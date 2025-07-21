@@ -25,7 +25,7 @@ public class JwtService {
                 .compact();
     }
     
-    public String extractPhoneNumber(String token) {
+    public String extractUserId(String token) {
         return extractClaims(token).getSubject();
     }
     

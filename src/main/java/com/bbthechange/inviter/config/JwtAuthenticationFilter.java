@@ -24,19 +24,27 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
         
+        String requestPath = request.getRequestURI();
+        
+        // Skip JWT processing for auth endpoints
+        if (requestPath.startsWith("/auth/")) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+        
         String authHeader = request.getHeader("Authorization");
         
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             String token = authHeader.substring(7);
             
             if (jwtService.isTokenValid(token)) {
-                String phoneNumber = jwtService.extractPhoneNumber(token);
+                String userId = jwtService.extractUserId(token);
                 
                 UsernamePasswordAuthenticationToken authentication = 
-                    new UsernamePasswordAuthenticationToken(phoneNumber, null, new ArrayList<>());
+                    new UsernamePasswordAuthenticationToken(userId, null, new ArrayList<>());
                 SecurityContextHolder.getContext().setAuthentication(authentication);
                 
-                request.setAttribute("userPhoneNumber", phoneNumber);
+                request.setAttribute("userId", userId);
             }
         }
         

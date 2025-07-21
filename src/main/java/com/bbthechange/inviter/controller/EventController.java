@@ -1,34 +1,46 @@
 package com.bbthechange.inviter.controller;
 
+import com.bbthechange.inviter.dto.CreateEventRequest;
 import com.bbthechange.inviter.model.Event;
+import com.bbthechange.inviter.repository.UserRepository;
+import com.bbthechange.inviter.service.EventService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.servlet.http.HttpServletRequest;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
-import java.util.stream.Collectors;
+import java.util.*;
 
 @RestController
 @RequestMapping("/events")
 public class EventController {
     
-    private final Map<UUID, Event> eventStore = new HashMap<>();
+    @Autowired
+    private EventService eventService;
+    
+    @Autowired
+    private UserRepository userRepository;
     
     @PostMapping("/new")
-    public ResponseEntity<Map<String, UUID>> createEvent(@RequestBody Event event) {
-        Event newEvent = new Event(
-            event.getName(),
-            event.getDescription(),
-            event.getStartTime(),
-            event.getEndTime(),
-            event.getInvitePhoneNumbers()
-        );
+    public ResponseEntity<Map<String, UUID>> createEvent(@RequestBody CreateEventRequest request, HttpServletRequest httpRequest) {
+        String userIdStr = (String) httpRequest.getAttribute("userId");
         
-        eventStore.put(newEvent.getId(), newEvent);
+        if (userIdStr == null) {
+            return new ResponseEntity<>(HttpStatus.UNAUTHORIZED);
+        }
+        
+        UUID userId = UUID.fromString(userIdStr);
+        List<UUID> hosts = Arrays.asList(userId);
+        
+        Event newEvent = eventService.createEventWithInvites(
+            request.getName(),
+            request.getDescription(),
+            request.getStartTime(),
+            request.getEndTime(),
+            hosts,
+            request.getInvitePhoneNumbers()
+        );
         
         Map<String, UUID> response = new HashMap<>();
         response.put("id", newEvent.getId());
@@ -37,38 +49,34 @@ public class EventController {
     }
     
     @GetMapping
-    public ResponseEntity<Collection<Event>> getAllEvents(HttpServletRequest request) {
-        String userPhoneNumber = (String) request.getAttribute("userPhoneNumber");
+    public ResponseEntity<List<Event>> getAllEvents(HttpServletRequest request) {
+        String userIdStr = (String) request.getAttribute("userId");
         
-        if (userPhoneNumber == null) {
+        if (userIdStr == null) {
             return new ResponseEntity<>(HttpStatus.UNAUTHORIZED);
         }
         
-        Collection<Event> userEvents = eventStore.values().stream()
-            .filter(event -> event.getInvitePhoneNumbers().contains(userPhoneNumber))
-            .collect(Collectors.toList());
+        UUID userId = UUID.fromString(userIdStr);
+        List<Event> userEvents = eventService.getEventsForUser(userId);
             
         return new ResponseEntity<>(userEvents, HttpStatus.OK);
     }
     
     @GetMapping("/{id}")
     public ResponseEntity<Event> getEvent(@PathVariable UUID id, HttpServletRequest request) {
-        String userPhoneNumber = (String) request.getAttribute("userPhoneNumber");
+        String userIdStr = (String) request.getAttribute("userId");
         
-        if (userPhoneNumber == null) {
+        if (userIdStr == null) {
             return new ResponseEntity<>(HttpStatus.UNAUTHORIZED);
         }
         
-        Event event = eventStore.get(id);
+        UUID userId = UUID.fromString(userIdStr);
+        Optional<Event> eventOpt = eventService.getEventForUser(id, userId);
         
-        if (event == null) {
+        if (eventOpt.isEmpty()) {
             return new ResponseEntity<>(HttpStatus.NOT_FOUND);
         }
         
-        if (!event.getInvitePhoneNumbers().contains(userPhoneNumber)) {
-            return new ResponseEntity<>(HttpStatus.FORBIDDEN);
-        }
-        
-        return new ResponseEntity<>(event, HttpStatus.OK);
+        return new ResponseEntity<>(eventOpt.get(), HttpStatus.OK);
     }
 }
