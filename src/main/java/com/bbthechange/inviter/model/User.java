@@ -15,12 +15,22 @@ public class User {
     private UUID id;
     private String phoneNumber;
     private String username;
+    private String displayName;
     private String password;
     
     public User(String phoneNumber, String username, String password) {
         this.id = UUID.randomUUID();
         this.phoneNumber = phoneNumber;
         this.username = username;
+        this.displayName = null;
+        this.password = password;
+    }
+    
+    public User(String phoneNumber, String username, String displayName, String password) {
+        this.id = UUID.randomUUID();
+        this.phoneNumber = phoneNumber;
+        this.username = username;
+        this.displayName = displayName;
         this.password = password;
     }
     

@@ -1,6 +1,8 @@
 package com.bbthechange.inviter.controller;
 
 import com.bbthechange.inviter.dto.CreateEventRequest;
+import com.bbthechange.inviter.dto.UpdateEventRequest;
+import com.bbthechange.inviter.model.EventVisibility;
 import com.bbthechange.inviter.model.Event;
 import com.bbthechange.inviter.repository.UserRepository;
 import com.bbthechange.inviter.service.EventService;
@@ -31,14 +33,28 @@ public class EventController {
         }
         
         UUID userId = UUID.fromString(userIdStr);
-        List<UUID> hosts = Arrays.asList(userId);
+        
+        // If no hosts specified, make the creating user a host
+        List<UUID> hostUserIds = request.getHostUserIds();
+        if (hostUserIds == null || hostUserIds.isEmpty()) {
+            hostUserIds = Arrays.asList(userId);
+        }
+        
+        // Set default visibility if not provided
+        EventVisibility visibility = request.getVisibility();
+        if (visibility == null) {
+            visibility = EventVisibility.INVITE_ONLY;
+        }
         
         Event newEvent = eventService.createEventWithInvites(
             request.getName(),
             request.getDescription(),
             request.getStartTime(),
             request.getEndTime(),
-            hosts,
+            request.getLocation(),
+            visibility,
+            request.getMainImagePath(),
+            hostUserIds,
             request.getInvitePhoneNumbers()
         );
         
@@ -78,5 +94,66 @@ public class EventController {
         }
         
         return new ResponseEntity<>(eventOpt.get(), HttpStatus.OK);
+    }
+    
+    @PutMapping("/{id}")
+    public ResponseEntity<Event> updateEvent(@PathVariable UUID id, @RequestBody UpdateEventRequest request, HttpServletRequest httpRequest) {
+        String userIdStr = (String) httpRequest.getAttribute("userId");
+        
+        if (userIdStr == null) {
+            return new ResponseEntity<>(HttpStatus.UNAUTHORIZED);
+        }
+        
+        UUID userId = UUID.fromString(userIdStr);
+        
+        // Validate that user is a host of this event
+        if (!eventService.isUserHostOfEvent(userId, id)) {
+            return new ResponseEntity<>(HttpStatus.FORBIDDEN);
+        }
+        
+        try {
+            Event updatedEvent = eventService.updateEvent(
+                id,
+                request.getName(),
+                request.getDescription(),
+                request.getStartTime(),
+                request.getEndTime(),
+                request.getLocation(),
+                request.getVisibility(),
+                request.getMainImagePath(),
+                request.getHostUserIds()
+            );
+            
+            return new ResponseEntity<>(updatedEvent, HttpStatus.OK);
+        } catch (IllegalArgumentException e) {
+            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+        }
+    }
+    
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Map<String, String>> deleteEvent(@PathVariable UUID id, HttpServletRequest httpRequest) {
+        String userIdStr = (String) httpRequest.getAttribute("userId");
+        
+        if (userIdStr == null) {
+            return new ResponseEntity<>(HttpStatus.UNAUTHORIZED);
+        }
+        
+        UUID userId = UUID.fromString(userIdStr);
+        
+        // Validate that user is a host of this event
+        if (!eventService.isUserHostOfEvent(userId, id)) {
+            return new ResponseEntity<>(HttpStatus.FORBIDDEN);
+        }
+        
+        try {
+            eventService.deleteEvent(id);
+            
+            Map<String, String> response = new HashMap<>();
+            response.put("message", "Event deleted successfully");
+            
+            return new ResponseEntity<>(response, HttpStatus.OK);
+        } catch (IllegalArgumentException e) {
+            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+        }
     }
 }

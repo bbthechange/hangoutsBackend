@@ -1,5 +1,6 @@
 package com.bbthechange.inviter.model;
 
+import com.bbthechange.inviter.dto.Address;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
@@ -19,15 +20,22 @@ public class Event {
     private String description;
     private LocalDateTime startTime;
     private LocalDateTime endTime;
+    private Address location;
+    private EventVisibility visibility;
+    private String mainImagePath;
     private List<UUID> hosts;
     private Long version;
     
-    public Event(String name, String description, LocalDateTime startTime, LocalDateTime endTime, List<UUID> hosts) {
+    public Event(String name, String description, LocalDateTime startTime, LocalDateTime endTime, 
+                 Address location, EventVisibility visibility, String mainImagePath, List<UUID> hosts) {
         this.id = UUID.randomUUID();
         this.name = name;
         this.description = description;
         this.startTime = startTime;
         this.endTime = endTime;
+        this.location = location;
+        this.visibility = visibility;
+        this.mainImagePath = mainImagePath;
         this.hosts = hosts;
         this.version = 1L;
     }

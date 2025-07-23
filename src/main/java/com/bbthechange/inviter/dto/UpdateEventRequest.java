@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.UUID;
 
 @Data
-public class CreateEventRequest {
+public class UpdateEventRequest {
     private String name;
     private String description;
     private LocalDateTime startTime;
@@ -16,5 +16,4 @@ public class CreateEventRequest {
     private EventVisibility visibility;
     private String mainImagePath;
     private List<UUID> hostUserIds;
-    private List<String> invitePhoneNumbers;
 }

@@ -8,6 +8,7 @@ import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.Key;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -33,5 +34,16 @@ public class EventRepository {
     
     public void delete(Event event) {
         eventTable.deleteItem(event);
+    }
+    
+    public void deleteById(UUID id) {
+        eventTable.deleteItem(Key.builder().partitionValue(id.toString()).build());
+    }
+    
+    public List<Event> findAll() {
+        return eventTable.scan()
+                .items()
+                .stream()
+                .toList();
     }
 }

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Inviter** is a Spring Boot 3.5.3 REST API for event management with phone number invitations. Events are stored in-memory using HashMap (data is lost on restart).
+**Inviter** is a Spring Boot 3.5.3 REST API for event management with DynamoDB backend. Features JWT-based authentication, user management, event creation, and phone number invitation system.
 
 ## Development Commands
 
@@ -31,44 +31,88 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Core Structure
 - **Package**: `com.bbthechange.inviter`
-- **Pattern**: Simple MVC with Controller → Model
-- **Storage**: In-memory HashMap (no database)
-- **API**: RESTful JSON endpoints under `/events`
+- **Pattern**: MVC with Controller → Service → Repository
+- **Database**: AWS DynamoDB with Enhanced Client
+- **Security**: JWT-based authentication with Spring Security
+- **API**: RESTful JSON endpoints with OpenAPI/Swagger documentation
 
 ### Key Components
 
-**Event Model** (`model/Event.java`)
-- Uses Lombok for boilerplate reduction
-- UUID auto-generated in constructor
-- Fields: id, name, description, startTime, endTime (optional), invitePhoneNumbers
+#### Models (`model/`)
+- **Event**: DynamoDB entity with location, visibility, hosts, and versioning
+- **User**: User authentication and profile data with phone number indexing
+- **Invite**: Event invitation management with response tracking
+- **EventVisibility**: Enum for INVITE_ONLY vs PUBLIC events
 
-**Event Controller** (`controller/EventController.java`)
-- Stores events in `Map<UUID, Event> eventStore`
-- Three endpoints: POST `/events/new`, GET `/events`, GET `/events/{id}`
+#### Controllers (`controller/`)
+- **AuthController**: User registration and JWT login
+- **EventController**: CRUD operations for events (create, list, get, update)
+- **InviteController**: Invitation management (add, remove, update responses)
+- **ProfileController**: User profile and password management
+- **ImageController**: Predefined image options
+
+#### Services (`service/`)
+- **EventService**: Event business logic and host validation
+- **InviteService**: Invitation creation and management
+- **UserService**: User profile operations
+- **JwtService**: JWT token generation and validation
+- **PasswordService**: BCrypt password hashing
+
+#### Security
+- **SecurityConfig**: Spring Security configuration with JWT filter
+- **JwtAuthenticationFilter**: Request interceptor for JWT validation
 
 ### API Endpoints
 
+#### Authentication (`/auth`) - Public
+| Method | URL | Purpose | Response |
+|--------|-----|---------|----------|
+| POST | `/auth/register` | Register user | `{"message": "User registered successfully"}` |
+| POST | `/auth/login` | Login user | `{"token": "jwt", "expiresIn": 86400}` |
+
+#### Events (`/events`) - Requires JWT
 | Method | URL | Purpose | Response |
 |--------|-----|---------|----------|
 | POST | `/events/new` | Create event | `{"id": "uuid"}` |
-| GET | `/events` | List all events | Array of events |
+| GET | `/events` | List user events | Array of events |
 | GET | `/events/{id}` | Get specific event | Event object or 404 |
+| PUT | `/events/{id}` | Update event (hosts only) | Updated event object |
 
-### Request Format
-```json
-{
-  "name": "Event Name",
-  "description": "Event Description", 
-  "startTime": "2024-01-15T10:00:00",
-  "endTime": "2024-01-15T11:00:00",
-  "invitePhoneNumbers": ["+1234567890", "+0987654321"]
-}
-```
+#### Invites (`/events/{eventId}/invites`) - Requires JWT
+| Method | URL | Purpose | Response |
+|--------|-----|---------|----------|
+| GET | `/events/{eventId}/invites` | List event invites | Array of invites |
+| POST | `/events/{eventId}/invites` | Add invite (hosts only) | `{"inviteId": "uuid"}` |
+| PUT | `/events/{eventId}/invites/{inviteId}` | Update response | Updated invite |
+| DELETE | `/events/{eventId}/invites/{inviteId}` | Remove invite (hosts only) | Success message |
+
+#### Profile (`/profile`) - Requires JWT
+| Method | URL | Purpose | Response |
+|--------|-----|---------|----------|
+| GET | `/profile` | Get user profile | User object |
+| PUT | `/profile` | Update display name | Success message |
+| PUT | `/profile/password` | Change password | Success message |
+
+#### Images (`/images`) - Public
+| Method | URL | Purpose | Response |
+|--------|-----|---------|----------|
+| GET | `/images/predefined` | Get predefined images | Array of image options |
+
+### Authentication
+- **Method**: JWT Bearer tokens (24-hour expiration)
+- **Header**: `Authorization: Bearer <token>`
+- **Login**: Phone number + password
+- **Storage**: BCrypt password hashing
+
+### Authorization Rules
+- **Event Access**: User must be invited OR be a host
+- **Event Updates**: Host only
+- **Invite Management**: Hosts can add/remove, users can update own responses
 
 ## Development Notes
 
 - **Testing**: Uses JUnit 5, currently minimal test coverage
-- **Configuration**: Minimal - only application name set in `application.properties`
+- **Configuration**: DynamoDB connection in `application.properties`
 - **Port**: Default 8080
-- **Data Persistence**: None - all data lost on restart
-- **Dependencies**: Spring Web, Lombok, JUnit 5
+- **Documentation**: Swagger UI at `http://localhost:8080/swagger-ui.html`
+- **Dependencies**: Spring Boot, Spring Security, DynamoDB Enhanced Client, JWT, BCrypt, Lombok

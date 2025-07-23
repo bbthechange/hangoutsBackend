@@ -39,10 +39,11 @@ public class AuthController {
         if (existingUser.isPresent()) {
             User existingUserEntity = existingUser.get();
             existingUserEntity.setUsername(user.getUsername());
+            existingUserEntity.setDisplayName(user.getDisplayName());
             existingUserEntity.setPassword(passwordService.encryptPassword(user.getPassword()));
             userRepository.save(existingUserEntity);
         } else {
-            User newUser = new User(user.getPhoneNumber(), user.getUsername(), passwordService.encryptPassword(user.getPassword()));
+            User newUser = new User(user.getPhoneNumber(), user.getUsername(), user.getDisplayName(), passwordService.encryptPassword(user.getPassword()));
             userRepository.save(newUser);
         }
         
