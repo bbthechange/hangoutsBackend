@@ -49,4 +49,15 @@ public class UserService {
     public Optional<User> getUserById(UUID userId) {
         return userRepository.findById(userId);
     }
+    
+    public User updateDeviceToken(UUID userId, String deviceToken) {
+        Optional<User> userOpt = userRepository.findById(userId);
+        if (userOpt.isEmpty()) {
+            throw new IllegalArgumentException("User not found");
+        }
+        
+        User user = userOpt.get();
+        user.setDeviceToken(deviceToken);
+        return userRepository.save(user);
+    }
 }
