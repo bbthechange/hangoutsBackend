@@ -116,3 +116,34 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Port**: Default 8080
 - **Documentation**: Swagger UI at `http://localhost:8080/swagger-ui.html`
 - **Dependencies**: Spring Boot, Spring Security, DynamoDB Enhanced Client, JWT, BCrypt, Lombok
+
+## Manual Database Operations
+
+### DynamoDB Access Issues
+- **AWS CLI**: Direct DynamoDB access via AWS CLI often fails with "Cannot do operations on a non-existent table" even when application can access tables
+- **Root Cause**: Application uses DynamoDB Enhanced Client which may have different table creation/access patterns than standard AWS CLI
+- **Tables**: Events, Users, Invites (plural names, created automatically on app startup via `DynamoDBTableInitializer`)
+
+### Manual Data Deletion Options
+1. **API Endpoints**: Use existing REST endpoints when possible (requires JWT auth)
+2. **Temporary Code Bypass**: Modify controller validation temporarily for specific operations
+3. **Command Line Runner**: Create temporary Spring Boot CommandLineRunner components
+4. **Direct Repository Access**: Not recommended due to Enhanced Client complexities
+
+### Emergency Event Deletion Process
+If you need to delete an event with unrecognized hosts:
+1. Temporarily modify `EventController.deleteEvent()` to bypass host validation for specific event ID
+2. Use any valid JWT token to call `DELETE /events/{id}`
+3. Restore original host validation immediately after deletion
+
+### Getting JWT Tokens for Manual Operations
+```bash
+# Login to get JWT token
+curl -X POST http://localhost:8080/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"phoneNumber": "YOUR_PHONE", "password": "YOUR_PASSWORD"}'
+
+# Use token for authenticated requests
+curl -X DELETE http://localhost:8080/events/{id} \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
