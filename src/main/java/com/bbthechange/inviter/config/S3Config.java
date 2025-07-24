@@ -10,6 +10,7 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3ClientBuilder;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
 import java.net.URI;
 
@@ -36,6 +37,28 @@ public class S3Config {
             
             builder.endpointOverride(URI.create(endpoint))
                    .forcePathStyle(true)
+                   .credentialsProvider(credentialsProvider);
+        } else {
+            // For production, use default credentials provider
+            builder.credentialsProvider(DefaultCredentialsProvider.create());
+        }
+
+        return builder.build();
+    }
+
+    @Bean
+    public S3Presigner s3Presigner() {
+        S3Presigner.Builder builder = S3Presigner.builder()
+                .region(Region.of(region));
+
+        // Use LocalStack endpoint if configured (development)
+        if (endpoint != null && !endpoint.isEmpty()) {
+            // For LocalStack, use dummy credentials
+            AwsCredentialsProvider credentialsProvider = StaticCredentialsProvider.create(
+                AwsBasicCredentials.create("test", "test")
+            );
+            
+            builder.endpointOverride(URI.create(endpoint))
                    .credentialsProvider(credentialsProvider);
         } else {
             // For production, use default credentials provider

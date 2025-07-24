@@ -99,9 +99,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | GET | `/images/predefined` | Get predefined images | Array of image options |
 | POST | `/images/upload-url` | Get presigned S3 upload URL | Presigned URL for direct S3 upload |
 
-**⚠️ MISSING ENDPOINT**: The iOS app requires `/images/upload-url` for custom image uploads:
-
-**Request Body:**
+**Request Body (for upload-url):**
 ```json
 {
   "key": "events/{userId}/{timestamp}_{randomId}_{filename}",
@@ -109,7 +107,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 }
 ```
 
-**Response:**
+**Response (from upload-url):**
 ```json
 {
   "uploadUrl": "https://inviter-event-images-prod.s3.us-west-2.amazonaws.com/events/user123/12345_abc_image.jpg?X-Amz-Credential=...",
@@ -117,9 +115,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 }
 ```
 
-**Purpose**: Generate presigned S3 upload URLs for direct iOS → S3 uploads (industry best practice)
-**Auth**: Requires JWT token
-**S3 Config**: Bucket `inviter-event-images-prod` in `us-west-2`
+**Implementation Details:**
+- **Purpose**: Generate presigned S3 upload URLs for direct iOS → S3 uploads (industry best practice)
+- **Auth**: Requires JWT token
+- **S3 Config**: Bucket `inviter-event-images-prod` in `us-west-2`, 15-minute URL expiration
+- **Components**: `S3Service.generatePresignedUploadUrl()`, `ImageController.getUploadUrl()`
+- **DTOs**: `UploadUrlRequest`, `UploadUrlResponse`
+- **Testing**: Full unit test coverage in `S3ServiceTest` and `ImageControllerTest`
 
 ### Authentication
 - **Method**: JWT Bearer tokens (24-hour expiration)

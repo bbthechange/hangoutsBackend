@@ -8,8 +8,13 @@ import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Object;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +26,9 @@ public class S3Service {
 
     @Autowired
     private S3Client s3Client;
+
+    @Autowired
+    private S3Presigner s3Presigner;
 
     @Value("${aws.s3.bucket}")
     private String bucketName;
@@ -111,5 +119,32 @@ public class S3Service {
             }
         }
         return result.toString().trim();
+    }
+
+    public String generatePresignedUploadUrl(String key, String contentType) {
+        try {
+            log.info("Generating presigned upload URL for key: {} with content type: {}", key, contentType);
+            
+            PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(key)
+                    .contentType(contentType)
+                    .build();
+
+            PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
+                    .signatureDuration(Duration.ofMinutes(15)) // URL expires in 15 minutes
+                    .putObjectRequest(putObjectRequest)
+                    .build();
+
+            PresignedPutObjectRequest presignedRequest = s3Presigner.presignPutObject(presignRequest);
+            String presignedUrl = presignedRequest.url().toString();
+            
+            log.info("Generated presigned URL for key: {}", key);
+            return presignedUrl;
+            
+        } catch (Exception e) {
+            log.error("Error generating presigned upload URL for key {}: {}", key, e.getMessage(), e);
+            throw new RuntimeException("Failed to generate presigned upload URL", e);
+        }
     }
 }
