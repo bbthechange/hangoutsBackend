@@ -3,6 +3,7 @@ package com.bbthechange.inviter.service;
 import com.bbthechange.inviter.dto.InviteResponse;
 import com.bbthechange.inviter.model.Event;
 import com.bbthechange.inviter.model.Invite;
+import com.bbthechange.inviter.model.Invite.InviteType;
 import com.bbthechange.inviter.model.User;
 import com.bbthechange.inviter.repository.EventRepository;
 import com.bbthechange.inviter.repository.InviteRepository;
@@ -45,6 +46,10 @@ public class InviteService {
     }
     
     public Invite addInviteToEvent(UUID eventId, String phoneNumber) {
+        return addInviteToEvent(eventId, phoneNumber, InviteType.GUEST);
+    }
+    
+    public Invite addInviteToEvent(UUID eventId, String phoneNumber, InviteType type) {
         User user = findOrCreateUserByPhoneNumber(phoneNumber);
         
         // Check if invite already exists
@@ -56,7 +61,7 @@ public class InviteService {
             throw new IllegalStateException("User is already invited to this event");
         }
         
-        Invite invite = new Invite(eventId, user.getId());
+        Invite invite = new Invite(eventId, user.getId(), type);
         Invite savedInvite = inviteRepository.save(invite);
         
         // Send push notification if user has device token
@@ -65,7 +70,8 @@ public class InviteService {
                 Optional<Event> eventOpt = eventRepository.findById(eventId);
                 if (eventOpt.isPresent()) {
                     Event event = eventOpt.get();
-                    String hostName = getHostDisplayName(event.getHosts().get(0));
+                    // Get a host name from existing host invites or legacy hosts field
+                    String hostName = getAnyHostDisplayName(eventId);
                     pushNotificationService.sendInviteNotification(
                         user.getDeviceToken(), 
                         event.getName(), 
@@ -83,11 +89,34 @@ public class InviteService {
     
     public void removeInvite(UUID inviteId) {
         Optional<Invite> inviteOpt = inviteRepository.findById(inviteId);
-        if (inviteOpt.isPresent()) {
-            inviteRepository.delete(inviteOpt.get());
-        } else {
+        if (inviteOpt.isEmpty()) {
             throw new IllegalArgumentException("Invite not found");
         }
+        
+        Invite invite = inviteOpt.get();
+        
+        // If this is a host invite, check if it's the last host
+        if (invite.getType() == InviteType.HOST) {
+            List<Invite> eventInvites = inviteRepository.findByEventId(invite.getEventId());
+            long hostCount = eventInvites.stream()
+                    .filter(inv -> inv.getType() == InviteType.HOST)
+                    .count();
+            
+            // Also check legacy hosts field for migration support
+            Optional<Event> eventOpt = eventRepository.findById(invite.getEventId());
+            if (eventOpt.isPresent()) {
+                Event event = eventOpt.get();
+                boolean hasLegacyHosts = event.getHosts() != null && !event.getHosts().isEmpty();
+                
+                if (hostCount <= 1 && !hasLegacyHosts) {
+                    throw new IllegalStateException("Cannot remove the last host from an event");
+                }
+            } else if (hostCount <= 1) {
+                throw new IllegalStateException("Cannot remove the last host from an event");
+            }
+        }
+        
+        inviteRepository.delete(invite);
     }
     
     public Invite updateInviteResponse(UUID inviteId, UUID userId, com.bbthechange.inviter.model.Invite.InviteResponse response) {
@@ -118,6 +147,7 @@ public class InviteService {
             user.getPhoneNumber(),
             user.getUsername(),
             user.getDisplayName(),
+            invite.getType(),
             invite.getResponse(),
             invite.getEventPassed()
         );
@@ -139,6 +169,29 @@ public class InviteService {
             User host = hostOpt.get();
             return host.getDisplayName() != null ? host.getDisplayName() : host.getUsername();
         }
+        return "Unknown Host";
+    }
+    
+    private String getAnyHostDisplayName(UUID eventId) {
+        // First try to get from host invites
+        List<Invite> eventInvites = inviteRepository.findByEventId(eventId);
+        Optional<Invite> hostInvite = eventInvites.stream()
+                .filter(invite -> invite.getType() == InviteType.HOST)
+                .findFirst();
+        
+        if (hostInvite.isPresent()) {
+            return getHostDisplayName(hostInvite.get().getUserId());
+        }
+        
+        // Fallback to legacy hosts field
+        Optional<Event> eventOpt = eventRepository.findById(eventId);
+        if (eventOpt.isPresent()) {
+            Event event = eventOpt.get();
+            if (event.getHosts() != null && !event.getHosts().isEmpty()) {
+                return getHostDisplayName(event.getHosts().get(0));
+            }
+        }
+        
         return "Unknown Host";
     }
 }

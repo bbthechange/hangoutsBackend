@@ -23,7 +23,7 @@ public class Event {
     private Address location;
     private EventVisibility visibility;
     private String mainImagePath;
-    private List<UUID> hosts;
+    private List<UUID> hosts; // TODO: Remove after migration - hosts are now managed via Invite.type=HOST
     private Long version;
     
     public Event(String name, String description, LocalDateTime startTime, LocalDateTime endTime, 

@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.controller;
 
 import com.bbthechange.inviter.dto.CreateEventRequest;
+import com.bbthechange.inviter.dto.CreateEventWithInvitesRequest;
 import com.bbthechange.inviter.dto.UpdateEventRequest;
 import com.bbthechange.inviter.model.EventVisibility;
 import com.bbthechange.inviter.model.Event;
@@ -25,7 +26,7 @@ public class EventController {
     private UserRepository userRepository;
     
     @PostMapping("/new")
-    public ResponseEntity<Map<String, UUID>> createEvent(@RequestBody CreateEventRequest request, HttpServletRequest httpRequest) {
+    public ResponseEntity<Map<String, UUID>> createEvent(@RequestBody CreateEventWithInvitesRequest request, HttpServletRequest httpRequest) {
         String userIdStr = (String) httpRequest.getAttribute("userId");
         
         if (userIdStr == null) {
@@ -34,34 +35,31 @@ public class EventController {
         
         UUID userId = UUID.fromString(userIdStr);
         
-        // If no hosts specified, make the creating user a host
-        List<UUID> hostUserIds = request.getHostUserIds();
-        if (hostUserIds == null || hostUserIds.isEmpty()) {
-            hostUserIds = Arrays.asList(userId);
-        }
-        
         // Set default visibility if not provided
         EventVisibility visibility = request.getVisibility();
         if (visibility == null) {
             visibility = EventVisibility.INVITE_ONLY;
         }
         
-        Event newEvent = eventService.createEventWithInvites(
-            request.getName(),
-            request.getDescription(),
-            request.getStartTime(),
-            request.getEndTime(),
-            request.getLocation(),
-            visibility,
-            request.getMainImagePath(),
-            hostUserIds,
-            request.getInvitePhoneNumbers()
-        );
-        
-        Map<String, UUID> response = new HashMap<>();
-        response.put("id", newEvent.getId());
-        
-        return new ResponseEntity<>(response, HttpStatus.CREATED);
+        try {
+            Event newEvent = eventService.createEventWithInvites(
+                request.getName(),
+                request.getDescription(),
+                request.getStartTime(),
+                request.getEndTime(),
+                request.getLocation(),
+                visibility,
+                request.getMainImagePath(),
+                request.getInvites()
+            );
+            
+            Map<String, UUID> response = new HashMap<>();
+            response.put("id", newEvent.getId());
+            
+            return new ResponseEntity<>(response, HttpStatus.CREATED);
+        } catch (IllegalArgumentException e) {
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+        }
     }
     
     @GetMapping

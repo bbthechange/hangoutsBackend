@@ -1,9 +1,11 @@
 package com.bbthechange.inviter.service;
 
 import com.bbthechange.inviter.dto.Address;
+import com.bbthechange.inviter.dto.CreateInviteRequest;
 import com.bbthechange.inviter.model.Event;
 import com.bbthechange.inviter.model.EventVisibility;
 import com.bbthechange.inviter.model.Invite;
+import com.bbthechange.inviter.model.Invite.InviteType;
 import com.bbthechange.inviter.model.User;
 import com.bbthechange.inviter.repository.EventRepository;
 import com.bbthechange.inviter.repository.InviteRepository;
@@ -102,7 +104,10 @@ class EventServiceTest {
         @DisplayName("Should create event and invites successfully")
         void createEventWithInvites_Success() {
             // Arrange
-            List<String> phoneNumbers = Arrays.asList("+1234567890", "+0987654321");
+            List<CreateInviteRequest> inviteRequests = Arrays.asList(
+                createInviteRequest("+1234567890", InviteType.HOST),
+                createInviteRequest("+0987654321", InviteType.GUEST)
+            );
             when(eventRepository.save(any(Event.class))).thenReturn(testEvent);
             when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.of(testUser));
             when(userRepository.findByPhoneNumber("+0987654321")).thenReturn(Optional.of(otherUser));
@@ -117,8 +122,7 @@ class EventServiceTest {
                 testAddress,
                 EventVisibility.INVITE_ONLY,
                 "/images/test.jpg",
-                Arrays.asList(testUserId),
-                phoneNumbers
+                inviteRequests
             );
 
             // Assert
@@ -134,7 +138,9 @@ class EventServiceTest {
         @DisplayName("Should create new users for unknown phone numbers")
         void createEventWithInvites_CreatesNewUsers() {
             // Arrange
-            List<String> phoneNumbers = Arrays.asList("+1111111111");
+            List<CreateInviteRequest> inviteRequests = Arrays.asList(
+                createInviteRequest("+1111111111", InviteType.HOST)
+            );
             User newUser = new User("+1111111111", null, null);
             
             when(eventRepository.save(any(Event.class))).thenReturn(testEvent);
@@ -151,8 +157,7 @@ class EventServiceTest {
                 testAddress,
                 EventVisibility.INVITE_ONLY,
                 "/images/test.jpg",
-                Arrays.asList(testUserId),
-                phoneNumbers
+                inviteRequests
             );
 
             // Assert
@@ -167,27 +172,55 @@ class EventServiceTest {
         }
 
         @Test
-        @DisplayName("Should handle empty invite list")
-        void createEventWithInvites_EmptyInviteList() {
+        @DisplayName("Should reject empty invite list without host")
+        void createEventWithInvites_EmptyInviteList_ThrowsException() {
             // Arrange
-            when(eventRepository.save(any(Event.class))).thenReturn(testEvent);
+            List<CreateInviteRequest> emptyInvites = new ArrayList<>();
 
-            // Act
-            Event result = eventService.createEventWithInvites(
-                "Test Event",
-                "Test Description",
-                testEvent.getStartTime(),
-                testEvent.getEndTime(),
-                testAddress,
-                EventVisibility.INVITE_ONLY,
-                "/images/test.jpg",
-                Arrays.asList(testUserId),
-                new ArrayList<>()
+            // Act & Assert
+            IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () ->
+                eventService.createEventWithInvites(
+                    "Test Event",
+                    "Test Description",
+                    testEvent.getStartTime(),
+                    testEvent.getEndTime(),
+                    testAddress,
+                    EventVisibility.INVITE_ONLY,
+                    "/images/test.jpg",
+                    emptyInvites
+                )
+            );
+            
+            assertEquals("Event must have at least one host", exception.getMessage());
+            verify(eventRepository, never()).save(any(Event.class));
+            verify(inviteRepository, never()).save(any(Invite.class));
+        }
+        
+        @Test
+        @DisplayName("Should reject invite list with only guests (no hosts)")
+        void createEventWithInvites_OnlyGuests_ThrowsException() {
+            // Arrange
+            List<CreateInviteRequest> guestOnlyInvites = Arrays.asList(
+                createInviteRequest("+1234567890", InviteType.GUEST),
+                createInviteRequest("+0987654321", InviteType.GUEST)
             );
 
-            // Assert
-            assertNotNull(result);
-            verify(eventRepository).save(any(Event.class));
+            // Act & Assert
+            IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () ->
+                eventService.createEventWithInvites(
+                    "Test Event",
+                    "Test Description",
+                    testEvent.getStartTime(),
+                    testEvent.getEndTime(),
+                    testAddress,
+                    EventVisibility.INVITE_ONLY,
+                    "/images/test.jpg",
+                    guestOnlyInvites
+                )
+            );
+            
+            assertEquals("Event must have at least one host", exception.getMessage());
+            verify(eventRepository, never()).save(any(Event.class));
             verify(inviteRepository, never()).save(any(Invite.class));
         }
     }
@@ -526,5 +559,13 @@ class EventServiceTest {
             verify(inviteRepository, never()).findByEventId(any());
             verify(eventRepository, never()).deleteById(any());
         }
+    }
+    
+    // Helper method to create invite requests
+    private CreateInviteRequest createInviteRequest(String phoneNumber, InviteType type) {
+        CreateInviteRequest request = new CreateInviteRequest();
+        request.setPhoneNumber(phoneNumber);
+        request.setType(type);
+        return request;
     }
 }

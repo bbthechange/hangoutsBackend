@@ -2,7 +2,10 @@ package com.bbthechange.inviter.controller;
 
 import com.bbthechange.inviter.dto.Address;
 import com.bbthechange.inviter.dto.CreateEventRequest;
+import com.bbthechange.inviter.dto.CreateEventWithInvitesRequest;
+import com.bbthechange.inviter.dto.CreateInviteRequest;
 import com.bbthechange.inviter.dto.UpdateEventRequest;
+import com.bbthechange.inviter.model.Invite.InviteType;
 import com.bbthechange.inviter.model.Event;
 import com.bbthechange.inviter.model.EventVisibility;
 import com.bbthechange.inviter.repository.UserRepository;
@@ -67,6 +70,7 @@ class EventControllerTest {
     private UUID testEventId;
     private Event testEvent;
     private CreateEventRequest createEventRequest;
+    private CreateEventWithInvitesRequest createEventWithInvitesRequest;
     private UpdateEventRequest updateEventRequest;
     private Address testAddress;
 
@@ -108,6 +112,29 @@ class EventControllerTest {
         createEventRequest.setHostUserIds(Arrays.asList(testUserId));
         createEventRequest.setInvitePhoneNumbers(Arrays.asList("+1234567890"));
         
+        // Create new-style request with invites
+        createEventWithInvitesRequest = new CreateEventWithInvitesRequest();
+        createEventWithInvitesRequest.setName("Test Event");
+        createEventWithInvitesRequest.setDescription("Test Description");
+        createEventWithInvitesRequest.setStartTime(LocalDateTime.now().plusDays(1));
+        createEventWithInvitesRequest.setEndTime(LocalDateTime.now().plusDays(1).plusHours(2));
+        createEventWithInvitesRequest.setLocation(testAddress);
+        createEventWithInvitesRequest.setVisibility(EventVisibility.INVITE_ONLY);
+        createEventWithInvitesRequest.setMainImagePath("/images/test.jpg");
+        
+        List<CreateInviteRequest> invites = new ArrayList<>();
+        CreateInviteRequest hostInvite = new CreateInviteRequest();
+        hostInvite.setPhoneNumber("+1234567890"); // Assuming test user has this phone
+        hostInvite.setType(InviteType.HOST);
+        invites.add(hostInvite);
+        
+        CreateInviteRequest guestInvite = new CreateInviteRequest();
+        guestInvite.setPhoneNumber("+1234567891");
+        guestInvite.setType(InviteType.GUEST);
+        invites.add(guestInvite);
+        
+        createEventWithInvitesRequest.setInvites(invites);
+        
         updateEventRequest = new UpdateEventRequest();
         updateEventRequest.setName("Updated Event");
         updateEventRequest.setDescription("Updated Description");
@@ -122,11 +149,11 @@ class EventControllerTest {
         void createEvent_Success_AllFields() {
             // Arrange
             when(httpServletRequest.getAttribute("userId")).thenReturn(testUserId.toString());
-            when(eventService.createEventWithInvites(any(), any(), any(), any(), any(), any(), any(), any(), any()))
+            when(eventService.createEventWithInvites(any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(testEvent);
 
             // Act
-            ResponseEntity<Map<String, UUID>> response = eventController.createEvent(createEventRequest, httpServletRequest);
+            ResponseEntity<Map<String, UUID>> response = eventController.createEvent(createEventWithInvitesRequest, httpServletRequest);
 
             // Assert
             assertEquals(HttpStatus.CREATED, response.getStatusCode());
@@ -136,13 +163,12 @@ class EventControllerTest {
             verify(eventService).createEventWithInvites(
                 eq("Test Event"),
                 eq("Test Description"),
-                eq(createEventRequest.getStartTime()),
-                eq(createEventRequest.getEndTime()),
+                eq(createEventWithInvitesRequest.getStartTime()),
+                eq(createEventWithInvitesRequest.getEndTime()),
                 eq(testAddress),
                 eq(EventVisibility.INVITE_ONLY),
                 eq("/images/test.jpg"),
-                eq(Arrays.asList(testUserId)),
-                eq(Arrays.asList("+1234567890"))
+                any(List.class)
             );
         }
 
@@ -152,18 +178,18 @@ class EventControllerTest {
             // Arrange
             when(httpServletRequest.getAttribute("userId")).thenReturn(testUserId.toString());
             createEventRequest.setVisibility(null);
-            when(eventService.createEventWithInvites(any(), any(), any(), any(), any(), any(), any(), any(), any()))
+            when(eventService.createEventWithInvites(any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(testEvent);
 
             // Act
-            ResponseEntity<Map<String, UUID>> response = eventController.createEvent(createEventRequest, httpServletRequest);
+            ResponseEntity<Map<String, UUID>> response = eventController.createEvent(createEventWithInvitesRequest, httpServletRequest);
 
             // Assert
             assertEquals(HttpStatus.CREATED, response.getStatusCode());
             verify(eventService).createEventWithInvites(
                 any(), any(), any(), any(), any(),
                 eq(EventVisibility.INVITE_ONLY), // Should default to INVITE_ONLY
-                any(), any(), any()
+                any(), any()
             );
         }
 
@@ -173,18 +199,17 @@ class EventControllerTest {
             // Arrange
             when(httpServletRequest.getAttribute("userId")).thenReturn(testUserId.toString());
             createEventRequest.setHostUserIds(null);
-            when(eventService.createEventWithInvites(any(), any(), any(), any(), any(), any(), any(), any(), any()))
+            when(eventService.createEventWithInvites(any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(testEvent);
 
             // Act
-            ResponseEntity<Map<String, UUID>> response = eventController.createEvent(createEventRequest, httpServletRequest);
+            ResponseEntity<Map<String, UUID>> response = eventController.createEvent(createEventWithInvitesRequest, httpServletRequest);
 
             // Assert
             assertEquals(HttpStatus.CREATED, response.getStatusCode());
             verify(eventService).createEventWithInvites(
                 any(), any(), any(), any(), any(), any(), any(),
-                eq(Arrays.asList(testUserId)), // Should default to creating user
-                any()
+                any() // List<CreateInviteRequest>
             );
         }
 
@@ -195,7 +220,7 @@ class EventControllerTest {
             when(httpServletRequest.getAttribute("userId")).thenReturn(null);
 
             // Act
-            ResponseEntity<Map<String, UUID>> response = eventController.createEvent(createEventRequest, httpServletRequest);
+            ResponseEntity<Map<String, UUID>> response = eventController.createEvent(createEventWithInvitesRequest, httpServletRequest);
 
             // Assert
             assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());

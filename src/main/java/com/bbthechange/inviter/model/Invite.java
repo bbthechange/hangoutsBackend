@@ -15,15 +15,22 @@ public class Invite {
     private UUID id;
     private UUID eventId;
     private UUID userId;
+    private InviteType type;
     private InviteResponse response;
     private Boolean eventPassed;
     
-    public Invite(UUID eventId, UUID userId) {
+    public Invite(UUID eventId, UUID userId, InviteType type) {
         this.id = UUID.randomUUID();
         this.eventId = eventId;
         this.userId = userId;
+        this.type = type;
         this.response = InviteResponse.NOT_RESPONDED;
         this.eventPassed = false;
+    }
+    
+    // Backward compatibility constructor for tests - defaults to GUEST
+    public Invite(UUID eventId, UUID userId) {
+        this(eventId, userId, InviteType.GUEST);
     }
     
     @DynamoDbPartitionKey
@@ -39,6 +46,11 @@ public class Invite {
     @DynamoDbSecondaryPartitionKey(indexNames = "UserIndex")
     public UUID getUserId() {
         return userId;
+    }
+    
+    public enum InviteType {
+        HOST,
+        GUEST
     }
     
     public enum InviteResponse {
