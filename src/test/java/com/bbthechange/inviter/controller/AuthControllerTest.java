@@ -1,0 +1,322 @@
+package com.bbthechange.inviter.controller;
+
+import com.bbthechange.inviter.controller.AuthController.LoginRequest;
+import com.bbthechange.inviter.model.User;
+import com.bbthechange.inviter.repository.UserRepository;
+import com.bbthechange.inviter.service.JwtService;
+import com.bbthechange.inviter.service.PasswordService;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+/**
+ * Unit tests for AuthController
+ * 
+ * Test Coverage:
+ * - POST /auth/register - User registration functionality
+ * - POST /auth/login - User authentication functionality
+ * - Various error scenarios and edge cases
+ */
+@ExtendWith(MockitoExtension.class)
+@DisplayName("AuthController Tests")
+class AuthControllerTest {
+
+    @Mock
+    private JwtService jwtService;
+
+    @Mock
+    private UserRepository userRepository;
+
+    @Mock
+    private PasswordService passwordService;
+
+    @InjectMocks
+    private AuthController authController;
+
+    private User testUser;
+    private User existingUser;
+    private LoginRequest loginRequest;
+    private UUID testUserId;
+
+    @BeforeEach
+    void setUp() {
+        testUserId = UUID.randomUUID();
+        
+        testUser = new User("+1234567890", "testuser", "Test User", "password123");
+        testUser.setId(testUserId);
+        
+        existingUser = new User("+1234567890", "existinguser", "Existing User", "hashedpassword");
+        existingUser.setId(testUserId);
+        
+        loginRequest = new LoginRequest();
+        loginRequest.setPhoneNumber("+1234567890");
+        loginRequest.setPassword("password123");
+    }
+
+    @Nested
+    @DisplayName("POST /auth/register - Registration Tests")
+    class RegistrationTests {
+
+        @Test
+        @DisplayName("Should register new user successfully")
+        void register_Success_NewUser() {
+            // Arrange
+            when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.empty());
+            when(passwordService.encryptPassword("password123")).thenReturn("hashedpassword");
+            when(userRepository.save(any(User.class))).thenReturn(testUser);
+
+            // Act
+            ResponseEntity<Map<String, String>> response = authController.register(testUser);
+
+            // Assert
+            assertEquals(HttpStatus.CREATED, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("User registered successfully", response.getBody().get("message"));
+            
+            verify(userRepository).findByPhoneNumber("+1234567890");
+            verify(passwordService).encryptPassword("password123");
+            verify(userRepository).save(argThat(user ->
+                "+1234567890".equals(user.getPhoneNumber()) &&
+                "testuser".equals(user.getUsername()) &&
+                "Test User".equals(user.getDisplayName())
+            ));
+        }
+
+        @Test
+        @DisplayName("Should update existing user without password")
+        void register_Success_UpdateExistingUser() {
+            // Arrange
+            User existingUserWithoutPassword = new User("+1234567890", "olduser", "Old User", null);
+            existingUserWithoutPassword.setId(testUserId);
+            
+            when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.of(existingUserWithoutPassword));
+            when(passwordService.encryptPassword("password123")).thenReturn("hashedpassword");
+            when(userRepository.save(any(User.class))).thenReturn(existingUserWithoutPassword);
+
+            // Act
+            ResponseEntity<Map<String, String>> response = authController.register(testUser);
+
+            // Assert
+            assertEquals(HttpStatus.CREATED, response.getStatusCode());
+            assertEquals("User registered successfully", response.getBody().get("message"));
+            
+            verify(userRepository).save(argThat(user ->
+                "testuser".equals(user.getUsername()) &&
+                "Test User".equals(user.getDisplayName()) &&
+                "hashedpassword".equals(user.getPassword())
+            ));
+        }
+
+        @Test
+        @DisplayName("Should return CONFLICT when user already exists with password")
+        void register_Conflict_UserAlreadyExists() {
+            // Arrange
+            when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.of(existingUser));
+
+            // Act
+            ResponseEntity<Map<String, String>> response = authController.register(testUser);
+
+            // Assert
+            assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("User already exists", response.getBody().get("error"));
+            
+            verify(userRepository).findByPhoneNumber("+1234567890");
+            verify(userRepository, never()).save(any());
+            verify(passwordService, never()).encryptPassword(any());
+        }
+
+        @Test
+        @DisplayName("Should handle null password in registration")
+        void register_Success_NullPassword() {
+            // Arrange
+            User userWithNullPassword = new User("+1234567890", "testuser", "Test User", null);
+            when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.empty());
+            when(passwordService.encryptPassword(null)).thenReturn("hashedpassword");
+            when(userRepository.save(any(User.class))).thenReturn(userWithNullPassword);
+
+            // Act
+            ResponseEntity<Map<String, String>> response = authController.register(userWithNullPassword);
+
+            // Assert
+            assertEquals(HttpStatus.CREATED, response.getStatusCode());
+            verify(passwordService).encryptPassword(null);
+        }
+    }
+
+    @Nested
+    @DisplayName("POST /auth/login - Authentication Tests")
+    class AuthenticationTests {
+
+        @Test
+        @DisplayName("Should login successfully with valid credentials")
+        void login_Success_ValidCredentials() {
+            // Arrange
+            when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.of(existingUser));
+            when(passwordService.matches("password123", "hashedpassword")).thenReturn(true);
+            when(jwtService.generateToken(testUserId.toString())).thenReturn("jwt-token");
+
+            // Act
+            ResponseEntity<Map<String, Object>> response = authController.login(loginRequest);
+
+            // Assert
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("jwt-token", response.getBody().get("token"));
+            assertEquals(86400, response.getBody().get("expiresIn"));
+            
+            verify(userRepository).findByPhoneNumber("+1234567890");
+            verify(passwordService).matches("password123", "hashedpassword");
+            verify(jwtService).generateToken(testUserId.toString());
+        }
+
+        @Test
+        @DisplayName("Should return UNAUTHORIZED when user doesn't exist")
+        void login_Unauthorized_UserNotFound() {
+            // Arrange
+            when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.empty());
+
+            // Act
+            ResponseEntity<Map<String, Object>> response = authController.login(loginRequest);
+
+            // Assert
+            assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("Invalid credentials", response.getBody().get("error"));
+            
+            verify(userRepository).findByPhoneNumber("+1234567890");
+            verify(passwordService, never()).matches(any(), any());
+            verify(jwtService, never()).generateToken(any());
+        }
+
+        @Test
+        @DisplayName("Should return UNAUTHORIZED when user has no password")
+        void login_Unauthorized_UserHasNoPassword() {
+            // Arrange
+            User userWithoutPassword = new User("+1234567890", "testuser", "Test User", null);
+            when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.of(userWithoutPassword));
+
+            // Act
+            ResponseEntity<Map<String, Object>> response = authController.login(loginRequest);
+
+            // Assert
+            assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+            assertEquals("Invalid credentials", response.getBody().get("error"));
+            
+            verify(passwordService, never()).matches(any(), any());
+            verify(jwtService, never()).generateToken(any());
+        }
+
+        @Test
+        @DisplayName("Should return UNAUTHORIZED when password doesn't match")
+        void login_Unauthorized_InvalidPassword() {
+            // Arrange
+            when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.of(existingUser));
+            when(passwordService.matches("password123", "hashedpassword")).thenReturn(false);
+
+            // Act
+            ResponseEntity<Map<String, Object>> response = authController.login(loginRequest);
+
+            // Assert
+            assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+            assertEquals("Invalid credentials", response.getBody().get("error"));
+            
+            verify(passwordService).matches("password123", "hashedpassword");
+            verify(jwtService, never()).generateToken(any());
+        }
+
+        @Test
+        @DisplayName("Should handle empty phone number")
+        void login_Unauthorized_EmptyPhoneNumber() {
+            // Arrange
+            loginRequest.setPhoneNumber("");
+            when(userRepository.findByPhoneNumber("")).thenReturn(Optional.empty());
+
+            // Act
+            ResponseEntity<Map<String, Object>> response = authController.login(loginRequest);
+
+            // Assert
+            assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+            assertEquals("Invalid credentials", response.getBody().get("error"));
+        }
+
+        @Test
+        @DisplayName("Should handle null password in login request")
+        void login_Unauthorized_NullPassword() {
+            // Arrange
+            loginRequest.setPassword(null);
+            when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.of(existingUser));
+            when(passwordService.matches(null, "hashedpassword")).thenReturn(false);
+
+            // Act
+            ResponseEntity<Map<String, Object>> response = authController.login(loginRequest);
+
+            // Assert
+            assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+            assertEquals("Invalid credentials", response.getBody().get("error"));
+        }
+    }
+
+    @Nested
+    @DisplayName("LoginRequest DTO Tests")
+    class LoginRequestTests {
+
+        @Test
+        @DisplayName("Should set and get phone number correctly")
+        void loginRequest_PhoneNumber() {
+            // Arrange
+            LoginRequest request = new LoginRequest();
+            
+            // Act
+            request.setPhoneNumber("+1234567890");
+            
+            // Assert
+            assertEquals("+1234567890", request.getPhoneNumber());
+        }
+
+        @Test
+        @DisplayName("Should set and get password correctly")
+        void loginRequest_Password() {
+            // Arrange
+            LoginRequest request = new LoginRequest();
+            
+            // Act
+            request.setPassword("testpassword");
+            
+            // Assert
+            assertEquals("testpassword", request.getPassword());
+        }
+
+        @Test
+        @DisplayName("Should handle null values")
+        void loginRequest_NullValues() {
+            // Arrange
+            LoginRequest request = new LoginRequest();
+            
+            // Act & Assert
+            assertNull(request.getPhoneNumber());
+            assertNull(request.getPassword());
+            
+            request.setPhoneNumber(null);
+            request.setPassword(null);
+            
+            assertNull(request.getPhoneNumber());
+            assertNull(request.getPassword());
+        }
+    }
+}

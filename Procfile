@@ -1,0 +1,1 @@
+web: java -jar application.jar --server.port=5000 --spring.profiles.active=prod

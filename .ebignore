@@ -1,0 +1,7 @@
+# EB should ignore most build artifacts but include the final JAR
+build/classes/
+build/generated/
+build/reports/
+build/test-results/
+build/tmp/
+# Include the JAR file by NOT ignoring build/libs/

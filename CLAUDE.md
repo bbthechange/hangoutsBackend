@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Development Commands
 
 ```bash
-# Run the application (requires Java 17+)
+# Run the application (requires Java 21)
 ./gradlew bootRun
 
 # Build and test
@@ -25,7 +25,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ./gradlew bootJar
 ```
 
-**Important**: The project requires Java 17+ due to Spring Boot 3.5.3. If build fails with Java version error, either upgrade Java or downgrade Spring Boot version in `build.gradle`.
+**Important**: The project is compiled with Java 21. Local development requires Java 21+. Production deployment uses Corretto 21 on Elastic Beanstalk.
 
 ## Architecture
 
@@ -93,10 +93,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | PUT | `/profile` | Update display name | Success message |
 | PUT | `/profile/password` | Change password | Success message |
 
-#### Images (`/images`) - Public
+#### Images (`/images`) - Public/Protected
 | Method | URL | Purpose | Response |
 |--------|-----|---------|----------|
 | GET | `/images/predefined` | Get predefined images | Array of image options |
+| POST | `/images/upload-url` | Get presigned S3 upload URL | Presigned URL for direct S3 upload |
+
+**⚠️ MISSING ENDPOINT**: The iOS app requires `/images/upload-url` for custom image uploads:
+
+**Request Body:**
+```json
+{
+  "key": "events/{userId}/{timestamp}_{randomId}_{filename}",
+  "contentType": "image/jpeg"
+}
+```
+
+**Response:**
+```json
+{
+  "uploadUrl": "https://inviter-event-images-prod.s3.us-west-2.amazonaws.com/events/user123/12345_abc_image.jpg?X-Amz-Credential=...",
+  "key": "events/user123/12345_abc_image.jpg"
+}
+```
+
+**Purpose**: Generate presigned S3 upload URLs for direct iOS → S3 uploads (industry best practice)
+**Auth**: Requires JWT token
+**S3 Config**: Bucket `inviter-event-images-prod` in `us-west-2`
 
 ### Authentication
 - **Method**: JWT Bearer tokens (24-hour expiration)
@@ -147,3 +170,61 @@ curl -X POST http://localhost:8080/auth/login \
 curl -X DELETE http://localhost:8080/events/{id} \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
+
+## AWS Elastic Beanstalk Deployment
+
+### Production Environment
+- **Application**: `inviter-app`
+- **Environment**: `inviter-prod-22` 
+- **Platform**: Corretto 21 running on 64bit Amazon Linux 2023
+- **Region**: us-west-2
+- **URL**: `inviter-prod-22.eba-wnp3c2jb.us-west-2.elasticbeanstalk.com`
+
+### Deployment Files
+- **Procfile**: `web: java -jar application.jar --server.port=5000 --spring.profiles.active=prod`
+- **.ebextensions/java.config**: Sets `SPRING_PROFILES_ACTIVE=prod`
+- **.ebextensions/instance-profile.config**: Configures IAM role for DynamoDB access
+- **.ebignore**: Excludes build artifacts except final JAR
+- **application.jar**: Copy of `build/libs/inviter-0.0.1-SNAPSHOT.jar` in project root
+
+### Deployment Process
+```bash
+# Build the application
+./gradlew clean build
+
+# Copy JAR to project root (required for EB deployment)
+cp build/libs/inviter-0.0.1-SNAPSHOT.jar ./application.jar
+
+# Deploy to Elastic Beanstalk
+eb deploy
+```
+
+### IAM Configuration
+The deployment uses the default `aws-elasticbeanstalk-ec2-role` with DynamoDB permissions:
+- **Role**: `aws-elasticbeanstalk-ec2-role`
+- **Policies**: `AmazonDynamoDBFullAccess` and `AmazonDynamoDBFullAccess_v2`
+- **Permissions**: The `dynamodb:*` wildcard includes all DynamoDB operations including `DescribeTable`
+
+### Deployment Troubleshooting
+
+#### Web Server Startup Issues
+If the application fails to start or Tomcat doesn't initialize:
+1. **Check Spring Boot Configuration**: Ensure `spring-boot-starter-web` dependency is present
+2. **Disable Problematic Components**: Temporarily disable `@Component` classes that might cause startup failures
+3. **Add Debug Logging**: Use `WebServerInitializedEvent` listener to confirm Tomcat startup
+4. **Minimal Configuration**: Reduce `application-prod.properties` to minimal settings for testing
+
+#### DynamoDB Connection Issues
+1. **Table Initialization**: The `DynamoDBTableInitializer` automatically creates Users, Events, and Invites tables
+2. **Permission Errors**: If getting "not authorized to perform: dynamodb:DescribeTable", verify IAM role has DynamoDB policies
+3. **Temporary Disable**: Can disable table initializer with `//@Component` for testing web server independently
+
+#### Spring Security Configuration
+- **Health Check Endpoints**: Ensure `/` and `/health` endpoints are permitted in `SecurityConfig`
+- **Load Balancer Access**: EB health checks must be able to access root endpoint without authentication
+
+### Common Issues
+1. **Java Version Mismatch**: Ensure EB platform is set to Corretto 21
+2. **JAR Inclusion**: JAR must be copied to project root as `application.jar` for EB to find it
+3. **Region Configuration**: Verify DynamoDB client is configured for us-west-2 in production profile
+4. **Web Server Not Starting**: Check logs for ApplicationRunner failures that prevent Tomcat initialization
