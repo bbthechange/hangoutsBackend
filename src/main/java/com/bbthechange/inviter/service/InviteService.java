@@ -1,8 +1,10 @@
 package com.bbthechange.inviter.service;
 
 import com.bbthechange.inviter.dto.InviteResponse;
+import com.bbthechange.inviter.model.Event;
 import com.bbthechange.inviter.model.Invite;
 import com.bbthechange.inviter.model.User;
+import com.bbthechange.inviter.repository.EventRepository;
 import com.bbthechange.inviter.repository.InviteRepository;
 import com.bbthechange.inviter.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,6 +23,12 @@ public class InviteService {
     
     @Autowired
     private UserRepository userRepository;
+    
+    @Autowired
+    private EventRepository eventRepository;
+    
+    @Autowired
+    private PushNotificationService pushNotificationService;
     
     public boolean isUserInvitedToEvent(UUID userId, UUID eventId) {
         List<Invite> userInvites = inviteRepository.findByUserId(userId);
@@ -49,7 +57,28 @@ public class InviteService {
         }
         
         Invite invite = new Invite(eventId, user.getId());
-        return inviteRepository.save(invite);
+        Invite savedInvite = inviteRepository.save(invite);
+        
+        // Send push notification if user has device token
+        if (user.getDeviceToken() != null && !user.getDeviceToken().trim().isEmpty()) {
+            try {
+                Optional<Event> eventOpt = eventRepository.findById(eventId);
+                if (eventOpt.isPresent()) {
+                    Event event = eventOpt.get();
+                    String hostName = getHostDisplayName(event.getHosts().get(0));
+                    pushNotificationService.sendInviteNotification(
+                        user.getDeviceToken(), 
+                        event.getName(), 
+                        hostName
+                    );
+                }
+            } catch (Exception e) {
+                // Log error but don't fail invite creation
+                System.err.println("Failed to send push notification: " + e.getMessage());
+            }
+        }
+        
+        return savedInvite;
     }
     
     public void removeInvite(UUID inviteId) {
@@ -102,5 +131,14 @@ public class InviteService {
             User newUser = new User(phoneNumber, null, null);
             return userRepository.save(newUser);
         }
+    }
+    
+    private String getHostDisplayName(UUID hostId) {
+        Optional<User> hostOpt = userRepository.findById(hostId);
+        if (hostOpt.isPresent()) {
+            User host = hostOpt.get();
+            return host.getDisplayName() != null ? host.getDisplayName() : host.getUsername();
+        }
+        return "Unknown Host";
     }
 }
