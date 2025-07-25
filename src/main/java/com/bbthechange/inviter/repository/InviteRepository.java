@@ -40,20 +40,20 @@ public class InviteRepository {
     }
     
     public List<Invite> findByEventId(UUID eventId) {
-        // Temporary: scan table instead of using GSI
-        return inviteTable.scan()
-                .items()
+        return eventIndex.query(QueryConditional.keyEqualTo(Key.builder()
+                .partitionValue(eventId.toString())
+                .build()))
                 .stream()
-                .filter(invite -> eventId.equals(invite.getEventId()))
+                .flatMap(page -> page.items().stream())
                 .collect(Collectors.toList());
     }
     
     public List<Invite> findByUserId(UUID userId) {
-        // Temporary: scan table instead of using GSI
-        return inviteTable.scan()
-                .items()
+        return userIndex.query(QueryConditional.keyEqualTo(Key.builder()
+                .partitionValue(userId.toString())
+                .build()))
                 .stream()
-                .filter(invite -> userId.equals(invite.getUserId()))
+                .flatMap(page -> page.items().stream())
                 .collect(Collectors.toList());
     }
     

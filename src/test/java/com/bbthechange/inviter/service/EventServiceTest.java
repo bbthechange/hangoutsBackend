@@ -238,7 +238,6 @@ class EventServiceTest {
             
             when(inviteRepository.findByUserId(testUserId)).thenReturn(userInvites);
             when(eventRepository.findById(testEventId)).thenReturn(Optional.of(testEvent));
-            when(eventRepository.findAll()).thenReturn(allEvents);
 
             // Act
             List<Event> result = eventService.getEventsForUser(testUserId);
@@ -251,26 +250,6 @@ class EventServiceTest {
         }
 
         @Test
-        @DisplayName("Should return events where user is host")
-        void getEventsForUser_HostedEvents() {
-            // Arrange
-            Event hostedEvent = new Event("Hosted Event", "Description",
-                LocalDateTime.now().plusDays(2), LocalDateTime.now().plusDays(2).plusHours(1),
-                testAddress, EventVisibility.PUBLIC, null, Arrays.asList(testUserId));
-            
-            when(inviteRepository.findByUserId(testUserId)).thenReturn(new ArrayList<>());
-            when(eventRepository.findAll()).thenReturn(Arrays.asList(hostedEvent));
-
-            // Act
-            List<Event> result = eventService.getEventsForUser(testUserId);
-
-            // Assert
-            assertEquals(1, result.size());
-            assertEquals(hostedEvent, result.get(0));
-            verify(eventRepository).findAll();
-        }
-
-        @Test
         @DisplayName("Should not duplicate events where user is both invited and host")
         void getEventsForUser_NoDuplicates() {
             // Arrange
@@ -279,7 +258,6 @@ class EventServiceTest {
             
             when(inviteRepository.findByUserId(testUserId)).thenReturn(userInvites);
             when(eventRepository.findById(testEventId)).thenReturn(Optional.of(testEvent));
-            when(eventRepository.findAll()).thenReturn(Arrays.asList(testEvent));
 
             // Act
             List<Event> result = eventService.getEventsForUser(testUserId);
@@ -294,7 +272,6 @@ class EventServiceTest {
         void getEventsForUser_NoEvents() {
             // Arrange
             when(inviteRepository.findByUserId(testUserId)).thenReturn(new ArrayList<>());
-            when(eventRepository.findAll()).thenReturn(new ArrayList<>());
 
             // Act
             List<Event> result = eventService.getEventsForUser(testUserId);

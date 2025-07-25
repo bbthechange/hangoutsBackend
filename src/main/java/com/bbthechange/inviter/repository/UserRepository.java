@@ -36,11 +36,11 @@ public class UserRepository {
     }
     
     public Optional<User> findByPhoneNumber(String phoneNumber) {
-        // Temporary: scan table instead of using GSI
-        return userTable.scan()
-                .items()
+        return phoneNumberIndex.query(QueryConditional.keyEqualTo(Key.builder()
+                .partitionValue(phoneNumber)
+                .build()))
                 .stream()
-                .filter(user -> phoneNumber.equals(user.getPhoneNumber()))
+                .flatMap(page -> page.items().stream())
                 .findFirst();
     }
     

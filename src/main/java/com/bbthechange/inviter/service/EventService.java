@@ -99,15 +99,7 @@ public class EventService {
             Optional<Event> eventOpt = eventRepository.findById(invite.getEventId());
             eventOpt.ifPresent(events::add);
         }
-        
-        // Legacy: Get events where user is a host via the old hosts field (for migration)
-        List<Event> allEvents = eventRepository.findAll();
-        for (Event event : allEvents) {
-            if (event.getHosts() != null && event.getHosts().contains(userId) && !events.contains(event)) {
-                events.add(event);
-            }
-        }
-        
+
         return events;
     }
     
