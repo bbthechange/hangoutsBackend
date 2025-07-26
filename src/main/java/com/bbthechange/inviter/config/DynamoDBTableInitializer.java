@@ -1,5 +1,6 @@
 package com.bbthechange.inviter.config;
 
+import com.bbthechange.inviter.model.Device;
 import com.bbthechange.inviter.model.Event;
 import com.bbthechange.inviter.model.Invite;
 import com.bbthechange.inviter.model.User;
@@ -27,6 +28,7 @@ public class DynamoDBTableInitializer implements ApplicationRunner {
         createTableIfNotExists("Users", User.class);
         createTableIfNotExists("Events", Event.class);  
         createTableIfNotExists("Invites", Invite.class);
+        createTableIfNotExists("Devices", Device.class);
     }
     
     private <T> void createTableIfNotExists(String tableName, Class<T> entityClass) {

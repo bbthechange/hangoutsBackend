@@ -18,7 +18,7 @@ public class Event {
     private UUID id;
     private String name;
     private String description;
-    private LocalDateTime startTime;
+    private LocalDateTime startTime; // TODO change to UTC
     private LocalDateTime endTime;
     private Address location;
     private EventVisibility visibility;

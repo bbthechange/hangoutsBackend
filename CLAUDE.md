@@ -27,6 +27,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Important**: The project is compiled with Java 21. Local development requires Java 21+. Production deployment uses Corretto 21 on Elastic Beanstalk.
 
+## Commit Guidelines
+
+- Don't include references to Claude in commit logs
+
 ## Architecture
 
 ### Core Structure
@@ -118,7 +122,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Implementation Details:**
 - **Purpose**: Generate presigned S3 upload URLs for direct iOS → S3 uploads (industry best practice)
 - **Auth**: Requires JWT token
-- **S3 Config**: Bucket `inviter-event-images-prod` in `us-west-2`, 15-minute URL expiration
+- **S3 Config**: Bucket `inviter-event-images-871070087012` in `us-west-2`, 15-minute URL expiration
 - **Components**: `S3Service.generatePresignedUploadUrl()`, `ImageController.getUploadUrl()`
 - **DTOs**: `UploadUrlRequest`, `UploadUrlResponse`
 - **Testing**: Full unit test coverage in `S3ServiceTest` and `ImageControllerTest`
@@ -176,11 +180,12 @@ curl -X DELETE http://localhost:8080/events/{id} \
 ## AWS Elastic Beanstalk Deployment
 
 ### Production Environment
-- **Application**: `inviter-app`
-- **Environment**: `inviter-prod-22` 
+- **Account**: 871070087012 (dedicated account with free tier)
+- **Application**: `inviter-app-new`
+- **Environment**: `inviter-test` (primary production environment)
 - **Platform**: Corretto 21 running on 64bit Amazon Linux 2023
 - **Region**: us-west-2
-- **URL**: `inviter-prod-22.eba-wnp3c2jb.us-west-2.elasticbeanstalk.com`
+- **URL**: `http://inviter-test.eba-meudu6bv.us-west-2.elasticbeanstalk.com`
 
 ### Deployment Files
 - **Procfile**: `web: java -jar application.jar --server.port=5000 --spring.profiles.active=prod`
@@ -230,3 +235,56 @@ If the application fails to start or Tomcat doesn't initialize:
 2. **JAR Inclusion**: JAR must be copied to project root as `application.jar` for EB to find it
 3. **Region Configuration**: Verify DynamoDB client is configured for us-west-2 in production profile
 4. **Web Server Not Starting**: Check logs for ApplicationRunner failures that prevent Tomcat initialization
+
+## AWS Production Account
+
+**Primary Production Account**: 871070087012 (dedicated account with free tier benefits)
+
+### Production Infrastructure Details
+
+#### Elastic Beanstalk Configuration
+- **Application**: `inviter-app-new`
+- **Environment**: `inviter-test` (production-ready)
+- **Platform**: Corretto 21 running on 64bit Amazon Linux 2023
+- **Instance Type**: t3.small
+- **Region**: us-west-2
+- **Load Balancer**: Application Load Balancer (ALB)
+- **Auto Scaling**: Min 1, Max 4 instances
+
+#### DynamoDB Tables (Auto-created)
+All tables use provisioned throughput (5 RCU/5 WCU):
+1. **Users**: Partition key `id` (UUID), GSI `PhoneNumberIndex` on `phoneNumber`
+2. **Events**: Partition key `id` (UUID)
+3. **Invites**: Partition key `id` (UUID), GSI `EventIndex` on `eventId`, GSI `UserIndex` on `userId`
+
+#### S3 Configuration
+- **Bucket**: `inviter-event-images-871070087012`
+- **Region**: us-west-2
+- **Predefined Images**: 23 images uploaded to `predefined/` prefix
+- **Custom Images**: Stored under `events/{userId}/` prefix via presigned URLs
+
+#### IAM Roles and Policies
+- **EC2 Instance Profile**: `aws-elasticbeanstalk-ec2-role`
+- **Service Role**: `aws-elasticbeanstalk-service-role`
+- **Managed Policies**:
+  - `AWSElasticBeanstalkWebTier`
+  - `AWSElasticBeanstalkWorkerTier`
+  - `AWSElasticBeanstalkMulticontainerDocker`
+  - `AmazonDynamoDBFullAccess`
+  - `AmazonDynamoDBFullAccess_v2`
+  - `AmazonS3ReadOnlyAccess`
+- **Custom Inline Policy**: `S3PutObject` allows `s3:PutObject` and `s3:PutObjectAcl` on new bucket
+
+#### AWS CLI Configuration
+- **Profile Name**: `inviter`
+- **Usage**: `AWS_PROFILE=inviter` or `aws --profile inviter`
+- **EB CLI**: Uses profile configured in `.elasticbeanstalk/config.yml`
+
+### Development Workflow
+1. **Local Development**: Uses default AWS credentials
+2. **Production Deployment**: Use `AWS_PROFILE=inviter eb deploy` to deploy to primary production environment
+
+### Legacy Account Status
+- **Old Account**: Mixed-use account (terminated)
+- **Environment**: `inviter-prod-22` (terminated to save costs)
+- **Status**: Environment terminated, application version and configuration preserved for emergency restoration if needed

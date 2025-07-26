@@ -1,7 +1,6 @@
 package com.bbthechange.inviter.controller;
 
 import com.bbthechange.inviter.dto.ChangePasswordRequest;
-import com.bbthechange.inviter.dto.DeviceTokenRequest;
 import com.bbthechange.inviter.dto.UpdateProfileRequest;
 import com.bbthechange.inviter.model.User;
 import com.bbthechange.inviter.service.UserService;
@@ -110,31 +109,4 @@ public class ProfileController {
         }
     }
     
-    @PutMapping("/device-token")
-    @Operation(summary = "Register device token", 
-               description = "Registers or updates the iOS device token for push notifications")
-    public ResponseEntity<Map<String, String>> registerDeviceToken(
-            @RequestBody DeviceTokenRequest request,
-            HttpServletRequest httpRequest) {
-        
-        String userIdStr = (String) httpRequest.getAttribute("userId");
-        if (userIdStr == null) {
-            return new ResponseEntity<>(HttpStatus.UNAUTHORIZED);
-        }
-        
-        UUID userId = UUID.fromString(userIdStr);
-        
-        try {
-            userService.updateDeviceToken(userId, request.getDeviceToken());
-            
-            Map<String, String> response = new HashMap<>();
-            response.put("message", "Device token registered successfully");
-            
-            return new ResponseEntity<>(response, HttpStatus.OK);
-        } catch (IllegalArgumentException e) {
-            Map<String, String> error = new HashMap<>();
-            error.put("error", e.getMessage());
-            return new ResponseEntity<>(error, HttpStatus.NOT_FOUND);
-        }
-    }
 }

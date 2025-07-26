@@ -1,7 +1,6 @@
 package com.bbthechange.inviter.controller;
 
 import com.bbthechange.inviter.dto.ChangePasswordRequest;
-import com.bbthechange.inviter.dto.DeviceTokenRequest;
 import com.bbthechange.inviter.dto.UpdateProfileRequest;
 import com.bbthechange.inviter.model.User;
 import com.bbthechange.inviter.service.UserService;
@@ -32,7 +31,6 @@ import static org.mockito.Mockito.*;
  * - GET /profile - Get user profile
  * - PUT /profile - Update user profile
  * - PUT /profile/password - Change password
- * - PUT /profile/device-token - Register device token
  * - Authorization and error handling scenarios
  */
 @ExtendWith(MockitoExtension.class)
@@ -52,7 +50,6 @@ class ProfileControllerTest {
     private User testUser;
     private UpdateProfileRequest updateProfileRequest;
     private ChangePasswordRequest changePasswordRequest;
-    private DeviceTokenRequest deviceTokenRequest;
 
     @BeforeEach
     void setUp() {
@@ -60,7 +57,6 @@ class ProfileControllerTest {
         
         testUser = new User("+1234567890", "testuser", "Test User", "hashedpassword");
         testUser.setId(testUserId);
-        testUser.setDeviceToken("device-token-123");
 
         updateProfileRequest = new UpdateProfileRequest();
         updateProfileRequest.setDisplayName("Updated User");
@@ -68,9 +64,6 @@ class ProfileControllerTest {
         changePasswordRequest = new ChangePasswordRequest();
         changePasswordRequest.setCurrentPassword("oldpassword");
         changePasswordRequest.setNewPassword("newpassword123");
-
-        deviceTokenRequest = new DeviceTokenRequest();
-        deviceTokenRequest.setDeviceToken("new-device-token-456");
     }
 
     @Nested
@@ -314,89 +307,4 @@ class ProfileControllerTest {
         }
     }
 
-    @Nested
-    @DisplayName("PUT /profile/device-token - Device Token Tests")
-    class DeviceTokenTests {
-
-        @Test
-        @DisplayName("Should register device token successfully")
-        void registerDeviceToken_Success() {
-            // Arrange
-            when(httpServletRequest.getAttribute("userId")).thenReturn(testUserId.toString());
-            when(userService.updateDeviceToken(testUserId, "new-device-token-456")).thenReturn(testUser);
-
-            // Act
-            ResponseEntity<Map<String, String>> response = profileController.registerDeviceToken(deviceTokenRequest, httpServletRequest);
-
-            // Assert
-            assertEquals(HttpStatus.OK, response.getStatusCode());
-            assertNotNull(response.getBody());
-            assertEquals("Device token registered successfully", response.getBody().get("message"));
-            
-            verify(userService).updateDeviceToken(testUserId, "new-device-token-456");
-        }
-
-        @Test
-        @DisplayName("Should return NOT_FOUND when user doesn't exist")
-        void registerDeviceToken_NotFound() {
-            // Arrange
-            when(httpServletRequest.getAttribute("userId")).thenReturn(testUserId.toString());
-            doThrow(new IllegalArgumentException("User not found"))
-                .when(userService).updateDeviceToken(testUserId, "new-device-token-456");
-
-            // Act
-            ResponseEntity<Map<String, String>> response = profileController.registerDeviceToken(deviceTokenRequest, httpServletRequest);
-
-            // Assert
-            assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
-            assertNotNull(response.getBody());
-            assertEquals("User not found", response.getBody().get("error"));
-        }
-
-        @Test
-        @DisplayName("Should return UNAUTHORIZED when userId is null")
-        void registerDeviceToken_Unauthorized() {
-            // Arrange
-            when(httpServletRequest.getAttribute("userId")).thenReturn(null);
-
-            // Act
-            ResponseEntity<Map<String, String>> response = profileController.registerDeviceToken(deviceTokenRequest, httpServletRequest);
-
-            // Assert
-            assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
-            verifyNoInteractions(userService);
-        }
-
-        @Test
-        @DisplayName("Should handle null device token")
-        void registerDeviceToken_NullToken() {
-            // Arrange
-            deviceTokenRequest.setDeviceToken(null);
-            when(httpServletRequest.getAttribute("userId")).thenReturn(testUserId.toString());
-            when(userService.updateDeviceToken(testUserId, null)).thenReturn(testUser);
-
-            // Act
-            ResponseEntity<Map<String, String>> response = profileController.registerDeviceToken(deviceTokenRequest, httpServletRequest);
-
-            // Assert
-            assertEquals(HttpStatus.OK, response.getStatusCode());
-            verify(userService).updateDeviceToken(testUserId, null);
-        }
-
-        @Test
-        @DisplayName("Should handle empty device token")
-        void registerDeviceToken_EmptyToken() {
-            // Arrange
-            deviceTokenRequest.setDeviceToken("");
-            when(httpServletRequest.getAttribute("userId")).thenReturn(testUserId.toString());
-            when(userService.updateDeviceToken(testUserId, "")).thenReturn(testUser);
-
-            // Act
-            ResponseEntity<Map<String, String>> response = profileController.registerDeviceToken(deviceTokenRequest, httpServletRequest);
-
-            // Assert
-            assertEquals(HttpStatus.OK, response.getStatusCode());
-            verify(userService).updateDeviceToken(testUserId, "");
-        }
-    }
 }

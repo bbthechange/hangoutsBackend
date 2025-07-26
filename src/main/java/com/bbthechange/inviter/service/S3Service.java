@@ -125,6 +125,7 @@ public class S3Service {
         try {
             log.info("Generating presigned upload URL for key: {} with content type: {}", key, contentType);
             
+            // Create PutObjectRequest with contentType to ensure signature matches the actual request
             PutObjectRequest putObjectRequest = PutObjectRequest.builder()
                     .bucket(bucketName)
                     .key(key)
@@ -139,7 +140,8 @@ public class S3Service {
             PresignedPutObjectRequest presignedRequest = s3Presigner.presignPutObject(presignRequest);
             String presignedUrl = presignedRequest.url().toString();
             
-            log.info("Generated presigned URL for key: {}", key);
+            log.info("Generated presigned URL for key: {} with content-type: {}", key, contentType);
+            log.debug("Presigned URL: {}", presignedUrl);
             return presignedUrl;
             
         } catch (Exception e) {

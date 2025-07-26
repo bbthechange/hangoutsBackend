@@ -33,7 +33,10 @@ public class PushNotificationService {
         try {
             SimpleApnsPayloadBuilder payloadBuilder = new SimpleApnsPayloadBuilder();
             payloadBuilder.setAlertTitle("Event Invitation");
-            payloadBuilder.setAlertBody(String.format("You've been invited to '%s' by %s", eventTitle, hostName));
+            String alertBody = hostName != null && !hostName.trim().isEmpty() && !"Unknown Host".equals(hostName)
+                ? String.format("You've been invited to %s by %s", eventTitle, hostName)
+                : String.format("You've been invited to %s", eventTitle);
+            payloadBuilder.setAlertBody(alertBody);
             payloadBuilder.setBadgeNumber(1);
             payloadBuilder.setSound("default");
             payloadBuilder.addCustomProperty("type", "invite");
@@ -69,7 +72,7 @@ public class PushNotificationService {
         try {
             SimpleApnsPayloadBuilder payloadBuilder = new SimpleApnsPayloadBuilder();
             payloadBuilder.setAlertTitle("Event Update");
-            payloadBuilder.setAlertBody(String.format("'%s': %s", eventTitle, updateMessage));
+            payloadBuilder.setAlertBody(String.format("%s: %s", eventTitle, updateMessage));
             payloadBuilder.setBadgeNumber(1);
             payloadBuilder.setSound("default");
             payloadBuilder.addCustomProperty("type", "event_update");

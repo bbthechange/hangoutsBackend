@@ -39,12 +39,36 @@ dependencies {
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testImplementation 'org.testcontainers:testcontainers:1.19.3'
+	testImplementation 'org.testcontainers:junit-jupiter:1.19.3' 
+	testImplementation 'org.testcontainers:localstack:1.19.3'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 tasks.named('test') {
 	useJUnitPlatform()
 	finalizedBy jacocoTestReport
+}
+
+// Integration test task
+task integrationTest(type: Test) {
+	description = 'Run integration tests with TestContainers'
+	group = 'verification'
+	
+	useJUnitPlatform()
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	
+	include '**/integration/**'
+	
+	// Set system properties for integration tests
+	systemProperty 'spring.profiles.active', 'integration'
+	
+	// Ensure Docker is available for TestContainers
+	dependsOn 'testClasses'
+	
+	// Run after regular unit tests
+	shouldRunAfter test
 }
 
 jacocoTestReport {

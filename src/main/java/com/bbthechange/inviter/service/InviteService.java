@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.service;
 
 import com.bbthechange.inviter.dto.InviteResponse;
+import com.bbthechange.inviter.model.Device;
 import com.bbthechange.inviter.model.Event;
 import com.bbthechange.inviter.model.Invite;
 import com.bbthechange.inviter.model.Invite.InviteType;
@@ -30,6 +31,9 @@ public class InviteService {
     
     @Autowired
     private PushNotificationService pushNotificationService;
+    
+    @Autowired
+    private DeviceService deviceService;
     
     public boolean isUserInvitedToEvent(UUID userId, UUID eventId) {
         List<Invite> userInvites = inviteRepository.findByUserId(userId);
@@ -64,24 +68,33 @@ public class InviteService {
         Invite invite = new Invite(eventId, user.getId(), type);
         Invite savedInvite = inviteRepository.save(invite);
         
-        // Send push notification if user has device token
-        if (user.getDeviceToken() != null && !user.getDeviceToken().trim().isEmpty()) {
-            try {
+        // Send push notification to all active devices for user
+        try {
+            List<Device> activeDevices = deviceService.getActiveDevicesForUser(user.getId());
+            if (!activeDevices.isEmpty()) {
                 Optional<Event> eventOpt = eventRepository.findById(eventId);
                 if (eventOpt.isPresent()) {
                     Event event = eventOpt.get();
                     // Get a host name from existing host invites or legacy hosts field
                     String hostName = getAnyHostDisplayName(eventId);
-                    pushNotificationService.sendInviteNotification(
-                        user.getDeviceToken(), 
-                        event.getName(), 
-                        hostName
-                    );
+                    
+                    for (Device device : activeDevices) {
+                        try {
+                            pushNotificationService.sendInviteNotification(
+                                device.getToken(), 
+                                event.getName(), 
+                                hostName
+                            );
+                        } catch (Exception e) {
+                            // Log error for individual device but continue with others
+                            System.err.println("Failed to send push notification to device " + device.getToken() + ": " + e.getMessage());
+                        }
+                    }
                 }
-            } catch (Exception e) {
-                // Log error but don't fail invite creation
-                System.err.println("Failed to send push notification: " + e.getMessage());
             }
+        } catch (Exception e) {
+            // Log error but don't fail invite creation
+            System.err.println("Failed to send push notifications: " + e.getMessage());
         }
         
         return savedInvite;
@@ -167,9 +180,14 @@ public class InviteService {
         Optional<User> hostOpt = userRepository.findById(hostId);
         if (hostOpt.isPresent()) {
             User host = hostOpt.get();
-            return host.getDisplayName() != null ? host.getDisplayName() : host.getUsername();
+            if (host.getDisplayName() != null && !host.getDisplayName().trim().isEmpty()) {
+                return host.getDisplayName();
+            }
+            if (host.getUsername() != null && !host.getUsername().trim().isEmpty()) {
+                return host.getUsername();
+            }
         }
-        return "Unknown Host";
+        return null; // Return null instead of "Unknown Host" to let push notification handle it
     }
     
     private String getAnyHostDisplayName(UUID eventId) {
@@ -192,6 +210,6 @@ public class InviteService {
             }
         }
         
-        return "Unknown Host";
+        return null; // Return null when no valid host name found
     }
 }

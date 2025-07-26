@@ -197,13 +197,13 @@ class S3ServiceTest {
                 var putObjectRequest = request.putObjectRequest();
                 return testBucketName.equals(putObjectRequest.bucket()) &&
                        testKey.equals(putObjectRequest.key()) &&
-                       testContentType.equals(putObjectRequest.contentType());
+                       testContentType.equals(putObjectRequest.contentType()); // contentType is now included in the request
             }));
         }
 
         @Test
-        @DisplayName("Should handle different content types")
-        void generatePresignedUploadUrl_DifferentContentTypes() throws Exception {
+        @DisplayName("Should generate URL with content type included in signature")
+        void generatePresignedUploadUrl_WithContentTypeInSignature() throws Exception {
             // Arrange
             String testKey = "events/user123/image.png";
             String testContentType = "image/png";
@@ -219,7 +219,7 @@ class S3ServiceTest {
             // Assert
             assertEquals(expectedUrl, result);
             verify(s3Presigner).presignPutObject(argThat((PutObjectPresignRequest request) ->
-                "image/png".equals(request.putObjectRequest().contentType())
+                testContentType.equals(request.putObjectRequest().contentType()) // contentType is now included in the request
             ));
         }
 

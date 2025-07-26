@@ -17,7 +17,6 @@ public class User {
     private String username;
     private String displayName;
     private String password;
-    private String deviceToken;
     
     public User(String phoneNumber, String username, String password) {
         this.id = UUID.randomUUID();

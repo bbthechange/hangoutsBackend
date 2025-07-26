@@ -40,3 +40,14 @@ out/
 .elasticbeanstalk/*
 !.elasticbeanstalk/*.cfg.yml
 !.elasticbeanstalk/*.global.yml
+
+# Build artifacts for EB deployment
+application.jar
+
+# Apple Push Notification keys
+*.p8
+
+# Temporary documentation and diagrams
+AWS_MIGRATION_GUIDE.md
+database_schema_diagram.svg
+run-integration-tests.sh

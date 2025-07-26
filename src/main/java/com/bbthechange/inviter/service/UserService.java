@@ -50,14 +50,4 @@ public class UserService {
         return userRepository.findById(userId);
     }
     
-    public User updateDeviceToken(UUID userId, String deviceToken) {
-        Optional<User> userOpt = userRepository.findById(userId);
-        if (userOpt.isEmpty()) {
-            throw new IllegalArgumentException("User not found");
-        }
-        
-        User user = userOpt.get();
-        user.setDeviceToken(deviceToken);
-        return userRepository.save(user);
-    }
 }

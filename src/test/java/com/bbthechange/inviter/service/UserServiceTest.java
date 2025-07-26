@@ -25,7 +25,6 @@ import static org.mockito.Mockito.*;
  * - updateDisplayName - Update user display name
  * - changePassword - Change user password with validation
  * - getUserById - Retrieve user by ID
- * - updateDeviceToken - Update device token for push notifications
  * - Error handling and validation scenarios
  */
 @ExtendWith(MockitoExtension.class)
@@ -49,7 +48,6 @@ class UserServiceTest {
         testUserId = UUID.randomUUID();
         testUser = new User("+1234567890", "testuser", "Test User", "hashedpassword");
         testUser.setId(testUserId);
-        testUser.setDeviceToken("device-token-123");
     }
 
     @Nested
@@ -301,108 +299,4 @@ class UserServiceTest {
         }
     }
 
-    @Nested
-    @DisplayName("updateDeviceToken - Device Token Update Tests")
-    class UpdateDeviceTokenTests {
-
-        @Test
-        @DisplayName("Should update device token successfully")
-        void updateDeviceToken_Success() {
-            // Arrange
-            User updatedUser = new User(testUser.getPhoneNumber(), testUser.getUsername(), testUser.getDisplayName(), testUser.getPassword());
-            updatedUser.setId(testUserId);
-            updatedUser.setDeviceToken("new-token-456");
-            
-            when(userRepository.findById(testUserId)).thenReturn(Optional.of(testUser));
-            when(userRepository.save(any(User.class))).thenReturn(updatedUser);
-
-            // Act
-            User result = userService.updateDeviceToken(testUserId, "new-token-456");
-
-            // Assert
-            assertNotNull(result);
-            assertEquals("new-token-456", result.getDeviceToken());
-            verify(userRepository).findById(testUserId);
-            verify(userRepository).save(argThat(user ->
-                "new-token-456".equals(user.getDeviceToken()) &&
-                testUserId.equals(user.getId())
-            ));
-        }
-
-        @Test
-        @DisplayName("Should throw exception when user not found")
-        void updateDeviceToken_UserNotFound() {
-            // Arrange
-            when(userRepository.findById(testUserId)).thenReturn(Optional.empty());
-
-            // Act & Assert
-            IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () ->
-                userService.updateDeviceToken(testUserId, "new-token")
-            );
-            
-            assertEquals("User not found", exception.getMessage());
-            verify(userRepository).findById(testUserId);
-            verify(userRepository, never()).save(any());
-        }
-
-        @Test
-        @DisplayName("Should handle null device token")
-        void updateDeviceToken_NullToken() {
-            // Arrange
-            User updatedUser = new User(testUser.getPhoneNumber(), testUser.getUsername(), testUser.getDisplayName(), testUser.getPassword());
-            updatedUser.setId(testUserId);
-            updatedUser.setDeviceToken(null);
-            
-            when(userRepository.findById(testUserId)).thenReturn(Optional.of(testUser));
-            when(userRepository.save(any(User.class))).thenReturn(updatedUser);
-
-            // Act
-            User result = userService.updateDeviceToken(testUserId, null);
-
-            // Assert
-            assertNotNull(result);
-            assertNull(result.getDeviceToken());
-            verify(userRepository).save(argThat(user -> user.getDeviceToken() == null));
-        }
-
-        @Test
-        @DisplayName("Should handle empty device token")
-        void updateDeviceToken_EmptyToken() {
-            // Arrange
-            User updatedUser = new User(testUser.getPhoneNumber(), testUser.getUsername(), testUser.getDisplayName(), testUser.getPassword());
-            updatedUser.setId(testUserId);
-            updatedUser.setDeviceToken("");
-            
-            when(userRepository.findById(testUserId)).thenReturn(Optional.of(testUser));
-            when(userRepository.save(any(User.class))).thenReturn(updatedUser);
-
-            // Act
-            User result = userService.updateDeviceToken(testUserId, "");
-
-            // Assert
-            assertNotNull(result);
-            assertEquals("", result.getDeviceToken());
-            verify(userRepository).save(argThat(user -> "".equals(user.getDeviceToken())));
-        }
-
-        @Test
-        @DisplayName("Should overwrite existing device token")
-        void updateDeviceToken_OverwriteExisting() {
-            // Arrange
-            testUser.setDeviceToken("old-token-123");
-            User updatedUser = new User(testUser.getPhoneNumber(), testUser.getUsername(), testUser.getDisplayName(), testUser.getPassword());
-            updatedUser.setId(testUserId);
-            updatedUser.setDeviceToken("new-token-789");
-            
-            when(userRepository.findById(testUserId)).thenReturn(Optional.of(testUser));
-            when(userRepository.save(any(User.class))).thenReturn(updatedUser);
-
-            // Act
-            User result = userService.updateDeviceToken(testUserId, "new-token-789");
-
-            // Assert
-            assertEquals("new-token-789", result.getDeviceToken());
-            verify(userRepository).save(argThat(user -> "new-token-789".equals(user.getDeviceToken())));
-        }
-    }
 }
