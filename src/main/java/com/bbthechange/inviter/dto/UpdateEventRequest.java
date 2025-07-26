@@ -15,5 +15,4 @@ public class UpdateEventRequest {
     private Address location;
     private EventVisibility visibility;
     private String mainImagePath;
-    private List<UUID> hostUserIds;
 }

@@ -3,6 +3,7 @@ package com.bbthechange.inviter.integration;
 import com.bbthechange.inviter.config.BaseIntegrationTest;
 import com.bbthechange.inviter.model.Event;
 import com.bbthechange.inviter.model.EventVisibility;
+import com.bbthechange.inviter.model.Invite;
 import com.bbthechange.inviter.model.User;
 import com.fasterxml.jackson.core.type.TypeReference;
 import org.junit.jupiter.api.DisplayName;
@@ -67,8 +68,7 @@ public class EventControllerIntegrationTest extends BaseIntegrationTest {
             assertEquals("Integration Test Event", savedEvent.getName());
             assertEquals("Test event description", savedEvent.getDescription());
             assertEquals(EventVisibility.INVITE_ONLY, savedEvent.getVisibility());
-            assertNotNull(savedEvent.getHosts());
-            assertFalse(savedEvent.getHosts().isEmpty());
+            // Host validation now handled via invites, not legacy hosts field
         }
 
         @Test
@@ -131,11 +131,14 @@ public class EventControllerIntegrationTest extends BaseIntegrationTest {
             Event event1 = createTestEvent("Event 1", "Description 1");
             Event event2 = createTestEvent("Event 2", "Description 2");
             
-            event1.setHosts(List.of(user.getId()));
-            event2.setHosts(List.of(user.getId()));
-            
             eventRepository.save(event1);
             eventRepository.save(event2);
+            
+            // Create host invites for the user
+            Invite hostInvite1 = new Invite(event1.getId(), user.getId(), Invite.InviteType.HOST);
+            Invite hostInvite2 = new Invite(event2.getId(), user.getId(), Invite.InviteType.HOST);
+            inviteRepository.save(hostInvite1);
+            inviteRepository.save(hostInvite2);
 
             // Act & Assert
             MvcResult result = mockMvc.perform(get("/events")
@@ -176,8 +179,11 @@ public class EventControllerIntegrationTest extends BaseIntegrationTest {
             User user = getUserByPhoneNumber("+1234567890");
             
             Event event = createTestEvent("Retrievable Event", "Test Description");
-            event.setHosts(List.of(user.getId()));
             Event savedEvent = eventRepository.save(event);
+            
+            // Create host invite for the user
+            Invite hostInvite = new Invite(savedEvent.getId(), user.getId(), Invite.InviteType.HOST);
+            inviteRepository.save(hostInvite);
 
             // Act & Assert
             mockMvc.perform(get("/events/" + savedEvent.getId())
@@ -226,8 +232,11 @@ public class EventControllerIntegrationTest extends BaseIntegrationTest {
             User user = getUserByPhoneNumber("+1234567890");
             
             Event originalEvent = createTestEvent("Original Title", "Original Description");
-            originalEvent.setHosts(List.of(user.getId()));
             Event savedEvent = eventRepository.save(originalEvent);
+            
+            // Create host invite for the user
+            Invite hostInvite = new Invite(savedEvent.getId(), user.getId(), Invite.InviteType.HOST);
+            inviteRepository.save(hostInvite);
 
             Event updatedEvent = new Event();
             updatedEvent.setName("Updated Title");
@@ -263,8 +272,11 @@ public class EventControllerIntegrationTest extends BaseIntegrationTest {
             User hostUser = getUserByPhoneNumber("+1234567890");
             
             Event event = createTestEvent("Host Event", "Host Description");
-            event.setHosts(List.of(hostUser.getId()));
             Event savedEvent = eventRepository.save(event);
+            
+            // Create host invite for the host user
+            Invite hostInvite = new Invite(savedEvent.getId(), hostUser.getId(), Invite.InviteType.HOST);
+            inviteRepository.save(hostInvite);
 
             Event updatedEvent = new Event();
             updatedEvent.setName("Hacked Title");

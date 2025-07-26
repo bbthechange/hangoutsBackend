@@ -15,6 +15,5 @@ public class CreateEventRequest {
     private Address location;
     private EventVisibility visibility;
     private String mainImagePath;
-    private List<UUID> hostUserIds;
     private List<String> invitePhoneNumbers;
 }

@@ -88,8 +88,7 @@ class EventServiceTest {
             LocalDateTime.now().plusDays(1).plusHours(2),
             testAddress,
             EventVisibility.INVITE_ONLY,
-            "/images/test.jpg",
-            Arrays.asList(testUserId)
+            "/images/test.jpg"
         );
         testEvent.setId(testEventId);
         
@@ -253,7 +252,7 @@ class EventServiceTest {
         @DisplayName("Should not duplicate events where user is both invited and host")
         void getEventsForUser_NoDuplicates() {
             // Arrange
-            testEvent.setHosts(Arrays.asList(testUserId)); // User is host
+            // User is host (handled via invites now)
             List<Invite> userInvites = Arrays.asList(testInvite); // User is also invited
             
             when(inviteRepository.findByUserId(testUserId)).thenReturn(userInvites);
@@ -289,7 +288,9 @@ class EventServiceTest {
         @DisplayName("Should return event when user is host")
         void getEventForUser_UserIsHost() {
             // Arrange
+            Invite hostInvite = new Invite(testEventId, testUserId, Invite.InviteType.HOST);
             when(eventRepository.findById(testEventId)).thenReturn(Optional.of(testEvent));
+            when(inviteRepository.findByUserId(testUserId)).thenReturn(Arrays.asList(hostInvite));
 
             // Act
             Optional<Event> result = eventService.getEventForUser(testEventId, testUserId);
@@ -306,7 +307,7 @@ class EventServiceTest {
             // Arrange
             Event eventWithOtherHost = new Event("Other Event", "Description",
                 LocalDateTime.now().plusDays(1), LocalDateTime.now().plusDays(1).plusHours(2),
-                testAddress, EventVisibility.INVITE_ONLY, null, Arrays.asList(otherUserId));
+                testAddress, EventVisibility.INVITE_ONLY, null);
             eventWithOtherHost.setId(testEventId);
             
             when(eventRepository.findById(testEventId)).thenReturn(Optional.of(eventWithOtherHost));
@@ -327,7 +328,7 @@ class EventServiceTest {
             // Arrange
             Event restrictedEvent = new Event("Restricted Event", "Description",
                 LocalDateTime.now().plusDays(1), LocalDateTime.now().plusDays(1).plusHours(2),
-                testAddress, EventVisibility.INVITE_ONLY, null, Arrays.asList(otherUserId));
+                testAddress, EventVisibility.INVITE_ONLY, null);
             restrictedEvent.setId(testEventId);
             
             when(eventRepository.findById(testEventId)).thenReturn(Optional.of(restrictedEvent));
@@ -363,7 +364,8 @@ class EventServiceTest {
         @DisplayName("Should return true when user is host")
         void isUserHostOfEvent_UserIsHost() {
             // Arrange
-            when(eventRepository.findById(testEventId)).thenReturn(Optional.of(testEvent));
+            Invite hostInvite = new Invite(testEventId, testUserId, Invite.InviteType.HOST);
+            when(inviteRepository.findByUserId(testUserId)).thenReturn(Arrays.asList(hostInvite));
 
             // Act
             boolean result = eventService.isUserHostOfEvent(testUserId, testEventId);
@@ -376,7 +378,8 @@ class EventServiceTest {
         @DisplayName("Should return false when user is not host")
         void isUserHostOfEvent_UserIsNotHost() {
             // Arrange
-            when(eventRepository.findById(testEventId)).thenReturn(Optional.of(testEvent));
+            // User has no invites or only guest invites
+            when(inviteRepository.findByUserId(otherUserId)).thenReturn(new ArrayList<>());
 
             // Act
             boolean result = eventService.isUserHostOfEvent(otherUserId, testEventId);
@@ -386,10 +389,10 @@ class EventServiceTest {
         }
 
         @Test
-        @DisplayName("Should return false when event doesn't exist")
-        void isUserHostOfEvent_EventNotFound() {
+        @DisplayName("Should return false when user has no invites")
+        void isUserHostOfEvent_NoInvites() {
             // Arrange
-            when(eventRepository.findById(testEventId)).thenReturn(Optional.empty());
+            when(inviteRepository.findByUserId(testUserId)).thenReturn(new ArrayList<>());
 
             // Act
             boolean result = eventService.isUserHostOfEvent(testUserId, testEventId);
@@ -409,7 +412,7 @@ class EventServiceTest {
             // Arrange
             Event updatedEvent = new Event(testEvent.getName(), testEvent.getDescription(),
                 testEvent.getStartTime(), testEvent.getEndTime(), testEvent.getLocation(),
-                testEvent.getVisibility(), testEvent.getMainImagePath(), testEvent.getHosts());
+                testEvent.getVisibility(), testEvent.getMainImagePath());
             updatedEvent.setId(testEventId);
             
             when(eventRepository.findById(testEventId)).thenReturn(Optional.of(testEvent));
@@ -424,8 +427,7 @@ class EventServiceTest {
                 LocalDateTime.now().plusDays(2).plusHours(3),
                 testAddress,
                 EventVisibility.PUBLIC,
-                "/images/updated.jpg",
-                Arrays.asList(testUserId, otherUserId)
+                "/images/updated.jpg"
             );
 
             // Assert
@@ -435,9 +437,7 @@ class EventServiceTest {
                 "Updated Name".equals(event.getName()) &&
                 "Updated Description".equals(event.getDescription()) &&
                 EventVisibility.PUBLIC.equals(event.getVisibility()) &&
-                "/images/updated.jpg".equals(event.getMainImagePath()) &&
-                event.getHosts().contains(testUserId) &&
-                event.getHosts().contains(otherUserId)
+                "/images/updated.jpg".equals(event.getMainImagePath())
             ));
         }
 
@@ -453,7 +453,7 @@ class EventServiceTest {
                 testEventId,
                 "Updated Name",
                 "Updated Description",
-                null, null, null, null, null, null
+                null, null, null, null, null
             );
 
             // Assert
@@ -473,7 +473,7 @@ class EventServiceTest {
 
             // Act & Assert
             assertThrows(IllegalArgumentException.class, () ->
-                eventService.updateEvent(testEventId, "Updated", null, null, null, null, null, null, null)
+                eventService.updateEvent(testEventId, "Updated", null, null, null, null, null, null)
             );
             verify(eventRepository, never()).save(any());
         }

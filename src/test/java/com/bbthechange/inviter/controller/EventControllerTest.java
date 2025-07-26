@@ -96,8 +96,7 @@ class EventControllerTest {
             LocalDateTime.now().plusDays(1).plusHours(2),
             testAddress,
             EventVisibility.INVITE_ONLY,
-            "/images/test.jpg",
-            Arrays.asList(testUserId)
+            "/images/test.jpg"
         );
         testEvent.setId(testEventId);
         
@@ -109,7 +108,6 @@ class EventControllerTest {
         createEventRequest.setLocation(testAddress);
         createEventRequest.setVisibility(EventVisibility.INVITE_ONLY);
         createEventRequest.setMainImagePath("/images/test.jpg");
-        createEventRequest.setHostUserIds(Arrays.asList(testUserId));
         createEventRequest.setInvitePhoneNumbers(Arrays.asList("+1234567890"));
         
         // Create new-style request with invites
@@ -198,8 +196,7 @@ class EventControllerTest {
         void createEvent_Success_DefaultHost() {
             // Arrange
             when(httpServletRequest.getAttribute("userId")).thenReturn(testUserId.toString());
-            createEventRequest.setHostUserIds(null);
-            when(eventService.createEventWithInvites(any(), any(), any(), any(), any(), any(), any(), any()))
+                when(eventService.createEventWithInvites(any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(testEvent);
 
             // Act
@@ -339,13 +336,13 @@ class EventControllerTest {
             // Arrange
             Event updatedEvent = new Event(testEvent.getName(), testEvent.getDescription(),
                 testEvent.getStartTime(), testEvent.getEndTime(), testEvent.getLocation(),
-                testEvent.getVisibility(), testEvent.getMainImagePath(), testEvent.getHosts());
+                testEvent.getVisibility(), testEvent.getMainImagePath());
             updatedEvent.setId(testEventId);
             updatedEvent.setName("Updated Event");
             
             when(httpServletRequest.getAttribute("userId")).thenReturn(testUserId.toString());
             when(eventService.isUserHostOfEvent(testUserId, testEventId)).thenReturn(true);
-            when(eventService.updateEvent(any(), any(), any(), any(), any(), any(), any(), any(), any()))
+            when(eventService.updateEvent(any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(updatedEvent);
 
             // Act
@@ -363,8 +360,7 @@ class EventControllerTest {
                 eq(updateEventRequest.getEndTime()),
                 eq(updateEventRequest.getLocation()),
                 eq(updateEventRequest.getVisibility()),
-                eq(updateEventRequest.getMainImagePath()),
-                eq(updateEventRequest.getHostUserIds())
+                eq(updateEventRequest.getMainImagePath())
             );
         }
 
@@ -381,7 +377,7 @@ class EventControllerTest {
             // Assert
             assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
             verify(eventService).isUserHostOfEvent(testUserId, testEventId);
-            verify(eventService, never()).updateEvent(any(), any(), any(), any(), any(), any(), any(), any(), any());
+            verify(eventService, never()).updateEvent(any(), any(), any(), any(), any(), any(), any(), any());
         }
 
         @Test
@@ -390,7 +386,7 @@ class EventControllerTest {
             // Arrange
             when(httpServletRequest.getAttribute("userId")).thenReturn(testUserId.toString());
             when(eventService.isUserHostOfEvent(testUserId, testEventId)).thenReturn(true);
-            when(eventService.updateEvent(any(), any(), any(), any(), any(), any(), any(), any(), any()))
+            when(eventService.updateEvent(any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenThrow(new IllegalArgumentException("Event not found"));
 
             // Act

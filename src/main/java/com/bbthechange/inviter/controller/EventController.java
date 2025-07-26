@@ -118,8 +118,7 @@ public class EventController {
                 request.getEndTime(),
                 request.getLocation(),
                 request.getVisibility(),
-                request.getMainImagePath(),
-                request.getHostUserIds()
+                request.getMainImagePath()
             );
             
             return new ResponseEntity<>(updatedEvent, HttpStatus.OK);

@@ -115,16 +115,7 @@ public class InviteService {
                     .filter(inv -> inv.getType() == InviteType.HOST)
                     .count();
             
-            // Also check legacy hosts field for migration support
-            Optional<Event> eventOpt = eventRepository.findById(invite.getEventId());
-            if (eventOpt.isPresent()) {
-                Event event = eventOpt.get();
-                boolean hasLegacyHosts = event.getHosts() != null && !event.getHosts().isEmpty();
-                
-                if (hostCount <= 1 && !hasLegacyHosts) {
-                    throw new IllegalStateException("Cannot remove the last host from an event");
-                }
-            } else if (hostCount <= 1) {
+            if (hostCount <= 1) {
                 throw new IllegalStateException("Cannot remove the last host from an event");
             }
         }
@@ -199,15 +190,6 @@ public class InviteService {
         
         if (hostInvite.isPresent()) {
             return getHostDisplayName(hostInvite.get().getUserId());
-        }
-        
-        // Fallback to legacy hosts field
-        Optional<Event> eventOpt = eventRepository.findById(eventId);
-        if (eventOpt.isPresent()) {
-            Event event = eventOpt.get();
-            if (event.getHosts() != null && !event.getHosts().isEmpty()) {
-                return getHostDisplayName(event.getHosts().get(0));
-            }
         }
         
         return null; // Return null when no valid host name found

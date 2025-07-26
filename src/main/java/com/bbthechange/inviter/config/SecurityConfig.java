@@ -30,7 +30,6 @@ public class SecurityConfig {
                 .requestMatchers("/", "/health").permitAll() // Allow health check endpoints
                 .requestMatchers("/auth/register", "/auth/login").permitAll()
                 .requestMatchers("/images/predefined").permitAll()
-                .requestMatchers("/admin/migration/**").permitAll() // Allow migration endpoints
                 .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
                 .anyRequest().authenticated()
             )

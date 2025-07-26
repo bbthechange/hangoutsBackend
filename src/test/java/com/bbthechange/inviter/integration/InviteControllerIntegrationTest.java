@@ -43,8 +43,7 @@ public class InviteControllerIntegrationTest extends BaseIntegrationTest {
             User host = getUserByPhoneNumber("+1234567890");
             User invitee = getUserByPhoneNumber("+0987654321");
             
-            Event event = createTestEvent("Test Event", host);
-            Event savedEvent = eventRepository.save(event);
+            Event savedEvent = createTestEventWithHost("Test Event", host);
             
             Invite invite = createTestInvite(savedEvent, invitee);
             inviteRepository.save(invite);
@@ -77,8 +76,7 @@ public class InviteControllerIntegrationTest extends BaseIntegrationTest {
             String unauthorizedToken = createSecondUserAndGetToken();
             
             User host = getUserByPhoneNumber("+1234567890");
-            Event event = createTestEvent("Private Event", host);
-            Event savedEvent = eventRepository.save(event);
+            Event savedEvent = createTestEventWithHost("Private Event", host);
 
             // Act & Assert
             mockMvc.perform(get("/events/" + savedEvent.getId() + "/invites")
@@ -101,8 +99,7 @@ public class InviteControllerIntegrationTest extends BaseIntegrationTest {
             User host = getUserByPhoneNumber("+1234567890");
             User invitee = getUserByPhoneNumber("+0987654321");
             
-            Event event = createTestEvent("Invitation Event", host);
-            Event savedEvent = eventRepository.save(event);
+            Event savedEvent = createTestEventWithHost("Invitation Event", host);
 
             Map<String, String> inviteRequest = Map.of("phoneNumber", invitee.getPhoneNumber());
 
@@ -140,8 +137,7 @@ public class InviteControllerIntegrationTest extends BaseIntegrationTest {
             User host = getUserByPhoneNumber("+1234567890");
             User nonHost = getUserByPhoneNumber("+0987654321");
             
-            Event event = createTestEvent("Host Only Event", host);
-            Event savedEvent = eventRepository.save(event);
+            Event savedEvent = createTestEventWithHost("Host Only Event", host);
 
             Map<String, String> inviteRequest = Map.of("phoneNumber", "+1555000001");
 
@@ -160,8 +156,7 @@ public class InviteControllerIntegrationTest extends BaseIntegrationTest {
             String hostToken = createDefaultUserAndGetToken();
             User host = getUserByPhoneNumber("+1234567890");
             
-            Event event = createTestEvent("Test Event", host);
-            Event savedEvent = eventRepository.save(event);
+            Event savedEvent = createTestEventWithHost("Test Event", host);
 
             Map<String, String> inviteRequest = Map.of("phoneNumber", "+9999999999");
 
@@ -188,8 +183,7 @@ public class InviteControllerIntegrationTest extends BaseIntegrationTest {
             User host = getUserByPhoneNumber("+1234567890");
             User invitee = getUserByPhoneNumber("+0987654321");
             
-            Event event = createTestEvent("Response Event", host);
-            Event savedEvent = eventRepository.save(event);
+            Event savedEvent = createTestEventWithHost("Response Event", host);
             
             Invite invite = createTestInvite(savedEvent, invitee);
             Invite savedInvite = inviteRepository.save(invite);
@@ -221,8 +215,7 @@ public class InviteControllerIntegrationTest extends BaseIntegrationTest {
             User host = getUserByPhoneNumber("+1234567890");
             User invitee = getUserByPhoneNumber("+0987654321");
             
-            Event event = createTestEvent("Decline Event", host);
-            Event savedEvent = eventRepository.save(event);
+            Event savedEvent = createTestEventWithHost("Decline Event", host);
             
             Invite invite = createTestInvite(savedEvent, invitee);
             Invite savedInvite = inviteRepository.save(invite);
@@ -254,8 +247,7 @@ public class InviteControllerIntegrationTest extends BaseIntegrationTest {
             User host = getUserByPhoneNumber("+1234567890");
             User invitee = getUserByPhoneNumber("+0987654321");
             
-            Event event = createTestEvent("Protected Event", host);
-            Event savedEvent = eventRepository.save(event);
+            Event savedEvent = createTestEventWithHost("Protected Event", host);
             
             Invite invite = createTestInvite(savedEvent, invitee);
             Invite savedInvite = inviteRepository.save(invite);
@@ -290,8 +282,7 @@ public class InviteControllerIntegrationTest extends BaseIntegrationTest {
             User host = getUserByPhoneNumber("+1234567890");
             User invitee = getUserByPhoneNumber("+0987654321");
             
-            Event event = createTestEvent("Removal Event", host);
-            Event savedEvent = eventRepository.save(event);
+            Event savedEvent = createTestEventWithHost("Removal Event", host);
             
             Invite invite = createTestInvite(savedEvent, invitee);
             Invite savedInvite = inviteRepository.save(invite);
@@ -318,8 +309,7 @@ public class InviteControllerIntegrationTest extends BaseIntegrationTest {
             User host = getUserByPhoneNumber("+1234567890");
             User nonHost = getUserByPhoneNumber("+0987654321");
             
-            Event event = createTestEvent("Protected Event", host);
-            Event savedEvent = eventRepository.save(event);
+            Event savedEvent = createTestEventWithHost("Protected Event", host);
             
             Invite invite = createTestInvite(savedEvent, nonHost);
             Invite savedInvite = inviteRepository.save(invite);
@@ -346,8 +336,21 @@ public class InviteControllerIntegrationTest extends BaseIntegrationTest {
         event.setStartTime(LocalDateTime.now().plusDays(1));
         event.setEndTime(LocalDateTime.now().plusDays(1).plusHours(2));
         event.setVisibility(EventVisibility.INVITE_ONLY);
-        event.setHosts(List.of(host.getId()));
         return event;
+    }
+    
+    /**
+     * Helper method to create test event with host invite
+     */
+    private Event createTestEventWithHost(String title, User host) {
+        Event event = createTestEvent(title, host);
+        Event savedEvent = eventRepository.save(event);
+        
+        // Create host invite
+        Invite hostInvite = new Invite(savedEvent.getId(), host.getId(), Invite.InviteType.HOST);
+        inviteRepository.save(hostInvite);
+        
+        return savedEvent;
     }
 
     /**

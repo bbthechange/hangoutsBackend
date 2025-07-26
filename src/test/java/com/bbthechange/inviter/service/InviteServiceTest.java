@@ -229,7 +229,6 @@ class InviteServiceTest {
         
         when(inviteRepository.findById(inviteId)).thenReturn(Optional.of(hostInvite));
         when(inviteRepository.findByEventId(eventId)).thenReturn(Arrays.asList(hostInvite));
-        when(eventRepository.findById(eventId)).thenReturn(Optional.of(testEvent));
         
         // Act & Assert
         IllegalStateException exception = assertThrows(IllegalStateException.class,
@@ -240,21 +239,20 @@ class InviteServiceTest {
     }
 
     @Test
-    void testRemoveInvite_LastHostWithLegacyHosts_AllowsRemoval() {
+    void testRemoveInvite_HostWithMultipleHosts_AllowsRemoval() {
         // Arrange
-        Invite hostInvite = new Invite(eventId, userId, Invite.InviteType.HOST);
-        hostInvite.setId(inviteId);
-        testEvent.setHosts(Arrays.asList(UUID.randomUUID()));
+        Invite hostInvite1 = new Invite(eventId, userId, Invite.InviteType.HOST);
+        hostInvite1.setId(inviteId);
+        Invite hostInvite2 = new Invite(eventId, UUID.randomUUID(), Invite.InviteType.HOST);
         
-        when(inviteRepository.findById(inviteId)).thenReturn(Optional.of(hostInvite));
-        when(inviteRepository.findByEventId(eventId)).thenReturn(Arrays.asList(hostInvite));
-        when(eventRepository.findById(eventId)).thenReturn(Optional.of(testEvent));
+        when(inviteRepository.findById(inviteId)).thenReturn(Optional.of(hostInvite1));
+        when(inviteRepository.findByEventId(eventId)).thenReturn(Arrays.asList(hostInvite1, hostInvite2));
         
         // Act
         inviteService.removeInvite(inviteId);
         
         // Assert
-        verify(inviteRepository).delete(hostInvite);
+        verify(inviteRepository).delete(hostInvite1);
     }
 
     @Test

@@ -23,11 +23,10 @@ public class Event {
     private Address location;
     private EventVisibility visibility;
     private String mainImagePath;
-    private List<UUID> hosts; // TODO: Remove after migration - hosts are now managed via Invite.type=HOST
     private Long version;
     
     public Event(String name, String description, LocalDateTime startTime, LocalDateTime endTime, 
-                 Address location, EventVisibility visibility, String mainImagePath, List<UUID> hosts) {
+                 Address location, EventVisibility visibility, String mainImagePath) {
         this.id = UUID.randomUUID();
         this.name = name;
         this.description = description;
@@ -36,7 +35,6 @@ public class Event {
         this.location = location;
         this.visibility = visibility;
         this.mainImagePath = mainImagePath;
-        this.hosts = hosts;
         this.version = 1L;
     }
     

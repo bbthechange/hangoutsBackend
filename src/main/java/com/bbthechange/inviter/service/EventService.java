@@ -41,8 +41,8 @@ public class EventService {
             throw new IllegalArgumentException("Event must have at least one host");
         }
         
-        // Create event with empty hosts list (will be managed via invites)
-        Event event = new Event(name, description, startTime, endTime, location, visibility, mainImagePath, new ArrayList<>());
+        // Create event (hosts managed via invites)
+        Event event = new Event(name, description, startTime, endTime, location, visibility, mainImagePath);
         eventRepository.save(event);
         
         // Create invites
@@ -55,40 +55,6 @@ public class EventService {
         return event;
     }
     
-    // Backward compatibility method for tests - converts old API to new API
-    public Event createEventWithInvites(String name, String description, LocalDateTime startTime, 
-                                       LocalDateTime endTime, com.bbthechange.inviter.dto.Address location, 
-                                       com.bbthechange.inviter.model.EventVisibility visibility, String mainImagePath,
-                                       List<UUID> hostUserIds, List<String> invitePhoneNumbers) {
-        
-        List<CreateInviteRequest> inviteRequests = new ArrayList<>();
-        
-        // Add host invites
-        if (hostUserIds != null) {
-            for (UUID hostId : hostUserIds) {
-                // Convert UUID to phone number by looking up user - this is for test compatibility
-                Optional<User> userOpt = userRepository.findById(hostId);
-                if (userOpt.isPresent()) {
-                    CreateInviteRequest hostInvite = new CreateInviteRequest();
-                    hostInvite.setPhoneNumber(userOpt.get().getPhoneNumber());
-                    hostInvite.setType(InviteType.HOST);
-                    inviteRequests.add(hostInvite);
-                }
-            }
-        }
-        
-        // Add guest invites
-        if (invitePhoneNumbers != null) {
-            for (String phoneNumber : invitePhoneNumbers) {
-                CreateInviteRequest guestInvite = new CreateInviteRequest();
-                guestInvite.setPhoneNumber(phoneNumber);
-                guestInvite.setType(InviteType.GUEST);
-                inviteRequests.add(guestInvite);
-            }
-        }
-        
-        return createEventWithInvites(name, description, startTime, endTime, location, visibility, mainImagePath, inviteRequests);
-    }
     
     public List<Event> getEventsForUser(UUID userId) {
         List<Event> events = new ArrayList<>();
@@ -120,11 +86,6 @@ public class EventService {
             return eventOpt;
         }
         
-        // Legacy: Check if user is a host via the old hosts field (for migration)
-        if (event.getHosts() != null && event.getHosts().contains(userId)) {
-            return eventOpt;
-        }
-        
         return Optional.empty();
     }
     
@@ -134,23 +95,12 @@ public class EventService {
         boolean isHostViaInvite = userInvites.stream()
                 .anyMatch(invite -> invite.getEventId().equals(eventId) && invite.getType() == InviteType.HOST);
         
-        if (isHostViaInvite) {
-            return true;
-        }
-        
-        // Fallback to legacy hosts field for migration
-        Optional<Event> eventOpt = eventRepository.findById(eventId);
-        if (eventOpt.isEmpty()) {
-            return false;
-        }
-        
-        Event event = eventOpt.get();
-        return event.getHosts() != null && event.getHosts().contains(userId);
+        return isHostViaInvite;
     }
     
     public Event updateEvent(UUID eventId, String name, String description, LocalDateTime startTime, 
                            LocalDateTime endTime, com.bbthechange.inviter.dto.Address location, 
-                           com.bbthechange.inviter.model.EventVisibility visibility, String mainImagePath, List<UUID> hostUserIds) {
+                           com.bbthechange.inviter.model.EventVisibility visibility, String mainImagePath) {
         Optional<Event> eventOpt = eventRepository.findById(eventId);
         if (eventOpt.isEmpty()) {
             throw new IllegalArgumentException("Event not found");
@@ -166,7 +116,6 @@ public class EventService {
         if (location != null) event.setLocation(location);
         if (visibility != null) event.setVisibility(visibility);
         if (mainImagePath != null) event.setMainImagePath(mainImagePath);
-        if (hostUserIds != null) event.setHosts(hostUserIds);
         
         return eventRepository.save(event);
     }
@@ -197,56 +146,4 @@ public class EventService {
         }
     }
     
-    // Migration utility method - can be called to migrate existing events
-    public void migrateEventHostsToInvites(UUID eventId) {
-        Optional<Event> eventOpt = eventRepository.findById(eventId);
-        if (eventOpt.isEmpty()) {
-            return;
-        }
-        
-        Event event = eventOpt.get();
-        if (event.getHosts() == null || event.getHosts().isEmpty()) {
-            return;
-        }
-        
-        // Check if host invites already exist
-        List<Invite> eventInvites = inviteRepository.findByEventId(eventId);
-        boolean hasHostInvites = eventInvites.stream()
-                .anyMatch(invite -> invite.getType() == InviteType.HOST);
-        
-        if (hasHostInvites) {
-            return; // Already migrated
-        }
-        
-        // Create host invites for each host in the legacy hosts field
-        for (UUID hostId : event.getHosts()) {
-            // Check if this user already has any invite (guest or host)
-            boolean userAlreadyInvited = eventInvites.stream()
-                    .anyMatch(invite -> invite.getUserId().equals(hostId));
-            
-            if (!userAlreadyInvited) {
-                Invite hostInvite = new Invite(eventId, hostId, InviteType.HOST);
-                inviteRepository.save(hostInvite);
-            } else {
-                // User already has an invite - update it to HOST type
-                Invite existingInvite = eventInvites.stream()
-                        .filter(invite -> invite.getUserId().equals(hostId))
-                        .findFirst()
-                        .orElse(null);
-                
-                if (existingInvite != null) {
-                    existingInvite.setType(InviteType.HOST);
-                    inviteRepository.save(existingInvite);
-                }
-            }
-        }
-    }
-    
-    // Utility method to migrate all events
-    public void migrateAllEventHostsToInvites() {
-        List<Event> allEvents = eventRepository.findAll();
-        for (Event event : allEvents) {
-            migrateEventHostsToInvites(event.getId());
-        }
-    }
 }
