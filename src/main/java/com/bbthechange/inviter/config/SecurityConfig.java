@@ -43,6 +43,7 @@ public class SecurityConfig {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(Arrays.asList(
             "http://localhost:3000", // Local development
+            "http://localhost:8080", // Swagger UI
             "https://d3lm7si4v7xvcj.cloudfront.net", // Production CloudFront domain
             "https://api.inviter.app" // API Gateway domain (update with actual domain)
         ));
