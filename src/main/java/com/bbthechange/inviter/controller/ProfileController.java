@@ -109,4 +109,29 @@ public class ProfileController {
         }
     }
     
+    @DeleteMapping
+    @Operation(summary = "Delete user account", 
+               description = "Permanently deletes the current user's account. This will also delete all associated invites, devices, and events where the user is the sole host.")
+    public ResponseEntity<Map<String, String>> deleteProfile(HttpServletRequest request) {
+        String userIdStr = (String) request.getAttribute("userId");
+        if (userIdStr == null) {
+            return new ResponseEntity<>(HttpStatus.UNAUTHORIZED);
+        }
+        
+        UUID userId = UUID.fromString(userIdStr);
+        
+        try {
+            userService.deleteUser(userId);
+            
+            Map<String, String> response = new HashMap<>();
+            response.put("message", "Account deleted successfully");
+            
+            return new ResponseEntity<>(response, HttpStatus.OK);
+        } catch (IllegalArgumentException e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", e.getMessage());
+            return new ResponseEntity<>(error, HttpStatus.NOT_FOUND);
+        }
+    }
+    
 }

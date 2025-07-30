@@ -1,6 +1,10 @@
 package com.bbthechange.inviter.service;
 
+import com.bbthechange.inviter.model.Device;
+import com.bbthechange.inviter.model.Invite;
 import com.bbthechange.inviter.model.User;
+import com.bbthechange.inviter.repository.EventRepository;
+import com.bbthechange.inviter.repository.InviteRepository;
 import com.bbthechange.inviter.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -11,6 +15,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -36,6 +42,15 @@ class UserServiceTest {
 
     @Mock
     private PasswordService passwordService;
+    
+    @Mock
+    private InviteRepository inviteRepository;
+    
+    @Mock
+    private EventRepository eventRepository;
+    
+    @Mock
+    private DeviceService deviceService;
 
     @InjectMocks
     private UserService userService;
@@ -296,6 +311,176 @@ class UserServiceTest {
             // Assert
             assertTrue(result.isEmpty());
             verify(userRepository).findById(null);
+        }
+    }
+
+    @Nested
+    @DisplayName("deleteUser - User Deletion Tests")
+    class DeleteUserTests {
+
+        private UUID eventId1;
+        private UUID eventId2;
+        private Invite hostInvite;
+        private Invite guestInvite;
+        private Invite coHostInvite;
+        private Device device1;
+        private Device device2;
+
+        @BeforeEach
+        void setUpDeleteTests() {
+            eventId1 = UUID.randomUUID();
+            eventId2 = UUID.randomUUID();
+            
+            hostInvite = new Invite(eventId1, testUserId, Invite.InviteType.HOST);
+            hostInvite.setId(UUID.randomUUID());
+            
+            guestInvite = new Invite(eventId2, testUserId, Invite.InviteType.GUEST);
+            guestInvite.setId(UUID.randomUUID());
+            
+            coHostInvite = new Invite(eventId1, UUID.randomUUID(), Invite.InviteType.HOST);
+            coHostInvite.setId(UUID.randomUUID());
+            
+            device1 = new Device("token1", testUserId, Device.Platform.IOS);
+            device2 = new Device("token2", testUserId, Device.Platform.ANDROID);
+        }
+
+        @Test
+        @DisplayName("Should delete user successfully when user is not sole host")
+        void deleteUser_Success_NotSoleHost() {
+            // Arrange
+            List<Invite> userInvites = List.of(hostInvite, guestInvite);
+            List<Invite> eventInvites = List.of(hostInvite, coHostInvite); // Multiple hosts
+            List<Device> userDevices = List.of(device1, device2);
+            
+            when(userRepository.findById(testUserId)).thenReturn(Optional.of(testUser));
+            when(inviteRepository.findByUserId(testUserId)).thenReturn(userInvites);
+            when(inviteRepository.findByEventId(eventId1)).thenReturn(eventInvites); // Multiple hosts
+            when(deviceService.getAllDevicesForUser(testUserId)).thenReturn(userDevices);
+
+            // Act
+            userService.deleteUser(testUserId);
+
+            // Assert
+            verify(userRepository).findById(testUserId);
+            verify(inviteRepository).findByUserId(testUserId);
+            verify(inviteRepository).findByEventId(eventId1);
+            verify(eventRepository, never()).deleteById(any()); // Event should not be deleted
+            verify(inviteRepository).delete(hostInvite);
+            verify(inviteRepository).delete(guestInvite);
+            verify(deviceService).deleteDevice("token1");
+            verify(deviceService).deleteDevice("token2");
+            verify(userRepository).delete(testUser);
+        }
+
+        @Test
+        @DisplayName("Should delete event when user is sole host")
+        void deleteUser_DeletesEventWhenSoleHost() {
+            // Arrange
+            List<Invite> userInvites = List.of(hostInvite, guestInvite);
+            List<Invite> eventInvites = List.of(hostInvite); // Only one host
+            List<Device> userDevices = List.of(device1);
+            
+            when(userRepository.findById(testUserId)).thenReturn(Optional.of(testUser));
+            when(inviteRepository.findByUserId(testUserId)).thenReturn(userInvites);
+            when(inviteRepository.findByEventId(eventId1)).thenReturn(eventInvites); // Single host
+            when(deviceService.getAllDevicesForUser(testUserId)).thenReturn(userDevices);
+
+            // Act
+            userService.deleteUser(testUserId);
+
+            // Assert
+            verify(eventRepository).deleteById(eventId1); // Event should be deleted
+            verify(inviteRepository).delete(guestInvite); // Only remaining invite
+            verify(deviceService).deleteDevice("token1");
+            verify(userRepository).delete(testUser);
+        }
+
+        @Test
+        @DisplayName("Should handle user with no invites")
+        void deleteUser_NoInvites() {
+            // Arrange
+            List<Invite> userInvites = Collections.emptyList();
+            List<Device> userDevices = List.of(device1);
+            
+            when(userRepository.findById(testUserId)).thenReturn(Optional.of(testUser));
+            when(inviteRepository.findByUserId(testUserId)).thenReturn(userInvites);
+            when(deviceService.getAllDevicesForUser(testUserId)).thenReturn(userDevices);
+
+            // Act
+            userService.deleteUser(testUserId);
+
+            // Assert
+            verify(eventRepository, never()).deleteById(any());
+            verify(inviteRepository, never()).delete(any());
+            verify(deviceService).deleteDevice("token1");
+            verify(userRepository).delete(testUser);
+        }
+
+        @Test
+        @DisplayName("Should handle user with no devices")
+        void deleteUser_NoDevices() {
+            // Arrange
+            List<Invite> userInvites = List.of(guestInvite);
+            List<Device> userDevices = Collections.emptyList();
+            
+            when(userRepository.findById(testUserId)).thenReturn(Optional.of(testUser));
+            when(inviteRepository.findByUserId(testUserId)).thenReturn(userInvites);
+            when(deviceService.getAllDevicesForUser(testUserId)).thenReturn(userDevices);
+
+            // Act
+            userService.deleteUser(testUserId);
+
+            // Assert
+            verify(inviteRepository).delete(guestInvite);
+            verify(deviceService, never()).deleteDevice(any());
+            verify(userRepository).delete(testUser);
+        }
+
+        @Test
+        @DisplayName("Should throw exception when user not found")
+        void deleteUser_UserNotFound() {
+            // Arrange
+            when(userRepository.findById(testUserId)).thenReturn(Optional.empty());
+
+            // Act & Assert
+            IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () ->
+                userService.deleteUser(testUserId)
+            );
+            
+            assertEquals("User not found", exception.getMessage());
+            verify(userRepository).findById(testUserId);
+            verify(inviteRepository, never()).findByUserId(any());
+            verify(deviceService, never()).getAllDevicesForUser(any());
+            verify(userRepository, never()).delete(any());
+        }
+
+        @Test
+        @DisplayName("Should handle multiple events where user is sole host")
+        void deleteUser_MultipleSoleHostEvents() {
+            // Arrange
+            UUID eventId3 = UUID.randomUUID();
+            Invite hostInvite2 = new Invite(eventId3, testUserId, Invite.InviteType.HOST);
+            hostInvite2.setId(UUID.randomUUID());
+            
+            List<Invite> userInvites = List.of(hostInvite, hostInvite2, guestInvite);
+            List<Invite> event1Invites = List.of(hostInvite); // Single host
+            List<Invite> event3Invites = List.of(hostInvite2); // Single host
+            List<Device> userDevices = Collections.emptyList();
+            
+            when(userRepository.findById(testUserId)).thenReturn(Optional.of(testUser));
+            when(inviteRepository.findByUserId(testUserId)).thenReturn(userInvites);
+            when(inviteRepository.findByEventId(eventId1)).thenReturn(event1Invites);
+            when(inviteRepository.findByEventId(eventId3)).thenReturn(event3Invites);
+            when(deviceService.getAllDevicesForUser(testUserId)).thenReturn(userDevices);
+
+            // Act
+            userService.deleteUser(testUserId);
+
+            // Assert
+            verify(eventRepository).deleteById(eventId1); // Both events deleted
+            verify(eventRepository).deleteById(eventId3);
+            verify(inviteRepository).delete(guestInvite); // Only remaining invite
+            verify(userRepository).delete(testUser);
         }
     }
 

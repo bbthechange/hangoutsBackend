@@ -31,6 +31,7 @@ import static org.mockito.Mockito.*;
  * - GET /profile - Get user profile
  * - PUT /profile - Update user profile
  * - PUT /profile/password - Change password
+ * - DELETE /profile - Delete user account
  * - Authorization and error handling scenarios
  */
 @ExtendWith(MockitoExtension.class)
@@ -304,6 +305,92 @@ class ProfileControllerTest {
             // Assert
             assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
             verify(userService).changePassword(testUserId, null, null);
+        }
+    }
+
+    @Nested
+    @DisplayName("DELETE /profile - Delete Profile Tests")
+    class DeleteProfileTests {
+
+        @Test
+        @DisplayName("Should delete user account successfully")
+        void deleteProfile_Success() {
+            // Arrange
+            when(httpServletRequest.getAttribute("userId")).thenReturn(testUserId.toString());
+            doNothing().when(userService).deleteUser(testUserId);
+
+            // Act
+            ResponseEntity<Map<String, String>> response = profileController.deleteProfile(httpServletRequest);
+
+            // Assert
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("Account deleted successfully", response.getBody().get("message"));
+            
+            verify(userService).deleteUser(testUserId);
+        }
+
+        @Test
+        @DisplayName("Should return NOT_FOUND when user doesn't exist")
+        void deleteProfile_NotFound() {
+            // Arrange
+            when(httpServletRequest.getAttribute("userId")).thenReturn(testUserId.toString());
+            doThrow(new IllegalArgumentException("User not found"))
+                .when(userService).deleteUser(testUserId);
+
+            // Act
+            ResponseEntity<Map<String, String>> response = profileController.deleteProfile(httpServletRequest);
+
+            // Assert
+            assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("User not found", response.getBody().get("error"));
+            
+            verify(userService).deleteUser(testUserId);
+        }
+
+        @Test
+        @DisplayName("Should return UNAUTHORIZED when userId is null")
+        void deleteProfile_Unauthorized() {
+            // Arrange
+            when(httpServletRequest.getAttribute("userId")).thenReturn(null);
+
+            // Act
+            ResponseEntity<Map<String, String>> response = profileController.deleteProfile(httpServletRequest);
+
+            // Assert
+            assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+            verifyNoInteractions(userService);
+        }
+
+        @Test
+        @DisplayName("Should handle invalid UUID format")
+        void deleteProfile_InvalidUUID() {
+            // Arrange
+            when(httpServletRequest.getAttribute("userId")).thenReturn("invalid-uuid");
+
+            // Act & Assert
+            assertThrows(IllegalArgumentException.class, () -> 
+                profileController.deleteProfile(httpServletRequest)
+            );
+            
+            verifyNoInteractions(userService);
+        }
+
+        @Test
+        @DisplayName("Should call service with correct userId")
+        void deleteProfile_CorrectUserId() {
+            // Arrange
+            UUID specificUserId = UUID.fromString("12345678-1234-1234-1234-123456789012");
+            when(httpServletRequest.getAttribute("userId")).thenReturn(specificUserId.toString());
+            doNothing().when(userService).deleteUser(specificUserId);
+
+            // Act
+            ResponseEntity<Map<String, String>> response = profileController.deleteProfile(httpServletRequest);
+
+            // Assert
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            verify(userService).deleteUser(specificUserId);
         }
     }
 
