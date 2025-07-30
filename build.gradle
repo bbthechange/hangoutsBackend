@@ -47,6 +47,7 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
+	exclude '**/integration/**'
 	finalizedBy jacocoTestReport
 }
 

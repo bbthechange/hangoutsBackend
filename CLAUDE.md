@@ -96,6 +96,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | GET | `/profile` | Get user profile | User object |
 | PUT | `/profile` | Update display name | Success message |
 | PUT | `/profile/password` | Change password | Success message |
+| DELETE | `/profile` | Delete user account | Success message |
 
 #### Images (`/images`) - Public/Protected
 | Method | URL | Purpose | Response |
@@ -151,7 +152,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### DynamoDB Access Issues
 - **AWS CLI**: Direct DynamoDB access via AWS CLI often fails with "Cannot do operations on a non-existent table" even when application can access tables
 - **Root Cause**: Application uses DynamoDB Enhanced Client which may have different table creation/access patterns than standard AWS CLI
-- **Tables**: Events, Users, Invites (plural names, created automatically on app startup via `DynamoDBTableInitializer`)
+- **Tables**: Events, Users, Invites, Devices (plural names, created automatically on app startup via `DynamoDBTableInitializer`)
 
 ### Manual Data Deletion Options
 1. **API Endpoints**: Use existing REST endpoints when possible (requires JWT auth)
@@ -222,7 +223,7 @@ If the application fails to start or Tomcat doesn't initialize:
 4. **Minimal Configuration**: Reduce `application-prod.properties` to minimal settings for testing
 
 #### DynamoDB Connection Issues
-1. **Table Initialization**: The `DynamoDBTableInitializer` automatically creates Users, Events, and Invites tables
+1. **Table Initialization**: The `DynamoDBTableInitializer` automatically creates Users, Events, Invites, and Devices tables with their respective GSIs
 2. **Permission Errors**: If getting "not authorized to perform: dynamodb:DescribeTable", verify IAM role has DynamoDB policies
 3. **Temporary Disable**: Can disable table initializer with `//@Component` for testing web server independently
 
@@ -256,6 +257,7 @@ All tables use provisioned throughput (5 RCU/5 WCU):
 1. **Users**: Partition key `id` (UUID), GSI `PhoneNumberIndex` on `phoneNumber`
 2. **Events**: Partition key `id` (UUID)
 3. **Invites**: Partition key `id` (UUID), GSI `EventIndex` on `eventId`, GSI `UserIndex` on `userId`
+4. **Devices**: Partition key `token` (String), GSI `UserIndex` on `userId`
 
 #### S3 Configuration
 - **Bucket**: `inviter-event-images-871070087012`
