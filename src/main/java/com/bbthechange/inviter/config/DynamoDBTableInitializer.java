@@ -13,6 +13,11 @@ import org.springframework.stereotype.Component;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
+import software.amazon.awssdk.enhanced.dynamodb.model.CreateTableEnhancedRequest;
+import software.amazon.awssdk.enhanced.dynamodb.model.EnhancedGlobalSecondaryIndex;
+import software.amazon.awssdk.services.dynamodb.model.ProvisionedThroughput;
+import software.amazon.awssdk.services.dynamodb.model.Projection;
+import software.amazon.awssdk.services.dynamodb.model.ProjectionType;
 import software.amazon.awssdk.services.dynamodb.model.ResourceNotFoundException;
 
 @Component
@@ -41,18 +46,57 @@ public class DynamoDBTableInitializer implements ApplicationRunner {
             
         } catch (ResourceNotFoundException e) {
             logger.info("Creating table: {}", tableName);
-            DynamoDbTable<T> table = dynamoDbEnhancedClient.table(tableName, TableSchema.fromBean(entityClass));
-            
-            // Create table without GSI first - GSI creation with Enhanced client is complex
-            table.createTable(builder -> builder
-                .provisionedThroughput(throughput -> throughput
-                    .readCapacityUnits(5L)
-                    .writeCapacityUnits(5L)));
-            
-            logger.info("Table {} created successfully", tableName);
+            createTableWithGSIs(tableName, entityClass);
+            logger.info("Table {} created successfully with GSIs", tableName);
         } catch (Exception e) {
             logger.error("Error creating table {}: {}", tableName, e.getMessage());
             throw e;
         }
+    }
+    
+    private <T> void createTableWithGSIs(String tableName, Class<T> entityClass) {
+        DynamoDbTable<T> table = dynamoDbEnhancedClient.table(tableName, TableSchema.fromBean(entityClass));
+        
+        CreateTableEnhancedRequest.Builder requestBuilder = CreateTableEnhancedRequest.builder()
+            .provisionedThroughput(ProvisionedThroughput.builder()
+                .readCapacityUnits(5L)
+                .writeCapacityUnits(5L)
+                .build());
+        
+        // Add GSIs based on table name
+        switch (tableName) {
+            case "Users":
+                requestBuilder.globalSecondaryIndices(
+                    createGSI("PhoneNumberIndex")
+                );
+                break;
+            case "Invites":
+                requestBuilder.globalSecondaryIndices(
+                    createGSI("EventIndex"),
+                    createGSI("UserIndex")
+                );
+                break;
+            case "Devices":
+                requestBuilder.globalSecondaryIndices(
+                    createGSI("UserIndex")
+                );
+                break;
+            // Events table has no GSIs
+        }
+        
+        table.createTable(requestBuilder.build());
+    }
+    
+    private EnhancedGlobalSecondaryIndex createGSI(String indexName) {
+        return EnhancedGlobalSecondaryIndex.builder()
+            .indexName(indexName)
+            .provisionedThroughput(ProvisionedThroughput.builder()
+                .readCapacityUnits(5L)
+                .writeCapacityUnits(5L)
+                .build())
+            .projection(Projection.builder()
+                .projectionType(ProjectionType.ALL)
+                .build())
+            .build();
     }
 }
