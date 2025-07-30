@@ -51,3 +51,6 @@ application.jar
 AWS_MIGRATION_GUIDE.md
 database_schema_diagram.svg
 run-integration-tests.sh
+
+# Spring Boot log files
+spring-boot.log
