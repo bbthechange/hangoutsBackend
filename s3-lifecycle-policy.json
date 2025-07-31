@@ -1,0 +1,10 @@
+{
+    "Rules": [
+        {
+            "ID": "StagingCleanup",
+            "Status": "Enabled",
+            "Filter": {"Prefix": "events/"},
+            "Expiration": {"Days": 30}
+        }
+    ]
+}
