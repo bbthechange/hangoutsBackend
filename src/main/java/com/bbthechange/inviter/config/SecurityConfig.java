@@ -45,7 +45,8 @@ public class SecurityConfig {
             "http://localhost:3000", // Local development
             "http://localhost:8080", // Swagger UI
             "https://d3lm7si4v7xvcj.cloudfront.net", // Production CloudFront domain
-            "https://api.inviter.app" // API Gateway domain (update with actual domain)
+            "https://api.inviter.app", // Production API Gateway domain
+            "https://v7ihwy6uv9.execute-api.us-west-2.amazonaws.com" // Staging API Gateway domain
         ));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList("Content-Type", "Authorization", "X-Requested-With"));
