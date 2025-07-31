@@ -290,3 +290,144 @@ All tables use provisioned throughput (5 RCU/5 WCU):
 - **Old Account**: Mixed-use account (terminated)
 - **Environment**: `inviter-prod-22` (terminated to save costs)
 - **Status**: Environment terminated, application version and configuration preserved for emergency restoration if needed
+
+## AWS API Gateway Configuration
+
+**Production API Gateway**: Provides HTTPS endpoints with SSL termination and custom domain support.
+
+### API Gateway Details
+- **API Name**: `inviter-api`
+- **API ID**: `am6c8sp6kh`
+- **Type**: REST API (Edge-optimized)
+- **Region**: us-west-2
+- **Default Endpoint**: `https://am6c8sp6kh.execute-api.us-west-2.amazonaws.com/prod/`
+- **Stage**: `prod`
+
+### Architecture Flow
+```
+Client (HTTPS) → API Gateway → Elastic Beanstalk (HTTP) → Spring Boot App
+```
+
+API Gateway acts as a reverse proxy, providing:
+- **SSL Termination**: Automatic HTTPS with AWS-managed certificates
+- **Custom Domain**: Support for `api.inviter.app` (when DNS configured)
+- **Request Routing**: All requests proxied to Elastic Beanstalk backend
+- **CloudFront Integration**: Global edge locations for performance
+
+### Resource Configuration
+1. **Root Resource** (`/`): Handles direct root path requests
+   - Method: ANY
+   - Integration: HTTP_PROXY to `http://inviter-test.eba-meudu6bv.us-west-2.elasticbeanstalk.com/`
+
+2. **Proxy Resource** (`/{proxy+}`): Handles all sub-path requests
+   - Method: ANY with path parameter mapping
+   - Integration: HTTP_PROXY to `http://inviter-test.eba-meudu6bv.us-west-2.elasticbeanstalk.com/{proxy}`
+   - Parameter Mapping: `integration.request.path.proxy` → `method.request.path.proxy`
+
+### SSL Certificate Configuration
+- **Certificate ARN**: `arn:aws:acm:us-west-2:871070087012:certificate/071a23cc-d4ca-48e2-a47a-2c87bd7ce498`
+- **Domain**: `api.inviter.app`
+- **Status**: PENDING_VALIDATION (requires DNS validation)
+- **Validation Method**: DNS
+- **Required DNS Record**:
+  - **Name**: `_c6cc5b994aee1c5b1fc869c18df9f230.api.inviter.app.`
+  - **Type**: CNAME
+  - **Value**: `_1f39f2912689374abe1111da8ffb32d7.xlfgrmvvlj.acm-validations.aws.`
+
+### Testing Commands
+
+#### API Gateway Default Endpoint
+```bash
+# Health check
+curl https://am6c8sp6kh.execute-api.us-west-2.amazonaws.com/prod/health
+
+# Root endpoint
+curl https://am6c8sp6kh.execute-api.us-west-2.amazonaws.com/prod/
+
+# Predefined images
+curl https://am6c8sp6kh.execute-api.us-west-2.amazonaws.com/prod/images/predefined
+
+# Login (with test credentials)
+curl -X POST https://am6c8sp6kh.execute-api.us-west-2.amazonaws.com/prod/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"phoneNumber": "YOUR_PHONE", "password": "YOUR_PASSWORD"}'
+```
+
+#### Using JWT Authentication
+```bash
+# Get JWT token from login response, then use for authenticated endpoints
+curl https://am6c8sp6kh.execute-api.us-west-2.amazonaws.com/prod/events \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+
+curl https://am6c8sp6kh.execute-api.us-west-2.amazonaws.com/prod/profile \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+### Custom Domain Setup (Future)
+Once DNS validation is complete:
+
+1. **Create Domain Name**:
+   ```bash
+   AWS_PROFILE=inviter aws apigateway create-domain-name \
+     --domain-name api.inviter.app \
+     --certificate-arn arn:aws:acm:us-west-2:871070087012:certificate/071a23cc-d4ca-48e2-a47a-2c87bd7ce498 \
+     --region us-west-2
+   ```
+
+2. **Create Base Path Mapping**:
+   ```bash
+   AWS_PROFILE=inviter aws apigateway create-base-path-mapping \
+     --domain-name api.inviter.app \
+     --rest-api-id am6c8sp6kh \
+     --stage prod \
+     --region us-west-2
+   ```
+
+3. **Update DNS**: Add CNAME record pointing `api.inviter.app` to the API Gateway domain name
+
+### CORS Configuration
+The Spring Boot application already includes CORS configuration for the API Gateway domain:
+```java
+configuration.setAllowedOrigins(Arrays.asList(
+    "http://localhost:3000", // Local development
+    "http://localhost:8080", // Swagger UI
+    "https://d3lm7si4v7xvcj.cloudfront.net", // Production CloudFront domain
+    "https://api.inviter.app" // API Gateway domain
+));
+```
+
+### Deployment Management
+
+#### Redeploying API Changes
+```bash
+# After making API Gateway configuration changes
+AWS_PROFILE=inviter aws apigateway create-deployment \
+  --rest-api-id am6c8sp6kh \
+  --stage-name prod \
+  --region us-west-2
+```
+
+#### Updating Backend Integration
+If the Elastic Beanstalk URL changes, update the integration URI:
+```bash
+AWS_PROFILE=inviter aws apigateway put-integration \
+  --rest-api-id am6c8sp6kh \
+  --resource-id ROOT_OR_PROXY_RESOURCE_ID \
+  --http-method ANY \
+  --type HTTP_PROXY \
+  --integration-http-method ANY \
+  --uri "http://NEW_EB_URL/{proxy}" \
+  --region us-west-2
+```
+
+### Monitoring and Logging
+- **CloudWatch Metrics**: Request count, latency, and error rates automatically tracked
+- **Access Logs**: Can be enabled for detailed request logging
+- **X-Ray Tracing**: Available for request flow analysis
+
+### Production Ready Features
+- **Edge-Optimized**: Uses CloudFront for global distribution
+- **SSL/TLS**: Automatic HTTPS with AWS-managed certificates
+- **Rate Limiting**: Can be configured via usage plans
+- **Request Validation**: Can validate requests before reaching backend
+- **Response Caching**: Can be enabled to reduce backend load
