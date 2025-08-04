@@ -15,4 +15,6 @@ public class UpdateEventRequest {
     private Address location;
     private EventVisibility visibility;
     private String mainImagePath;
+    private List<String> associatedGroups; // Groups this hangout/event is associated with
+    private Boolean carpoolEnabled; // Whether carpooling features are enabled
 }

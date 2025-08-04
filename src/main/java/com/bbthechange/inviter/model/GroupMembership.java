@@ -1,0 +1,85 @@
+package com.bbthechange.inviter.model;
+
+import com.bbthechange.inviter.util.InviterKeyFactory;
+import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
+
+/**
+ * Group membership entity for the InviterTable.
+ * Represents a user's membership in a group with denormalized group name for GSI efficiency.
+ * 
+ * Key Pattern: PK = GROUP#{GroupID}, SK = USER#{UserID}  
+ * GSI Pattern: GSI1PK = USER#{UserID}, GSI1SK = GROUP#{GroupID}
+ */
+@DynamoDbBean
+public class GroupMembership extends BaseItem {
+    
+    private String groupId;
+    private String userId;
+    private String groupName;  // Denormalized for GSI query efficiency
+    private String role;       // GroupRole.ADMIN or GroupRole.MEMBER
+    
+    // Default constructor for DynamoDB
+    public GroupMembership() {
+        super();
+    }
+
+    /**
+     * Create a new group membership record.
+     */
+    public GroupMembership(String groupId, String userId, String groupName) {
+        super();
+        this.groupId = groupId;
+        this.userId = userId;
+        this.groupName = groupName;
+        this.role = GroupRole.MEMBER; // Default role
+        
+        // Set main table keys
+        setPk(InviterKeyFactory.getGroupPk(groupId));
+        setSk(InviterKeyFactory.getUserSk(userId));
+        
+        // Set GSI keys for efficient user -> groups queries
+        setGsi1pk(InviterKeyFactory.getUserGsi1Pk(userId));
+        setGsi1sk(InviterKeyFactory.getGroupGsi1Sk(groupId));
+    }
+    
+    public String getGroupId() {
+        return groupId;
+    }
+    
+    public void setGroupId(String groupId) {
+        this.groupId = groupId;
+    }
+    
+    public String getUserId() {
+        return userId;
+    }
+    
+    public void setUserId(String userId) {
+        this.userId = userId;
+    }
+    
+    public String getGroupName() {
+        return groupName;
+    }
+    
+    public void setGroupName(String groupName) {
+        this.groupName = groupName;
+        touch(); // Update timestamp
+    }
+    
+    public String getRole() {
+        return role;
+    }
+    
+    public void setRole(String role) {
+        this.role = role;
+        touch(); // Update timestamp
+    }
+    
+    /**
+     * Check if this member has admin privileges.
+     */
+    public boolean isAdmin() {
+        return GroupRole.ADMIN.equals(role);
+    }
+}

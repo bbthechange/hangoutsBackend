@@ -4,6 +4,7 @@ import com.bbthechange.inviter.model.Device;
 import com.bbthechange.inviter.model.Event;
 import com.bbthechange.inviter.model.Invite;
 import com.bbthechange.inviter.model.User;
+import com.bbthechange.inviter.model.BaseItem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,10 +31,14 @@ public class DynamoDBTableInitializer implements ApplicationRunner {
     
     @Override
     public void run(ApplicationArguments args) throws Exception {
+        // Existing tables
         createTableIfNotExists("Users", User.class);
         createTableIfNotExists("Events", Event.class);  
         createTableIfNotExists("Invites", Invite.class);
         createTableIfNotExists("Devices", Device.class);
+        
+        // New InviterTable with GSI for hangout features
+        createTableIfNotExists("InviterTable", BaseItem.class);
     }
     
     private <T> void createTableIfNotExists(String tableName, Class<T> entityClass) {
@@ -79,6 +84,11 @@ public class DynamoDBTableInitializer implements ApplicationRunner {
             case "Devices":
                 requestBuilder.globalSecondaryIndices(
                     createGSI("UserIndex")
+                );
+                break;
+            case "InviterTable":
+                requestBuilder.globalSecondaryIndices(
+                    createGSI("UserGroupIndex")
                 );
                 break;
             // Events table has no GSIs

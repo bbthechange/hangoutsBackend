@@ -7,6 +7,7 @@ import lombok.AllArgsConstructor;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.*;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -24,6 +25,8 @@ public class Event {
     private EventVisibility visibility;
     private String mainImagePath;
     private Long version;
+    private List<String> associatedGroups; // Groups this hangout/event is associated with
+    private boolean carpoolEnabled; // Whether carpooling features are enabled
     
     public Event(String name, String description, LocalDateTime startTime, LocalDateTime endTime, 
                  Address location, EventVisibility visibility, String mainImagePath) {
@@ -36,6 +39,8 @@ public class Event {
         this.visibility = visibility;
         this.mainImagePath = mainImagePath;
         this.version = 1L;
+        this.associatedGroups = new ArrayList<>(); // Initialize empty list
+        this.carpoolEnabled = false; // Default to disabled
     }
     
     @DynamoDbPartitionKey
