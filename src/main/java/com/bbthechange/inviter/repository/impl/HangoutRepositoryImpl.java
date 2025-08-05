@@ -52,8 +52,8 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                         .build()))
                     .scanIndexForward(true)
                     .build())
-                    .items()
                     .stream()
+                    .flatMap(page -> page.items().stream())
                     .collect(Collectors.toList());
                 
                 // Sort by sort key patterns in memory (efficient - documented contract)
@@ -61,6 +61,7 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                 List<Car> cars = new ArrayList<>();
                 List<Vote> votes = new ArrayList<>();
                 List<InterestLevel> attendance = new ArrayList<>();
+                List<CarRider> carRiders = new ArrayList<>();
                 
                 for (BaseItem item : allItems) {
                     String sk = item.getSk();
@@ -74,6 +75,8 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                         votes.add((Vote) item); // Safe - key pattern guarantees Vote
                     } else if (InviterKeyFactory.isAttendanceItem(sk)) {
                         attendance.add((InterestLevel) item); // Safe - key pattern guarantees InterestLevel
+                    } else if (InviterKeyFactory.isCarRiderItem(sk)) {
+                        carRiders.add((CarRider) item); // Safe - key pattern guarantees CarRider
                     }
                 }
                 
@@ -81,7 +84,7 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                 Event event = eventRepository.findById(UUID.fromString(eventId))
                     .orElseThrow(() -> new ResourceNotFoundException("Event not found: " + eventId));
                 
-                return new EventDetailData(event, polls, cars, votes, attendance);
+                return new EventDetailData(event, polls, cars, votes, attendance, carRiders);
                 
             } catch (Exception e) {
                 logger.error("Failed to get event detail data for event {}", eventId, e);

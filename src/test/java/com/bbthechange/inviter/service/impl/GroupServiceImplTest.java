@@ -39,7 +39,7 @@ class GroupServiceImplTest {
     void createGroup_Success() {
         // Given
         CreateGroupRequest request = new CreateGroupRequest("Test Group", true);
-        String creatorId = "creator-123";
+        String creatorId = "12345678-1234-1234-1234-123456789012";
         User creator = new User();
         creator.setId(UUID.fromString(creatorId));
         
@@ -61,7 +61,7 @@ class GroupServiceImplTest {
     void createGroup_CreatorNotFound_ThrowsException() {
         // Given
         CreateGroupRequest request = new CreateGroupRequest("Test Group", true);
-        String creatorId = "non-existent-user";
+        String creatorId = "12345678-1234-1234-1234-123456789999"; // Valid UUID format
         
         when(userRepository.findById(UUID.fromString(creatorId))).thenReturn(Optional.empty());
         
@@ -76,10 +76,10 @@ class GroupServiceImplTest {
     @Test
     void getUserGroups_UsesGSIEfficiently() {
         // Given
-        String userId = "user-123";
+        String userId = "87654321-4321-4321-4321-210987654321";
         List<GroupMembership> memberships = List.of(
-            createTestMembership("group-1", userId, "Group One", GroupRole.ADMIN),
-            createTestMembership("group-2", userId, "Group Two", GroupRole.MEMBER)
+            createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Group One", GroupRole.ADMIN),
+            createTestMembership("22222222-2222-2222-2222-222222222222", userId, "Group Two", GroupRole.MEMBER)
         );
         
         when(groupRepository.findGroupsByUserId(userId)).thenReturn(memberships);
@@ -102,10 +102,10 @@ class GroupServiceImplTest {
     @Test
     void getGroup_Success() {
         // Given
-        String groupId = "group-123";
-        String userId = "user-456";
+        String groupId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
         
-        Group group = new Group("Test Group", false);
+        Group group = createTestGroup("Test Group", false, groupId);
         GroupMembership membership = createTestMembership(groupId, userId, "Test Group", GroupRole.MEMBER);
         
         when(groupRepository.findById(groupId)).thenReturn(Optional.of(group));
@@ -122,10 +122,10 @@ class GroupServiceImplTest {
     @Test
     void getGroup_UserNotInGroup_ThrowsUnauthorized() {
         // Given
-        String groupId = "group-123";
-        String userId = "user-456";
+        String groupId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
         
-        Group group = new Group("Test Group", false);
+        Group group = createTestGroup("Test Group", false, groupId);
         when(groupRepository.findById(groupId)).thenReturn(Optional.of(group));
         when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.empty());
         
@@ -138,18 +138,18 @@ class GroupServiceImplTest {
     @Test
     void addMember_ToPublicGroup_Success() {
         // Given
-        String groupId = "group-123";
-        String userId = "new-user";
-        String addedBy = "admin-user";
+        String groupId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+        String addedBy = "11111111-1111-1111-1111-111111111111";
         
-        Group group = new Group("Public Group", true); // Public group
+        Group group = createTestGroup("Public Group", true, groupId); // Public group
         User userToAdd = new User();
         userToAdd.setId(UUID.fromString(userId));
         
         when(groupRepository.findById(groupId)).thenReturn(Optional.of(group));
         when(userRepository.findById(UUID.fromString(userId))).thenReturn(Optional.of(userToAdd));
         when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.empty());
-        when(groupRepository.addMember(any(GroupMembership.class))).thenReturn(new GroupMembership(groupId, userId, "Public Group"));
+        when(groupRepository.addMember(any(GroupMembership.class))).thenReturn(createTestMembership(groupId, userId, "Public Group", GroupRole.MEMBER));
         
         // When
         assertThatCode(() -> groupService.addMember(groupId, userId, addedBy))
@@ -162,11 +162,11 @@ class GroupServiceImplTest {
     @Test
     void addMember_ToPrivateGroup_RequiresAdmin() {
         // Given
-        String groupId = "group-123";
-        String userId = "new-user";
-        String addedBy = "regular-user";
+        String groupId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+        String addedBy = "11111111-1111-1111-1111-111111111111";
         
-        Group group = new Group("Private Group", false); // Private group
+        Group group = createTestGroup("Private Group", false, groupId); // Private group
         GroupMembership adderMembership = createTestMembership(groupId, addedBy, "Private Group", GroupRole.MEMBER);
         
         when(groupRepository.findById(groupId)).thenReturn(Optional.of(group));
@@ -183,8 +183,8 @@ class GroupServiceImplTest {
     @Test
     void removeMember_UserRemovesThemself_Success() {
         // Given
-        String groupId = "group-123";
-        String userId = "user-456";
+        String groupId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
         String removedBy = userId; // Same user removing themselves
         
         GroupMembership membership = createTestMembership(groupId, userId, "Test Group", GroupRole.MEMBER);
@@ -201,9 +201,9 @@ class GroupServiceImplTest {
     @Test
     void removeMember_AdminRemovesOther_Success() {
         // Given
-        String groupId = "group-123";
-        String userId = "user-to-remove";
-        String removedBy = "admin-user";
+        String groupId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+        String removedBy = "11111111-1111-1111-1111-111111111111";
         
         GroupMembership membershipToRemove = createTestMembership(groupId, userId, "Test Group", GroupRole.MEMBER);
         GroupMembership adminMembership = createTestMembership(groupId, removedBy, "Test Group", GroupRole.ADMIN);
@@ -222,8 +222,8 @@ class GroupServiceImplTest {
     @Test
     void isUserInGroup_UserExists_ReturnsTrue() {
         // Given
-        String userId = "user-123";
-        String groupId = "group-456";
+        String userId = "87654321-4321-4321-4321-210987654321";
+        String groupId = "12345678-1234-1234-1234-123456789012";
         GroupMembership membership = createTestMembership(groupId, userId, "Test Group", GroupRole.MEMBER);
         
         when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.of(membership));
@@ -238,8 +238,8 @@ class GroupServiceImplTest {
     @Test
     void isUserInGroup_UserNotExists_ReturnsFalse() {
         // Given
-        String userId = "user-123";
-        String groupId = "group-456";
+        String userId = "87654321-4321-4321-4321-210987654321";
+        String groupId = "12345678-1234-1234-1234-123456789012";
         
         when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.empty());
         
@@ -253,15 +253,15 @@ class GroupServiceImplTest {
     @Test
     void getGroupFeed_Success() {
         // Given
-        String groupId = "group-123";
-        String userId = "user-456";
+        String groupId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
         
         when(groupRepository.findMembership(groupId, userId)).thenReturn(
             Optional.of(createTestMembership(groupId, userId, "Test Group", GroupRole.MEMBER)));
         
         List<HangoutPointer> hangouts = List.of(
-            createHangoutPointer(groupId, "hangout-1", "Future Hangout", java.time.Instant.now().plusSeconds(3600)),
-            createHangoutPointer(groupId, "hangout-2", "Needs Scheduling", null)
+            createHangoutPointer(groupId, "11111111-1111-1111-1111-111111111111", "Future Hangout", java.time.Instant.now().plusSeconds(3600)),
+            createHangoutPointer(groupId, "22222222-2222-2222-2222-222222222222", "Needs Scheduling", null)
         );
         when(groupRepository.findHangoutsByGroupId(groupId)).thenReturn(hangouts);
         
@@ -278,14 +278,42 @@ class GroupServiceImplTest {
     
     // Helper methods for test data creation
     private GroupMembership createTestMembership(String groupId, String userId, String groupName, String role) {
-        GroupMembership membership = new GroupMembership(groupId, userId, groupName);
+        // For tests, create membership without going through the constructor that validates UUIDs
+        GroupMembership membership = new GroupMembership();
+        membership.setGroupId(groupId);
+        membership.setUserId(userId);
+        membership.setGroupName(groupName);
         membership.setRole(role);
+        // Set keys directly for test purposes
+        membership.setPk("GROUP#" + groupId);
+        membership.setSk("USER#" + userId);
+        membership.setGsi1pk("USER#" + userId);
+        membership.setGsi1sk("GROUP#" + groupId);
         return membership;
     }
     
     private HangoutPointer createHangoutPointer(String groupId, String hangoutId, String title, java.time.Instant hangoutTime) {
-        HangoutPointer pointer = new HangoutPointer(groupId, hangoutId, title);
+        // Create HangoutPointer without going through constructor that validates UUIDs
+        HangoutPointer pointer = new HangoutPointer();
+        pointer.setGroupId(groupId);
+        pointer.setHangoutId(hangoutId);
+        pointer.setTitle(title);
         pointer.setHangoutTime(hangoutTime);
+        // Set keys directly for test purposes
+        pointer.setPk("GROUP#" + groupId);
+        pointer.setSk("HANGOUT#" + hangoutId);
         return pointer;
+    }
+    
+    private Group createTestGroup(String groupName, boolean isPublic, String groupId) {
+        // Create group without going through constructor that validates UUIDs
+        Group group = new Group();
+        group.setGroupId(groupId);
+        group.setGroupName(groupName);
+        group.setPublic(isPublic);
+        // Set keys directly for test purposes
+        group.setPk("GROUP#" + groupId);
+        group.setSk("METADATA");
+        return group;
     }
 }

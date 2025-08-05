@@ -26,9 +26,9 @@ class HangoutRepositoryImplTest extends BaseIntegrationTest {
     @Autowired
     private HangoutRepository hangoutRepository;
     
-    private static final String TEST_EVENT_ID = "event-123";
-    private static final String TEST_USER_ID = "user-456";
-    private static final String TEST_POLL_ID = "poll-789";
+    private static final String TEST_EVENT_ID = "12345678-1234-1234-1234-123456789012";
+    private static final String TEST_USER_ID = "87654321-4321-4321-4321-210987654321";
+    private static final String TEST_POLL_ID = "11111111-1111-1111-1111-111111111111";
     
     @Test
     @Order(1)
@@ -65,7 +65,7 @@ class HangoutRepositoryImplTest extends BaseIntegrationTest {
     @Order(3)
     void saveCarRider_Success() {
         // Given
-        CarRider rider = new CarRider(TEST_EVENT_ID, TEST_USER_ID, "rider-123", "Jane Smith");
+        CarRider rider = new CarRider(TEST_EVENT_ID, TEST_USER_ID, "22222222-2222-2222-2222-222222222222", "Jane Smith");
         rider.setPlusOneCount(1);
         
         // When
@@ -81,7 +81,7 @@ class HangoutRepositoryImplTest extends BaseIntegrationTest {
     @Order(4)
     void saveVote_Success() {
         // Given
-        Vote vote = new Vote(TEST_EVENT_ID, TEST_POLL_ID, "option-1", TEST_USER_ID, "John Doe", "YES");
+        Vote vote = new Vote(TEST_EVENT_ID, TEST_POLL_ID, "33333333-3333-3333-3333-333333333333", TEST_USER_ID, "John Doe", "YES");
         
         // When
         Vote saved = hangoutRepository.saveVote(vote);
@@ -113,7 +113,7 @@ class HangoutRepositoryImplTest extends BaseIntegrationTest {
         // For now, let's test that it doesn't crash with a non-existent event
         
         // When/Then - should throw ResourceNotFoundException for non-existent event
-        assertThatThrownBy(() -> hangoutRepository.getEventDetailData("non-existent-event"))
+        assertThatThrownBy(() -> hangoutRepository.getEventDetailData("99999999-9999-9999-9999-999999999999"))
             .hasMessageContaining("Event not found");
     }
     
@@ -143,7 +143,7 @@ class HangoutRepositoryImplTest extends BaseIntegrationTest {
         // Given - we know there's a rider from earlier test
         
         // When
-        assertThatCode(() -> hangoutRepository.deleteCarRider(TEST_EVENT_ID, TEST_USER_ID, "rider-123"))
+        assertThatCode(() -> hangoutRepository.deleteCarRider(TEST_EVENT_ID, TEST_USER_ID, "22222222-2222-2222-2222-222222222222"))
             .doesNotThrowAnyException();
     }
     
@@ -153,7 +153,7 @@ class HangoutRepositoryImplTest extends BaseIntegrationTest {
         // Given - we know there's a vote from earlier test
         
         // When
-        assertThatCode(() -> hangoutRepository.deleteVote(TEST_EVENT_ID, TEST_POLL_ID, TEST_USER_ID, "option-1"))
+        assertThatCode(() -> hangoutRepository.deleteVote(TEST_EVENT_ID, TEST_POLL_ID, TEST_USER_ID, "33333333-3333-3333-3333-333333333333"))
             .doesNotThrowAnyException();
     }
     

@@ -1,4 +1,4 @@
-package com.bbthechange.inviter.controller;
+package com.bbthechange.inviter.integration;
 
 import com.bbthechange.inviter.config.BaseIntegrationTest;
 import com.bbthechange.inviter.dto.UpdateEventRequest;
@@ -6,11 +6,7 @@ import com.bbthechange.inviter.dto.AssociateGroupsRequest;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureWebMvc;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.List;
 
@@ -21,13 +17,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Integration tests for HangoutController.
  * Tests the item collection patterns and pointer updates.
  */
-@SpringBootTest
-@AutoConfigureWebMvc
-@Testcontainers
 class HangoutControllerIntegrationTest extends BaseIntegrationTest {
-    
-    @Autowired
-    private MockMvc mockMvc;
     
     @Autowired
     private ObjectMapper objectMapper;

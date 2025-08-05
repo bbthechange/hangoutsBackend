@@ -28,7 +28,7 @@ class GroupRepositoryImplTest extends BaseIntegrationTest {
     private GroupRepository groupRepository;
     
     private static String testGroupId;
-    private static final String TEST_USER_ID = "user-123";
+    private static final String TEST_USER_ID = "12345678-1234-1234-1234-123456789012";
     private static final String TEST_GROUP_NAME = "Test Group";
     
     @Test
@@ -76,7 +76,7 @@ class GroupRepositoryImplTest extends BaseIntegrationTest {
     @Order(3)
     void addMember_Success() {
         // Given
-        String newUserId = "user-456";
+        String newUserId = "87654321-4321-4321-4321-210987654321";
         GroupMembership membership = new GroupMembership(testGroupId, newUserId, TEST_GROUP_NAME);
         
         // When
@@ -99,7 +99,7 @@ class GroupRepositoryImplTest extends BaseIntegrationTest {
         
         // Then
         assertThat(members).hasSize(2);
-        assertThat(members).extracting("userId").containsExactlyInAnyOrder(TEST_USER_ID, "user-456");
+        assertThat(members).extracting("userId").containsExactlyInAnyOrder(TEST_USER_ID, "87654321-4321-4321-4321-210987654321");
         assertThat(members).extracting("role").containsExactlyInAnyOrder(GroupRole.ADMIN, GroupRole.MEMBER);
     }
     
@@ -107,7 +107,7 @@ class GroupRepositoryImplTest extends BaseIntegrationTest {
     @Order(5)
     void saveHangoutPointer_Success() {
         // Given
-        String hangoutId = "hangout-789";
+        String hangoutId = "11111111-1111-1111-1111-111111111111";
         HangoutPointer pointer = new HangoutPointer(testGroupId, hangoutId, "Test Hangout");
         pointer.setStatus("ACTIVE");
         pointer.setParticipantCount(5);
@@ -127,7 +127,7 @@ class GroupRepositoryImplTest extends BaseIntegrationTest {
     @Order(6)
     void removeMember_Success() {
         // Given
-        String userToRemove = "user-456";
+        String userToRemove = "87654321-4321-4321-4321-210987654321";
         
         // When
         assertThatCode(() -> groupRepository.removeMember(testGroupId, userToRemove))
@@ -146,7 +146,7 @@ class GroupRepositoryImplTest extends BaseIntegrationTest {
     @Test
     void findById_NonExistentGroup_ReturnsEmpty() {
         // When
-        Optional<Group> result = groupRepository.findById("non-existent-id");
+        Optional<Group> result = groupRepository.findById("99999999-9999-9999-9999-999999999999");
         
         // Then
         assertThat(result).isEmpty();
@@ -155,7 +155,7 @@ class GroupRepositoryImplTest extends BaseIntegrationTest {
     @Test
     void findMembership_NonExistentMembership_ReturnsEmpty() {
         // When
-        Optional<GroupMembership> result = groupRepository.findMembership("non-existent-group", "non-existent-user");
+        Optional<GroupMembership> result = groupRepository.findMembership("99999999-9999-9999-9999-999999999999", "88888888-8888-8888-8888-888888888888");
         
         // Then
         assertThat(result).isEmpty();

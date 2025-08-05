@@ -159,6 +159,10 @@ public final class InviterKeyFactory {
         return sortKey.contains(DELIMITER + RIDER_PREFIX + DELIMITER);
     }
     
+    public static boolean isCarRiderItem(String sortKey) {
+        return sortKey.contains(DELIMITER + RIDER_PREFIX + DELIMITER);
+    }
+    
     public static boolean isVoteItem(String sortKey) {
         return sortKey.contains(DELIMITER + VOTE_PREFIX + DELIMITER);
     }

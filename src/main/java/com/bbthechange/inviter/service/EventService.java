@@ -34,11 +34,9 @@ public class EventService {
                                        com.bbthechange.inviter.model.EventVisibility visibility, String mainImagePath,
                                        List<CreateInviteRequest> inviteRequests) {
         
-        // Validate that at least one invite is a host
-        boolean hasHost = inviteRequests.stream()
-                .anyMatch(invite -> invite.getType() == InviteType.HOST);
-        if (!hasHost) {
-            throw new IllegalArgumentException("Event must have at least one host");
+        // Handle null or empty invite requests
+        if (inviteRequests == null) {
+            inviteRequests = new ArrayList<>();
         }
         
         // Create event (hosts managed via invites)

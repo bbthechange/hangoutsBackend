@@ -203,8 +203,8 @@ public class GroupRepositoryImpl implements GroupRepository {
                         .queryConditional(queryConditional)
                         .scanIndexForward(true)
                         .build())
-                    .items()
                     .stream()
+                    .flatMap(page -> page.items().stream())
                     .filter(item -> InviterKeyFactory.isGroupMembership(item.getSk()))
                     .map(item -> (GroupMembership) item)
                     .collect(Collectors.toList());
@@ -231,8 +231,8 @@ public class GroupRepositoryImpl implements GroupRepository {
                         .queryConditional(queryConditional)
                         .scanIndexForward(true)
                         .build())
-                    .items()
                     .stream()
+                    .flatMap(page -> page.items().stream())
                     .filter(item -> InviterKeyFactory.isGroupMembership(item.getSk()))
                     .map(item -> (GroupMembership) item)
                     .collect(Collectors.toList());
@@ -336,8 +336,8 @@ public class GroupRepositoryImpl implements GroupRepository {
                         .queryConditional(queryConditional)
                         .scanIndexForward(true)
                         .build())
-                    .items()
                     .stream()
+                    .flatMap(page -> page.items().stream())
                     .filter(item -> InviterKeyFactory.isHangoutPointer(item.getSk()))
                     .map(item -> (HangoutPointer) item)
                     .collect(Collectors.toList());
@@ -350,7 +350,10 @@ public class GroupRepositoryImpl implements GroupRepository {
     }
     
     // Helper method for DynamoDB attribute conversion
+    @SuppressWarnings("unchecked")
     private Map<String, AttributeValue> convertToAttributeValueMap(BaseItem item) {
-        return TableSchema.fromBean(item.getClass()).itemToMap(item, true);
+        @SuppressWarnings("rawtypes")
+        TableSchema schema = TableSchema.fromBean(item.getClass());
+        return schema.itemToMap((Object) item, true);
     }
 }

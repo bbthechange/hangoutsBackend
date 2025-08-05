@@ -1,4 +1,4 @@
-package com.bbthechange.inviter.controller;
+package com.bbthechange.inviter.integration;
 
 import com.bbthechange.inviter.config.BaseIntegrationTest;
 import com.bbthechange.inviter.dto.CreateGroupRequest;
@@ -7,11 +7,7 @@ import com.bbthechange.inviter.service.GroupService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureWebMvc;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -20,13 +16,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Integration tests for GroupController.
  * Tests the full Spring context with real service layer.
  */
-@SpringBootTest
-@AutoConfigureWebMvc
-@Testcontainers
 class GroupControllerIntegrationTest extends BaseIntegrationTest {
-    
-    @Autowired
-    private MockMvc mockMvc;
     
     @Autowired
     private ObjectMapper objectMapper;

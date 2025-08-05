@@ -37,8 +37,8 @@ class HangoutServiceImplTest {
     @Test
     void getEventDetail_Success() {
         // Given
-        String eventId = "event-123";
-        String userId = "user-456";
+        String eventId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
         
         Event event = createTestEvent(eventId);
         event.setVisibility(EventVisibility.PUBLIC); // Public event - user can view
@@ -48,7 +48,8 @@ class HangoutServiceImplTest {
             List.of(createTestPoll()),
             List.of(createTestCar()),
             List.of(createTestVote()),
-            List.of(createTestInterestLevel())
+            List.of(createTestInterestLevel()),
+            List.of()
         );
         
         when(hangoutRepository.getEventDetailData(eventId)).thenReturn(data);
@@ -69,16 +70,16 @@ class HangoutServiceImplTest {
     @Test
     void getEventDetail_UnauthorizedUser_ThrowsException() {
         // Given
-        String eventId = "event-123";
-        String userId = "unauthorized-user";
+        String eventId = "12345678-1234-1234-1234-123456789012";
+        String userId = "33333333-3333-3333-3333-333333333333";
         
         Event event = createTestEvent(eventId);
         event.setVisibility(EventVisibility.INVITE_ONLY); // Private event
-        event.setAssociatedGroups(List.of("group-1")); // User not in this group
+        event.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111"))); // User not in this group
         
-        EventDetailData data = new EventDetailData(event, List.of(), List.of(), List.of(), List.of());
+        EventDetailData data = new EventDetailData(event, List.of(), List.of(), List.of(), List.of(), List.of());
         when(hangoutRepository.getEventDetailData(eventId)).thenReturn(data);
-        when(groupRepository.findMembership("group-1", userId)).thenReturn(Optional.empty());
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.empty());
         
         // When/Then
         assertThatThrownBy(() -> hangoutService.getEventDetail(eventId, userId))
@@ -89,20 +90,20 @@ class HangoutServiceImplTest {
     @Test
     void updateEventTitle_Success() {
         // Given
-        String eventId = "event-123";
+        String eventId = "12345678-1234-1234-1234-123456789012";
         String newTitle = "Updated Event Title";
-        String userId = "admin-user";
+        String userId = "87654321-4321-4321-4321-210987654321";
         
         Event event = createTestEvent(eventId);
-        event.setAssociatedGroups(List.of("group-1", "group-2"));
+        event.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")));
         
-        EventDetailData data = new EventDetailData(event, List.of(), List.of(), List.of(), List.of());
+        EventDetailData data = new EventDetailData(event, List.of(), List.of(), List.of(), List.of(), List.of());
         when(hangoutRepository.getEventDetailData(eventId)).thenReturn(data);
         
         // Mock authorization - user is admin in group-1
-        GroupMembership adminMembership = new GroupMembership("group-1", userId, "Test Group");
+        GroupMembership adminMembership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Test Group");
         adminMembership.setRole(GroupRole.ADMIN);
-        when(groupRepository.findMembership("group-1", userId)).thenReturn(Optional.of(adminMembership));
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(adminMembership));
         
         when(hangoutRepository.save(any(Event.class))).thenReturn(event);
         doNothing().when(groupRepository).updateHangoutPointer(anyString(), anyString(), any());
@@ -119,20 +120,20 @@ class HangoutServiceImplTest {
     @Test
     void updateEventTitle_UnauthorizedUser_ThrowsException() {
         // Given
-        String eventId = "event-123";
+        String eventId = "12345678-1234-1234-1234-123456789012";
         String newTitle = "Updated Title";
-        String userId = "regular-user";
+        String userId = "44444444-4444-4444-4444-444444444444";
         
         Event event = createTestEvent(eventId);
-        event.setAssociatedGroups(List.of("group-1"));
+        event.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111")));
         
-        EventDetailData data = new EventDetailData(event, List.of(), List.of(), List.of(), List.of());
+        EventDetailData data = new EventDetailData(event, List.of(), List.of(), List.of(), List.of(), List.of());
         when(hangoutRepository.getEventDetailData(eventId)).thenReturn(data);
         
         // Mock authorization - user is regular member, not admin
-        GroupMembership memberMembership = new GroupMembership("group-1", userId, "Test Group");
+        GroupMembership memberMembership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Test Group");
         memberMembership.setRole(GroupRole.MEMBER);
-        when(groupRepository.findMembership("group-1", userId)).thenReturn(Optional.of(memberMembership));
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(memberMembership));
         
         // When/Then
         assertThatThrownBy(() -> hangoutService.updateEventTitle(eventId, newTitle, userId))
@@ -145,21 +146,24 @@ class HangoutServiceImplTest {
     @Test
     void associateEventWithGroups_Success() {
         // Given
-        String eventId = "event-123";
-        List<String> groupIds = List.of("group-1", "group-2");
-        String userId = "admin-user";
+        String eventId = "12345678-1234-1234-1234-123456789012";
+        List<String> groupIds = List.of("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222");
+        String userId = "87654321-4321-4321-4321-210987654321";
         
         Event event = createTestEvent(eventId);
-        event.setAssociatedGroups(List.of()); // Initially no groups
+        // Set up event so user can edit it (they're admin in one of the groups they want to associate)
+        event.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111")));
         
-        EventDetailData data = new EventDetailData(event, List.of(), List.of(), List.of(), List.of());
+        EventDetailData data = new EventDetailData(event, List.of(), List.of(), List.of(), List.of(), List.of());
         when(hangoutRepository.getEventDetailData(eventId)).thenReturn(data);
         
-        // Mock authorization - user is member of both groups
-        when(groupRepository.findMembership("group-1", userId)).thenReturn(
-            Optional.of(new GroupMembership("group-1", userId, "Group One")));
-        when(groupRepository.findMembership("group-2", userId)).thenReturn(
-            Optional.of(new GroupMembership("group-2", userId, "Group Two")));
+        // Mock authorization - user is admin in first group and member of second
+        GroupMembership adminMembership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Group One");
+        adminMembership.setRole(GroupRole.ADMIN);
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(
+            Optional.of(adminMembership));
+        when(groupRepository.findMembership("22222222-2222-2222-2222-222222222222", userId)).thenReturn(
+            Optional.of(createTestMembership("22222222-2222-2222-2222-222222222222", userId, "Group Two")));
         
         when(hangoutRepository.save(any(Event.class))).thenReturn(event);
         doNothing().when(groupRepository).saveHangoutPointer(any(HangoutPointer.class));
@@ -176,16 +180,24 @@ class HangoutServiceImplTest {
     @Test
     void associateEventWithGroups_UserNotInGroup_ThrowsException() {
         // Given
-        String eventId = "event-123";
-        List<String> groupIds = List.of("group-1");
-        String userId = "non-member";
+        String eventId = "12345678-1234-1234-1234-123456789012";
+        List<String> groupIds = List.of("11111111-1111-1111-1111-111111111111");
+        String userId = "87654321-4321-4321-4321-210987654321";
         
         Event event = createTestEvent(eventId);
-        EventDetailData data = new EventDetailData(event, List.of(), List.of(), List.of(), List.of());
+        // Set up event so user can edit it (they're admin in a different group)
+        event.setAssociatedGroups(new java.util.ArrayList<>(List.of("22222222-2222-2222-2222-222222222222")));
+        
+        EventDetailData data = new EventDetailData(event, List.of(), List.of(), List.of(), List.of(), List.of());
         when(hangoutRepository.getEventDetailData(eventId)).thenReturn(data);
         
-        // User is not in the group
-        when(groupRepository.findMembership("group-1", userId)).thenReturn(Optional.empty());
+        // User is admin in existing associated group (so they can edit event)
+        GroupMembership adminMembership = createTestMembership("22222222-2222-2222-2222-222222222222", userId, "Existing Group");
+        adminMembership.setRole(GroupRole.ADMIN);
+        when(groupRepository.findMembership("22222222-2222-2222-2222-222222222222", userId)).thenReturn(Optional.of(adminMembership));
+        
+        // But user is NOT in the group they're trying to associate with
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.empty());
         
         // When/Then
         assertThatThrownBy(() -> hangoutService.associateEventWithGroups(eventId, groupIds, userId))
@@ -199,20 +211,20 @@ class HangoutServiceImplTest {
     @Test
     void disassociateEventFromGroups_Success() {
         // Given
-        String eventId = "event-123";
-        List<String> groupIds = List.of("group-1");
-        String userId = "admin-user";
+        String eventId = "12345678-1234-1234-1234-123456789012";
+        List<String> groupIds = List.of("11111111-1111-1111-1111-111111111111");
+        String userId = "87654321-4321-4321-4321-210987654321";
         
         Event event = createTestEvent(eventId);
-        event.setAssociatedGroups(List.of("group-1", "group-2")); // Has groups initially
+        event.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")));
         
-        EventDetailData data = new EventDetailData(event, List.of(), List.of(), List.of(), List.of());
+        EventDetailData data = new EventDetailData(event, List.of(), List.of(), List.of(), List.of(), List.of());
         when(hangoutRepository.getEventDetailData(eventId)).thenReturn(data);
         
         // Mock authorization - user is admin in group-1
-        GroupMembership adminMembership = new GroupMembership("group-1", userId, "Group One");
+        GroupMembership adminMembership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Group One");
         adminMembership.setRole(GroupRole.ADMIN);
-        when(groupRepository.findMembership("group-1", userId)).thenReturn(Optional.of(adminMembership));
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(adminMembership));
         
         when(hangoutRepository.save(any(Event.class))).thenReturn(event);
         doNothing().when(groupRepository).deleteHangoutPointer(anyString(), anyString());
@@ -223,14 +235,14 @@ class HangoutServiceImplTest {
         
         // Then
         verify(hangoutRepository).save(any(Event.class)); // Update canonical record
-        verify(groupRepository).deleteHangoutPointer("group-1", eventId); // Remove pointer
+        verify(groupRepository).deleteHangoutPointer("11111111-1111-1111-1111-111111111111", eventId); // Remove pointer
     }
     
     @Test
     void canUserViewEvent_PublicEvent_ReturnsTrue() {
         // Given
-        String userId = "any-user";
-        Event event = createTestEvent("event-123");
+        String userId = "87654321-4321-4321-4321-210987654321";
+        Event event = createTestEvent("12345678-1234-1234-1234-123456789012");
         event.setVisibility(EventVisibility.PUBLIC);
         
         // When
@@ -243,13 +255,13 @@ class HangoutServiceImplTest {
     @Test
     void canUserViewEvent_InviteOnlyEventUserInGroup_ReturnsTrue() {
         // Given
-        String userId = "member-user";
-        Event event = createTestEvent("event-123");
+        String userId = "87654321-4321-4321-4321-210987654321";
+        Event event = createTestEvent("12345678-1234-1234-1234-123456789012");
         event.setVisibility(EventVisibility.INVITE_ONLY);
-        event.setAssociatedGroups(List.of("group-1"));
+        event.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111")));
         
-        when(groupRepository.findMembership("group-1", userId)).thenReturn(
-            Optional.of(new GroupMembership("group-1", userId, "Group One")));
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(
+            Optional.of(createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Group One")));
         
         // When
         boolean result = hangoutService.canUserViewEvent(userId, event);
@@ -261,13 +273,13 @@ class HangoutServiceImplTest {
     @Test
     void canUserEditEvent_UserIsAdmin_ReturnsTrue() {
         // Given
-        String userId = "admin-user";
-        Event event = createTestEvent("event-123");
-        event.setAssociatedGroups(List.of("group-1"));
+        String userId = "87654321-4321-4321-4321-210987654321";
+        Event event = createTestEvent("12345678-1234-1234-1234-123456789012");
+        event.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111")));
         
-        GroupMembership adminMembership = new GroupMembership("group-1", userId, "Group One");
+        GroupMembership adminMembership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Group One");
         adminMembership.setRole(GroupRole.ADMIN);
-        when(groupRepository.findMembership("group-1", userId)).thenReturn(Optional.of(adminMembership));
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(adminMembership));
         
         // When
         boolean result = hangoutService.canUserEditEvent(userId, event);
@@ -279,13 +291,13 @@ class HangoutServiceImplTest {
     @Test
     void canUserEditEvent_UserIsRegularMember_ReturnsFalse() {
         // Given
-        String userId = "regular-user";
-        Event event = createTestEvent("event-123");
-        event.setAssociatedGroups(List.of("group-1"));
+        String userId = "44444444-4444-4444-4444-444444444444";
+        Event event = createTestEvent("12345678-1234-1234-1234-123456789012");
+        event.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111")));
         
-        GroupMembership memberMembership = new GroupMembership("group-1", userId, "Group One");
+        GroupMembership memberMembership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Group One");
         memberMembership.setRole(GroupRole.MEMBER);
-        when(groupRepository.findMembership("group-1", userId)).thenReturn(Optional.of(memberMembership));
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(memberMembership));
         
         // When
         boolean result = hangoutService.canUserEditEvent(userId, event);
@@ -303,19 +315,70 @@ class HangoutServiceImplTest {
         return event;
     }
     
+    private GroupMembership createTestMembership(String groupId, String userId, String groupName) {
+        // For tests, create membership without going through the constructor that validates UUIDs
+        GroupMembership membership = new GroupMembership();
+        membership.setGroupId(groupId);
+        membership.setUserId(userId);
+        membership.setGroupName(groupName);
+        membership.setRole(GroupRole.MEMBER);
+        // Set keys directly for test purposes
+        membership.setPk("GROUP#" + groupId);
+        membership.setSk("USER#" + userId);
+        membership.setGsi1pk("USER#" + userId);
+        membership.setGsi1sk("GROUP#" + groupId);
+        return membership;
+    }
+    
     private Poll createTestPoll() {
-        return new Poll("event-123", "Test Poll", "Description", false);
+        // Create Poll without constructor validation for tests
+        Poll poll = new Poll();
+        poll.setEventId("12345678-1234-1234-1234-123456789012");
+        poll.setPollId("11111111-1111-1111-1111-111111111111");
+        poll.setTitle("Test Poll");
+        poll.setDescription("Description");
+        poll.setMultipleChoice(false);
+        poll.setPk("EVENT#12345678-1234-1234-1234-123456789012");
+        poll.setSk("POLL#11111111-1111-1111-1111-111111111111");
+        return poll;
     }
     
     private Car createTestCar() {
-        return new Car("event-123", "driver-123", "John Doe", 4);
+        // Create Car without constructor validation for tests
+        Car car = new Car();
+        car.setEventId("12345678-1234-1234-1234-123456789012");
+        car.setDriverId("87654321-4321-4321-4321-210987654321");
+        car.setDriverName("John Doe");
+        car.setTotalCapacity(4);
+        car.setAvailableSeats(4);
+        car.setPk("EVENT#12345678-1234-1234-1234-123456789012");
+        car.setSk("CAR#87654321-4321-4321-4321-210987654321");
+        return car;
     }
     
     private Vote createTestVote() {
-        return new Vote("event-123", "poll-123", "option-1", "user-123", "John Doe", "YES");
+        // Create Vote without constructor validation for tests
+        Vote vote = new Vote();
+        vote.setEventId("12345678-1234-1234-1234-123456789012");
+        vote.setPollId("11111111-1111-1111-1111-111111111111");
+        vote.setOptionId("22222222-2222-2222-2222-222222222222");
+        vote.setUserId("87654321-4321-4321-4321-210987654321");
+        vote.setUserName("John Doe");
+        vote.setVoteType("YES");
+        vote.setPk("EVENT#12345678-1234-1234-1234-123456789012");
+        vote.setSk("POLL#11111111-1111-1111-1111-111111111111#VOTE#87654321-4321-4321-4321-210987654321#OPTION#22222222-2222-2222-2222-222222222222");
+        return vote;
     }
     
     private InterestLevel createTestInterestLevel() {
-        return new InterestLevel("event-123", "user-123", "John Doe", "GOING");
+        // Create InterestLevel without constructor validation for tests
+        InterestLevel interest = new InterestLevel();
+        interest.setEventId("12345678-1234-1234-1234-123456789012");
+        interest.setUserId("87654321-4321-4321-4321-210987654321");
+        interest.setUserName("John Doe");
+        interest.setStatus("GOING");
+        interest.setPk("EVENT#12345678-1234-1234-1234-123456789012");
+        interest.setSk("ATTENDANCE#87654321-4321-4321-4321-210987654321");
+        return interest;
     }
 }

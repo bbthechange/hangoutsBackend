@@ -108,8 +108,8 @@ public abstract class BaseController {
             .body(new ErrorResponse("INVALID_KEY", e.getMessage()));
     }
     
-    @ExceptionHandler(javax.validation.ConstraintViolationException.class)
-    public ResponseEntity<ErrorResponse> handleConstraintViolation(javax.validation.ConstraintViolationException e) {
+    @ExceptionHandler(jakarta.validation.ConstraintViolationException.class)
+    public ResponseEntity<ErrorResponse> handleConstraintViolation(jakarta.validation.ConstraintViolationException e) {
         logger.warn("Validation constraint violation: {}", e.getMessage());
         return ResponseEntity.badRequest()
             .body(new ErrorResponse("VALIDATION_ERROR", "Invalid input parameters"));
@@ -124,6 +124,27 @@ public abstract class BaseController {
             .orElse("Invalid input");
         return ResponseEntity.badRequest()
             .body(new ErrorResponse("VALIDATION_ERROR", message));
+    }
+    
+    @ExceptionHandler(CarNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleCarNotFound(CarNotFoundException e) {
+        logger.warn("Car not found: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+            .body(new ErrorResponse("CAR_NOT_FOUND", e.getMessage()));
+    }
+    
+    @ExceptionHandler(NoAvailableSeatsException.class)
+    public ResponseEntity<ErrorResponse> handleNoAvailableSeats(NoAvailableSeatsException e) {
+        logger.warn("No available seats: {}", e.getMessage());
+        return ResponseEntity.badRequest()
+            .body(new ErrorResponse("NO_AVAILABLE_SEATS", e.getMessage()));
+    }
+    
+    @ExceptionHandler(UnsupportedOperationException.class)
+    public ResponseEntity<ErrorResponse> handleUnsupportedOperation(UnsupportedOperationException e) {
+        logger.warn("Unsupported operation: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
+            .body(new ErrorResponse("NOT_IMPLEMENTED", e.getMessage()));
     }
     
     @ExceptionHandler(Exception.class)

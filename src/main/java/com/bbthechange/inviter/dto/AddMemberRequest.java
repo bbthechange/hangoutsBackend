@@ -1,7 +1,7 @@
 package com.bbthechange.inviter.dto;
 
-import javax.validation.constraints.NotBlank;
-import javax.validation.constraints.Pattern;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 
 /**
  * Request DTO for adding a member to a group.
