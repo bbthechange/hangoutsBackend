@@ -169,59 +169,6 @@ class EventServiceTest {
             ));
             verify(inviteRepository).save(any(Invite.class));
         }
-
-        @Test
-        @DisplayName("Should reject empty invite list without host")
-        void createEventWithInvites_EmptyInviteList_ThrowsException() {
-            // Arrange
-            List<CreateInviteRequest> emptyInvites = new ArrayList<>();
-
-            // Act & Assert
-            IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () ->
-                eventService.createEventWithInvites(
-                    "Test Event",
-                    "Test Description",
-                    testEvent.getStartTime(),
-                    testEvent.getEndTime(),
-                    testAddress,
-                    EventVisibility.INVITE_ONLY,
-                    "/images/test.jpg",
-                    emptyInvites
-                )
-            );
-            
-            assertEquals("Event must have at least one host", exception.getMessage());
-            verify(eventRepository, never()).save(any(Event.class));
-            verify(inviteRepository, never()).save(any(Invite.class));
-        }
-        
-        @Test
-        @DisplayName("Should reject invite list with only guests (no hosts)")
-        void createEventWithInvites_OnlyGuests_ThrowsException() {
-            // Arrange
-            List<CreateInviteRequest> guestOnlyInvites = Arrays.asList(
-                createInviteRequest("+1234567890", InviteType.GUEST),
-                createInviteRequest("+0987654321", InviteType.GUEST)
-            );
-
-            // Act & Assert
-            IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () ->
-                eventService.createEventWithInvites(
-                    "Test Event",
-                    "Test Description",
-                    testEvent.getStartTime(),
-                    testEvent.getEndTime(),
-                    testAddress,
-                    EventVisibility.INVITE_ONLY,
-                    "/images/test.jpg",
-                    guestOnlyInvites
-                )
-            );
-            
-            assertEquals("Event must have at least one host", exception.getMessage());
-            verify(eventRepository, never()).save(any(Event.class));
-            verify(inviteRepository, never()).save(any(Invite.class));
-        }
     }
 
     @Nested

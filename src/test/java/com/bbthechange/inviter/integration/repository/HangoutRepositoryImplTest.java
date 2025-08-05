@@ -1,4 +1,4 @@
-package com.bbthechange.inviter.repository.impl;
+package com.bbthechange.inviter.integration.repository;
 
 import com.bbthechange.inviter.config.BaseIntegrationTest;
 import com.bbthechange.inviter.repository.HangoutRepository;
