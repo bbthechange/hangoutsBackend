@@ -124,12 +124,12 @@ class HangoutServiceImplTest {
         List<String> groupIds = List.of("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222");
         String userId = "87654321-4321-4321-4321-210987654321";
         
-        Event event = createTestEvent(eventId);
-        // Set up event so user can edit it (they're admin in one of the groups they want to associate)
-        event.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111")));
+        Hangout hangout = createTestHangout(eventId);
+        // Set up hangout so user can edit it (they're admin in one of the groups they want to associate)
+        hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111")));
         
-        EventDetailData data = new EventDetailData(event, List.of(), List.of(), List.of(), List.of(), List.of());
-        when(hangoutRepository.getEventDetailData(eventId)).thenReturn(data);
+        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of());
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
         
         // Mock authorization - user is admin in first group and member of second
         GroupMembership adminMembership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Group One");
@@ -139,7 +139,7 @@ class HangoutServiceImplTest {
         when(groupRepository.findMembership("22222222-2222-2222-2222-222222222222", userId)).thenReturn(
             Optional.of(createTestMembership("22222222-2222-2222-2222-222222222222", userId, "Group Two")));
         
-        when(hangoutRepository.save(any(Event.class))).thenReturn(event);
+        when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(hangout);
         doNothing().when(groupRepository).saveHangoutPointer(any(HangoutPointer.class));
         
         // When
@@ -147,7 +147,7 @@ class HangoutServiceImplTest {
             .doesNotThrowAnyException();
         
         // Then
-        verify(hangoutRepository).save(any(Event.class)); // Update canonical record
+        verify(hangoutRepository).createHangout(any(Hangout.class)); // Update canonical record
         verify(groupRepository, times(2)).saveHangoutPointer(any(HangoutPointer.class)); // Create pointers
     }
     
@@ -158,14 +158,14 @@ class HangoutServiceImplTest {
         List<String> groupIds = List.of("11111111-1111-1111-1111-111111111111");
         String userId = "87654321-4321-4321-4321-210987654321";
         
-        Event event = createTestEvent(eventId);
-        // Set up event so user can edit it (they're admin in a different group)
-        event.setAssociatedGroups(new java.util.ArrayList<>(List.of("22222222-2222-2222-2222-222222222222")));
+        Hangout hangout = createTestHangout(eventId);
+        // Set up hangout so user can edit it (they're admin in a different group)
+        hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("22222222-2222-2222-2222-222222222222")));
         
-        EventDetailData data = new EventDetailData(event, List.of(), List.of(), List.of(), List.of(), List.of());
-        when(hangoutRepository.getEventDetailData(eventId)).thenReturn(data);
+        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of());
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
         
-        // User is admin in existing associated group (so they can edit event)
+        // User is admin in existing associated group (so they can edit hangout)
         GroupMembership adminMembership = createTestMembership("22222222-2222-2222-2222-222222222222", userId, "Existing Group");
         adminMembership.setRole(GroupRole.ADMIN);
         when(groupRepository.findMembership("22222222-2222-2222-2222-222222222222", userId)).thenReturn(Optional.of(adminMembership));
@@ -178,7 +178,7 @@ class HangoutServiceImplTest {
             .isInstanceOf(UnauthorizedException.class)
             .hasMessageContaining("User not in group");
             
-        verify(hangoutRepository, never()).save(any());
+        verify(hangoutRepository, never()).createHangout(any());
         verify(groupRepository, never()).saveHangoutPointer(any());
     }
     
@@ -269,6 +269,14 @@ class HangoutServiceImplTest {
             null, EventVisibility.INVITE_ONLY, null);
         // Set the ID using reflection or a test-friendly constructor
         return event;
+    }
+    
+    private Hangout createTestHangout(String hangoutId) {
+        Hangout hangout = new Hangout("Test Hangout", "Description", 
+            java.time.LocalDateTime.now(), java.time.LocalDateTime.now().plusHours(2),
+            null, EventVisibility.INVITE_ONLY, null);
+        hangout.setHangoutId(hangoutId);
+        return hangout;
     }
     
     private GroupMembership createTestMembership(String groupId, String userId, String groupName) {
