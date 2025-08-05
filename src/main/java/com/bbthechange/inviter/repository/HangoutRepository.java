@@ -1,5 +1,6 @@
 package com.bbthechange.inviter.repository;
 
+import com.bbthechange.inviter.dto.HangoutDetailData;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.dto.EventDetailData;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
@@ -18,6 +19,12 @@ public interface HangoutRepository {
      * This is the power pattern - one query gets event + polls + cars + votes + attendance!
      */
     EventDetailData getEventDetailData(String eventId);
+
+    /**
+     * Get all event-related data in a single query using item collection pattern.
+     * This is the power pattern - one query gets event + polls + cars + votes + attendance!
+     */
+    HangoutDetailData getHangoutDetailData(String eventId);
     
     // New Hangout CRUD operations for InviterTable
     Hangout createHangout(Hangout hangout);

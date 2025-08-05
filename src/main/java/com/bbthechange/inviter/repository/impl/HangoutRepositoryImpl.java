@@ -1,5 +1,6 @@
 package com.bbthechange.inviter.repository.impl;
 
+import com.bbthechange.inviter.dto.HangoutDetailData;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.EventRepository;
 import com.bbthechange.inviter.model.*;
@@ -101,6 +102,65 @@ public class HangoutRepositoryImpl implements HangoutRepository {
             default:
                 throw new IllegalArgumentException("Unknown item type: " + itemType);
         }
+    }
+
+
+    public HangoutDetailData getHangoutDetailData(String eventId) {
+        return performanceTracker.trackQuery("getHangoutDetailData", "InviterTable", () -> {
+            try {
+                // Single query gets ALL event data - the power pattern!
+                QueryRequest request = QueryRequest.builder()
+                        .tableName(TABLE_NAME)
+                        .keyConditionExpression("pk = :pk")
+                        .expressionAttributeValues(Map.of(
+                                ":pk", AttributeValue.builder().s(InviterKeyFactory.getEventPk(eventId)).build()
+                        ))
+                        .scanIndexForward(true)
+                        .build();
+
+                QueryResponse response = dynamoDbClient.query(request);
+
+                List<BaseItem> allItems = response.items().stream()
+                        .map(this::deserializeItem)
+                        .collect(Collectors.toList());
+
+                // Sort by sort key patterns in memory (efficient - documented contract)
+                List<Poll> polls = new ArrayList<>();
+                List<Car> cars = new ArrayList<>();
+                List<Vote> votes = new ArrayList<>();
+                List<InterestLevel> attendance = new ArrayList<>();
+                List<CarRider> carRiders = new ArrayList<>();
+                Optional<Hangout> hangoutOption = Optional.empty();
+
+                for (BaseItem item : allItems) {
+                    String sk = item.getSk();
+
+                    // Use key patterns to safely identify types (documented contract)
+                    if (InviterKeyFactory.isPollItem(sk)) {
+                        polls.add((Poll) item); // Safe - key pattern guarantees Poll
+                    } else if (InviterKeyFactory.isCarItem(sk)) {
+                        cars.add((Car) item); // Safe - key pattern guarantees Car
+                    } else if (InviterKeyFactory.isVoteItem(sk)) {
+                        votes.add((Vote) item); // Safe - key pattern guarantees Vote
+                    } else if (InviterKeyFactory.isAttendanceItem(sk)) {
+                        attendance.add((InterestLevel) item); // Safe - key pattern guarantees InterestLevel
+                    } else if (InviterKeyFactory.isCarRiderItem(sk)) {
+                        carRiders.add((CarRider) item); // Safe - key pattern guarantees CarRider
+                    } else if (InviterKeyFactory.isMetadata(sk)) {
+                        hangoutOption = Optional.of((Hangout) item);
+                    }
+                }
+
+                Hangout hangout = hangoutOption
+                        .orElseThrow(() -> new ResourceNotFoundException("Event not found: " + eventId));
+
+                return new HangoutDetailData(hangout, polls, cars, votes, attendance, carRiders);
+
+            } catch (Exception e) {
+                logger.error("Failed to get event detail data for event {}", eventId, e);
+                throw new RepositoryException("Failed to retrieve event details", e);
+            }
+        });
     }
     
     @Override

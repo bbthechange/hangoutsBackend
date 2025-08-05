@@ -278,13 +278,13 @@ public class HangoutServiceImpl implements HangoutService {
     @Override
     public void associateEventWithGroups(String eventId, List<String> groupIds, String requestingUserId) {
         // Authorization check
-        EventDetailData data = hangoutRepository.getEventDetailData(eventId);
-        if (!canUserEditEvent(requestingUserId, data.getEvent())) {
+        HangoutDetailData hangoutDetail = hangoutRepository.getHangoutDetailData(eventId);
+        if (!canUserEditHangout(requestingUserId, hangoutDetail.getHangout())) {
             throw new UnauthorizedException("Cannot edit event");
         }
-        
-        Event event = data.getEvent();
-        
+
+        Hangout hangout = hangoutDetail.getHangout();
+
         // Verify user is in all specified groups
         for (String groupId : groupIds) {
             if (!groupRepository.findMembership(groupId, requestingUserId).isPresent()) {
@@ -293,21 +293,21 @@ public class HangoutServiceImpl implements HangoutService {
         }
         
         // Update canonical record
-        if (event.getAssociatedGroups() == null) {
-            event.setAssociatedGroups(new java.util.ArrayList<>());
+        if (hangout.getAssociatedGroups() == null) {
+            hangout.setAssociatedGroups(new java.util.ArrayList<>());
         }
         for (String groupId : groupIds) {
-            if (!event.getAssociatedGroups().contains(groupId)) {
-                event.getAssociatedGroups().add(groupId);
+            if (!hangout.getAssociatedGroups().contains(groupId)) {
+                hangout.getAssociatedGroups().add(groupId);
             }
         }
-        hangoutRepository.save(event);
+        hangoutRepository.createHangout(hangout);
         
         // Create hangout pointer records
         for (String groupId : groupIds) {
-            HangoutPointer pointer = new HangoutPointer(groupId, eventId, event.getName());
+            HangoutPointer pointer = new HangoutPointer(groupId, eventId, hangout.getTitle());
             pointer.setStatus("ACTIVE"); // Default status
-            pointer.setLocationName(getLocationName(event));
+            pointer.setLocationName(getLocationName(hangout.getLocation()));
             pointer.setParticipantCount(0); // Will be updated as people respond
             
             groupRepository.saveHangoutPointer(pointer);
