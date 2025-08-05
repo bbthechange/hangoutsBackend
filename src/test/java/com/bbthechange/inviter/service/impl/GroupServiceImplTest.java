@@ -160,27 +160,6 @@ class GroupServiceImplTest {
     }
     
     @Test
-    void addMember_ToPrivateGroup_RequiresAdmin() {
-        // Given
-        String groupId = "12345678-1234-1234-1234-123456789012";
-        String userId = "87654321-4321-4321-4321-210987654321";
-        String addedBy = "11111111-1111-1111-1111-111111111111";
-        
-        Group group = createTestGroup("Private Group", false, groupId); // Private group
-        GroupMembership adderMembership = createTestMembership(groupId, addedBy, "Private Group", GroupRole.MEMBER);
-        
-        when(groupRepository.findById(groupId)).thenReturn(Optional.of(group));
-        when(groupRepository.findMembership(groupId, addedBy)).thenReturn(Optional.of(adderMembership));
-        
-        // When/Then
-        assertThatThrownBy(() -> groupService.addMember(groupId, userId, addedBy))
-            .isInstanceOf(UnauthorizedException.class)
-            .hasMessageContaining("Only admins can add members to private groups");
-            
-        verify(groupRepository, never()).addMember(any());
-    }
-    
-    @Test
     void removeMember_UserRemovesThemself_Success() {
         // Given
         String groupId = "12345678-1234-1234-1234-123456789012";

@@ -216,7 +216,7 @@ public class HangoutServiceImpl implements HangoutService {
         if (event.getAssociatedGroups() != null) {
             for (String groupId : event.getAssociatedGroups()) {
                 GroupMembership membership = groupRepository.findMembership(groupId, userId).orElse(null);
-                if (membership != null && membership.isAdmin()) {
+                if (membership != null) {
                     return true;
                 }
             }

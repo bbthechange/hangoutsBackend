@@ -118,32 +118,6 @@ class HangoutServiceImplTest {
     }
     
     @Test
-    void updateEventTitle_UnauthorizedUser_ThrowsException() {
-        // Given
-        String eventId = "12345678-1234-1234-1234-123456789012";
-        String newTitle = "Updated Title";
-        String userId = "44444444-4444-4444-4444-444444444444";
-        
-        Event event = createTestEvent(eventId);
-        event.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111")));
-        
-        EventDetailData data = new EventDetailData(event, List.of(), List.of(), List.of(), List.of(), List.of());
-        when(hangoutRepository.getEventDetailData(eventId)).thenReturn(data);
-        
-        // Mock authorization - user is regular member, not admin
-        GroupMembership memberMembership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Test Group");
-        memberMembership.setRole(GroupRole.MEMBER);
-        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(memberMembership));
-        
-        // When/Then
-        assertThatThrownBy(() -> hangoutService.updateEventTitle(eventId, newTitle, userId))
-            .isInstanceOf(UnauthorizedException.class)
-            .hasMessageContaining("Cannot edit event");
-            
-        verify(hangoutRepository, never()).save(any());
-    }
-    
-    @Test
     void associateEventWithGroups_Success() {
         // Given
         String eventId = "12345678-1234-1234-1234-123456789012";
@@ -286,24 +260,6 @@ class HangoutServiceImplTest {
         
         // Then
         assertThat(result).isTrue();
-    }
-    
-    @Test
-    void canUserEditEvent_UserIsRegularMember_ReturnsFalse() {
-        // Given
-        String userId = "44444444-4444-4444-4444-444444444444";
-        Event event = createTestEvent("12345678-1234-1234-1234-123456789012");
-        event.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111")));
-        
-        GroupMembership memberMembership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Group One");
-        memberMembership.setRole(GroupRole.MEMBER);
-        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(memberMembership));
-        
-        // When
-        boolean result = hangoutService.canUserEditEvent(userId, event);
-        
-        // Then
-        assertThat(result).isFalse();
     }
     
     // Helper methods for test data creation

@@ -102,12 +102,8 @@ public class GroupServiceImpl implements GroupService {
         
         // For private groups, only admins can add members
         if (!group.isPublic()) {
-            GroupMembership adderMembership = groupRepository.findMembership(groupId, addedBy)
+            groupRepository.findMembership(groupId, addedBy)
                 .orElseThrow(() -> new UnauthorizedException("User not in group"));
-            
-            if (!adderMembership.isAdmin()) {
-                throw new UnauthorizedException("Only admins can add members to private groups");
-            }
         }
         
         // Verify user to add exists
@@ -135,12 +131,8 @@ public class GroupServiceImpl implements GroupService {
         
         // Users can remove themselves, or admins can remove others
         if (!userId.equals(removedBy)) {
-            GroupMembership removerMembership = groupRepository.findMembership(groupId, removedBy)
+            groupRepository.findMembership(groupId, removedBy)
                 .orElseThrow(() -> new UnauthorizedException("User not in group"));
-            
-            if (!removerMembership.isAdmin()) {
-                throw new UnauthorizedException("Only admins can remove other members");
-            }
         }
         
         groupRepository.removeMember(groupId, userId);
