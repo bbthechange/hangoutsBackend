@@ -15,6 +15,7 @@ public abstract class BaseItem {
     private String sk;          // Sort Key
     private String gsi1pk;      // GSI1 Partition Key
     private String gsi1sk;      // GSI1 Sort Key
+    private String itemType;    // Type discriminator for polymorphic deserialization
     private Instant createdAt;
     private Instant updatedAt;
     
@@ -57,6 +58,15 @@ public abstract class BaseItem {
     
     public void setGsi1sk(String gsi1sk) {
         this.gsi1sk = gsi1sk;
+    }
+    
+    @DynamoDbAttribute("itemType")
+    public String getItemType() {
+        return itemType;
+    }
+    
+    public void setItemType(String itemType) {
+        this.itemType = itemType;
     }
     
     public Instant getCreatedAt() {

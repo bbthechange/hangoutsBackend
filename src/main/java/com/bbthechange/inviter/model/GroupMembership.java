@@ -21,6 +21,7 @@ public class GroupMembership extends BaseItem {
     // Default constructor for DynamoDB
     public GroupMembership() {
         super();
+        setItemType("GROUP_MEMBERSHIP");
     }
 
     /**
@@ -28,6 +29,7 @@ public class GroupMembership extends BaseItem {
      */
     public GroupMembership(String groupId, String userId, String groupName) {
         super();
+        setItemType("GROUP_MEMBERSHIP");
         this.groupId = groupId;
         this.userId = userId;
         this.groupName = groupName;

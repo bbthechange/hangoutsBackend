@@ -21,7 +21,8 @@ import java.util.stream.Collectors;
  * Implementation of GroupRepository using DynamoDB Enhanced Client.
  * Provides atomic operations and efficient query patterns with performance tracking.
  */
-@Repository
+// @Repository - Disabled in favor of PolymorphicGroupRepositoryImpl
+@Deprecated
 public class GroupRepositoryImpl implements GroupRepository {
     
     private static final Logger logger = LoggerFactory.getLogger(GroupRepositoryImpl.class);

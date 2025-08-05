@@ -26,6 +26,7 @@ public class HangoutPointer extends BaseItem {
     // Default constructor for DynamoDB
     public HangoutPointer() {
         super();
+        setItemType("HANGOUT_POINTER");
     }
 
     /**
@@ -33,6 +34,7 @@ public class HangoutPointer extends BaseItem {
      */
     public HangoutPointer(String groupId, String hangoutId, String title) {
         super();
+        setItemType("HANGOUT_POINTER");
         this.groupId = groupId;
         this.hangoutId = hangoutId;
         this.title = title;

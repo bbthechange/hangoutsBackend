@@ -21,6 +21,7 @@ public class Group extends BaseItem {
     // Default constructor for DynamoDB
     public Group() {
         super();
+        setItemType("GROUP");
     }
 
     /**
@@ -28,6 +29,7 @@ public class Group extends BaseItem {
      */
     public Group(String groupName, boolean isPublic) {
         super();
+        setItemType("GROUP");
         this.groupId = UUID.randomUUID().toString();
         this.groupName = groupName;
         this.isPublic = isPublic;
