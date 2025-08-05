@@ -35,6 +35,159 @@ public class HangoutServiceImpl implements HangoutService {
     }
     
     @Override
+    public Hangout createHangout(CreateHangoutRequest request, String requestingUserId) {
+        // Create the hangout
+        Hangout hangout = new Hangout(
+            request.getTitle(),
+            request.getDescription(),
+            request.getStartTime(),
+            request.getEndTime(),
+            request.getLocation(),
+            request.getVisibility(),
+            request.getMainImagePath()
+        );
+        hangout.setCarpoolEnabled(request.isCarpoolEnabled());
+        
+        // Verify user is in all specified groups
+        if (request.getAssociatedGroups() != null) {
+            for (String groupId : request.getAssociatedGroups()) {
+                if (!groupRepository.findMembership(groupId, requestingUserId).isPresent()) {
+                    throw new UnauthorizedException("User not in group: " + groupId);
+                }
+            }
+            hangout.setAssociatedGroups(request.getAssociatedGroups());
+        }
+        
+        // Save canonical hangout record
+        hangout = hangoutRepository.createHangout(hangout);
+        
+        // Create hangout pointer records for each associated group
+        if (request.getAssociatedGroups() != null) {
+            for (String groupId : request.getAssociatedGroups()) {
+                HangoutPointer pointer = new HangoutPointer(groupId, hangout.getHangoutId(), hangout.getTitle());
+                pointer.setStatus("ACTIVE");
+                pointer.setLocationName(getLocationName(hangout.getLocation()));
+                pointer.setParticipantCount(0);
+                
+                groupRepository.saveHangoutPointer(pointer);
+            }
+        }
+        
+        logger.info("Created hangout {} by user {}", hangout.getHangoutId(), requestingUserId);
+        return hangout;
+    }
+    
+    @Override
+    public HangoutDetailDTO getHangoutDetail(String hangoutId, String requestingUserId) {
+        // Get the hangout canonical record
+        Hangout hangout = hangoutRepository.findHangoutById(hangoutId)
+            .orElseThrow(() -> new ResourceNotFoundException("Hangout not found: " + hangoutId));
+        
+        // Authorization check
+        if (!canUserViewHangout(requestingUserId, hangout)) {
+            throw new UnauthorizedException("Cannot view hangout");
+        }
+        
+        // Single item collection query gets EVERYTHING (the power pattern!)
+        EventDetailData data = hangoutRepository.getEventDetailData(hangoutId);
+        
+        // Transform to DTO
+        return new HangoutDetailDTO(
+            hangout,
+            data.getPolls(),
+            data.getCars(),
+            data.getVotes(),
+            data.getAttendance(),
+            data.getCarRiders()
+        );
+    }
+    
+    @Override
+    public void updateHangout(String hangoutId, UpdateHangoutRequest request, String requestingUserId) {
+        // Get and authorize
+        Hangout hangout = hangoutRepository.findHangoutById(hangoutId)
+            .orElseThrow(() -> new ResourceNotFoundException("Hangout not found: " + hangoutId));
+        
+        if (!canUserEditHangout(requestingUserId, hangout)) {
+            throw new UnauthorizedException("Cannot edit hangout");
+        }
+        
+        // Update canonical record
+        boolean needsPointerUpdate = false;
+        Map<String, String> pointerUpdates = new HashMap<>();
+        
+        if (request.getTitle() != null && !request.getTitle().equals(hangout.getTitle())) {
+            hangout.setTitle(request.getTitle());
+            pointerUpdates.put("title", request.getTitle());
+            needsPointerUpdate = true;
+        }
+        
+        if (request.getDescription() != null) {
+            hangout.setDescription(request.getDescription());
+        }
+        
+        if (request.getStartTime() != null) {
+            hangout.setStartTime(request.getStartTime());
+        }
+        
+        if (request.getEndTime() != null) {
+            hangout.setEndTime(request.getEndTime());
+        }
+        
+        if (request.getLocation() != null) {
+            hangout.setLocation(request.getLocation());
+            String locationName = getLocationName(request.getLocation());
+            if (locationName != null) {
+                pointerUpdates.put("locationName", locationName);
+                needsPointerUpdate = true;
+            }
+        }
+        
+        if (request.getVisibility() != null) {
+            hangout.setVisibility(request.getVisibility());
+        }
+        
+        if (request.getMainImagePath() != null) {
+            hangout.setMainImagePath(request.getMainImagePath());
+        }
+        
+        hangout.setCarpoolEnabled(request.isCarpoolEnabled());
+        
+        // Save canonical record
+        hangoutRepository.createHangout(hangout); // Using createHangout as it's a putItem
+        
+        // Update pointer records if needed
+        if (needsPointerUpdate && hangout.getAssociatedGroups() != null) {
+            updatePointerRecords(hangoutId, hangout.getAssociatedGroups(), pointerUpdates);
+        }
+        
+        logger.info("Updated hangout {} by user {}", hangoutId, requestingUserId);
+    }
+    
+    @Override
+    public void deleteHangout(String hangoutId, String requestingUserId) {
+        // Get and authorize
+        Hangout hangout = hangoutRepository.findHangoutById(hangoutId)
+            .orElseThrow(() -> new ResourceNotFoundException("Hangout not found: " + hangoutId));
+        
+        if (!canUserEditHangout(requestingUserId, hangout)) {
+            throw new UnauthorizedException("Cannot delete hangout");
+        }
+        
+        // Delete pointer records first
+        if (hangout.getAssociatedGroups() != null) {
+            for (String groupId : hangout.getAssociatedGroups()) {
+                groupRepository.deleteHangoutPointer(groupId, hangoutId);
+            }
+        }
+        
+        // Delete canonical record and all associated data (polls, cars, etc.)
+        hangoutRepository.deleteHangout(hangoutId);
+        
+        logger.info("Deleted hangout {} by user {}", hangoutId, requestingUserId);
+    }
+
+    @Override
     public EventDetailDTO getEventDetail(String eventId, String requestingUserId) {
         // Single item collection query gets EVERYTHING (the power pattern!)
         EventDetailData data = hangoutRepository.getEventDetailData(eventId);
@@ -244,12 +397,68 @@ public class HangoutServiceImpl implements HangoutService {
     }
     
     private String getLocationName(Event event) {
-        // Extract location name from Address object
-        // This would need to be adapted based on the actual Address structure
-        if (event.getLocation() != null) {
-            // return event.getLocation().getName(); // Adjust based on Address fields
-            return "Location"; // Placeholder
+        return getLocationName(event.getLocation());
+    }
+    
+    private String getLocationName(Address location) {
+        if (location == null) {
+            return null;
         }
-        return null;
+        
+        // Create a readable location name from Address components
+        StringBuilder locationName = new StringBuilder();
+        
+        if (location.getStreetAddress() != null && !location.getStreetAddress().trim().isEmpty()) {
+            locationName.append(location.getStreetAddress());
+        }
+        
+        if (location.getCity() != null && !location.getCity().trim().isEmpty()) {
+            if (locationName.length() > 0) {
+                locationName.append(", ");
+            }
+            locationName.append(location.getCity());
+        }
+        
+        if (location.getState() != null && !location.getState().trim().isEmpty()) {
+            if (locationName.length() > 0) {
+                locationName.append(", ");
+            }
+            locationName.append(location.getState());
+        }
+        
+        return locationName.length() > 0 ? locationName.toString() : null;
+    }
+    
+    private boolean canUserViewHangout(String userId, Hangout hangout) {
+        // Check if hangout is public
+        if (hangout.getVisibility() == EventVisibility.PUBLIC) {
+            return true;
+        }
+        
+        // For invite-only hangouts, check if user is in any associated groups
+        if (hangout.getAssociatedGroups() != null) {
+            for (String groupId : hangout.getAssociatedGroups()) {
+                if (groupRepository.findMembership(groupId, userId).isPresent()) {
+                    return true;
+                }
+            }
+        }
+        
+        return false;
+    }
+    
+    private boolean canUserEditHangout(String userId, Hangout hangout) {
+        // Check if user is a member of any associated groups
+        // For now, any group member can edit - can be refined to admin-only later
+        if (hangout.getAssociatedGroups() != null) {
+            for (String groupId : hangout.getAssociatedGroups()) {
+                GroupMembership membership = groupRepository.findMembership(groupId, userId).orElse(null);
+                if (membership != null) {
+                    return true;
+                }
+            }
+        }
+        
+        return false;
     }
 }

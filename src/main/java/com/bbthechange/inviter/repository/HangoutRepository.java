@@ -19,7 +19,13 @@ public interface HangoutRepository {
      */
     EventDetailData getEventDetailData(String eventId);
     
-    // Simple CRUD for canonical event records (still uses existing Events table)
+    // New Hangout CRUD operations for InviterTable
+    Hangout createHangout(Hangout hangout);
+    Optional<Hangout> findHangoutById(String hangoutId);
+    void updateHangoutMetadata(String hangoutId, Map<String, AttributeValue> updates);
+    void deleteHangout(String hangoutId);
+    
+    // Legacy Event CRUD for backward compatibility (uses existing Events table)
     Event save(Event event);
     Optional<Event> findById(String eventId);
     void updateEventMetadata(String eventId, Map<String, AttributeValue> updates);

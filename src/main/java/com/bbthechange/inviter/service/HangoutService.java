@@ -2,6 +2,9 @@ package com.bbthechange.inviter.service;
 
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.model.Event;
+import com.bbthechange.inviter.model.Hangout;
+
+import java.util.List;
 
 /**
  * Service interface for hangout/event management with pointer update patterns.
@@ -9,6 +12,28 @@ import com.bbthechange.inviter.model.Event;
  */
 public interface HangoutService {
     
+    // New Hangout management methods
+    /**
+     * Create a new hangout and associate it with groups (creates pointer records).
+     */
+    Hangout createHangout(CreateHangoutRequest request, String requestingUserId);
+    
+    /**
+     * Get hangout details by ID using item collection pattern.
+     */
+    HangoutDetailDTO getHangoutDetail(String hangoutId, String requestingUserId);
+    
+    /**
+     * Update hangout metadata with pointer coordination.
+     */
+    void updateHangout(String hangoutId, UpdateHangoutRequest request, String requestingUserId);
+    
+    /**
+     * Delete hangout and all associated data (canonical + pointer records).
+     */
+    void deleteHangout(String hangoutId, String requestingUserId);
+    
+    // Legacy event methods for backward compatibility
     /**
      * Get complete event details using item collection pattern.
      * Single query gets ALL data - the power pattern!

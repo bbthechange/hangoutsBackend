@@ -38,7 +38,7 @@ public class CarpoolController extends BaseController {
         this.carpoolService = carpoolService;
     }
     
-    @PostMapping("/offer")
+    @PostMapping("/cars")
     @Operation(summary = "Offer a car for the event")
     public ResponseEntity<Car> offerCar(
             @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid event ID format") String eventId,

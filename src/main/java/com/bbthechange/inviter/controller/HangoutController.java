@@ -2,7 +2,9 @@ package com.bbthechange.inviter.controller;
 
 import com.bbthechange.inviter.service.HangoutService;
 import com.bbthechange.inviter.dto.*;
+import com.bbthechange.inviter.model.Hangout;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -15,10 +17,10 @@ import jakarta.validation.constraints.Pattern;
 
 /**
  * REST controller for hangout/event management with item collection patterns.
+ * Provides both new /hangouts endpoints and legacy /events endpoints.
  * Extends BaseController for consistent error handling and user extraction.
  */
 @RestController
-@RequestMapping("/events")
 @Validated
 public class HangoutController extends BaseController {
     
@@ -31,7 +33,69 @@ public class HangoutController extends BaseController {
         this.hangoutService = hangoutService;
     }
     
-    @GetMapping("/{eventId}/detail")
+    // NEW HANGOUT API ENDPOINTS
+    
+    @PostMapping("/hangouts")
+    public ResponseEntity<Hangout> createHangout(
+            @Valid @RequestBody CreateHangoutRequest request,
+            HttpServletRequest httpRequest) {
+        
+        String userId = extractUserId(httpRequest);
+        
+        Hangout hangout = hangoutService.createHangout(request, userId);
+        logger.info("Created hangout {} by user {}", hangout.getHangoutId(), userId);
+        
+        return ResponseEntity.status(HttpStatus.CREATED).body(hangout);
+    }
+    
+    @GetMapping("/hangouts/{hangoutId}")
+    public ResponseEntity<HangoutDetailDTO> getHangout(
+            @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid hangout ID format") String hangoutId,
+            HttpServletRequest httpRequest) {
+        
+        String userId = extractUserId(httpRequest);
+        
+        HangoutDetailDTO detail = hangoutService.getHangoutDetail(hangoutId, userId);
+        
+        logger.debug("Retrieved hangout detail for {} - {} polls, {} cars, {} attendance records", 
+            hangoutId, 
+            detail.getPolls().size(),
+            detail.getCars().size(), 
+            detail.getAttendance().size());
+            
+        return ResponseEntity.ok(detail);
+    }
+    
+    @PatchMapping("/hangouts/{hangoutId}")
+    public ResponseEntity<Void> updateHangout(
+            @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid hangout ID format") String hangoutId,
+            @Valid @RequestBody UpdateHangoutRequest request,
+            HttpServletRequest httpRequest) {
+        
+        String userId = extractUserId(httpRequest);
+        
+        hangoutService.updateHangout(hangoutId, request, userId);
+        logger.info("Updated hangout {} by user {}", hangoutId, userId);
+        
+        return ResponseEntity.ok().build();
+    }
+    
+    @DeleteMapping("/hangouts/{hangoutId}")
+    public ResponseEntity<Void> deleteHangout(
+            @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid hangout ID format") String hangoutId,
+            HttpServletRequest httpRequest) {
+        
+        String userId = extractUserId(httpRequest);
+        
+        hangoutService.deleteHangout(hangoutId, userId);
+        logger.info("Deleted hangout {} by user {}", hangoutId, userId);
+        
+        return ResponseEntity.noContent().build();
+    }
+    
+    // LEGACY EVENT API ENDPOINTS (for backward compatibility)
+    
+    @GetMapping("/events/{eventId}/detail")
     public ResponseEntity<EventDetailDTO> getEventDetail(
             @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid event ID format") String eventId,
             HttpServletRequest httpRequest) {
