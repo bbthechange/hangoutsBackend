@@ -18,6 +18,7 @@ public interface HangoutRepository {
      * Get all event-related data in a single query using item collection pattern.
      * This is the power pattern - one query gets event + polls + cars + votes + attendance!
      */
+    @Deprecated
     EventDetailData getEventDetailData(String eventId);
 
     /**

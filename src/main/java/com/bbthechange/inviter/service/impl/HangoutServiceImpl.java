@@ -79,26 +79,21 @@ public class HangoutServiceImpl implements HangoutService {
     
     @Override
     public HangoutDetailDTO getHangoutDetail(String hangoutId, String requestingUserId) {
-        // Get the hangout canonical record
-        Hangout hangout = hangoutRepository.findHangoutById(hangoutId)
-            .orElseThrow(() -> new ResourceNotFoundException("Hangout not found: " + hangoutId));
-        
+        // Single item collection query gets EVERYTHING (the power pattern!)
+        HangoutDetailData hangoutDetail = hangoutRepository.getHangoutDetailData(hangoutId);
         // Authorization check
-        if (!canUserViewHangout(requestingUserId, hangout)) {
+        if (!canUserViewHangout(requestingUserId, hangoutDetail.getHangout())) {
             throw new UnauthorizedException("Cannot view hangout");
         }
         
-        // Single item collection query gets EVERYTHING (the power pattern!)
-        EventDetailData data = hangoutRepository.getEventDetailData(hangoutId);
-        
         // Transform to DTO
         return new HangoutDetailDTO(
-            hangout,
-            data.getPolls(),
-            data.getCars(),
-            data.getVotes(),
-            data.getAttendance(),
-            data.getCarRiders()
+            hangoutDetail.getHangout(),
+            hangoutDetail.getPolls(),
+            hangoutDetail.getCars(),
+            hangoutDetail.getVotes(),
+            hangoutDetail.getAttendance(),
+            hangoutDetail.getCarRiders()
         );
     }
     
@@ -319,17 +314,17 @@ public class HangoutServiceImpl implements HangoutService {
     @Override
     public void disassociateEventFromGroups(String eventId, List<String> groupIds, String requestingUserId) {
         // Authorization check
-        EventDetailData data = hangoutRepository.getEventDetailData(eventId);
-        if (!canUserEditEvent(requestingUserId, data.getEvent())) {
+        HangoutDetailData data = hangoutRepository.getHangoutDetailData(eventId);
+        if (!canUserEditHangout(requestingUserId, data.getHangout())) {
             throw new UnauthorizedException("Cannot edit event");
         }
         
-        Event event = data.getEvent();
+        Hangout event = data.getHangout();
         
         // Update canonical record
         if (event.getAssociatedGroups() != null) {
             event.getAssociatedGroups().removeAll(groupIds);
-            hangoutRepository.save(event);
+            hangoutRepository.createHangout(event);
         }
         
         // Remove hangout pointer records
