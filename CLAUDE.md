@@ -31,6 +31,34 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - Don't include references to Claude in commit logs
 
+## Test-Driven Development (TDD) Protocol
+
+When implementing TDD features:
+
+### Mandatory Process
+1. **Never exit TDD loop until `./gradlew test` succeeds completely**
+2. **Compilation errors = test failures**
+3. **Make one small change at a time**
+4. **Run `./gradlew test` after every single code modification**
+
+### Required Agent Usage
+- Use `unit-test-runner` ONLY to run tests and report results - never to write or fix code
+- Use `tdd-failure-investigator` when encountering ANY error
+- Use `code-verification-guard` after every code change
+- YOU write all implementation code - agents only run tests and analyze failures
+
+### Test Command
+```bash
+./gradlew test
+```
+Must return: BUILD SUCCESSFUL with 0 test failures
+
+### TDD Constraints
+- DO NOT create stub implementations
+- DO NOT skip failing tests
+- DO NOT rationalize moving on with failures
+- DO NOT make large changes at once
+
 ## Architecture
 
 ### Core Structure
