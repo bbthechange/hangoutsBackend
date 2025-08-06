@@ -54,3 +54,55 @@ run-integration-tests.sh
 
 # Spring Boot log files
 spring-boot.log
+
+# Logs
+*.log
+logs/
+server.log
+
+# Local environment files
+.env
+.env.local
+.env.production
+.env.staging
+
+# AWS credentials and config
+.aws/
+aws-credentials.properties
+
+# Database files
+*.db
+*.sqlite
+
+# Test output
+test-results/
+coverage/
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Mac OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Documentation and testing files (project-specific)
+Features/
+HANGOUT_*.md
+bugs/
+*.diff
+test-*.sh
+create_*.py
+docs/fixes/
