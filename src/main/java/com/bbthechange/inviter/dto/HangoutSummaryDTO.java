@@ -3,6 +3,7 @@ package com.bbthechange.inviter.dto;
 import com.bbthechange.inviter.model.HangoutPointer;
 
 import java.time.Instant;
+import java.util.Map;
 
 /**
  * Data Transfer Object for Hangout summary information in group feeds.
@@ -12,7 +13,7 @@ public class HangoutSummaryDTO {
     private String hangoutId;
     private String title;
     private String status;
-    private Instant hangoutTime;
+    private Map<String, String> timeInfo; // Fuzzy time information for display
     private String locationName;
     private int participantCount;
     
@@ -20,7 +21,7 @@ public class HangoutSummaryDTO {
         this.hangoutId = pointer.getHangoutId();
         this.title = pointer.getTitle();
         this.status = pointer.getStatus();
-        this.hangoutTime = pointer.getHangoutTime();
+        // timeInfo will need to be set separately from hangout's timeInput
         this.locationName = pointer.getLocationName();
         this.participantCount = pointer.getParticipantCount();
     }
@@ -49,12 +50,12 @@ public class HangoutSummaryDTO {
         this.status = status;
     }
     
-    public Instant getHangoutTime() {
-        return hangoutTime;
+    public Map<String, String> getTimeInfo() {
+        return timeInfo;
     }
     
-    public void setHangoutTime(Instant hangoutTime) {
-        this.hangoutTime = hangoutTime;
+    public void setTimeInfo(Map<String, String> timeInfo) {
+        this.timeInfo = timeInfo;
     }
     
     public String getLocationName() {

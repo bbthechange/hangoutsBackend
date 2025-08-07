@@ -22,6 +22,8 @@ public class HangoutPointer extends BaseItem {
     private Instant hangoutTime;    // When the hangout is scheduled
     private String locationName;    // Denormalized location info
     private int participantCount;   // Cached count for display
+    private String GSI1PK;          // GSI partition key for EntityTimeIndex
+    private String GSI1SK;          // GSI sort key for EntityTimeIndex
     
     // Default constructor for DynamoDB
     public HangoutPointer() {
@@ -103,6 +105,24 @@ public class HangoutPointer extends BaseItem {
     
     public void setParticipantCount(int participantCount) {
         this.participantCount = participantCount;
+        touch(); // Update timestamp
+    }
+    
+    public String getGSI1PK() {
+        return GSI1PK;
+    }
+    
+    public void setGSI1PK(String GSI1PK) {
+        this.GSI1PK = GSI1PK;
+        touch(); // Update timestamp
+    }
+    
+    public String getGSI1SK() {
+        return GSI1SK;
+    }
+    
+    public void setGSI1SK(String GSI1SK) {
+        this.GSI1SK = GSI1SK;
         touch(); // Update timestamp
     }
 }

@@ -5,11 +5,13 @@ import lombok.Data;
 import lombok.AllArgsConstructor;
 
 import java.util.List;
+import java.util.Map;
 
 @Data
 @AllArgsConstructor
 public class HangoutDetailDTO {
     private Hangout hangout;
+    private Map<String, String> timeInfo; // Fuzzy time information for display
     private List<Poll> polls;
     private List<Car> cars;
     private List<Vote> votes;

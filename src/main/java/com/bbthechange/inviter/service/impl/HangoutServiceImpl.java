@@ -40,12 +40,15 @@ public class HangoutServiceImpl implements HangoutService {
         Hangout hangout = new Hangout(
             request.getTitle(),
             request.getDescription(),
-            request.getStartTime(),
-            request.getEndTime(),
+            null, // startTime - will be populated from timeInput later
+            null, // endTime - will be populated from timeInput later
             request.getLocation(),
             request.getVisibility(),
             request.getMainImagePath()
         );
+        
+        // Set the timeInput for fuzzy time support
+        hangout.setTimeInput(request.getTimeInput());
         hangout.setCarpoolEnabled(request.isCarpoolEnabled());
         
         // Verify user is in all specified groups
@@ -89,6 +92,7 @@ public class HangoutServiceImpl implements HangoutService {
         // Transform to DTO
         return new HangoutDetailDTO(
             hangoutDetail.getHangout(),
+            hangoutDetail.getHangout().getTimeInput(), // timeInfo from hangout's timeInput
             hangoutDetail.getPolls(),
             hangoutDetail.getCars(),
             hangoutDetail.getVotes(),
@@ -121,12 +125,8 @@ public class HangoutServiceImpl implements HangoutService {
             hangout.setDescription(request.getDescription());
         }
         
-        if (request.getStartTime() != null) {
-            hangout.setStartTime(request.getStartTime());
-        }
-        
-        if (request.getEndTime() != null) {
-            hangout.setEndTime(request.getEndTime());
+        if (request.getTimeInput() != null) {
+            hangout.setTimeInput(request.getTimeInput());
         }
         
         if (request.getLocation() != null) {
