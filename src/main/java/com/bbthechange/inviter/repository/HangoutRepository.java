@@ -58,4 +58,11 @@ public interface HangoutRepository {
     
     InterestLevel saveInterestLevel(InterestLevel interestLevel);
     void deleteInterestLevel(String eventId, String userId);
+    
+    // GSI query methods for EntityTimeIndex
+    /**
+     * Query the EntityTimeIndex GSI for hangouts by partition key and time range.
+     * Used to fetch hangouts for groups and users in chronological order.
+     */
+    List<BaseItem> findItemsByGSI1PKAndGSI1SKPrefix(String gsi1PK, String gsi1SKPrefix);
 }

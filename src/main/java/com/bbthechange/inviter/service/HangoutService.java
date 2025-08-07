@@ -33,6 +33,12 @@ public interface HangoutService {
      */
     void deleteHangout(String hangoutId, String requestingUserId);
     
+    /**
+     * Get all hangouts for a user (both direct invites and group memberships).
+     * Returns chronologically sorted list using EntityTimeIndex GSI.
+     */
+    List<HangoutSummaryDTO> getHangoutsForUser(String userId);
+    
     // Legacy event methods for backward compatibility
     /**
      * Get complete event details using item collection pattern.

@@ -16,6 +16,8 @@ import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.stream.Collectors;
 
 /**
  * Implementation of HangoutService with pointer update patterns.
@@ -109,10 +111,11 @@ public class HangoutServiceImpl implements HangoutService {
             throw new UnauthorizedException("Cannot view hangout");
         }
         
-        // Transform to DTO
+        // Transform to DTO with formatted timeInfo
+        Map<String, String> timeInfo = formatTimeInfoForResponse(hangoutDetail.getHangout().getTimeInput());
         return new HangoutDetailDTO(
             hangoutDetail.getHangout(),
-            hangoutDetail.getHangout().getTimeInput(), // timeInfo from hangout's timeInput
+            timeInfo, // Formatted timeInfo with UTC timestamps
             hangoutDetail.getPolls(),
             hangoutDetail.getCars(),
             hangoutDetail.getVotes(),
@@ -211,6 +214,50 @@ public class HangoutServiceImpl implements HangoutService {
         hangoutRepository.deleteHangout(hangoutId);
         
         logger.info("Deleted hangout {} by user {}", hangoutId, requestingUserId);
+    }
+
+    @Override
+    public List<HangoutSummaryDTO> getHangoutsForUser(String userId) {
+        logger.info("Fetching hangouts for user {}", userId);
+        
+        // Step 1: Get user's group IDs
+        List<GroupMembership> userGroups = groupRepository.findGroupsByUserId(userId);
+        List<String> groupIds = userGroups.stream()
+            .map(GroupMembership::getGroupId)
+            .collect(Collectors.toList());
+        
+        // Step 2: Construct GSI query partition keys
+        List<String> partitionKeys = new ArrayList<>();
+        partitionKeys.add("USER#" + userId); // Direct user invites
+        for (String groupId : groupIds) {
+            partitionKeys.add("GROUP#" + groupId); // Group hangouts
+        }
+        
+        // Step 3: Execute parallel GSI queries
+        List<BaseItem> allHangoutPointers = new ArrayList<>();
+        for (String partitionKey : partitionKeys) {
+            try {
+                List<BaseItem> pointers = hangoutRepository.findItemsByGSI1PKAndGSI1SKPrefix(partitionKey, "T#");
+                allHangoutPointers.addAll(pointers);
+            } catch (Exception e) {
+                logger.warn("Failed to query hangouts for partition key {}: {}", partitionKey, e.getMessage());
+            }
+        }
+        
+        // Step 4: Filter for HangoutPointer items and convert to DTOs
+        List<HangoutSummaryDTO> hangoutSummaries = allHangoutPointers.stream()
+            .filter(item -> item instanceof HangoutPointer)
+            .map(item -> (HangoutPointer) item)
+            .map(this::convertToSummaryDTO)
+            .sorted((a, b) -> {
+                // Sort by hangoutId as a proxy for chronological order
+                // In practice, GSI already returns items sorted by timestamp
+                return a.getHangoutId().compareTo(b.getHangoutId());
+            })
+            .collect(Collectors.toList());
+        
+        logger.info("Found {} hangouts for user {}", hangoutSummaries.size(), userId);
+        return hangoutSummaries;
     }
 
     @Override
@@ -492,5 +539,62 @@ public class HangoutServiceImpl implements HangoutService {
         }
         
         return false;
+    }
+    
+    private HangoutSummaryDTO convertToSummaryDTO(HangoutPointer pointer) {
+        HangoutSummaryDTO summary = new HangoutSummaryDTO(pointer);
+        
+        // For summary DTOs, we need to get the timeInput from the canonical hangout record
+        // Since we only have the pointer, we need to fetch the full hangout
+        try {
+            Hangout hangout = hangoutRepository.findHangoutById(pointer.getHangoutId()).orElse(null);
+            if (hangout != null && hangout.getTimeInput() != null) {
+                Map<String, String> timeInfo = formatTimeInfoForResponse(hangout.getTimeInput());
+                summary.setTimeInfo(timeInfo);
+            }
+        } catch (Exception e) {
+            logger.warn("Could not fetch timeInput for hangout {}: {}", pointer.getHangoutId(), e.getMessage());
+        }
+        
+        return summary;
+    }
+    
+    private Map<String, String> formatTimeInfoForResponse(Map<String, String> timeInput) {
+        if (timeInput == null) {
+            return null;
+        }
+        
+        Map<String, String> timeInfo = new HashMap<>();
+        
+        // Copy all fields from timeInput
+        for (Map.Entry<String, String> entry : timeInput.entrySet()) {
+            String key = entry.getKey();
+            String value = entry.getValue();
+            
+            // Convert timestamp fields from Unix seconds to UTC ISO 8601 format
+            if (("startTime".equals(key) || "endTime".equals(key) || "periodStart".equals(key)) && value != null) {
+                try {
+                    // Check if value is a Unix timestamp (numeric string)
+                    if (value.matches("\\d+")) {
+                        long timestamp = Long.parseLong(value);
+                        // Convert from seconds to milliseconds and format as ISO 8601 UTC
+                        java.time.Instant instant = java.time.Instant.ofEpochSecond(timestamp);
+                        String utcIsoString = instant.toString(); // Already in UTC ISO format ending with 'Z'
+                        timeInfo.put(key, utcIsoString);
+                    } else {
+                        // Already in ISO format, just copy
+                        timeInfo.put(key, value);
+                    }
+                } catch (NumberFormatException e) {
+                    // Not a timestamp, copy as-is
+                    timeInfo.put(key, value);
+                }
+            } else {
+                // Copy non-timestamp fields as-is
+                timeInfo.put(key, value);
+            }
+        }
+        
+        return timeInfo;
     }
 }

@@ -614,4 +614,226 @@ class HangoutServiceImplTest {
         timeInput.put(key2, value2);
         return timeInput;
     }
+    
+    // ===== New Tests for F-1-T3 Implementation =====
+    
+    @Test
+    void getHangoutDetail_WithFormattedTimeInfo_Success() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+        
+        Hangout hangout = createTestHangout(hangoutId);
+        hangout.setVisibility(EventVisibility.PUBLIC);
+        
+        // Set timeInput with timestamps that need formatting
+        Map<String, String> timeInput = new HashMap<>();
+        timeInput.put("startTime", "1754558100"); // Unix timestamp
+        timeInput.put("endTime", "1754566200");   // Unix timestamp
+        hangout.setTimeInput(timeInput);
+        
+        HangoutDetailData data = new HangoutDetailData(
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of()
+        );
+        
+        when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
+        
+        // When
+        HangoutDetailDTO result = hangoutService.getHangoutDetail(hangoutId, userId);
+        
+        // Then
+        assertThat(result.getHangout()).isEqualTo(hangout);
+        assertThat(result.getTimeInfo()).isNotNull();
+        assertThat(result.getTimeInfo().get("startTime")).isEqualTo("2025-08-07T09:15:00Z"); // Formatted as UTC ISO
+        assertThat(result.getTimeInfo().get("endTime")).isEqualTo("2025-08-07T11:30:00Z");   // Formatted as UTC ISO
+    }
+    
+    @Test 
+    void getHangoutsForUser_WithGroupAndUserPointers_Success() {
+        // Given
+        String userId = "87654321-4321-4321-4321-210987654321";
+        
+        // Mock user's groups
+        List<GroupMembership> userGroups = List.of(
+            createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Group One"),
+            createTestMembership("22222222-2222-2222-2222-222222222222", userId, "Group Two")
+        );
+        when(groupRepository.findGroupsByUserId(userId)).thenReturn(userGroups);
+        
+        // Create mock hangout pointers from both groups and user
+        HangoutPointer groupPointer1 = createTestHangoutPointer("11111111-1111-1111-1111-111111111111", "hangout-1");
+        HangoutPointer groupPointer2 = createTestHangoutPointer("22222222-2222-2222-2222-222222222222", "hangout-2"); 
+        HangoutPointer userPointer = createTestHangoutPointer(userId, "hangout-3");
+        
+        // Mock GSI queries
+        when(hangoutRepository.findItemsByGSI1PKAndGSI1SKPrefix("USER#" + userId, "T#"))
+            .thenReturn(List.of(userPointer));
+        when(hangoutRepository.findItemsByGSI1PKAndGSI1SKPrefix("GROUP#11111111-1111-1111-1111-111111111111", "T#"))
+            .thenReturn(List.of(groupPointer1));
+        when(hangoutRepository.findItemsByGSI1PKAndGSI1SKPrefix("GROUP#22222222-2222-2222-2222-222222222222", "T#"))
+            .thenReturn(List.of(groupPointer2));
+            
+        // Mock hangout details for timeInfo
+        when(hangoutRepository.findHangoutById("hangout-1")).thenReturn(Optional.of(createTestHangoutWithTimeInput("hangout-1")));
+        when(hangoutRepository.findHangoutById("hangout-2")).thenReturn(Optional.of(createTestHangoutWithTimeInput("hangout-2")));
+        when(hangoutRepository.findHangoutById("hangout-3")).thenReturn(Optional.of(createTestHangoutWithTimeInput("hangout-3")));
+        
+        // When
+        List<HangoutSummaryDTO> result = hangoutService.getHangoutsForUser(userId);
+        
+        // Then
+        assertThat(result).hasSize(3);
+        assertThat(result.stream().map(HangoutSummaryDTO::getHangoutId))
+            .containsExactlyInAnyOrder("hangout-1", "hangout-2", "hangout-3");
+            
+        // Verify GSI queries were made for user and both groups
+        verify(hangoutRepository).findItemsByGSI1PKAndGSI1SKPrefix("USER#" + userId, "T#");
+        verify(hangoutRepository).findItemsByGSI1PKAndGSI1SKPrefix("GROUP#11111111-1111-1111-1111-111111111111", "T#");
+        verify(hangoutRepository).findItemsByGSI1PKAndGSI1SKPrefix("GROUP#22222222-2222-2222-2222-222222222222", "T#");
+    }
+    
+    @Test
+    void getHangoutsForUser_NoGroups_OnlyUserPointers() {
+        // Given
+        String userId = "87654321-4321-4321-4321-210987654321";
+        
+        // Mock user has no groups
+        when(groupRepository.findGroupsByUserId(userId)).thenReturn(List.of());
+        
+        // Create mock user hangout pointer
+        HangoutPointer userPointer = createTestHangoutPointer(userId, "hangout-1");
+        when(hangoutRepository.findItemsByGSI1PKAndGSI1SKPrefix("USER#" + userId, "T#"))
+            .thenReturn(List.of(userPointer));
+            
+        when(hangoutRepository.findHangoutById("hangout-1")).thenReturn(Optional.of(createTestHangoutWithTimeInput("hangout-1")));
+        
+        // When
+        List<HangoutSummaryDTO> result = hangoutService.getHangoutsForUser(userId);
+        
+        // Then
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getHangoutId()).isEqualTo("hangout-1");
+        
+        // Verify only user query was made
+        verify(hangoutRepository).findItemsByGSI1PKAndGSI1SKPrefix("USER#" + userId, "T#");
+        verify(hangoutRepository, never()).findItemsByGSI1PKAndGSI1SKPrefix(startsWith("GROUP#"), anyString());
+    }
+    
+    @Test
+    void getHangoutsForUser_GSIQueryFails_ContinuesWithOtherQueries() {
+        // Given
+        String userId = "87654321-4321-4321-4321-210987654321";
+        
+        // Mock user's groups
+        List<GroupMembership> userGroups = List.of(
+            createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Group One")
+        );
+        when(groupRepository.findGroupsByUserId(userId)).thenReturn(userGroups);
+        
+        // Mock one GSI query fails, other succeeds
+        when(hangoutRepository.findItemsByGSI1PKAndGSI1SKPrefix("USER#" + userId, "T#"))
+            .thenThrow(new RuntimeException("GSI query failed"));
+        when(hangoutRepository.findItemsByGSI1PKAndGSI1SKPrefix("GROUP#11111111-1111-1111-1111-111111111111", "T#"))
+            .thenReturn(List.of(createTestHangoutPointer("11111111-1111-1111-1111-111111111111", "hangout-1")));
+            
+        when(hangoutRepository.findHangoutById("hangout-1")).thenReturn(Optional.of(createTestHangoutWithTimeInput("hangout-1")));
+        
+        // When
+        List<HangoutSummaryDTO> result = hangoutService.getHangoutsForUser(userId);
+        
+        // Then - should still return results from successful queries
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getHangoutId()).isEqualTo("hangout-1");
+    }
+    
+    @Test
+    void formatTimeInfoForResponse_WithUnixTimestamps_ConvertsToISO() {
+        // This tests the private method through the public getHangoutDetail method
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+        
+        Hangout hangout = createTestHangout(hangoutId);
+        hangout.setVisibility(EventVisibility.PUBLIC);
+        
+        // Set timeInput with Unix timestamps and other fields
+        Map<String, String> timeInput = new HashMap<>();
+        timeInput.put("startTime", "1754558100"); // Unix timestamp for 2025-08-05T19:15:00Z
+        timeInput.put("periodGranularity", "evening");
+        timeInput.put("periodStart", "1754557200"); // Unix timestamp for 2025-08-05T19:00:00Z  
+        timeInput.put("nonTimestamp", "someValue");
+        hangout.setTimeInput(timeInput);
+        
+        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of());
+        when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
+        
+        // When
+        HangoutDetailDTO result = hangoutService.getHangoutDetail(hangoutId, userId);
+        
+        // Then
+        Map<String, String> timeInfo = result.getTimeInfo();
+        assertThat(timeInfo.get("startTime")).isEqualTo("2025-08-07T09:15:00Z");
+        assertThat(timeInfo.get("periodStart")).isEqualTo("2025-08-07T09:00:00Z");
+        assertThat(timeInfo.get("periodGranularity")).isEqualTo("evening"); // Non-timestamp unchanged
+        assertThat(timeInfo.get("nonTimestamp")).isEqualTo("someValue"); // Non-timestamp unchanged
+    }
+    
+    @Test
+    void formatTimeInfoForResponse_WithISOTimestamps_PassesThrough() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+        
+        Hangout hangout = createTestHangout(hangoutId);
+        hangout.setVisibility(EventVisibility.PUBLIC);
+        
+        // Set timeInput with already formatted ISO timestamps
+        Map<String, String> timeInput = new HashMap<>();
+        timeInput.put("startTime", "2025-08-05T19:15:00Z");
+        timeInput.put("endTime", "2025-08-05T21:30:00Z");
+        hangout.setTimeInput(timeInput);
+        
+        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of());
+        when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
+        
+        // When
+        HangoutDetailDTO result = hangoutService.getHangoutDetail(hangoutId, userId);
+        
+        // Then
+        Map<String, String> timeInfo = result.getTimeInfo();
+        assertThat(timeInfo.get("startTime")).isEqualTo("2025-08-05T19:15:00Z"); // Unchanged
+        assertThat(timeInfo.get("endTime")).isEqualTo("2025-08-05T21:30:00Z");   // Unchanged
+    }
+    
+    // Helper methods for new tests
+    private HangoutPointer createTestHangoutPointer(String entityId, String hangoutId) {
+        // Create pointer manually for tests to support both group and user entities
+        HangoutPointer pointer = new HangoutPointer();
+        pointer.setGroupId(entityId); // For tests, this can be either group or user ID
+        pointer.setHangoutId(hangoutId);
+        pointer.setTitle("Test Hangout " + hangoutId);
+        pointer.setStatus("ACTIVE");
+        pointer.setLocationName("Test Location");
+        pointer.setParticipantCount(5);
+        
+        // Set keys manually for test
+        if (entityId.contains("1111") || entityId.contains("2222")) {
+            // This is a group ID
+            pointer.setPk("GROUP#" + entityId);
+        } else {
+            // This is a user ID
+            pointer.setPk("USER#" + entityId);
+        }
+        pointer.setSk("HANGOUT#" + hangoutId);
+        return pointer;
+    }
+    
+    private Hangout createTestHangoutWithTimeInput(String hangoutId) {
+        Hangout hangout = createTestHangout(hangoutId);
+        Map<String, String> timeInput = new HashMap<>();
+        timeInput.put("startTime", "1754558100"); // Unix timestamp
+        timeInput.put("endTime", "1754566200");
+        hangout.setTimeInput(timeInput);
+        return hangout;
+    }
 }

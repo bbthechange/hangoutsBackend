@@ -4,14 +4,19 @@ import com.bbthechange.inviter.config.BaseIntegrationTest;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.dto.EventDetailData;
+import com.bbthechange.inviter.dto.HangoutDetailData;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.jupiter.api.MethodOrderer.OrderAnnotation;
 import org.junit.jupiter.api.Order;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -165,5 +170,97 @@ class HangoutRepositoryImplTest extends BaseIntegrationTest {
         // When
         assertThatCode(() -> hangoutRepository.deleteInterestLevel(TEST_EVENT_ID, TEST_USER_ID))
             .doesNotThrowAnyException();
+    }
+    
+    // ===== Integration Tests for F-1-T3 Implementation =====
+    
+    @Test
+    @Order(12)
+    void createHangoutWithGSIFields_Success() {
+        // Given
+        Hangout hangout = new Hangout("GSI Test Hangout", "Testing EntityTimeIndex GSI", 
+            null, null, null, EventVisibility.INVITE_ONLY, null);
+        hangout.setHangoutId("gsi-test-hangout-1");
+        
+        // Set timeInput and timestamps for GSI
+        Map<String, String> timeInput = new HashMap<>();
+        timeInput.put("startTime", "1754558100");
+        timeInput.put("endTime", "1754566200");
+        hangout.setTimeInput(timeInput);
+        hangout.setStartTimestamp(1754558100L);
+        hangout.setEndTimestamp(1754566200L);
+        
+        // When
+        Hangout saved = hangoutRepository.createHangout(hangout);
+        
+        // Then
+        assertThat(saved.getHangoutId()).isEqualTo("gsi-test-hangout-1");
+        assertThat(saved.getTimeInput()).isEqualTo(timeInput);
+        assertThat(saved.getStartTimestamp()).isEqualTo(1754558100L);
+        assertThat(saved.getEndTimestamp()).isEqualTo(1754566200L);
+    }
+    
+    @Test
+    @Order(13) 
+    void findHangoutById_WithTimeInput_Success() {
+        // Given - hangout created in previous test
+        String hangoutId = "gsi-test-hangout-1";
+        
+        // When
+        Optional<Hangout> result = hangoutRepository.findHangoutById(hangoutId);
+        
+        // Then
+        assertThat(result).isPresent();
+        Hangout hangout = result.get();
+        assertThat(hangout.getHangoutId()).isEqualTo(hangoutId);
+        assertThat(hangout.getTimeInput()).isNotNull();
+        assertThat(hangout.getTimeInput().get("startTime")).isEqualTo("1754558100");
+        assertThat(hangout.getStartTimestamp()).isEqualTo(1754558100L);
+    }
+    
+    @Test  
+    @Order(14)
+    void findItemsByGSI1PKAndGSI1SKPrefix_WithCurrentTimestamp_ReturnsEmpty() {
+        // Given - we're querying for future events but test hangout is in past
+        String gsi1PK = "GROUP#test-group-1";
+        String gsi1SKPrefix = "T#";
+        
+        // When - this should return empty since our test data has past timestamps
+        List<BaseItem> result = hangoutRepository.findItemsByGSI1PKAndGSI1SKPrefix(gsi1PK, gsi1SKPrefix);
+        
+        // Then
+        assertThat(result).isEmpty(); // Should be empty since test data is in the past
+    }
+    
+    @Test
+    @Order(15)
+    void findItemsByGSI1PKAndGSI1SKPrefix_BasicTest() {
+        // Given - test the method without creating complex GSI data
+        // This is a basic test to verify the method doesn't crash
+        String gsi1PK = "GROUP#nonexistent-group";
+        String gsi1SKPrefix = "T#";
+        
+        // When - query for non-existent data
+        assertThatCode(() -> {
+            List<BaseItem> result = hangoutRepository.findItemsByGSI1PKAndGSI1SKPrefix(gsi1PK, gsi1SKPrefix);
+            // Should return empty list, not crash
+            assertThat(result).isEmpty();
+        }).doesNotThrowAnyException();
+    }
+    
+    @Test
+    @Order(16)
+    void getHangoutDetailData_WithTimeInput_Success() {
+        // Given - hangout created in earlier test
+        String hangoutId = "gsi-test-hangout-1";
+        
+        // When
+        HangoutDetailData result = hangoutRepository.getHangoutDetailData(hangoutId);
+        
+        // Then
+        assertThat(result.getHangout()).isNotNull();
+        assertThat(result.getHangout().getHangoutId()).isEqualTo(hangoutId);
+        assertThat(result.getHangout().getTimeInput()).isNotNull();
+        assertThat(result.getHangout().getStartTimestamp()).isEqualTo(1754558100L);
     }
 }
