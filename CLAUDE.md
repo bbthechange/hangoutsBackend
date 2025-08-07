@@ -3,6 +3,7 @@
 ## ⚠️ CRITICAL REQUIREMENTS
 
 - **MANDATORY TESTING**: Every new method/field MUST have unit tests before completion
+- **DATABASE ARCHITECTURE**: MUST read `DATABASE_ARCHITECTURE_CRITICAL.md` before ANY database modifications or hangout retrievals
 - **TDD Protocol**: Never exit until `./gradlew test` shows "BUILD SUCCESSFUL"
 - **No Claude References**: Never include Claude in commit messages
 - **Java 21 Required**: Development and production use Corretto 21
