@@ -220,13 +220,13 @@ class HangoutRepositoryImplTest extends BaseIntegrationTest {
     
     @Test  
     @Order(14)
-    void findItemsByGSI1PKAndGSI1SKPrefix_WithCurrentTimestamp_ReturnsEmpty() {
+    void findUpcomingHangoutsForParticipant_WithCurrentTimestamp_ReturnsEmpty() {
         // Given - we're querying for future events but test hangout is in past
-        String gsi1PK = "GROUP#test-group-1";
-        String gsi1SKPrefix = "T#";
+        String participantKey = "GROUP#test-group-1";
+        String timePrefix = "T#";
         
         // When - this should return empty since our test data has past timestamps
-        List<BaseItem> result = hangoutRepository.findItemsByGSI1PKAndGSI1SKPrefix(gsi1PK, gsi1SKPrefix);
+        List<BaseItem> result = hangoutRepository.findUpcomingHangoutsForParticipant(participantKey, timePrefix);
         
         // Then
         assertThat(result).isEmpty(); // Should be empty since test data is in the past
@@ -234,15 +234,15 @@ class HangoutRepositoryImplTest extends BaseIntegrationTest {
     
     @Test
     @Order(15)
-    void findItemsByGSI1PKAndGSI1SKPrefix_BasicTest() {
+    void findUpcomingHangoutsForParticipant_BasicTest() {
         // Given - test the method without creating complex GSI data
         // This is a basic test to verify the method doesn't crash
-        String gsi1PK = "GROUP#nonexistent-group";
-        String gsi1SKPrefix = "T#";
+        String participantKey = "GROUP#nonexistent-group";
+        String timePrefix = "T#";
         
         // When - query for non-existent data
         assertThatCode(() -> {
-            List<BaseItem> result = hangoutRepository.findItemsByGSI1PKAndGSI1SKPrefix(gsi1PK, gsi1SKPrefix);
+            List<BaseItem> result = hangoutRepository.findUpcomingHangoutsForParticipant(participantKey, timePrefix);
             // Should return empty list, not crash
             assertThat(result).isEmpty();
         }).doesNotThrowAnyException();

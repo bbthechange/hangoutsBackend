@@ -61,8 +61,8 @@ public interface HangoutRepository {
     
     // GSI query methods for EntityTimeIndex
     /**
-     * Query the EntityTimeIndex GSI for hangouts by partition key and time range.
-     * Used to fetch hangouts for groups and users in chronological order.
+     * Find upcoming hangouts for a participant (user or group) in chronological order.
+     * Only returns hangouts that start after the current time.
      */
-    List<BaseItem> findItemsByGSI1PKAndGSI1SKPrefix(String gsi1PK, String gsi1SKPrefix);
+    List<BaseItem> findUpcomingHangoutsForParticipant(String participantKey, String timePrefix);
 }

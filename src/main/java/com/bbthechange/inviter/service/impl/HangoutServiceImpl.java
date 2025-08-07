@@ -237,7 +237,7 @@ public class HangoutServiceImpl implements HangoutService {
         List<BaseItem> allHangoutPointers = new ArrayList<>();
         for (String partitionKey : partitionKeys) {
             try {
-                List<BaseItem> pointers = hangoutRepository.findItemsByGSI1PKAndGSI1SKPrefix(partitionKey, "T#");
+                List<BaseItem> pointers = hangoutRepository.findUpcomingHangoutsForParticipant(partitionKey, "T#");
                 allHangoutPointers.addAll(pointers);
             } catch (Exception e) {
                 logger.warn("Failed to query hangouts for partition key {}: {}", partitionKey, e.getMessage());

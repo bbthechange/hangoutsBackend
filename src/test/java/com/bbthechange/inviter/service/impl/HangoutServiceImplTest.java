@@ -666,11 +666,11 @@ class HangoutServiceImplTest {
         HangoutPointer userPointer = createTestHangoutPointer(userId, "hangout-3");
         
         // Mock GSI queries
-        when(hangoutRepository.findItemsByGSI1PKAndGSI1SKPrefix("USER#" + userId, "T#"))
+        when(hangoutRepository.findUpcomingHangoutsForParticipant("USER#" + userId, "T#"))
             .thenReturn(List.of(userPointer));
-        when(hangoutRepository.findItemsByGSI1PKAndGSI1SKPrefix("GROUP#11111111-1111-1111-1111-111111111111", "T#"))
+        when(hangoutRepository.findUpcomingHangoutsForParticipant("GROUP#11111111-1111-1111-1111-111111111111", "T#"))
             .thenReturn(List.of(groupPointer1));
-        when(hangoutRepository.findItemsByGSI1PKAndGSI1SKPrefix("GROUP#22222222-2222-2222-2222-222222222222", "T#"))
+        when(hangoutRepository.findUpcomingHangoutsForParticipant("GROUP#22222222-2222-2222-2222-222222222222", "T#"))
             .thenReturn(List.of(groupPointer2));
             
         // Mock hangout details for timeInfo
@@ -687,9 +687,9 @@ class HangoutServiceImplTest {
             .containsExactlyInAnyOrder("hangout-1", "hangout-2", "hangout-3");
             
         // Verify GSI queries were made for user and both groups
-        verify(hangoutRepository).findItemsByGSI1PKAndGSI1SKPrefix("USER#" + userId, "T#");
-        verify(hangoutRepository).findItemsByGSI1PKAndGSI1SKPrefix("GROUP#11111111-1111-1111-1111-111111111111", "T#");
-        verify(hangoutRepository).findItemsByGSI1PKAndGSI1SKPrefix("GROUP#22222222-2222-2222-2222-222222222222", "T#");
+        verify(hangoutRepository).findUpcomingHangoutsForParticipant("USER#" + userId, "T#");
+        verify(hangoutRepository).findUpcomingHangoutsForParticipant("GROUP#11111111-1111-1111-1111-111111111111", "T#");
+        verify(hangoutRepository).findUpcomingHangoutsForParticipant("GROUP#22222222-2222-2222-2222-222222222222", "T#");
     }
     
     @Test
@@ -702,7 +702,7 @@ class HangoutServiceImplTest {
         
         // Create mock user hangout pointer
         HangoutPointer userPointer = createTestHangoutPointer(userId, "hangout-1");
-        when(hangoutRepository.findItemsByGSI1PKAndGSI1SKPrefix("USER#" + userId, "T#"))
+        when(hangoutRepository.findUpcomingHangoutsForParticipant("USER#" + userId, "T#"))
             .thenReturn(List.of(userPointer));
             
         when(hangoutRepository.findHangoutById("hangout-1")).thenReturn(Optional.of(createTestHangoutWithTimeInput("hangout-1")));
@@ -715,8 +715,8 @@ class HangoutServiceImplTest {
         assertThat(result.get(0).getHangoutId()).isEqualTo("hangout-1");
         
         // Verify only user query was made
-        verify(hangoutRepository).findItemsByGSI1PKAndGSI1SKPrefix("USER#" + userId, "T#");
-        verify(hangoutRepository, never()).findItemsByGSI1PKAndGSI1SKPrefix(startsWith("GROUP#"), anyString());
+        verify(hangoutRepository).findUpcomingHangoutsForParticipant("USER#" + userId, "T#");
+        verify(hangoutRepository, never()).findUpcomingHangoutsForParticipant(startsWith("GROUP#"), anyString());
     }
     
     @Test
@@ -731,9 +731,9 @@ class HangoutServiceImplTest {
         when(groupRepository.findGroupsByUserId(userId)).thenReturn(userGroups);
         
         // Mock one GSI query fails, other succeeds
-        when(hangoutRepository.findItemsByGSI1PKAndGSI1SKPrefix("USER#" + userId, "T#"))
+        when(hangoutRepository.findUpcomingHangoutsForParticipant("USER#" + userId, "T#"))
             .thenThrow(new RuntimeException("GSI query failed"));
-        when(hangoutRepository.findItemsByGSI1PKAndGSI1SKPrefix("GROUP#11111111-1111-1111-1111-111111111111", "T#"))
+        when(hangoutRepository.findUpcomingHangoutsForParticipant("GROUP#11111111-1111-1111-1111-111111111111", "T#"))
             .thenReturn(List.of(createTestHangoutPointer("11111111-1111-1111-1111-111111111111", "hangout-1")));
             
         when(hangoutRepository.findHangoutById("hangout-1")).thenReturn(Optional.of(createTestHangoutWithTimeInput("hangout-1")));

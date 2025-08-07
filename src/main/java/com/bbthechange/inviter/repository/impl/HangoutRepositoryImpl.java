@@ -601,8 +601,8 @@ public class HangoutRepositoryImpl implements HangoutRepository {
     }
     
     @Override
-    public List<BaseItem> findItemsByGSI1PKAndGSI1SKPrefix(String gsi1PK, String gsi1SKPrefix) {
-        return performanceTracker.trackQuery("findItemsByGSI1PKAndGSI1SKPrefix", "EntityTimeIndex", () -> {
+    public List<BaseItem> findUpcomingHangoutsForParticipant(String participantKey, String timePrefix) {
+        return performanceTracker.trackQuery("findUpcomingHangoutsForParticipant", "EntityTimeIndex", () -> {
             try {
                 // Get current timestamp for filtering future events only
                 long currentTimestamp = System.currentTimeMillis() / 1000;
@@ -610,10 +610,10 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                 QueryRequest request = QueryRequest.builder()
                     .tableName(TABLE_NAME)
                     .indexName("EntityTimeIndex")
-                    .keyConditionExpression("GSI1PK = :gsi1pk AND GSI1SK > :timestampPrefix")
+                    .keyConditionExpression("GSI1PK = :participantKey AND GSI1SK > :timestampPrefix")
                     .expressionAttributeValues(Map.of(
-                        ":gsi1pk", AttributeValue.builder().s(gsi1PK).build(),
-                        ":timestampPrefix", AttributeValue.builder().s(gsi1SKPrefix + currentTimestamp).build()
+                        ":participantKey", AttributeValue.builder().s(participantKey).build(),
+                        ":timestampPrefix", AttributeValue.builder().s(timePrefix + currentTimestamp).build()
                     ))
                     .scanIndexForward(true) // Sort by timestamp ascending (chronological order)
                     .build();
@@ -625,8 +625,8 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                     .collect(Collectors.toList());
                     
             } catch (DynamoDbException e) {
-                logger.error("Failed to query GSI with partition key {} and prefix {}", gsi1PK, gsi1SKPrefix, e);
-                throw new RepositoryException("Failed to query EntityTimeIndex GSI", e);
+                logger.error("Failed to query upcoming hangouts for participant {} with prefix {}", participantKey, timePrefix, e);
+                throw new RepositoryException("Failed to query upcoming hangouts from EntityTimeIndex GSI", e);
             }
         });
     }
