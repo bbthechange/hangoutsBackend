@@ -106,3 +106,4 @@ bugs/
 test-*.sh
 create_*.py
 docs/fixes/
+docs/TDD_FAILURE_ANALYSIS_AND_PROMPT_REQUIREMENTS.md
