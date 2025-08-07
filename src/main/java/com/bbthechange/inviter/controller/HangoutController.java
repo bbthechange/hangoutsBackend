@@ -94,7 +94,7 @@ public class HangoutController extends BaseController {
     }
     
     // LEGACY EVENT API ENDPOINTS (for backward compatibility)
-    
+    @Deprecated
     @GetMapping("/events/{eventId}/detail")
     public ResponseEntity<EventDetailDTO> getEventDetail(
             @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid event ID format") String eventId,
@@ -141,7 +141,7 @@ public class HangoutController extends BaseController {
         
         return ResponseEntity.ok().build();
     }
-    
+
     @PostMapping("/{eventId}/groups")
     public ResponseEntity<Void> associateWithGroups(
             @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid event ID format") String eventId,

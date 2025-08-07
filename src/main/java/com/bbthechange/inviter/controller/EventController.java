@@ -24,7 +24,8 @@ public class EventController {
     
     @Autowired
     private UserRepository userRepository;
-    
+
+    @Deprecated
     @PostMapping("/new")
     public ResponseEntity<Map<String, UUID>> createEvent(@RequestBody CreateEventWithInvitesRequest request, HttpServletRequest httpRequest) {
         String userIdStr = (String) httpRequest.getAttribute("userId");
@@ -61,7 +62,8 @@ public class EventController {
             return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
         }
     }
-    
+
+    @Deprecated
     @GetMapping
     public ResponseEntity<List<Event>> getAllEvents(HttpServletRequest request) {
         String userIdStr = (String) request.getAttribute("userId");
@@ -75,7 +77,8 @@ public class EventController {
             
         return new ResponseEntity<>(userEvents, HttpStatus.OK);
     }
-    
+
+    @Deprecated
     @GetMapping("/{id}")
     public ResponseEntity<Event> getEvent(@PathVariable UUID id, HttpServletRequest request) {
         String userIdStr = (String) request.getAttribute("userId");
@@ -93,7 +96,8 @@ public class EventController {
         
         return new ResponseEntity<>(eventOpt.get(), HttpStatus.OK);
     }
-    
+
+    @Deprecated
     @PutMapping("/{id}")
     public ResponseEntity<Event> updateEvent(@PathVariable UUID id, @RequestBody UpdateEventRequest request, HttpServletRequest httpRequest) {
         String userIdStr = (String) httpRequest.getAttribute("userId");
@@ -126,7 +130,8 @@ public class EventController {
             return new ResponseEntity<>(HttpStatus.NOT_FOUND);
         }
     }
-    
+
+    @Deprecated
     @DeleteMapping("/{id}")
     public ResponseEntity<Map<String, String>> deleteEvent(@PathVariable UUID id, HttpServletRequest httpRequest) {
         String userIdStr = (String) httpRequest.getAttribute("userId");
