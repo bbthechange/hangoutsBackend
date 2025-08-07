@@ -5,6 +5,7 @@ import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.dto.EventDetailData;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -38,6 +39,9 @@ public interface HangoutRepository {
     Optional<Event> findById(String eventId);
     void updateEventMetadata(String eventId, Map<String, AttributeValue> updates);
     void delete(String eventId);
+    
+    // Atomic operations for hangout and pointer records
+    void saveHangoutAndPointersAtomically(Hangout hangout, List<HangoutPointer> pointers);
     
     // InviterTable operations for new hangout features
     Poll savePoll(Poll poll);

@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.service.impl;
 
 import com.bbthechange.inviter.service.HangoutService;
+import com.bbthechange.inviter.service.FuzzyTimeService;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.model.*;
@@ -12,7 +13,9 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.*;
@@ -30,6 +33,9 @@ class HangoutServiceImplTest {
     
     @Mock
     private GroupRepository groupRepository;
+    
+    @Mock
+    private FuzzyTimeService fuzzyTimeService;
     
     @InjectMocks
     private HangoutServiceImpl hangoutService;
@@ -344,5 +350,268 @@ class HangoutServiceImplTest {
         interest.setPk("EVENT#12345678-1234-1234-1234-123456789012");
         interest.setSk("ATTENDANCE#87654321-4321-4321-4321-210987654321");
         return interest;
+    }
+    
+    // ===== Integration Tests for Fuzzy Time Functionality =====
+    
+    @Test
+    void createHangout_WithFuzzyTime_Success() {
+        // Given
+        String userId = "87654321-4321-4321-4321-210987654321";
+        Map<String, String> timeInput = new HashMap<>();
+        timeInput.put("periodGranularity", "evening");
+        timeInput.put("periodStart", "2025-08-05T19:00:00Z");
+        
+        CreateHangoutRequest request = new CreateHangoutRequest();
+        request.setTitle("Evening Hangout");
+        request.setDescription("Test fuzzy time hangout");
+        request.setTimeInput(timeInput);
+        request.setVisibility(EventVisibility.INVITE_ONLY);
+        request.setAssociatedGroups(List.of("11111111-1111-1111-1111-111111111111"));
+        
+        // Mock fuzzy time service
+        FuzzyTimeService.FuzzyTimeResult timeResult = new FuzzyTimeService.FuzzyTimeResult(1754557200L, 1754571600L);
+        when(fuzzyTimeService.convertTimeInput(timeInput)).thenReturn(timeResult);
+        
+        // Mock group membership validation
+        GroupMembership membership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Test Group");
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(membership));
+        
+        // Mock repository operations
+        Hangout savedHangout = createTestHangout("33333333-3333-3333-3333-333333333333");
+        savedHangout.setStartTimestamp(1754557200L);
+        savedHangout.setEndTimestamp(1754571600L);
+        when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(savedHangout);
+        doNothing().when(groupRepository).saveHangoutPointer(any(HangoutPointer.class));
+        
+        // When
+        Hangout result = hangoutService.createHangout(request, userId);
+        
+        // Then
+        assertThat(result).isNotNull();
+        
+        // Verify fuzzy time conversion was called
+        verify(fuzzyTimeService).convertTimeInput(timeInput);
+        
+        // Verify hangout was created with correct timestamps
+        verify(hangoutRepository).createHangout(argThat(hangout -> 
+            hangout.getTimeInput().equals(timeInput) &&
+            hangout.getStartTimestamp().equals(1754557200L) &&
+            hangout.getEndTimestamp().equals(1754571600L)
+        ));
+        
+        // Verify pointer was created with GSI fields
+        verify(groupRepository).saveHangoutPointer(argThat(pointer ->
+            pointer.getGSI1PK().equals("GROUP#11111111-1111-1111-1111-111111111111") &&
+            pointer.getGSI1SK().equals("T#1754557200")
+        ));
+    }
+    
+    @Test
+    void createHangout_WithExactTime_Success() {
+        // Given
+        String userId = "87654321-4321-4321-4321-210987654321";
+        Map<String, String> timeInput = new HashMap<>();
+        timeInput.put("startTime", "2025-08-05T19:15:00Z");
+        timeInput.put("endTime", "2025-08-05T21:30:00Z");
+        
+        CreateHangoutRequest request = new CreateHangoutRequest();
+        request.setTitle("Exact Time Hangout");
+        request.setDescription("Test exact time hangout");
+        request.setTimeInput(timeInput);
+        request.setVisibility(EventVisibility.INVITE_ONLY);
+        request.setAssociatedGroups(List.of("11111111-1111-1111-1111-111111111111"));
+        
+        // Mock fuzzy time service
+        FuzzyTimeService.FuzzyTimeResult timeResult = new FuzzyTimeService.FuzzyTimeResult(1754558100L, 1754566200L);
+        when(fuzzyTimeService.convertTimeInput(timeInput)).thenReturn(timeResult);
+        
+        // Mock group membership validation
+        GroupMembership membership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Test Group");
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(membership));
+        
+        // Mock repository operations
+        Hangout savedHangout = createTestHangout("33333333-3333-3333-3333-333333333333");
+        savedHangout.setStartTimestamp(1754558100L);
+        savedHangout.setEndTimestamp(1754566200L);
+        when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(savedHangout);
+        doNothing().when(groupRepository).saveHangoutPointer(any(HangoutPointer.class));
+        
+        // When
+        Hangout result = hangoutService.createHangout(request, userId);
+        
+        // Then
+        assertThat(result).isNotNull();
+        
+        // Verify fuzzy time conversion was called
+        verify(fuzzyTimeService).convertTimeInput(timeInput);
+        
+        // Verify hangout was created with correct timestamps
+        verify(hangoutRepository).createHangout(argThat(hangout -> 
+            hangout.getTimeInput().equals(timeInput) &&
+            hangout.getStartTimestamp().equals(1754558100L) &&
+            hangout.getEndTimestamp().equals(1754566200L)
+        ));
+    }
+    
+    @Test
+    void createHangout_WithoutTimeInput_Success() {
+        // Given
+        String userId = "87654321-4321-4321-4321-210987654321";
+        
+        CreateHangoutRequest request = new CreateHangoutRequest();
+        request.setTitle("No Time Hangout");
+        request.setDescription("Hangout without time");
+        request.setTimeInput(null);
+        request.setVisibility(EventVisibility.INVITE_ONLY);
+        request.setAssociatedGroups(List.of("11111111-1111-1111-1111-111111111111"));
+        
+        // Mock group membership validation
+        GroupMembership membership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Test Group");
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(membership));
+        
+        // Mock repository operations
+        Hangout savedHangout = createTestHangout("33333333-3333-3333-3333-333333333333");
+        when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(savedHangout);
+        doNothing().when(groupRepository).saveHangoutPointer(any(HangoutPointer.class));
+        
+        // When
+        Hangout result = hangoutService.createHangout(request, userId);
+        
+        // Then
+        assertThat(result).isNotNull();
+        
+        // Verify fuzzy time service was not called for null timeInput
+        verify(fuzzyTimeService, never()).convertTimeInput(any());
+        
+        // Verify hangout was created with null timestamps
+        verify(hangoutRepository).createHangout(argThat(hangout -> 
+            hangout.getTimeInput() == null &&
+            hangout.getStartTimestamp() == null &&
+            hangout.getEndTimestamp() == null
+        ));
+    }
+    
+    @Test
+    void updateHangout_WithTimeInputChange_Success() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+        
+        Map<String, String> newTimeInput = new HashMap<>();
+        newTimeInput.put("periodGranularity", "morning");
+        newTimeInput.put("periodStart", "2025-08-06T08:00:00Z");
+        
+        UpdateHangoutRequest request = new UpdateHangoutRequest();
+        request.setTimeInput(newTimeInput);
+        
+        // Mock existing hangout
+        Hangout existingHangout = createTestHangout(hangoutId);
+        existingHangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111")));
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(existingHangout));
+        
+        // Mock authorization
+        GroupMembership membership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Test Group");
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(membership));
+        
+        // Mock fuzzy time service
+        FuzzyTimeService.FuzzyTimeResult timeResult = new FuzzyTimeService.FuzzyTimeResult(1754603600L, 1754618000L);
+        when(fuzzyTimeService.convertTimeInput(newTimeInput)).thenReturn(timeResult);
+        
+        // Mock repository operations
+        when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+        doNothing().when(groupRepository).updateHangoutPointer(anyString(), anyString(), any());
+        
+        // When
+        assertThatCode(() -> hangoutService.updateHangout(hangoutId, request, userId))
+            .doesNotThrowAnyException();
+        
+        // Then
+        // Verify fuzzy time conversion was called
+        verify(fuzzyTimeService).convertTimeInput(newTimeInput);
+        
+        // Verify hangout was updated with new timestamps
+        verify(hangoutRepository).createHangout(argThat(hangout -> 
+            hangout.getTimeInput().equals(newTimeInput) &&
+            hangout.getStartTimestamp().equals(1754603600L) &&
+            hangout.getEndTimestamp().equals(1754618000L)
+        ));
+        
+        // Verify pointer was updated with new GSI1SK
+        verify(groupRepository).updateHangoutPointer(
+            eq("11111111-1111-1111-1111-111111111111"), 
+            eq(hangoutId), 
+            argThat(updates -> updates.containsKey(":GSI1SK") && 
+                updates.get(":GSI1SK").s().equals("T#1754603600"))
+        );
+    }
+    
+    @Test
+    void createHangout_FuzzyTimeServiceThrowsException_PropagatesException() {
+        // Given
+        String userId = "87654321-4321-4321-4321-210987654321";
+        Map<String, String> invalidTimeInput = new HashMap<>();
+        invalidTimeInput.put("periodGranularity", "invalid");
+        invalidTimeInput.put("periodStart", "2025-08-05T19:00:00Z");
+        
+        CreateHangoutRequest request = new CreateHangoutRequest();
+        request.setTitle("Invalid Time Hangout");
+        request.setTimeInput(invalidTimeInput);
+        request.setVisibility(EventVisibility.INVITE_ONLY);
+        
+        // Mock fuzzy time service to throw exception
+        when(fuzzyTimeService.convertTimeInput(invalidTimeInput))
+            .thenThrow(new IllegalArgumentException("Unsupported periodGranularity: invalid"));
+        
+        // When/Then
+        assertThatThrownBy(() -> hangoutService.createHangout(request, userId))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("Unsupported periodGranularity: invalid");
+        
+        // Verify no repository operations were attempted
+        verify(hangoutRepository, never()).createHangout(any());
+        verify(groupRepository, never()).saveHangoutPointer(any());
+    }
+    
+    @Test
+    void associateEventWithGroups_WithTimestamps_CreatesPointersWithGSIFields() {
+        // Given
+        String eventId = "12345678-1234-1234-1234-123456789012";
+        List<String> groupIds = List.of("11111111-1111-1111-1111-111111111111");
+        String userId = "87654321-4321-4321-4321-210987654321";
+        
+        Hangout hangout = createTestHangout(eventId);
+        hangout.setStartTimestamp(1754557200L); // Has timestamp from fuzzy time
+        hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("22222222-2222-2222-2222-222222222222")));
+        
+        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of());
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
+        
+        // Mock authorization
+        GroupMembership adminMembership = createTestMembership("22222222-2222-2222-2222-222222222222", userId, "Existing Group");
+        adminMembership.setRole(GroupRole.ADMIN);
+        when(groupRepository.findMembership("22222222-2222-2222-2222-222222222222", userId)).thenReturn(Optional.of(adminMembership));
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(
+            Optional.of(createTestMembership("11111111-1111-1111-1111-111111111111", userId, "New Group")));
+        
+        when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(hangout);
+        doNothing().when(groupRepository).saveHangoutPointer(any(HangoutPointer.class));
+        
+        // When
+        assertThatCode(() -> hangoutService.associateEventWithGroups(eventId, groupIds, userId))
+            .doesNotThrowAnyException();
+        
+        // Then
+        verify(groupRepository).saveHangoutPointer(argThat(pointer ->
+            pointer.getGSI1PK().equals("GROUP#11111111-1111-1111-1111-111111111111") &&
+            pointer.getGSI1SK().equals("T#1754557200")
+        ));
+    }
+    
+    private java.util.HashMap<String, String> createTimeInputMap(String key1, String value1, String key2, String value2) {
+        java.util.HashMap<String, String> timeInput = new java.util.HashMap<>();
+        timeInput.put(key1, value1);
+        timeInput.put(key2, value2);
+        return timeInput;
     }
 }

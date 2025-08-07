@@ -39,6 +39,7 @@ public class HangoutRepositoryImpl implements HangoutRepository {
     private final TableSchema<Vote> voteSchema;
     private final TableSchema<InterestLevel> interestLevelSchema;
     private final TableSchema<CarRider> carRiderSchema;
+    private final TableSchema<HangoutPointer> hangoutPointerSchema;
     private final QueryPerformanceTracker performanceTracker;
     private final EventRepository eventRepository; // For canonical Event records
     
@@ -54,6 +55,7 @@ public class HangoutRepositoryImpl implements HangoutRepository {
         this.voteSchema = TableSchema.fromBean(Vote.class);
         this.interestLevelSchema = TableSchema.fromBean(InterestLevel.class);
         this.carRiderSchema = TableSchema.fromBean(CarRider.class);
+        this.hangoutPointerSchema = TableSchema.fromBean(HangoutPointer.class);
         this.performanceTracker = performanceTracker;
         this.eventRepository = eventRepository;
     }
@@ -238,6 +240,52 @@ public class HangoutRepositoryImpl implements HangoutRepository {
             } catch (DynamoDbException e) {
                 logger.error("Failed to create hangout {}", hangout.getHangoutId(), e);
                 throw new RepositoryException("Failed to create hangout", e);
+            }
+        });
+    }
+    
+    @Override
+    public void saveHangoutAndPointersAtomically(Hangout hangout, List<HangoutPointer> pointers) {
+        performanceTracker.trackQuery("saveHangoutAndPointersAtomically", TABLE_NAME, () -> {
+            try {
+                hangout.touch();
+                
+                // Prepare all transact write items
+                List<TransactWriteItem> transactItems = new ArrayList<>();
+                
+                // Add hangout put item
+                Map<String, AttributeValue> hangoutItem = hangoutSchema.itemToMap(hangout, true);
+                transactItems.add(TransactWriteItem.builder()
+                    .put(Put.builder()
+                        .tableName(TABLE_NAME)
+                        .item(hangoutItem)
+                        .build())
+                    .build());
+                
+                // Add pointer put items
+                for (HangoutPointer pointer : pointers) {
+                    pointer.touch();
+                    Map<String, AttributeValue> pointerItem = hangoutPointerSchema.itemToMap(pointer, true);
+                    transactItems.add(TransactWriteItem.builder()
+                        .put(Put.builder()
+                            .tableName(TABLE_NAME)
+                            .item(pointerItem)
+                            .build())
+                        .build());
+                }
+                
+                // Execute atomic transaction
+                TransactWriteItemsRequest request = TransactWriteItemsRequest.builder()
+                    .transactItems(transactItems)
+                    .build();
+                
+                dynamoDbClient.transactWriteItems(request);
+                return null;
+                
+            } catch (DynamoDbException e) {
+                logger.error("Failed to atomically save hangout {} and {} pointers", 
+                    hangout.getHangoutId(), pointers.size(), e);
+                throw new RepositoryException("Failed to atomically save hangout and pointers", e);
             }
         });
     }

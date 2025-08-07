@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.service.impl;
 
 import com.bbthechange.inviter.service.HangoutService;
+import com.bbthechange.inviter.service.FuzzyTimeService;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.model.*;
@@ -27,15 +28,24 @@ public class HangoutServiceImpl implements HangoutService {
     
     private final HangoutRepository hangoutRepository;
     private final GroupRepository groupRepository;
+    private final FuzzyTimeService fuzzyTimeService;
     
     @Autowired
-    public HangoutServiceImpl(HangoutRepository hangoutRepository, GroupRepository groupRepository) {
+    public HangoutServiceImpl(HangoutRepository hangoutRepository, GroupRepository groupRepository,
+                              FuzzyTimeService fuzzyTimeService) {
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
+        this.fuzzyTimeService = fuzzyTimeService;
     }
     
     @Override
     public Hangout createHangout(CreateHangoutRequest request, String requestingUserId) {
+        // Convert timeInput to canonical timestamps
+        FuzzyTimeService.FuzzyTimeResult timeResult = null;
+        if (request.getTimeInput() != null) {
+            timeResult = fuzzyTimeService.convertTimeInput(request.getTimeInput());
+        }
+        
         // Create the hangout
         Hangout hangout = new Hangout(
             request.getTitle(),
@@ -47,8 +57,12 @@ public class HangoutServiceImpl implements HangoutService {
             request.getMainImagePath()
         );
         
-        // Set the timeInput for fuzzy time support
+        // Set the timeInput for fuzzy time support and canonical timestamps
         hangout.setTimeInput(request.getTimeInput());
+        if (timeResult != null) {
+            hangout.setStartTimestamp(timeResult.getStartTimestamp());
+            hangout.setEndTimestamp(timeResult.getEndTimestamp());
+        }
         hangout.setCarpoolEnabled(request.isCarpoolEnabled());
         
         // Verify user is in all specified groups
@@ -71,6 +85,12 @@ public class HangoutServiceImpl implements HangoutService {
                 pointer.setStatus("ACTIVE");
                 pointer.setLocationName(getLocationName(hangout.getLocation()));
                 pointer.setParticipantCount(0);
+                
+                // Set GSI fields for EntityTimeIndex
+                pointer.setGSI1PK("GROUP#" + groupId);
+                if (hangout.getStartTimestamp() != null) {
+                    pointer.setGSI1SK("T#" + hangout.getStartTimestamp());
+                }
                 
                 groupRepository.saveHangoutPointer(pointer);
             }
@@ -127,6 +147,17 @@ public class HangoutServiceImpl implements HangoutService {
         
         if (request.getTimeInput() != null) {
             hangout.setTimeInput(request.getTimeInput());
+            
+            // Convert timeInput to canonical timestamps
+            FuzzyTimeService.FuzzyTimeResult timeResult = fuzzyTimeService.convertTimeInput(request.getTimeInput());
+            hangout.setStartTimestamp(timeResult.getStartTimestamp());
+            hangout.setEndTimestamp(timeResult.getEndTimestamp());
+            
+            // Time change requires pointer updates for GSI1SK
+            if (hangout.getAssociatedGroups() != null) {
+                needsPointerUpdate = true;
+                pointerUpdates.put("GSI1SK", "T#" + timeResult.getStartTimestamp());
+            }
         }
         
         if (request.getLocation() != null) {
@@ -304,6 +335,12 @@ public class HangoutServiceImpl implements HangoutService {
             pointer.setStatus("ACTIVE"); // Default status
             pointer.setLocationName(getLocationName(hangout.getLocation()));
             pointer.setParticipantCount(0); // Will be updated as people respond
+            
+            // Set GSI fields for EntityTimeIndex
+            pointer.setGSI1PK("GROUP#" + groupId);
+            if (hangout.getStartTimestamp() != null) {
+                pointer.setGSI1SK("T#" + hangout.getStartTimestamp());
+            }
             
             groupRepository.saveHangoutPointer(pointer);
         }
