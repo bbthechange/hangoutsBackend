@@ -31,6 +31,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - Don't include references to Claude in commit logs
 
+## Testing Requirements
+
+- **MANDATORY**: Every new method/field added to model classes MUST have corresponding unit tests
+- **MANDATORY**: Use `unit-test-runner` agent to run tests after writing tests, not just after implementation
+- **MANDATORY**: New functionality is not complete until tests are written and passing
+- **MANDATORY**: Do not commit changes until new methods have basic unit test coverage
+
 ## Test-Driven Development (TDD) Protocol
 
 When implementing TDD features:
