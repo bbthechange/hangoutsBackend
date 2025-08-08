@@ -6,7 +6,7 @@ This document specifies the API changes required to support creating and viewing
 
 ## Summary of Changes
 
-1.  **Flexible Time Input**: The `POST /hangouts` and `PATCH /hangouts/{hangoutId}` endpoints will be modified to accept a single `timeInput` object. This object can contain either fuzzy time parameters or exact start/end time parameters.
+1.  **Flexible Time Input**: The `POST /hangouts` and `PATCH /hangouts/{hangoutId}` endpoints will be modified to accept a single `timeInfo` object. This object can contain either fuzzy time parameters or exact start/end time parameters.
 2.  **UTC-Based Responses**: All `GET` requests that return hangout time information will do so using pure UTC timestamps in ISO 8601 format (ending in `Z`). This provides a consistent, timezone-agnostic source of truth for all clients.
 3.  **New Options Endpoint**: A new `GET /hangouts/time-options` endpoint will be added to provide clients with the list of available fuzzy time granularities.
 
@@ -16,7 +16,7 @@ This document specifies the API changes required to support creating and viewing
 
 These changes apply to `POST /hangouts` and `PATCH /hangouts/{hangoutId}`.
 
-The request body will now feature a `timeInput` object instead of top-level `startTime` and `endTime` fields. The server will validate that the `timeInput` object contains one of the two valid structures below.
+The request body will now feature a `timeInfo` object instead of top-level `startTime` and `endTime` fields. The server will validate that the `timeInfo` object contains one of the two valid structures below.
 
 ### Option A: Creating with Fuzzy Time
 
@@ -27,7 +27,7 @@ Used when the user selects a general period like "evening" or "weekend".
 {
   "name": "Team Dinner",
   "description": "Dinner to celebrate the project launch.",
-  "timeInput": {
+  "timeInfo": {
     "periodGranularity": "evening",
     "periodStart": "2025-08-05T19:00:00-04:00"
   },
@@ -44,7 +44,7 @@ Used when the user specifies an exact start and end time.
 {
   "name": "Team Dinner",
   "description": "Dinner to celebrate the project launch.",
-  "timeInput": {
+  "timeInfo": {
     "startTime": "2025-08-05T19:15:00-04:00",
     "endTime": "2025-08-05T21:30:00-04:00"
   },
@@ -66,11 +66,11 @@ This change applies to the response of `GET /hangouts/{hangoutId}`.
 
 The response will return the original time input structure, but with all timestamps converted to pure UTC. This allows the client to reconstruct the user's original intent while also having a standardized time to display.
 
-**`hangout.timeInput` Object in Response:**
+**`hangout.timeInfo` Object in Response:**
 
 ```json
 // Example for a hangout created with fuzzy time:
-"timeInput": {
+"timeInfo": {
   "periodGranularity": "evening",
   "periodStart": "2025-08-05T23:00:00Z",
   "startTime": null,
@@ -78,7 +78,7 @@ The response will return the original time input structure, but with all timesta
 }
 
 // Example for a hangout created with exact time:
-"timeInput": {
+"timeInfo": {
   "periodGranularity": null,
   "periodStart": null,
   "startTime": "2025-08-05T23:15:00Z",
