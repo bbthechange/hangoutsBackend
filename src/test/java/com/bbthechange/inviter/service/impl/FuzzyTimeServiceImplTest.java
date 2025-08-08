@@ -1,7 +1,7 @@
 package com.bbthechange.inviter.service.impl;
 
+import com.bbthechange.inviter.dto.TimeInfo;
 import com.bbthechange.inviter.service.FuzzyTimeService;
-import com.bbthechange.inviter.dto.TimeInput;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
@@ -31,9 +31,9 @@ class FuzzyTimeServiceImplTest {
     @Test
     @DisplayName("Should handle exact time with UTC timezone")
     void shouldHandleExactTimeWithUTC() {
-        TimeInput timeInput = new TimeInput(null, null, "2025-08-05T19:15:00Z", "2025-08-05T21:30:00Z");
+        TimeInfo timeInfo = new TimeInfo(null, null, "2025-08-05T19:15:00Z", "2025-08-05T21:30:00Z");
 
-        FuzzyTimeService.TimeConversionResult result = fuzzyTimeService.convert(timeInput);
+        FuzzyTimeService.TimeConversionResult result = fuzzyTimeService.convert(timeInfo);
 
         // 2025-08-05T19:15:00Z = Unix timestamp 1754421300
         // 2025-08-05T21:30:00Z = Unix timestamp 1754429400
@@ -44,9 +44,9 @@ class FuzzyTimeServiceImplTest {
     @Test
     @DisplayName("Should handle exact time with negative timezone offset")
     void shouldHandleExactTimeWithNegativeOffset() {
-        TimeInput timeInput = new TimeInput(null, null, "2025-08-05T19:15:00-04:00", "2025-08-05T21:30:00-04:00");
+        TimeInfo timeInfo = new TimeInfo(null, null, "2025-08-05T19:15:00-04:00", "2025-08-05T21:30:00-04:00");
 
-        FuzzyTimeService.TimeConversionResult result = fuzzyTimeService.convert(timeInput);
+        FuzzyTimeService.TimeConversionResult result = fuzzyTimeService.convert(timeInfo);
 
         // 2025-08-05T19:15:00-04:00 = 2025-08-05T23:15:00Z = Unix timestamp 1754435700
         // 2025-08-05T21:30:00-04:00 = 2025-08-06T01:30:00Z = Unix timestamp 1754443800
@@ -57,9 +57,9 @@ class FuzzyTimeServiceImplTest {
     @Test
     @DisplayName("Should handle exact time with positive timezone offset")
     void shouldHandleExactTimeWithPositiveOffset() {
-        TimeInput timeInput = new TimeInput(null, null, "2025-08-05T19:15:00+05:30", "2025-08-05T21:30:00+05:30");
+        TimeInfo timeInfo = new TimeInfo(null, null, "2025-08-05T19:15:00+05:30", "2025-08-05T21:30:00+05:30");
 
-        FuzzyTimeService.TimeConversionResult result = fuzzyTimeService.convert(timeInput);
+        FuzzyTimeService.TimeConversionResult result = fuzzyTimeService.convert(timeInfo);
 
         // 2025-08-05T19:15:00+05:30 = 2025-08-05T13:45:00Z = Unix timestamp 1754401500
         // 2025-08-05T21:30:00+05:30 = 2025-08-05T16:00:00Z = Unix timestamp 1754409600
@@ -70,9 +70,9 @@ class FuzzyTimeServiceImplTest {
     @Test
     @DisplayName("Should handle morning granularity (4 hours)")
     void shouldHandleMorningGranularity() {
-        TimeInput timeInput = new TimeInput("morning", "2025-08-05T08:00:00Z", null, null);
+        TimeInfo timeInfo = new TimeInfo("morning", "2025-08-05T08:00:00Z", null, null);
 
-        FuzzyTimeService.TimeConversionResult result = fuzzyTimeService.convert(timeInput);
+        FuzzyTimeService.TimeConversionResult result = fuzzyTimeService.convert(timeInfo);
 
         // 2025-08-05T08:00:00Z = Unix timestamp 1754380800
         // End = start + 4 hours = 1754380800 + 14400 = 1754395200
@@ -83,9 +83,9 @@ class FuzzyTimeServiceImplTest {
     @Test
     @DisplayName("Should handle afternoon granularity (4 hours)")
     void shouldHandleAfternoonGranularity() {
-        TimeInput timeInput = new TimeInput("afternoon", "2025-08-05T13:00:00Z", null, null);
+        TimeInfo timeInfo = new TimeInfo("afternoon", "2025-08-05T13:00:00Z", null, null);
 
-        FuzzyTimeService.TimeConversionResult result = fuzzyTimeService.convert(timeInput);
+        FuzzyTimeService.TimeConversionResult result = fuzzyTimeService.convert(timeInfo);
 
         // 2025-08-05T13:00:00Z = Unix timestamp 1754398800
         // End = start + 4 hours = 1754398800 + 14400 = 1754413200
@@ -96,9 +96,9 @@ class FuzzyTimeServiceImplTest {
     @Test
     @DisplayName("Should handle evening granularity (4 hours)")
     void shouldHandleEveningGranularity() {
-        TimeInput timeInput = new TimeInput("evening", "2025-08-05T19:00:00Z", null, null);
+        TimeInfo timeInfo = new TimeInfo("evening", "2025-08-05T19:00:00Z", null, null);
 
-        FuzzyTimeService.TimeConversionResult result = fuzzyTimeService.convert(timeInput);
+        FuzzyTimeService.TimeConversionResult result = fuzzyTimeService.convert(timeInfo);
 
         // 2025-08-05T19:00:00Z = Unix timestamp 1754420400
         // End = start + 4 hours = 1754420400 + 14400 = 1754434800
@@ -110,9 +110,9 @@ class FuzzyTimeServiceImplTest {
     @Test
     @DisplayName("Should handle night granularity (8 hours)")
     void shouldHandleNightGranularity() {
-        TimeInput timeInput = new TimeInput("night", "2025-08-05T22:00:00Z", null, null);
+        TimeInfo timeInfo = new TimeInfo("night", "2025-08-05T22:00:00Z", null, null);
 
-        FuzzyTimeService.TimeConversionResult result = fuzzyTimeService.convert(timeInput);
+        FuzzyTimeService.TimeConversionResult result = fuzzyTimeService.convert(timeInfo);
 
         // 2025-08-05T22:00:00Z = Unix timestamp 1754431200
         // End = start + 8 hours = 1754431200 + 28800 = 1754460000
@@ -123,9 +123,9 @@ class FuzzyTimeServiceImplTest {
     @Test
     @DisplayName("Should handle day granularity (12 hours)")
     void shouldHandleDayGranularity() {
-        TimeInput timeInput = new TimeInput("day", "2025-08-05T09:00:00Z", null, null);
+        TimeInfo timeInfo = new TimeInfo("day", "2025-08-05T09:00:00Z", null, null);
 
-        FuzzyTimeService.TimeConversionResult result = fuzzyTimeService.convert(timeInput);
+        FuzzyTimeService.TimeConversionResult result = fuzzyTimeService.convert(timeInfo);
 
         // 2025-08-05T09:00:00Z = Unix timestamp 1754384400
         // End = start + 12 hours = 1754384400 + 43200 = 1754427600
@@ -136,9 +136,9 @@ class FuzzyTimeServiceImplTest {
     @Test
     @DisplayName("Should handle weekend granularity (48 hours)")
     void shouldHandleWeekendGranularity() {
-        TimeInput timeInput = new TimeInput("weekend", "2025-08-02T10:00:00Z", null, null);
+        TimeInfo timeInfo = new TimeInfo("weekend", "2025-08-02T10:00:00Z", null, null);
 
-        FuzzyTimeService.TimeConversionResult result = fuzzyTimeService.convert(timeInput);
+        FuzzyTimeService.TimeConversionResult result = fuzzyTimeService.convert(timeInfo);
 
         // 2025-08-02T10:00:00Z = Unix timestamp 1754128800
         // End = start + 48 hours = 1754128800 + 172800 = 1754301600
@@ -150,9 +150,9 @@ class FuzzyTimeServiceImplTest {
     @Test
     @DisplayName("Should handle case insensitive granularity")
     void shouldHandleCaseInsensitiveGranularity() {
-        TimeInput timeInput = new TimeInput("MORNING", "2025-08-05T08:00:00Z", null, null);
+        TimeInfo timeInfo = new TimeInfo("MORNING", "2025-08-05T08:00:00Z", null, null);
 
-        FuzzyTimeService.TimeConversionResult result = fuzzyTimeService.convert(timeInput);
+        FuzzyTimeService.TimeConversionResult result = fuzzyTimeService.convert(timeInfo);
 
         assertEquals(1754380800L, result.startTimestamp);
         assertEquals(1754395200L, result.endTimestamp);
@@ -161,9 +161,9 @@ class FuzzyTimeServiceImplTest {
     @Test
     @DisplayName("Should handle fuzzy time with timezone offset in periodStart")
     void shouldHandleFuzzyTimeWithTimezone() {
-        TimeInput timeInput = new TimeInput("evening", "2025-08-05T19:00:00-04:00", null, null);
+        TimeInfo timeInfo = new TimeInfo("evening", "2025-08-05T19:00:00-04:00", null, null);
 
-        FuzzyTimeService.TimeConversionResult result = fuzzyTimeService.convert(timeInput);
+        FuzzyTimeService.TimeConversionResult result = fuzzyTimeService.convert(timeInfo);
 
         // 2025-08-05T19:00:00-04:00 = 2025-08-05T23:00:00Z = Unix timestamp 1754434800
         // End = start + 4 hours = 1754434800 + 14400 = 1754449200
@@ -183,9 +183,9 @@ class FuzzyTimeServiceImplTest {
     @Test
     @DisplayName("Should throw exception for empty timeInput")
     void shouldThrowExceptionForEmptyTimeInput() {
-        TimeInput timeInput = new TimeInput(null, null, null, null);
+        TimeInfo timeInfo = new TimeInfo(null, null, null, null);
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
-            fuzzyTimeService.convert(timeInput);
+            fuzzyTimeService.convert(timeInfo);
         });
         assertEquals("timeInput must contain either exact time (startTime + endTime) or fuzzy time (periodGranularity + periodStart)", exception.getMessage());
     }
@@ -193,10 +193,10 @@ class FuzzyTimeServiceImplTest {
     @Test
     @DisplayName("Should throw exception for incomplete exact time (missing endTime)")
     void shouldThrowExceptionForIncompleteExactTime() {
-        TimeInput timeInput = new TimeInput(null, null, "2025-08-05T19:15:00Z", null);
+        TimeInfo timeInfo = new TimeInfo(null, null, "2025-08-05T19:15:00Z", null);
 
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
-            fuzzyTimeService.convert(timeInput);
+            fuzzyTimeService.convert(timeInfo);
         });
         assertEquals("endTime cannot be null or empty", exception.getMessage());
     }
@@ -204,10 +204,10 @@ class FuzzyTimeServiceImplTest {
     @Test
     @DisplayName("Should throw exception for incomplete fuzzy time (missing periodStart)")
     void shouldThrowExceptionForIncompleteFuzzyTime() {
-        TimeInput timeInput = new TimeInput("morning", null, null, null);
+        TimeInfo timeInfo = new TimeInfo("morning", null, null, null);
 
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
-            fuzzyTimeService.convert(timeInput);
+            fuzzyTimeService.convert(timeInfo);
         });
         assertEquals("periodStart cannot be null or empty", exception.getMessage());
     }
@@ -215,10 +215,10 @@ class FuzzyTimeServiceImplTest {
     @Test
     @DisplayName("Should throw exception for null startTime")
     void shouldThrowExceptionForNullStartTime() {
-        TimeInput timeInput = new TimeInput(null, null, null, "2025-08-05T21:30:00Z");
+        TimeInfo timeInfo = new TimeInfo(null, null, null, "2025-08-05T21:30:00Z");
 
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
-            fuzzyTimeService.convert(timeInput);
+            fuzzyTimeService.convert(timeInfo);
         });
         assertEquals("startTime cannot be null or empty", exception.getMessage());
     }
@@ -226,10 +226,10 @@ class FuzzyTimeServiceImplTest {
     @Test
     @DisplayName("Should throw exception for empty startTime")
     void shouldThrowExceptionForEmptyStartTime() {
-        TimeInput timeInput = new TimeInput(null, null, "", "2025-08-05T21:30:00Z");
+        TimeInfo timeInfo = new TimeInfo(null, null, "", "2025-08-05T21:30:00Z");
 
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
-            fuzzyTimeService.convert(timeInput);
+            fuzzyTimeService.convert(timeInfo);
         });
         assertEquals("startTime cannot be null or empty", exception.getMessage());
     }
@@ -237,10 +237,10 @@ class FuzzyTimeServiceImplTest {
     @Test
     @DisplayName("Should throw exception for null endTime")
     void shouldThrowExceptionForNullEndTime() {
-        TimeInput timeInput = new TimeInput(null, null, "2025-08-05T19:15:00Z", null);
+        TimeInfo timeInfo = new TimeInfo(null, null, "2025-08-05T19:15:00Z", null);
 
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
-            fuzzyTimeService.convert(timeInput);
+            fuzzyTimeService.convert(timeInfo);
         });
         assertEquals("endTime cannot be null or empty", exception.getMessage());
     }
@@ -248,10 +248,10 @@ class FuzzyTimeServiceImplTest {
     @Test
     @DisplayName("Should throw exception for empty endTime")
     void shouldThrowExceptionForEmptyEndTime() {
-        TimeInput timeInput = new TimeInput(null, null, "2025-08-05T19:15:00Z", "   ");
+        TimeInfo timeInfo = new TimeInfo(null, null, "2025-08-05T19:15:00Z", "   ");
 
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
-            fuzzyTimeService.convert(timeInput);
+            fuzzyTimeService.convert(timeInfo);
         });
         assertEquals("endTime cannot be null or empty", exception.getMessage());
     }
@@ -259,10 +259,10 @@ class FuzzyTimeServiceImplTest {
     @Test
     @DisplayName("Should throw exception for null periodGranularity")
     void shouldThrowExceptionForNullPeriodGranularity() {
-        TimeInput timeInput = new TimeInput(null, "2025-08-05T19:00:00Z", null, null);
+        TimeInfo timeInfo = new TimeInfo(null, "2025-08-05T19:00:00Z", null, null);
 
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
-            fuzzyTimeService.convert(timeInput);
+            fuzzyTimeService.convert(timeInfo);
         });
         assertEquals("periodGranularity cannot be null or empty", exception.getMessage());
     }
@@ -270,10 +270,10 @@ class FuzzyTimeServiceImplTest {
     @Test
     @DisplayName("Should throw exception for empty periodGranularity")
     void shouldThrowExceptionForEmptyPeriodGranularity() {
-        TimeInput timeInput = new TimeInput("", "2025-08-05T19:00:00Z", null, null);
+        TimeInfo timeInfo = new TimeInfo("", "2025-08-05T19:00:00Z", null, null);
 
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
-            fuzzyTimeService.convert(timeInput);
+            fuzzyTimeService.convert(timeInfo);
         });
         assertEquals("periodGranularity cannot be null or empty", exception.getMessage());
     }
@@ -281,10 +281,10 @@ class FuzzyTimeServiceImplTest {
     @Test
     @DisplayName("Should throw exception for null periodStart")
     void shouldThrowExceptionForNullPeriodStart() {
-        TimeInput timeInput = new TimeInput("morning", null, null, null);
+        TimeInfo timeInfo = new TimeInfo("morning", null, null, null);
 
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
-            fuzzyTimeService.convert(timeInput);
+            fuzzyTimeService.convert(timeInfo);
         });
         assertEquals("periodStart cannot be null or empty", exception.getMessage());
     }
@@ -292,10 +292,10 @@ class FuzzyTimeServiceImplTest {
     @Test
     @DisplayName("Should throw exception for empty periodStart")
     void shouldThrowExceptionForEmptyPeriodStart() {
-        TimeInput timeInput = new TimeInput("morning", "   ", null, null);
+        TimeInfo timeInfo = new TimeInfo("morning", "   ", null, null);
 
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
-            fuzzyTimeService.convert(timeInput);
+            fuzzyTimeService.convert(timeInfo);
         });
         assertEquals("periodStart cannot be null or empty", exception.getMessage());
     }
@@ -303,10 +303,10 @@ class FuzzyTimeServiceImplTest {
     @Test
     @DisplayName("Should throw exception for endTime before startTime")
     void shouldThrowExceptionForEndTimeBeforeStartTime() {
-        TimeInput timeInput = new TimeInput(null, null, "2025-08-05T21:30:00Z", "2025-08-05T19:15:00Z");
+        TimeInfo timeInfo = new TimeInfo(null, null, "2025-08-05T21:30:00Z", "2025-08-05T19:15:00Z");
 
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
-            fuzzyTimeService.convert(timeInput);
+            fuzzyTimeService.convert(timeInfo);
         });
         assertEquals("endTime must be after startTime", exception.getMessage());
     }
@@ -314,10 +314,10 @@ class FuzzyTimeServiceImplTest {
     @Test
     @DisplayName("Should throw exception for equal startTime and endTime")
     void shouldThrowExceptionForEqualTimes() {
-        TimeInput timeInput = new TimeInput(null, null, "2025-08-05T19:15:00Z", "2025-08-05T19:15:00Z");
+        TimeInfo timeInfo = new TimeInfo(null, null, "2025-08-05T19:15:00Z", "2025-08-05T19:15:00Z");
 
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
-            fuzzyTimeService.convert(timeInput);
+            fuzzyTimeService.convert(timeInfo);
         });
         assertEquals("endTime must be after startTime", exception.getMessage());
     }
@@ -325,10 +325,10 @@ class FuzzyTimeServiceImplTest {
     @Test
     @DisplayName("Should throw exception for invalid ISO 8601 format")
     void shouldThrowExceptionForInvalidIso8601Format() {
-        TimeInput timeInput = new TimeInput(null, null, "2025-08-05 19:15:00", "2025-08-05T21:30:00Z");
+        TimeInfo timeInfo = new TimeInfo(null, null, "2025-08-05 19:15:00", "2025-08-05T21:30:00Z");
 
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
-            fuzzyTimeService.convert(timeInput);
+            fuzzyTimeService.convert(timeInfo);
         });
         assertTrue(exception.getMessage().contains("Invalid ISO 8601 timestamp format"));
     }
@@ -336,10 +336,10 @@ class FuzzyTimeServiceImplTest {
     @Test
     @DisplayName("Should throw exception for invalid fuzzy periodStart format")
     void shouldThrowExceptionForInvalidFuzzyPeriodStartFormat() {
-        TimeInput timeInput = new TimeInput("morning", "invalid-date", null, null);
+        TimeInfo timeInfo = new TimeInfo("morning", "invalid-date", null, null);
 
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
-            fuzzyTimeService.convert(timeInput);
+            fuzzyTimeService.convert(timeInfo);
         });
         assertTrue(exception.getMessage().contains("Invalid ISO 8601 timestamp format for periodStart"));
     }
@@ -348,10 +348,10 @@ class FuzzyTimeServiceImplTest {
     @ValueSource(strings = {"invalid", "weekly", "hourly", "daily", "monthly"})
     @DisplayName("Should throw exception for unsupported periodGranularity")
     void shouldThrowExceptionForUnsupportedPeriodGranularity(String granularity) {
-        TimeInput timeInput = new TimeInput(granularity, "2025-08-05T19:00:00Z", null, null);
+        TimeInfo timeInfo = new TimeInfo(granularity, "2025-08-05T19:00:00Z", null, null);
 
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
-            fuzzyTimeService.convert(timeInput);
+            fuzzyTimeService.convert(timeInfo);
         });
         assertTrue(exception.getMessage().contains("Unsupported periodGranularity"));
         assertTrue(exception.getMessage().contains("morning, afternoon, evening, night, day, weekend"));
@@ -360,10 +360,10 @@ class FuzzyTimeServiceImplTest {
     @Test
     @DisplayName("Should throw exception for exact granularity with fuzzy time structure")
     void shouldThrowExceptionForExactGranularityWithFuzzyStructure() {
-        TimeInput timeInput = new TimeInput("exact", "2025-08-05T19:00:00Z", null, null);
+        TimeInfo timeInfo = new TimeInfo("exact", "2025-08-05T19:00:00Z", null, null);
 
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
-            fuzzyTimeService.convert(timeInput);
+            fuzzyTimeService.convert(timeInfo);
         });
         assertEquals("exact granularity should use startTime/endTime, not periodGranularity", exception.getMessage());
     }

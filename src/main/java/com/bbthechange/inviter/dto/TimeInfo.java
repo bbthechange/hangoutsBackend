@@ -4,15 +4,15 @@ import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbAttribute;
 
 @DynamoDbBean
-public class TimeInput {
+public class TimeInfo {
     private String periodGranularity;
     private String periodStart; // ISO 8601 with timezone
     private String startTime;   // ISO 8601 with timezone  
     private String endTime;     // ISO 8601 with timezone
     
-    public TimeInput() {}
+    public TimeInfo() {}
     
-    public TimeInput(String periodGranularity, String periodStart, String startTime, String endTime) {
+    public TimeInfo(String periodGranularity, String periodStart, String startTime, String endTime) {
         this.periodGranularity = periodGranularity;
         this.periodStart = periodStart;
         this.startTime = startTime;

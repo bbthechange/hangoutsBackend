@@ -44,8 +44,8 @@ public class HangoutServiceImpl implements HangoutService {
     public Hangout createHangout(CreateHangoutRequest request, String requestingUserId) {
         // Convert timeInput to canonical timestamps
         FuzzyTimeService.TimeConversionResult timeResult = null;
-        if (request.getTimeInput() != null) {
-            timeResult = fuzzyTimeService.convert(request.getTimeInput());
+        if (request.getTimeInfo() != null) {
+            timeResult = fuzzyTimeService.convert(request.getTimeInfo());
         }
         
         // Create the hangout
@@ -60,7 +60,7 @@ public class HangoutServiceImpl implements HangoutService {
         );
         
         // Set the timeInput for fuzzy time support and canonical timestamps
-        hangout.setTimeInput(request.getTimeInput());
+        hangout.setTimeInput(request.getTimeInfo());
         if (timeResult != null) {
             hangout.setStartTimestamp(timeResult.startTimestamp);
             hangout.setEndTimestamp(timeResult.endTimestamp);
@@ -112,15 +112,16 @@ public class HangoutServiceImpl implements HangoutService {
         // Single item collection query gets EVERYTHING (the power pattern!)
         HangoutDetailData hangoutDetail = hangoutRepository.getHangoutDetailData(hangoutId);
         // Authorization check
-        if (!canUserViewHangout(requestingUserId, hangoutDetail.getHangout())) {
+        Hangout hangout = hangoutDetail.getHangout();
+        if (!canUserViewHangout(requestingUserId, hangout)) {
             throw new UnauthorizedException("Cannot view hangout");
         }
         
         // Transform to DTO with formatted timeInfo
-        Map<String, String> timeInfo = formatTimeInfoForResponse(hangoutDetail.getHangout().getTimeInput());
+        TimeInfo timeInfo = formatTimeInfoForResponse(hangout.getTimeInput());
+        hangout.setTimeInput(timeInfo);
         return new HangoutDetailDTO(
-            hangoutDetail.getHangout(),
-            timeInfo, // Formatted timeInfo with UTC timestamps
+                hangout,
             hangoutDetail.getPolls(),
             hangoutDetail.getCars(),
             hangoutDetail.getVotes(),
@@ -153,11 +154,11 @@ public class HangoutServiceImpl implements HangoutService {
             hangout.setDescription(request.getDescription());
         }
         
-        if (request.getTimeInput() != null) {
-            hangout.setTimeInput(request.getTimeInput());
+        if (request.getTimeInfo() != null) {
+            hangout.setTimeInput(request.getTimeInfo());
             
             // Convert timeInput to canonical timestamps
-            FuzzyTimeService.TimeConversionResult timeResult = fuzzyTimeService.convert(request.getTimeInput());
+            FuzzyTimeService.TimeConversionResult timeResult = fuzzyTimeService.convert(request.getTimeInfo());
             hangout.setStartTimestamp(timeResult.startTimestamp);
             hangout.setEndTimestamp(timeResult.endTimestamp);
             
@@ -551,36 +552,39 @@ public class HangoutServiceImpl implements HangoutService {
         
         // *** NO DATABASE CALL - Use denormalized timeInput ***
         if (pointer.getTimeInput() != null) {
-            Map<String, String> timeInfo = formatTimeInfoForResponse(pointer.getTimeInput());
+            TimeInfo timeInfo = formatTimeInfoForResponse(pointer.getTimeInput());
             summary.setTimeInfo(timeInfo);
         }
         
         return summary;
     }
-    
-    private Map<String, String> formatTimeInfoForResponse(TimeInput timeInput) {
-        if (timeInput == null) {
-            return null;
-        }
-        
-        Map<String, String> timeInfo = new HashMap<>();
-        
+
+    private TimeInfo formatTimeInfoForResponse(TimeInfo timeInfo) {
+        if (timeInfo == null) return null;
+
+        TimeInfo formattedTimeInfo = new TimeInfo();
+
         // For fuzzy time: only return periodGranularity and periodStart in UTC
-        if (timeInput.getPeriodGranularity() != null) {
-            timeInfo.put("periodGranularity", timeInput.getPeriodGranularity());
-            if (timeInput.getPeriodStart() != null) {
-                timeInfo.put("periodStart", convertToUtcIsoString(timeInput.getPeriodStart()));
-            }
-        } 
-        // For exact time: only return startTime and endTime in UTC
-        else if (timeInput.getStartTime() != null) {
-            timeInfo.put("startTime", convertToUtcIsoString(timeInput.getStartTime()));
-            if (timeInput.getEndTime() != null) {
-                timeInfo.put("endTime", convertToUtcIsoString(timeInput.getEndTime()));
+        if (timeInfo.getPeriodGranularity() != null) {
+            formattedTimeInfo.setPeriodGranularity(timeInfo.getPeriodGranularity());
+            if (timeInfo.getPeriodStart() != null) {
+                formattedTimeInfo.setPeriodStart(convertToUtcIsoString(timeInfo.getPeriodStart()));
             }
         }
-        
-        return timeInfo;
+        // For exact time: only return startTime and endTime in UTC
+        else if (timeInfo.getStartTime() != null) {
+            formattedTimeInfo.setStartTime(convertToUtcIsoString(timeInfo.getStartTime()));
+            if (timeInfo.getEndTime() != null) {
+                formattedTimeInfo.setEndTime(convertToUtcIsoString(timeInfo.getEndTime()));
+            }
+        }
+        // Ensure other fields are null if not set, as per API contract
+        formattedTimeInfo.setPeriodGranularity(formattedTimeInfo.getPeriodGranularity()); // Re-set to ensure null if not set above
+        formattedTimeInfo.setPeriodStart(formattedTimeInfo.getPeriodStart());
+        formattedTimeInfo.setStartTime(formattedTimeInfo.getStartTime());
+        formattedTimeInfo.setEndTime(formattedTimeInfo.getEndTime());
+
+        return formattedTimeInfo;
     }
     
     private String convertToUtcIsoString(String timeString) {

@@ -1,7 +1,7 @@
 package com.bbthechange.inviter.model;
 
+import com.bbthechange.inviter.dto.TimeInfo;
 import com.bbthechange.inviter.util.InviterKeyFactory;
-import com.bbthechange.inviter.dto.TimeInput;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbAttribute;
 
@@ -26,7 +26,7 @@ public class HangoutPointer extends BaseItem {
     private int participantCount;   // Cached count for display
     private String GSI1PK;          // GSI partition key for EntityTimeIndex
     private String GSI1SK;          // GSI sort key for EntityTimeIndex
-    private TimeInput timeInput;    // Denormalized for efficient reads
+    private TimeInfo timeInfo;    // Denormalized for efficient reads
     private Long startTimestamp;    // Denormalized for GSI sorting
     private Long endTimestamp;      // Denormalized for completeness
     
@@ -132,12 +132,12 @@ public class HangoutPointer extends BaseItem {
     }
     
     @DynamoDbAttribute("timeInput")
-    public TimeInput getTimeInput() {
-        return timeInput;
+    public TimeInfo getTimeInput() {
+        return timeInfo;
     }
     
-    public void setTimeInput(TimeInput timeInput) {
-        this.timeInput = timeInput;
+    public void setTimeInput(TimeInfo timeInfo) {
+        this.timeInfo = timeInfo;
         touch();
     }
     

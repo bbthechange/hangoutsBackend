@@ -1,6 +1,5 @@
 package com.bbthechange.inviter.service.impl;
 
-import com.bbthechange.inviter.service.HangoutService;
 import com.bbthechange.inviter.service.FuzzyTimeService;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.GroupRepository;
@@ -13,9 +12,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.*;
@@ -358,20 +355,20 @@ class HangoutServiceImplTest {
     void createHangout_WithFuzzyTime_Success() {
         // Given
         String userId = "87654321-4321-4321-4321-210987654321";
-        TimeInput timeInput = new TimeInput();
-        timeInput.setPeriodGranularity("evening");
-        timeInput.setPeriodStart("2025-08-05T19:00:00Z");
+        TimeInfo timeInfo = new TimeInfo();
+        timeInfo.setPeriodGranularity("evening");
+        timeInfo.setPeriodStart("2025-08-05T19:00:00Z");
         
         CreateHangoutRequest request = new CreateHangoutRequest();
         request.setTitle("Evening Hangout");
         request.setDescription("Test fuzzy time hangout");
-        request.setTimeInput(timeInput);
+        request.setTimeInfo(timeInfo);
         request.setVisibility(EventVisibility.INVITE_ONLY);
         request.setAssociatedGroups(List.of("11111111-1111-1111-1111-111111111111"));
         
         // Mock fuzzy time service
         FuzzyTimeService.TimeConversionResult timeResult = new FuzzyTimeService.TimeConversionResult(1754557200L, 1754571600L);
-        when(fuzzyTimeService.convert(timeInput)).thenReturn(timeResult);
+        when(fuzzyTimeService.convert(timeInfo)).thenReturn(timeResult);
         
         // Mock group membership validation
         GroupMembership membership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Test Group");
@@ -391,11 +388,11 @@ class HangoutServiceImplTest {
         assertThat(result).isNotNull();
         
         // Verify fuzzy time conversion was called
-        verify(fuzzyTimeService).convert(timeInput);
+        verify(fuzzyTimeService).convert(timeInfo);
         
         // Verify hangout was created with correct timestamps
         verify(hangoutRepository).createHangout(argThat(hangout -> 
-            hangout.getTimeInput().equals(timeInput) &&
+            hangout.getTimeInput().equals(timeInfo) &&
             hangout.getStartTimestamp().equals(1754557200L) &&
             hangout.getEndTimestamp().equals(1754571600L)
         ));
@@ -411,20 +408,20 @@ class HangoutServiceImplTest {
     void createHangout_WithExactTime_Success() {
         // Given
         String userId = "87654321-4321-4321-4321-210987654321";
-        TimeInput timeInput = new TimeInput();
-        timeInput.setStartTime("2025-08-05T19:15:00Z");
-        timeInput.setEndTime("2025-08-05T21:30:00Z");
+        TimeInfo timeInfo = new TimeInfo();
+        timeInfo.setStartTime("2025-08-05T19:15:00Z");
+        timeInfo.setEndTime("2025-08-05T21:30:00Z");
         
         CreateHangoutRequest request = new CreateHangoutRequest();
         request.setTitle("Exact Time Hangout");
         request.setDescription("Test exact time hangout");
-        request.setTimeInput(timeInput);
+        request.setTimeInfo(timeInfo);
         request.setVisibility(EventVisibility.INVITE_ONLY);
         request.setAssociatedGroups(List.of("11111111-1111-1111-1111-111111111111"));
         
         // Mock fuzzy time service
         FuzzyTimeService.TimeConversionResult timeResult = new FuzzyTimeService.TimeConversionResult(1754558100L, 1754566200L);
-        when(fuzzyTimeService.convert(timeInput)).thenReturn(timeResult);
+        when(fuzzyTimeService.convert(timeInfo)).thenReturn(timeResult);
         
         // Mock group membership validation
         GroupMembership membership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Test Group");
@@ -444,11 +441,11 @@ class HangoutServiceImplTest {
         assertThat(result).isNotNull();
         
         // Verify fuzzy time conversion was called
-        verify(fuzzyTimeService).convert(timeInput);
+        verify(fuzzyTimeService).convert(timeInfo);
         
         // Verify hangout was created with correct timestamps
         verify(hangoutRepository).createHangout(argThat(hangout -> 
-            hangout.getTimeInput().equals(timeInput) &&
+            hangout.getTimeInput().equals(timeInfo) &&
             hangout.getStartTimestamp().equals(1754558100L) &&
             hangout.getEndTimestamp().equals(1754566200L)
         ));
@@ -462,7 +459,7 @@ class HangoutServiceImplTest {
         CreateHangoutRequest request = new CreateHangoutRequest();
         request.setTitle("No Time Hangout");
         request.setDescription("Hangout without time");
-        request.setTimeInput(null);
+        request.setTimeInfo(null);
         request.setVisibility(EventVisibility.INVITE_ONLY);
         request.setAssociatedGroups(List.of("11111111-1111-1111-1111-111111111111"));
         
@@ -498,12 +495,12 @@ class HangoutServiceImplTest {
         String hangoutId = "12345678-1234-1234-1234-123456789012";
         String userId = "87654321-4321-4321-4321-210987654321";
         
-        TimeInput newTimeInput = new TimeInput();
-        newTimeInput.setPeriodGranularity("morning");
-        newTimeInput.setPeriodStart("2025-08-06T08:00:00Z");
+        TimeInfo newTimeInfo = new TimeInfo();
+        newTimeInfo.setPeriodGranularity("morning");
+        newTimeInfo.setPeriodStart("2025-08-06T08:00:00Z");
         
         UpdateHangoutRequest request = new UpdateHangoutRequest();
-        request.setTimeInput(newTimeInput);
+        request.setTimeInfo(newTimeInfo);
         
         // Mock existing hangout
         Hangout existingHangout = createTestHangout(hangoutId);
@@ -516,7 +513,7 @@ class HangoutServiceImplTest {
         
         // Mock fuzzy time service
         FuzzyTimeService.TimeConversionResult timeResult = new FuzzyTimeService.TimeConversionResult(1754603600L, 1754618000L);
-        when(fuzzyTimeService.convert(newTimeInput)).thenReturn(timeResult);
+        when(fuzzyTimeService.convert(newTimeInfo)).thenReturn(timeResult);
         
         // Mock repository operations
         when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
@@ -528,11 +525,11 @@ class HangoutServiceImplTest {
         
         // Then
         // Verify fuzzy time conversion was called
-        verify(fuzzyTimeService).convert(newTimeInput);
+        verify(fuzzyTimeService).convert(newTimeInfo);
         
         // Verify hangout was updated with new timestamps
         verify(hangoutRepository).createHangout(argThat(hangout -> 
-            hangout.getTimeInput().equals(newTimeInput) &&
+            hangout.getTimeInput().equals(newTimeInfo) &&
             hangout.getStartTimestamp().equals(1754603600L) &&
             hangout.getEndTimestamp().equals(1754618000L)
         ));
@@ -550,17 +547,17 @@ class HangoutServiceImplTest {
     void createHangout_FuzzyTimeServiceThrowsException_PropagatesException() {
         // Given
         String userId = "87654321-4321-4321-4321-210987654321";
-        TimeInput invalidTimeInput = new TimeInput();
-        invalidTimeInput.setPeriodGranularity("invalid");
-        invalidTimeInput.setPeriodStart("2025-08-05T19:00:00Z");
+        TimeInfo invalidTimeInfo = new TimeInfo();
+        invalidTimeInfo.setPeriodGranularity("invalid");
+        invalidTimeInfo.setPeriodStart("2025-08-05T19:00:00Z");
         
         CreateHangoutRequest request = new CreateHangoutRequest();
         request.setTitle("Invalid Time Hangout");
-        request.setTimeInput(invalidTimeInput);
+        request.setTimeInfo(invalidTimeInfo);
         request.setVisibility(EventVisibility.INVITE_ONLY);
         
         // Mock fuzzy time service to throw exception
-        when(fuzzyTimeService.convert(invalidTimeInput))
+        when(fuzzyTimeService.convert(invalidTimeInfo))
             .thenThrow(new IllegalArgumentException("Unsupported periodGranularity: invalid"));
         
         // When/Then
@@ -613,39 +610,6 @@ class HangoutServiceImplTest {
         timeInput.put(key1, value1);
         timeInput.put(key2, value2);
         return timeInput;
-    }
-    
-    // ===== New Tests for F-1-T3 Implementation =====
-    
-    @Test
-    void getHangoutDetail_WithFormattedTimeInfo_Success() {
-        // Given
-        String hangoutId = "12345678-1234-1234-1234-123456789012";
-        String userId = "87654321-4321-4321-4321-210987654321";
-        
-        Hangout hangout = createTestHangout(hangoutId);
-        hangout.setVisibility(EventVisibility.PUBLIC);
-        
-        // Set timeInput with timestamps that need formatting
-        TimeInput timeInput = new TimeInput();
-        timeInput.setStartTime("1754558100"); // Unix timestamp
-        timeInput.setEndTime("1754566200");   // Unix timestamp
-        hangout.setTimeInput(timeInput);
-        
-        HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of()
-        );
-        
-        when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
-        
-        // When
-        HangoutDetailDTO result = hangoutService.getHangoutDetail(hangoutId, userId);
-        
-        // Then
-        assertThat(result.getHangout()).isEqualTo(hangout);
-        assertThat(result.getTimeInfo()).isNotNull();
-        assertThat(result.getTimeInfo().get("startTime")).isEqualTo("2025-08-07T09:15:00Z"); // Formatted as UTC ISO
-        assertThat(result.getTimeInfo().get("endTime")).isEqualTo("2025-08-07T11:30:00Z");   // Formatted as UTC ISO
     }
     
     @Test 
@@ -752,7 +716,7 @@ class HangoutServiceImplTest {
         hangout.setVisibility(EventVisibility.PUBLIC);
         
         // Set timeInput with Unix timestamps for fuzzy time (only periodGranularity and periodStart)
-        TimeInput timeInput = new TimeInput();
+        TimeInfo timeInput = new TimeInfo();
         timeInput.setPeriodGranularity("evening");
         timeInput.setPeriodStart("1754557200"); // Unix timestamp for 2025-08-05T19:00:00Z  
         hangout.setTimeInput(timeInput);
@@ -764,37 +728,10 @@ class HangoutServiceImplTest {
         HangoutDetailDTO result = hangoutService.getHangoutDetail(hangoutId, userId);
         
         // Then - fuzzy time only returns periodGranularity and periodStart
-        Map<String, String> timeInfo = result.getTimeInfo();
-        assertThat(timeInfo.get("periodStart")).isEqualTo("2025-08-07T09:00:00Z");
-        assertThat(timeInfo.get("periodGranularity")).isEqualTo("evening");
-        assertThat(timeInfo.get("startTime")).isNull(); // Not returned for fuzzy time
-    }
-    
-    @Test
-    void formatTimeInfoForResponse_WithISOTimestamps_PassesThrough() {
-        // Given
-        String hangoutId = "12345678-1234-1234-1234-123456789012";
-        String userId = "87654321-4321-4321-4321-210987654321";
-        
-        Hangout hangout = createTestHangout(hangoutId);
-        hangout.setVisibility(EventVisibility.PUBLIC);
-        
-        // Set timeInput with already formatted ISO timestamps
-        TimeInput timeInput = new TimeInput();
-        timeInput.setStartTime("2025-08-05T19:15:00Z");
-        timeInput.setEndTime("2025-08-05T21:30:00Z");
-        hangout.setTimeInput(timeInput);
-        
-        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of());
-        when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
-        
-        // When
-        HangoutDetailDTO result = hangoutService.getHangoutDetail(hangoutId, userId);
-        
-        // Then
-        Map<String, String> timeInfo = result.getTimeInfo();
-        assertThat(timeInfo.get("startTime")).isEqualTo("2025-08-05T19:15:00Z"); // Unchanged
-        assertThat(timeInfo.get("endTime")).isEqualTo("2025-08-05T21:30:00Z");   // Unchanged
+        TimeInfo timeInfo = result.getHangout().getTimeInput();
+        assertThat(timeInfo.getPeriodStart()).isEqualTo("2025-08-07T09:00:00Z");
+        assertThat(timeInfo.getPeriodGranularity()).isEqualTo("evening");
+        assertThat(timeInfo.getStartTime()).isNull(); // Not returned for fuzzy time
     }
     
     // Helper methods for new tests
@@ -822,10 +759,10 @@ class HangoutServiceImplTest {
     
     private Hangout createTestHangoutWithTimeInput(String hangoutId) {
         Hangout hangout = createTestHangout(hangoutId);
-        TimeInput timeInput = new TimeInput();
-        timeInput.setStartTime("1754558100"); // Unix timestamp
-        timeInput.setEndTime("1754566200");
-        hangout.setTimeInput(timeInput);
+        TimeInfo timeInfo = new TimeInfo();
+        timeInfo.setStartTime("1754558100"); // Unix timestamp
+        timeInfo.setEndTime("1754566200");
+        hangout.setTimeInput(timeInfo);
         return hangout;
     }
 }

@@ -1,22 +1,18 @@
 package com.bbthechange.inviter.integration.repository;
 
 import com.bbthechange.inviter.config.BaseIntegrationTest;
+import com.bbthechange.inviter.dto.TimeInfo;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.model.*;
-import com.bbthechange.inviter.dto.EventDetailData;
 import com.bbthechange.inviter.dto.HangoutDetailData;
-import com.bbthechange.inviter.dto.TimeInput;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.jupiter.api.MethodOrderer.OrderAnnotation;
 import org.junit.jupiter.api.Order;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 import java.util.List;
-import java.util.Map;
-import java.util.HashMap;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.*;
@@ -184,10 +180,10 @@ class HangoutRepositoryImplTest extends BaseIntegrationTest {
         hangout.setHangoutId("gsi-test-hangout-1");
         
         // Set timeInput and timestamps for GSI
-        TimeInput timeInput = new TimeInput();
-        timeInput.setStartTime("1754558100");
-        timeInput.setEndTime("1754566200");
-        hangout.setTimeInput(timeInput);
+        TimeInfo timeInfo = new TimeInfo();
+        timeInfo.setStartTime("1754558100");
+        timeInfo.setEndTime("1754566200");
+        hangout.setTimeInput(timeInfo);
         hangout.setStartTimestamp(1754558100L);
         hangout.setEndTimestamp(1754566200L);
         
@@ -196,7 +192,7 @@ class HangoutRepositoryImplTest extends BaseIntegrationTest {
         
         // Then
         assertThat(saved.getHangoutId()).isEqualTo("gsi-test-hangout-1");
-        assertThat(saved.getTimeInput()).isEqualTo(timeInput);
+        assertThat(saved.getTimeInput()).isEqualTo(timeInfo);
         assertThat(saved.getStartTimestamp()).isEqualTo(1754558100L);
         assertThat(saved.getEndTimestamp()).isEqualTo(1754566200L);
     }

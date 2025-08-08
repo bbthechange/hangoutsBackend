@@ -11,7 +11,6 @@ import java.util.Map;
 @AllArgsConstructor
 public class HangoutDetailDTO {
     private Hangout hangout;
-    private Map<String, String> timeInfo; // Fuzzy time information for display
     private List<Poll> polls;
     private List<Car> cars;
     private List<Vote> votes;

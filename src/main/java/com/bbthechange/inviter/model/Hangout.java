@@ -1,7 +1,7 @@
 package com.bbthechange.inviter.model;
 
 import com.bbthechange.inviter.dto.Address;
-import com.bbthechange.inviter.dto.TimeInput;
+import com.bbthechange.inviter.dto.TimeInfo;
 import com.bbthechange.inviter.util.InviterKeyFactory;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbAttribute;
@@ -31,7 +31,7 @@ public class Hangout extends BaseItem {
     private Long version;
     private List<String> associatedGroups; // Groups this hangout is associated with
     private boolean carpoolEnabled; // Whether carpooling features are enabled
-    private TimeInput timeInput; // Original fuzzy time input from client
+    private TimeInfo timeInfo; // Original fuzzy time input from client
     private Long startTimestamp; // Canonical UTC Unix timestamp (seconds since epoch) for start time
     private Long endTimestamp; // Canonical UTC Unix timestamp (seconds since epoch) for end time
     
@@ -197,12 +197,12 @@ public class Hangout extends BaseItem {
     }
     
     @DynamoDbAttribute("timeInput")
-    public TimeInput getTimeInput() {
-        return timeInput;
+    public TimeInfo getTimeInput() {
+        return timeInfo;
     }
     
-    public void setTimeInput(TimeInput timeInput) {
-        this.timeInput = timeInput;
+    public void setTimeInput(TimeInfo timeInfo) {
+        this.timeInfo = timeInfo;
         touch(); // Update timestamp
     }
     

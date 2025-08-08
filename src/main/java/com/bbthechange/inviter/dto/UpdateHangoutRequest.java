@@ -2,13 +2,12 @@ package com.bbthechange.inviter.dto;
 
 import com.bbthechange.inviter.model.EventVisibility;
 import lombok.Data;
-import java.time.LocalDateTime;
 
 @Data
 public class UpdateHangoutRequest {
     private String title;
     private String description;
-    private TimeInput timeInput; // Fuzzy time input object
+    private TimeInfo timeInfo; // Fuzzy time input object
     private Address location;
     private EventVisibility visibility;
     private String mainImagePath;

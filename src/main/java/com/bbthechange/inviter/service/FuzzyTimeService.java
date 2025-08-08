@@ -1,6 +1,6 @@
 package com.bbthechange.inviter.service;
 
-import com.bbthechange.inviter.dto.TimeInput;
+import com.bbthechange.inviter.dto.TimeInfo;
 
 /**
  * Service for converting fuzzy time inputs to canonical timestamps.
@@ -12,13 +12,13 @@ public interface FuzzyTimeService {
     /**
      * Convert TimeInput to canonical timestamps.
      * 
-     * @param timeInput TimeInput containing either:
+     * @param timeInfo TimeInput containing either:
      *                  - Exact time: startTime and endTime (ISO 8601 strings with timezone)
      *                  - Fuzzy time: periodGranularity and periodStart (ISO 8601 with timezone)
      * @return TimeConversionResult with startTimestamp and endTimestamp (Unix seconds since epoch)
      * @throws IllegalArgumentException if timeInput is invalid or incomplete
      */
-    TimeConversionResult convert(TimeInput timeInput);
+    TimeConversionResult convert(TimeInfo timeInfo);
     
     /**
      * Result object containing canonical timestamps.
