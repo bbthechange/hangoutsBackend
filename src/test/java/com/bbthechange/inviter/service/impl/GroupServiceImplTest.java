@@ -238,10 +238,17 @@ class GroupServiceImplTest {
         when(groupRepository.findMembership(groupId, userId)).thenReturn(
             Optional.of(createTestMembership(groupId, userId, "Test Group", GroupRole.MEMBER)));
         
-        List<HangoutPointer> hangouts = List.of(
-            createHangoutPointer(groupId, "11111111-1111-1111-1111-111111111111", "Future Hangout", java.time.Instant.now().plusSeconds(3600)),
-            createHangoutPointer(groupId, "22222222-2222-2222-2222-222222222222", "Needs Scheduling", null)
-        );
+        // Create hangout pointers with timeInfo
+        HangoutPointer futureHangout = createHangoutPointer(groupId, "11111111-1111-1111-1111-111111111111", "Future Hangout", java.time.Instant.now().plusSeconds(3600));
+        TimeInfo timeInfo = new TimeInfo();
+        timeInfo.setPeriodGranularity("evening");
+        timeInfo.setPeriodStart("2025-08-05T19:00:00Z");
+        futureHangout.setTimeInput(timeInfo);
+        
+        HangoutPointer needsScheduling = createHangoutPointer(groupId, "22222222-2222-2222-2222-222222222222", "Needs Scheduling", null);
+        // No timeInfo for this one to test both scenarios
+        
+        List<HangoutPointer> hangouts = List.of(futureHangout, needsScheduling);
         when(groupRepository.findHangoutsByGroupId(groupId)).thenReturn(hangouts);
         
         // When
@@ -251,8 +258,17 @@ class GroupServiceImplTest {
         assertThat(result.getGroupId()).isEqualTo(groupId);
         assertThat(result.getWithDay()).hasSize(1);
         assertThat(result.getNeedsDay()).hasSize(1);
-        assertThat(result.getWithDay().get(0).getTitle()).isEqualTo("Future Hangout");
-        assertThat(result.getNeedsDay().get(0).getTitle()).isEqualTo("Needs Scheduling");
+        
+        // Verify hangout details and timeInfo
+        HangoutSummaryDTO futureHangoutSummary = result.getWithDay().get(0);
+        assertThat(futureHangoutSummary.getTitle()).isEqualTo("Future Hangout");
+        assertThat(futureHangoutSummary.getTimeInfo()).isNotNull();
+        assertThat(futureHangoutSummary.getTimeInfo().getPeriodGranularity()).isEqualTo("evening");
+        assertThat(futureHangoutSummary.getTimeInfo().getPeriodStart()).isEqualTo("2025-08-05T19:00:00Z");
+        
+        HangoutSummaryDTO needsSchedulingSummary = result.getNeedsDay().get(0);
+        assertThat(needsSchedulingSummary.getTitle()).isEqualTo("Needs Scheduling");
+        assertThat(needsSchedulingSummary.getTimeInfo()).isNull(); // No timeInfo set
     }
     
     // Helper methods for test data creation

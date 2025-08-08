@@ -387,14 +387,18 @@ public class HangoutServiceImpl implements HangoutService {
             HangoutPointer pointer = new HangoutPointer(groupId, eventId, hangout.getTitle());
             pointer.setStatus("ACTIVE"); // Default status
             pointer.setLocationName(getLocationName(hangout.getLocation()));
+            // TODO this looks wrong
             pointer.setParticipantCount(0); // Will be updated as people respond
-            
+
             // Set GSI fields for EntityTimeIndex
             pointer.setGSI1PK("GROUP#" + groupId);
-            if (hangout.getStartTimestamp() != null) {
-                pointer.setGSI1SK("T#" + hangout.getStartTimestamp());
+            if (hangout.getTimeInput() != null) {
+                pointer.setTimeInput(hangout.getTimeInput());
+                FuzzyTimeService.TimeConversionResult timeResult = fuzzyTimeService.convert(hangout.getTimeInput());
+                pointer.setStartTimestamp(timeResult.startTimestamp);
+                pointer.setGSI1SK("T#" + timeResult.startTimestamp);
             }
-            
+
             groupRepository.saveHangoutPointer(pointer);
         }
         

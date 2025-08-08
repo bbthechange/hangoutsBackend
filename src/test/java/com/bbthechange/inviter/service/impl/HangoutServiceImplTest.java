@@ -127,12 +127,19 @@ class HangoutServiceImplTest {
         List<String> groupIds = List.of("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222");
         String userId = "87654321-4321-4321-4321-210987654321";
         
-        Hangout hangout = createTestHangout(eventId);
+        // Use hangout with timeInfo to test timeInfo propagation to pointer
+        Hangout hangout = createTestHangoutWithTimeInput(eventId);
+        hangout.setStartTimestamp(1754558100L); // Set timestamps that would come from fuzzy time service
+        hangout.setEndTimestamp(1754566200L);
         // Set up hangout so user can edit it (they're admin in one of the groups they want to associate)
         hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111")));
         
         HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of());
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
+        
+        // Mock fuzzy time service conversion
+        FuzzyTimeService.TimeConversionResult timeResult = new FuzzyTimeService.TimeConversionResult(1754558100L, 1754566200L);
+        when(fuzzyTimeService.convert(any(TimeInfo.class))).thenReturn(timeResult);
         
         // Mock authorization - user is admin in first group and member of second
         GroupMembership adminMembership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Group One");
@@ -152,6 +159,15 @@ class HangoutServiceImplTest {
         // Then
         verify(hangoutRepository).createHangout(any(Hangout.class)); // Update canonical record
         verify(groupRepository, times(2)).saveHangoutPointer(any(HangoutPointer.class)); // Create pointers
+        
+        // Verify that pointers are created with timeInfo properly set
+        verify(groupRepository, times(2)).saveHangoutPointer(argThat(pointer -> 
+            pointer.getTimeInput() != null && 
+            pointer.getStartTimestamp() != null &&
+            pointer.getStartTimestamp().equals(1754558100L) &&
+            pointer.getGSI1SK() != null &&
+            pointer.getGSI1SK().equals("T#1754558100")
+        ));
     }
     
     @Test
@@ -577,12 +593,18 @@ class HangoutServiceImplTest {
         List<String> groupIds = List.of("11111111-1111-1111-1111-111111111111");
         String userId = "87654321-4321-4321-4321-210987654321";
         
-        Hangout hangout = createTestHangout(eventId);
-        hangout.setStartTimestamp(1754557200L); // Has timestamp from fuzzy time
+        // Use hangout with timeInput so GSI fields get set properly
+        Hangout hangout = createTestHangoutWithTimeInput(eventId);
+        hangout.setStartTimestamp(1754557200L); // Set timestamp that would come from fuzzy service
+        hangout.setEndTimestamp(1754571600L);
         hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("22222222-2222-2222-2222-222222222222")));
         
         HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of());
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
+        
+        // Mock fuzzy time service conversion
+        FuzzyTimeService.TimeConversionResult timeResult = new FuzzyTimeService.TimeConversionResult(1754557200L, 1754571600L);
+        when(fuzzyTimeService.convert(any(TimeInfo.class))).thenReturn(timeResult);
         
         // Mock authorization
         GroupMembership adminMembership = createTestMembership("22222222-2222-2222-2222-222222222222", userId, "Existing Group");
@@ -601,7 +623,8 @@ class HangoutServiceImplTest {
         // Then
         verify(groupRepository).saveHangoutPointer(argThat(pointer ->
             pointer.getGSI1PK().equals("GROUP#11111111-1111-1111-1111-111111111111") &&
-            pointer.getGSI1SK().equals("T#1754557200")
+            pointer.getGSI1SK().equals("T#1754557200") &&
+            pointer.getTimeInput() != null // Verify timeInput was set
         ));
     }
     
@@ -764,5 +787,38 @@ class HangoutServiceImplTest {
         timeInfo.setEndTime("1754566200");
         hangout.setTimeInput(timeInfo);
         return hangout;
+    }
+    
+    @Test
+    void hangoutSummaryDTO_Constructor_SetsTimeInfoFromPointer() {
+        // Given
+        String groupId = "11111111-1111-1111-1111-111111111111";
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String title = "Test Hangout";
+        
+        TimeInfo timeInfo = new TimeInfo();
+        timeInfo.setPeriodGranularity("evening");
+        timeInfo.setPeriodStart("2025-08-05T19:00:00Z");
+        
+        HangoutPointer pointer = new HangoutPointer(groupId, hangoutId, title);
+        pointer.setStatus("ACTIVE");
+        pointer.setLocationName("Test Location");
+        pointer.setParticipantCount(5);
+        pointer.setTimeInput(timeInfo);
+        
+        // When
+        HangoutSummaryDTO summary = new HangoutSummaryDTO(pointer);
+        
+        // Then
+        assertThat(summary.getHangoutId()).isEqualTo(hangoutId);
+        assertThat(summary.getTitle()).isEqualTo(title);
+        assertThat(summary.getStatus()).isEqualTo("ACTIVE");
+        assertThat(summary.getLocationName()).isEqualTo("Test Location");
+        assertThat(summary.getParticipantCount()).isEqualTo(5);
+        
+        // Verify timeInfo is properly set from pointer's timeInput
+        assertThat(summary.getTimeInfo()).isNotNull();
+        assertThat(summary.getTimeInfo().getPeriodGranularity()).isEqualTo("evening");
+        assertThat(summary.getTimeInfo().getPeriodStart()).isEqualTo("2025-08-05T19:00:00Z");
     }
 }

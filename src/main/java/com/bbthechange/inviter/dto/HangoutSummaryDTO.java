@@ -19,7 +19,7 @@ public class HangoutSummaryDTO {
         this.hangoutId = pointer.getHangoutId();
         this.title = pointer.getTitle();
         this.status = pointer.getStatus();
-        // timeInfo will need to be set separately from hangout's timeInput
+        this.timeInfo = pointer.getTimeInput(); // Set timeInfo from pointer's timeInput
         this.locationName = pointer.getLocationName();
         this.participantCount = pointer.getParticipantCount();
     }
