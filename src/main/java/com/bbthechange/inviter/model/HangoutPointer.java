@@ -1,7 +1,9 @@
 package com.bbthechange.inviter.model;
 
 import com.bbthechange.inviter.util.InviterKeyFactory;
+import com.bbthechange.inviter.dto.TimeInput;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
+import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbAttribute;
 
 import java.time.Instant;
 
@@ -24,6 +26,9 @@ public class HangoutPointer extends BaseItem {
     private int participantCount;   // Cached count for display
     private String GSI1PK;          // GSI partition key for EntityTimeIndex
     private String GSI1SK;          // GSI sort key for EntityTimeIndex
+    private TimeInput timeInput;    // Denormalized for efficient reads
+    private Long startTimestamp;    // Denormalized for GSI sorting
+    private Long endTimestamp;      // Denormalized for completeness
     
     // Default constructor for DynamoDB
     public HangoutPointer() {
@@ -124,5 +129,35 @@ public class HangoutPointer extends BaseItem {
     public void setGSI1SK(String GSI1SK) {
         this.GSI1SK = GSI1SK;
         touch(); // Update timestamp
+    }
+    
+    @DynamoDbAttribute("timeInput")
+    public TimeInput getTimeInput() {
+        return timeInput;
+    }
+    
+    public void setTimeInput(TimeInput timeInput) {
+        this.timeInput = timeInput;
+        touch();
+    }
+    
+    @DynamoDbAttribute("startTimestamp") 
+    public Long getStartTimestamp() {
+        return startTimestamp;
+    }
+    
+    public void setStartTimestamp(Long startTimestamp) {
+        this.startTimestamp = startTimestamp;
+        touch();
+    }
+    
+    @DynamoDbAttribute("endTimestamp")
+    public Long getEndTimestamp() {
+        return endTimestamp;
+    }
+    
+    public void setEndTimestamp(Long endTimestamp) {
+        this.endTimestamp = endTimestamp;
+        touch();
     }
 }

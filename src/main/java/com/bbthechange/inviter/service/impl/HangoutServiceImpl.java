@@ -43,9 +43,9 @@ public class HangoutServiceImpl implements HangoutService {
     @Override
     public Hangout createHangout(CreateHangoutRequest request, String requestingUserId) {
         // Convert timeInput to canonical timestamps
-        FuzzyTimeService.FuzzyTimeResult timeResult = null;
+        FuzzyTimeService.TimeConversionResult timeResult = null;
         if (request.getTimeInput() != null) {
-            timeResult = fuzzyTimeService.convertTimeInput(request.getTimeInput());
+            timeResult = fuzzyTimeService.convert(request.getTimeInput());
         }
         
         // Create the hangout
@@ -62,8 +62,8 @@ public class HangoutServiceImpl implements HangoutService {
         // Set the timeInput for fuzzy time support and canonical timestamps
         hangout.setTimeInput(request.getTimeInput());
         if (timeResult != null) {
-            hangout.setStartTimestamp(timeResult.getStartTimestamp());
-            hangout.setEndTimestamp(timeResult.getEndTimestamp());
+            hangout.setStartTimestamp(timeResult.startTimestamp);
+            hangout.setEndTimestamp(timeResult.endTimestamp);
         }
         hangout.setCarpoolEnabled(request.isCarpoolEnabled());
         
@@ -87,6 +87,11 @@ public class HangoutServiceImpl implements HangoutService {
                 pointer.setStatus("ACTIVE");
                 pointer.setLocationName(getLocationName(hangout.getLocation()));
                 pointer.setParticipantCount(0);
+                
+                // *** CRITICAL: Denormalize ALL time information ***
+                pointer.setTimeInput(hangout.getTimeInput());           // For API response
+                pointer.setStartTimestamp(hangout.getStartTimestamp()); // For GSI sorting  
+                pointer.setEndTimestamp(hangout.getEndTimestamp());     // For completeness
                 
                 // Set GSI fields for EntityTimeIndex
                 pointer.setGSI1PK("GROUP#" + groupId);
@@ -152,14 +157,14 @@ public class HangoutServiceImpl implements HangoutService {
             hangout.setTimeInput(request.getTimeInput());
             
             // Convert timeInput to canonical timestamps
-            FuzzyTimeService.FuzzyTimeResult timeResult = fuzzyTimeService.convertTimeInput(request.getTimeInput());
-            hangout.setStartTimestamp(timeResult.getStartTimestamp());
-            hangout.setEndTimestamp(timeResult.getEndTimestamp());
+            FuzzyTimeService.TimeConversionResult timeResult = fuzzyTimeService.convert(request.getTimeInput());
+            hangout.setStartTimestamp(timeResult.startTimestamp);
+            hangout.setEndTimestamp(timeResult.endTimestamp);
             
             // Time change requires pointer updates for GSI1SK
             if (hangout.getAssociatedGroups() != null) {
                 needsPointerUpdate = true;
-                pointerUpdates.put("GSI1SK", "T#" + timeResult.getStartTimestamp());
+                pointerUpdates.put("GSI1SK", "T#" + timeResult.startTimestamp);
             }
         }
         
@@ -544,57 +549,63 @@ public class HangoutServiceImpl implements HangoutService {
     private HangoutSummaryDTO convertToSummaryDTO(HangoutPointer pointer) {
         HangoutSummaryDTO summary = new HangoutSummaryDTO(pointer);
         
-        // For summary DTOs, we need to get the timeInput from the canonical hangout record
-        // Since we only have the pointer, we need to fetch the full hangout
-        try {
-            Hangout hangout = hangoutRepository.findHangoutById(pointer.getHangoutId()).orElse(null);
-            if (hangout != null && hangout.getTimeInput() != null) {
-                Map<String, String> timeInfo = formatTimeInfoForResponse(hangout.getTimeInput());
-                summary.setTimeInfo(timeInfo);
-            }
-        } catch (Exception e) {
-            logger.warn("Could not fetch timeInput for hangout {}: {}", pointer.getHangoutId(), e.getMessage());
+        // *** NO DATABASE CALL - Use denormalized timeInput ***
+        if (pointer.getTimeInput() != null) {
+            Map<String, String> timeInfo = formatTimeInfoForResponse(pointer.getTimeInput());
+            summary.setTimeInfo(timeInfo);
         }
         
         return summary;
     }
     
-    private Map<String, String> formatTimeInfoForResponse(Map<String, String> timeInput) {
+    private Map<String, String> formatTimeInfoForResponse(TimeInput timeInput) {
         if (timeInput == null) {
             return null;
         }
         
         Map<String, String> timeInfo = new HashMap<>();
         
-        // Copy all fields from timeInput
-        for (Map.Entry<String, String> entry : timeInput.entrySet()) {
-            String key = entry.getKey();
-            String value = entry.getValue();
-            
-            // Convert timestamp fields from Unix seconds to UTC ISO 8601 format
-            if (("startTime".equals(key) || "endTime".equals(key) || "periodStart".equals(key)) && value != null) {
-                try {
-                    // Check if value is a Unix timestamp (numeric string)
-                    if (value.matches("\\d+")) {
-                        long timestamp = Long.parseLong(value);
-                        // Convert from seconds to milliseconds and format as ISO 8601 UTC
-                        java.time.Instant instant = java.time.Instant.ofEpochSecond(timestamp);
-                        String utcIsoString = instant.toString(); // Already in UTC ISO format ending with 'Z'
-                        timeInfo.put(key, utcIsoString);
-                    } else {
-                        // Already in ISO format, just copy
-                        timeInfo.put(key, value);
-                    }
-                } catch (NumberFormatException e) {
-                    // Not a timestamp, copy as-is
-                    timeInfo.put(key, value);
-                }
-            } else {
-                // Copy non-timestamp fields as-is
-                timeInfo.put(key, value);
+        // For fuzzy time: only return periodGranularity and periodStart in UTC
+        if (timeInput.getPeriodGranularity() != null) {
+            timeInfo.put("periodGranularity", timeInput.getPeriodGranularity());
+            if (timeInput.getPeriodStart() != null) {
+                timeInfo.put("periodStart", convertToUtcIsoString(timeInput.getPeriodStart()));
+            }
+        } 
+        // For exact time: only return startTime and endTime in UTC
+        else if (timeInput.getStartTime() != null) {
+            timeInfo.put("startTime", convertToUtcIsoString(timeInput.getStartTime()));
+            if (timeInput.getEndTime() != null) {
+                timeInfo.put("endTime", convertToUtcIsoString(timeInput.getEndTime()));
             }
         }
         
         return timeInfo;
+    }
+    
+    private String convertToUtcIsoString(String timeString) {
+        if (timeString == null) {
+            return null;
+        }
+        
+        try {
+            // Check if it's already in ISO format (contains 'T' and timezone info)
+            if (timeString.contains("T")) {
+                // Parse and convert to UTC
+                java.time.ZonedDateTime zonedDateTime = java.time.ZonedDateTime.parse(timeString);
+                return zonedDateTime.toInstant().toString(); // Converts to UTC ISO format ending with 'Z'
+            } else if (timeString.matches("\\d+")) {
+                // It's a Unix timestamp, convert to UTC ISO
+                long timestamp = Long.parseLong(timeString);
+                java.time.Instant instant = java.time.Instant.ofEpochSecond(timestamp);
+                return instant.toString();
+            } else {
+                // Return as-is if format is unknown
+                return timeString;
+            }
+        } catch (Exception e) {
+            // Return as-is if parsing fails
+            return timeString;
+        }
     }
 }

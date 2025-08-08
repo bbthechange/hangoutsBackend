@@ -5,6 +5,7 @@ import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.dto.EventDetailData;
 import com.bbthechange.inviter.dto.HangoutDetailData;
+import com.bbthechange.inviter.dto.TimeInput;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.jupiter.api.MethodOrderer.OrderAnnotation;
@@ -183,9 +184,9 @@ class HangoutRepositoryImplTest extends BaseIntegrationTest {
         hangout.setHangoutId("gsi-test-hangout-1");
         
         // Set timeInput and timestamps for GSI
-        Map<String, String> timeInput = new HashMap<>();
-        timeInput.put("startTime", "1754558100");
-        timeInput.put("endTime", "1754566200");
+        TimeInput timeInput = new TimeInput();
+        timeInput.setStartTime("1754558100");
+        timeInput.setEndTime("1754566200");
         hangout.setTimeInput(timeInput);
         hangout.setStartTimestamp(1754558100L);
         hangout.setEndTimestamp(1754566200L);
@@ -214,7 +215,7 @@ class HangoutRepositoryImplTest extends BaseIntegrationTest {
         Hangout hangout = result.get();
         assertThat(hangout.getHangoutId()).isEqualTo(hangoutId);
         assertThat(hangout.getTimeInput()).isNotNull();
-        assertThat(hangout.getTimeInput().get("startTime")).isEqualTo("1754558100");
+        assertThat(hangout.getTimeInput().getStartTime()).isEqualTo("1754558100");
         assertThat(hangout.getStartTimestamp()).isEqualTo(1754558100L);
     }
     

@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.service.impl;
 
 import com.bbthechange.inviter.service.FuzzyTimeService;
+import com.bbthechange.inviter.dto.TimeInput;
 import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -9,7 +10,6 @@ import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
-import java.util.Map;
 
 /**
  * Implementation of FuzzyTimeService for converting timeInput to canonical timestamps.
@@ -26,32 +26,32 @@ public class FuzzyTimeServiceImpl implements FuzzyTimeService {
     private static final Logger logger = LoggerFactory.getLogger(FuzzyTimeServiceImpl.class);
     
     @Override
-    public FuzzyTimeResult convertTimeInput(Map<String, String> timeInput) {
-        if (timeInput == null || timeInput.isEmpty()) {
-            throw new IllegalArgumentException("timeInput cannot be null or empty");
+    public TimeConversionResult convert(TimeInput timeInput) {
+        if (timeInput == null) {
+            throw new IllegalArgumentException("timeInput cannot be null");
         }
         
-        // Check for exact time structure
-        if (timeInput.containsKey("startTime") && timeInput.containsKey("endTime")) {
-            return handleExactTime(timeInput);
+        // Check for exact time structure first and validate both fields
+        if (timeInput.getStartTime() != null || timeInput.getEndTime() != null) {
+            return handleExactTime(timeInput); // This will throw specific validation errors
         }
         
-        // Check for fuzzy time structure
-        if (timeInput.containsKey("periodGranularity") && timeInput.containsKey("periodStart")) {
-            return handleFuzzyTime(timeInput);
+        // Check for fuzzy time structure and validate both fields
+        if (timeInput.getPeriodGranularity() != null || timeInput.getPeriodStart() != null) {
+            return handleFuzzyTime(timeInput); // This will throw specific validation errors
         }
         
         throw new IllegalArgumentException(
-            "timeInput must contain either (startTime, endTime) or (periodGranularity, periodStart)"
+            "timeInput must contain either exact time (startTime + endTime) or fuzzy time (periodGranularity + periodStart)"
         );
     }
     
     /**
      * Handle exact time input with startTime and endTime ISO 8601 strings.
      */
-    private FuzzyTimeResult handleExactTime(Map<String, String> timeInput) {
-        String startTimeStr = timeInput.get("startTime");
-        String endTimeStr = timeInput.get("endTime");
+    private TimeConversionResult handleExactTime(TimeInput timeInput) {
+        String startTimeStr = timeInput.getStartTime();
+        String endTimeStr = timeInput.getEndTime();
         
         if (startTimeStr == null || startTimeStr.trim().isEmpty()) {
             throw new IllegalArgumentException("startTime cannot be null or empty");
@@ -72,7 +72,7 @@ public class FuzzyTimeServiceImpl implements FuzzyTimeService {
             logger.debug("Converted exact time: {} -> {}, {} -> {}", 
                 startTimeStr, startTimestamp, endTimeStr, endTimestamp);
             
-            return new FuzzyTimeResult(startTimestamp, endTimestamp);
+            return new TimeConversionResult(startTimestamp, endTimestamp);
             
         } catch (DateTimeParseException e) {
             throw new IllegalArgumentException("Invalid ISO 8601 timestamp format: " + e.getMessage(), e);
@@ -82,9 +82,9 @@ public class FuzzyTimeServiceImpl implements FuzzyTimeService {
     /**
      * Handle fuzzy time input with periodGranularity and periodStart.
      */
-    private FuzzyTimeResult handleFuzzyTime(Map<String, String> timeInput) {
-        String periodGranularity = timeInput.get("periodGranularity");
-        String periodStartStr = timeInput.get("periodStart");
+    private TimeConversionResult handleFuzzyTime(TimeInput timeInput) {
+        String periodGranularity = timeInput.getPeriodGranularity();
+        String periodStartStr = timeInput.getPeriodStart();
         
         if (periodGranularity == null || periodGranularity.trim().isEmpty()) {
             throw new IllegalArgumentException("periodGranularity cannot be null or empty");
@@ -103,7 +103,7 @@ public class FuzzyTimeServiceImpl implements FuzzyTimeService {
             logger.debug("Converted fuzzy time: {} {} -> {} to {}", 
                 periodGranularity, periodStartStr, startTimestamp, endTimestamp);
             
-            return new FuzzyTimeResult(startTimestamp, endTimestamp);
+            return new TimeConversionResult(startTimestamp, endTimestamp);
             
         } catch (DateTimeParseException e) {
             throw new IllegalArgumentException("Invalid ISO 8601 timestamp format for periodStart: " + e.getMessage(), e);

@@ -1,6 +1,6 @@
 package com.bbthechange.inviter.service;
 
-import java.util.Map;
+import com.bbthechange.inviter.dto.TimeInput;
 
 /**
  * Service for converting fuzzy time inputs to canonical timestamps.
@@ -10,34 +10,26 @@ import java.util.Map;
 public interface FuzzyTimeService {
     
     /**
-     * Convert timeInput map to canonical timestamps.
+     * Convert TimeInput to canonical timestamps.
      * 
-     * @param timeInput Map containing either:
-     *                  - Exact time: "startTime" and "endTime" (ISO 8601 strings with timezone)
-     *                  - Fuzzy time: "periodGranularity" and "periodStart" (ISO 8601 with timezone)
-     * @return FuzzyTimeResult with startTimestamp and endTimestamp (Unix seconds since epoch)
+     * @param timeInput TimeInput containing either:
+     *                  - Exact time: startTime and endTime (ISO 8601 strings with timezone)
+     *                  - Fuzzy time: periodGranularity and periodStart (ISO 8601 with timezone)
+     * @return TimeConversionResult with startTimestamp and endTimestamp (Unix seconds since epoch)
      * @throws IllegalArgumentException if timeInput is invalid or incomplete
      */
-    FuzzyTimeResult convertTimeInput(Map<String, String> timeInput);
+    TimeConversionResult convert(TimeInput timeInput);
     
     /**
      * Result object containing canonical timestamps.
      */
-    class FuzzyTimeResult {
-        private final Long startTimestamp;
-        private final Long endTimestamp;
+    class TimeConversionResult {
+        public final Long startTimestamp;
+        public final Long endTimestamp;
         
-        public FuzzyTimeResult(Long startTimestamp, Long endTimestamp) {
+        public TimeConversionResult(Long startTimestamp, Long endTimestamp) {
             this.startTimestamp = startTimestamp;
             this.endTimestamp = endTimestamp;
-        }
-        
-        public Long getStartTimestamp() {
-            return startTimestamp;
-        }
-        
-        public Long getEndTimestamp() {
-            return endTimestamp;
         }
     }
 }

@@ -4,13 +4,12 @@ import com.bbthechange.inviter.model.EventVisibility;
 import lombok.Data;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 
 @Data
 public class CreateHangoutRequest {
     private String title;
     private String description;
-    private Map<String, String> timeInput; // Fuzzy time input object
+    private TimeInput timeInput; // Fuzzy time input object
     private Address location;
     private EventVisibility visibility;
     private String mainImagePath;
