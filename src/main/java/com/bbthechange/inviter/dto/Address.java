@@ -5,6 +5,7 @@ import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.*;
+import com.fasterxml.jackson.annotation.JsonCreator;
 
 
 @Data
@@ -17,4 +18,9 @@ public class Address {
     private String state;
     private String postalCode;
     private String country;
+    
+    @JsonCreator
+    public Address(String streetAddress) {
+        this.streetAddress = streetAddress;
+    }
 }

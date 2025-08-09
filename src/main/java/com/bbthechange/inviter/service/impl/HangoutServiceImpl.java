@@ -480,7 +480,7 @@ public class HangoutServiceImpl implements HangoutService {
                 logger.warn("Unsupported type in pointer update for key {}: {}", key, value.getClass().getName());
                 continue; // Skip unsupported types
             }
-            updateValues.put(":" + key, attributeValue);
+            updateValues.put(key, attributeValue);
         }
         
         // Update each group's hangout pointer

@@ -51,7 +51,7 @@ public class SecurityConfig {
             "https://v7ihwy6uv9.execute-api.us-west-2.amazonaws.com", // Staging API Gateway domain
             "http://inviter-webapp-staging-575960429871.s3-website.us-west-2.amazonaws.com" // Staging webapp S3 website
         ));
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList("Content-Type", "Authorization", "X-Requested-With"));
         configuration.setAllowCredentials(true);
         
