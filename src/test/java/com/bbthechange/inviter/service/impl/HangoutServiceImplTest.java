@@ -164,9 +164,7 @@ class HangoutServiceImplTest {
         verify(groupRepository, times(2)).saveHangoutPointer(argThat(pointer -> 
             pointer.getTimeInput() != null && 
             pointer.getStartTimestamp() != null &&
-            pointer.getStartTimestamp().equals(1754558100L) &&
-            pointer.getGSI1SK() != null &&
-            pointer.getGSI1SK().equals("T#1754558100")
+            pointer.getStartTimestamp().equals(1754558100L)
         ));
     }
     
@@ -415,8 +413,8 @@ class HangoutServiceImplTest {
         
         // Verify pointer was created with GSI fields
         verify(groupRepository).saveHangoutPointer(argThat(pointer ->
-            pointer.getGSI1PK().equals("GROUP#11111111-1111-1111-1111-111111111111") &&
-            pointer.getGSI1SK().equals("T#1754557200")
+            pointer.getGsi1pk().equals("GROUP#11111111-1111-1111-1111-111111111111") &&
+            pointer.getStartTimestamp().equals(1754557200L)
         ));
     }
     
@@ -554,8 +552,8 @@ class HangoutServiceImplTest {
         verify(groupRepository).updateHangoutPointer(
             eq("11111111-1111-1111-1111-111111111111"), 
             eq(hangoutId), 
-            argThat(updates -> updates.containsKey(":GSI1SK") && 
-                updates.get(":GSI1SK").s().equals("T#1754603600"))
+            argThat(updates -> updates.containsKey(":startTimestamp") &&
+                updates.get(":startTimestamp").n().equals("1754603600"))
         );
     }
     
@@ -622,8 +620,8 @@ class HangoutServiceImplTest {
         
         // Then
         verify(groupRepository).saveHangoutPointer(argThat(pointer ->
-            pointer.getGSI1PK().equals("GROUP#11111111-1111-1111-1111-111111111111") &&
-            pointer.getGSI1SK().equals("T#1754557200") &&
+            pointer.getGsi1pk().equals("GROUP#11111111-1111-1111-1111-111111111111") &&
+            pointer.getStartTimestamp().equals(1754557200L) &&
             pointer.getTimeInput() != null // Verify timeInput was set
         ));
     }

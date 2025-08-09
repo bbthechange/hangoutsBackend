@@ -90,7 +90,7 @@ public class HangoutServiceImpl implements HangoutService {
                 
                 // *** CRITICAL: Denormalize ALL time information ***
                 pointer.setTimeInput(hangout.getTimeInput());           // For API response
-                pointer.setGSI1PK("GROUP#" + groupId);                  // GSI primary key
+                pointer.setGsi1pk("GROUP#" + groupId);                  // GSI primary key
                 pointer.setStartTimestamp(hangout.getStartTimestamp()); // GSI sort key
                 pointer.setEndTimestamp(hangout.getEndTimestamp());     // For completeness
 
@@ -386,7 +386,7 @@ public class HangoutServiceImpl implements HangoutService {
             pointer.setParticipantCount(0); // Will be updated as people respond
 
             // Set GSI fields for EntityTimeIndex
-            pointer.setGSI1PK("GROUP#" + groupId);
+            pointer.setGsi1pk("GROUP#" + groupId);
             if (hangout.getTimeInput() != null) {
                 pointer.setTimeInput(hangout.getTimeInput());
                 FuzzyTimeService.TimeConversionResult timeResult = fuzzyTimeService.convert(hangout.getTimeInput());

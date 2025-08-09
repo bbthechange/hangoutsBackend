@@ -195,13 +195,13 @@ public class GroupServiceImpl implements GroupService {
         
         // Separate by status in memory (fast)
         List<HangoutSummaryDTO> withDay = hangouts.stream()
-            .filter(h -> h.getHangoutTime() != null)
-            .sorted(Comparator.comparing(HangoutPointer::getHangoutTime))
+            .filter(h -> h.getStartTimestamp() != null)
+            .sorted(Comparator.comparing(HangoutPointer::getStartTimestamp))
             .map(HangoutSummaryDTO::new)
             .collect(Collectors.toList());
             
         List<HangoutSummaryDTO> needsDay = hangouts.stream()
-            .filter(h -> h.getHangoutTime() == null)
+            .filter(h -> h.getStartTimestamp() == null)
             .map(HangoutSummaryDTO::new)
             .collect(Collectors.toList());
             

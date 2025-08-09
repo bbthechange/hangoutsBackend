@@ -605,15 +605,15 @@ public class HangoutRepositoryImpl implements HangoutRepository {
         return performanceTracker.trackQuery("findUpcomingHangoutsForParticipant", "EntityTimeIndex", () -> {
             try {
                 // Get current timestamp for filtering future events only
-                long currentTimestamp = System.currentTimeMillis() / 1000;
+                String currentTimestamp = String.valueOf(System.currentTimeMillis() / 1000);
                 
                 QueryRequest request = QueryRequest.builder()
                     .tableName(TABLE_NAME)
                     .indexName("EntityTimeIndex")
-                    .keyConditionExpression("GSI1PK = :participantKey AND startTimestamp > :timestampPrefix")
+                    .keyConditionExpression("gsi1pk = :participantKey AND startTimestamp > :timestampPrefix")
                     .expressionAttributeValues(Map.of(
                         ":participantKey", AttributeValue.builder().s(participantKey).build(),
-                        ":timestampPrefix", AttributeValue.builder().s(timePrefix + currentTimestamp).build()
+                        ":timestampPrefix", AttributeValue.builder().n(currentTimestamp).build()
                     ))
                     .scanIndexForward(true) // Sort by timestamp ascending (chronological order)
                     .build();

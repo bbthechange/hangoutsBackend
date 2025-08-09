@@ -1,9 +1,10 @@
-package com.bbthechange.inviter.repository.impl;
+package com.bbthechange.inviter.integration.repository.impl;
 
 import com.bbthechange.inviter.model.BaseItem;
 import com.bbthechange.inviter.model.Group;
 import com.bbthechange.inviter.model.GroupMembership;
 import com.bbthechange.inviter.model.HangoutPointer;
+import com.bbthechange.inviter.repository.impl.PolymorphicGroupRepositoryImpl;
 import com.bbthechange.inviter.util.QueryPerformanceTracker;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -92,23 +93,6 @@ class TypeDiscriminatorTest {
         assertThat(result).isInstanceOf(HangoutPointer.class);
         HangoutPointer pointer = (HangoutPointer) result;
         assertThat(pointer.getItemType()).isEqualTo("HANGOUT_POINTER");
-    }
-    
-    @Test
-    void typeDiscriminator_LogicValidation() {
-        // This test validates the type discriminator logic conceptually
-        // without relying on complex DynamoDB TableSchema deserialization
-        
-        // Test the switch statement logic
-        String[] validTypes = {"GROUP", "GROUP_MEMBERSHIP", "HANGOUT_POINTER"};
-        for (String type : validTypes) {
-            // This would work in the actual deserializeItem method
-            assertThat(type).isIn(validTypes);
-        }
-        
-        // Test invalid type
-        String invalidType = "UNKNOWN_TYPE";
-        assertThat(invalidType).isNotIn(validTypes);
     }
     
     @Test

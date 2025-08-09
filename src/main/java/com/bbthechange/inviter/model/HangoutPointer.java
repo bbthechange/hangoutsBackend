@@ -26,8 +26,6 @@ public class HangoutPointer extends BaseItem {
     private Instant hangoutTime;    // When the hangout is scheduled
     private String locationName;    // Denormalized location info
     private int participantCount;   // Cached count for display
-    private String GSI1PK;          // GSI partition key for EntityTimeIndex
-    //private String GSI1SK;          // GSI sort key for EntityTimeIndex
     private TimeInfo timeInfo;    // Denormalized for efficient reads
     private Long startTimestamp;    // GSI sort key for EntityTimeIndex
     private Long endTimestamp;      // Denormalized for completeness
@@ -114,16 +112,6 @@ public class HangoutPointer extends BaseItem {
         this.participantCount = participantCount;
         touch(); // Update timestamp
     }
-
-    @DynamoDbSecondaryPartitionKey(indexNames = "UserGroupIndex")
-    public String getGSI1PK() {
-        return GSI1PK;
-    }
-    
-    public void setGSI1PK(String GSI1PK) {
-        this.GSI1PK = GSI1PK;
-        touch(); // Update timestamp
-    }
     
     @DynamoDbAttribute("timeInput")
     public TimeInfo getTimeInput() {
@@ -134,7 +122,7 @@ public class HangoutPointer extends BaseItem {
         this.timeInfo = timeInfo;
         touch();
     }
-    
+
     @DynamoDbSecondarySortKey(indexNames = "EntityTimeIndex")
     public Long getStartTimestamp() {
         return startTimestamp;
@@ -143,6 +131,12 @@ public class HangoutPointer extends BaseItem {
     public void setStartTimestamp(Long startTimestamp) {
         this.startTimestamp = startTimestamp;
         touch();
+    }
+
+    @Override
+    @DynamoDbSecondaryPartitionKey(indexNames = {"UserGroupIndex", "EntityTimeIndex"})
+    public String getGsi1pk() {
+        return super.getGsi1pk();
     }
     
     @DynamoDbAttribute("endTimestamp")
