@@ -20,10 +20,12 @@ import java.util.stream.Collectors;
 public class DeviceService {
     
     private final DynamoDbTable<Device> deviceTable;
+    private final DynamoDbIndex<Device> userIndex;
     
     @Autowired
     public DeviceService(DynamoDbEnhancedClient dynamoDbClient) {
         this.deviceTable = dynamoDbClient.table("Devices", TableSchema.fromBean(Device.class));
+        this.userIndex = deviceTable.index("UserIndex");
     }
     
     public Device registerDevice(String token, UUID userId, Device.Platform platform) {
@@ -58,21 +60,21 @@ public class DeviceService {
     }
     
     public List<Device> getActiveDevicesForUser(UUID userId) {
-        // Temporary fix: scan table instead of using GSI until UserIndex is created
-        return deviceTable.scan()
-                .items()
+        return userIndex.query(QueryConditional.keyEqualTo(Key.builder()
+                .partitionValue(userId.toString())
+                .build()))
                 .stream()
-                .filter(device -> userId.equals(device.getUserId()))
+                .flatMap(page -> page.items().stream())
                 .filter(Device::isActive)
                 .collect(Collectors.toList());
     }
     
     public List<Device> getAllDevicesForUser(UUID userId) {
-        // Temporary fix: scan table instead of using GSI until UserIndex is created
-        return deviceTable.scan()
-                .items()
+        return userIndex.query(QueryConditional.keyEqualTo(Key.builder()
+                .partitionValue(userId.toString())
+                .build()))
                 .stream()
-                .filter(device -> userId.equals(device.getUserId()))
+                .flatMap(page -> page.items().stream())
                 .collect(Collectors.toList());
     }
 }

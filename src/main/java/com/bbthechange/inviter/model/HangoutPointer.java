@@ -4,6 +4,8 @@ import com.bbthechange.inviter.dto.TimeInfo;
 import com.bbthechange.inviter.util.InviterKeyFactory;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbAttribute;
+import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSecondaryPartitionKey;
+import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSecondarySortKey;
 
 import java.time.Instant;
 
@@ -25,9 +27,9 @@ public class HangoutPointer extends BaseItem {
     private String locationName;    // Denormalized location info
     private int participantCount;   // Cached count for display
     private String GSI1PK;          // GSI partition key for EntityTimeIndex
-    private String GSI1SK;          // GSI sort key for EntityTimeIndex
+    //private String GSI1SK;          // GSI sort key for EntityTimeIndex
     private TimeInfo timeInfo;    // Denormalized for efficient reads
-    private Long startTimestamp;    // Denormalized for GSI sorting
+    private Long startTimestamp;    // GSI sort key for EntityTimeIndex
     private Long endTimestamp;      // Denormalized for completeness
     
     // Default constructor for DynamoDB
@@ -112,22 +114,14 @@ public class HangoutPointer extends BaseItem {
         this.participantCount = participantCount;
         touch(); // Update timestamp
     }
-    
+
+    @DynamoDbSecondaryPartitionKey(indexNames = "UserGroupIndex")
     public String getGSI1PK() {
         return GSI1PK;
     }
     
     public void setGSI1PK(String GSI1PK) {
         this.GSI1PK = GSI1PK;
-        touch(); // Update timestamp
-    }
-    
-    public String getGSI1SK() {
-        return GSI1SK;
-    }
-    
-    public void setGSI1SK(String GSI1SK) {
-        this.GSI1SK = GSI1SK;
         touch(); // Update timestamp
     }
     
@@ -141,7 +135,7 @@ public class HangoutPointer extends BaseItem {
         touch();
     }
     
-    @DynamoDbAttribute("startTimestamp") 
+    @DynamoDbSecondarySortKey(indexNames = "EntityTimeIndex")
     public Long getStartTimestamp() {
         return startTimestamp;
     }

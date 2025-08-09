@@ -610,7 +610,7 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                 QueryRequest request = QueryRequest.builder()
                     .tableName(TABLE_NAME)
                     .indexName("EntityTimeIndex")
-                    .keyConditionExpression("GSI1PK = :participantKey AND GSI1SK > :timestampPrefix")
+                    .keyConditionExpression("GSI1PK = :participantKey AND startTimestamp > :timestampPrefix")
                     .expressionAttributeValues(Map.of(
                         ":participantKey", AttributeValue.builder().s(participantKey).build(),
                         ":timestampPrefix", AttributeValue.builder().s(timePrefix + currentTimestamp).build()

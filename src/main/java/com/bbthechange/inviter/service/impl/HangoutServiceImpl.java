@@ -90,15 +90,10 @@ public class HangoutServiceImpl implements HangoutService {
                 
                 // *** CRITICAL: Denormalize ALL time information ***
                 pointer.setTimeInput(hangout.getTimeInput());           // For API response
-                pointer.setStartTimestamp(hangout.getStartTimestamp()); // For GSI sorting  
+                pointer.setGSI1PK("GROUP#" + groupId);                  // GSI primary key
+                pointer.setStartTimestamp(hangout.getStartTimestamp()); // GSI sort key
                 pointer.setEndTimestamp(hangout.getEndTimestamp());     // For completeness
-                
-                // Set GSI fields for EntityTimeIndex
-                pointer.setGSI1PK("GROUP#" + groupId);
-                if (hangout.getStartTimestamp() != null) {
-                    pointer.setGSI1SK("T#" + hangout.getStartTimestamp());
-                }
-                
+
                 groupRepository.saveHangoutPointer(pointer);
             }
         }
@@ -142,7 +137,7 @@ public class HangoutServiceImpl implements HangoutService {
         
         // Update canonical record
         boolean needsPointerUpdate = false;
-        Map<String, String> pointerUpdates = new HashMap<>();
+        Map<String, Object> pointerUpdates = new HashMap<>();
         
         if (request.getTitle() != null && !request.getTitle().equals(hangout.getTitle())) {
             hangout.setTitle(request.getTitle());
@@ -161,14 +156,14 @@ public class HangoutServiceImpl implements HangoutService {
             FuzzyTimeService.TimeConversionResult timeResult = fuzzyTimeService.convert(request.getTimeInfo());
             hangout.setStartTimestamp(timeResult.startTimestamp);
             hangout.setEndTimestamp(timeResult.endTimestamp);
-            
-            // Time change requires pointer updates for GSI1SK
+            // TODO participantCount? Not used yet, not sure we should use it
             if (hangout.getAssociatedGroups() != null) {
                 needsPointerUpdate = true;
-                pointerUpdates.put("GSI1SK", "T#" + timeResult.startTimestamp);
+                pointerUpdates.put("startTimestamp", timeResult.startTimestamp);
+                pointerUpdates.put("endTimestamp", timeResult.endTimestamp);
             }
         }
-        
+
         if (request.getLocation() != null) {
             hangout.setLocation(request.getLocation());
             String locationName = getLocationName(request.getLocation());
@@ -396,7 +391,7 @@ public class HangoutServiceImpl implements HangoutService {
                 pointer.setTimeInput(hangout.getTimeInput());
                 FuzzyTimeService.TimeConversionResult timeResult = fuzzyTimeService.convert(hangout.getTimeInput());
                 pointer.setStartTimestamp(timeResult.startTimestamp);
-                pointer.setGSI1SK("T#" + timeResult.startTimestamp);
+                pointer.setEndTimestamp(timeResult.endTimestamp);
             }
 
             groupRepository.saveHangoutPointer(pointer);
@@ -466,12 +461,26 @@ public class HangoutServiceImpl implements HangoutService {
         
         return false;
     }
-    
-    private void updatePointerRecords(String eventId, List<String> groupIds, Map<String, String> updates) {
+
+    private void updatePointerRecords(String eventId, List<String> groupIds, Map<String, Object> updates) {
         // Convert string updates to AttributeValue updates
         Map<String, AttributeValue> updateValues = new HashMap<>();
-        for (Map.Entry<String, String> entry : updates.entrySet()) {
-            updateValues.put(":" + entry.getKey(), AttributeValue.builder().s(entry.getValue()).build());
+        for (Map.Entry<String, Object> entry : updates.entrySet()) {
+            String key = entry.getKey();
+            Object value = entry.getValue();
+            AttributeValue attributeValue;
+
+            // Type checking to build the correct AttributeValue
+            if (value instanceof String) {
+                attributeValue = AttributeValue.builder().s((String) value).build();
+            } else if (value instanceof Number) {
+                attributeValue = AttributeValue.builder().n(value.toString()).build();
+            } else {
+                // Add more types here if needed (e.g., Boolean)
+                logger.warn("Unsupported type in pointer update for key {}: {}", key, value.getClass().getName());
+                continue; // Skip unsupported types
+            }
+            updateValues.put(":" + key, attributeValue);
         }
         
         // Update each group's hangout pointer

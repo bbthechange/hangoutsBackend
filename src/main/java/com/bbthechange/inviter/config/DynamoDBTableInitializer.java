@@ -89,7 +89,7 @@ public class DynamoDBTableInitializer implements ApplicationRunner {
             case "InviterTable":
                 requestBuilder.globalSecondaryIndices(
                     createGSI("UserGroupIndex"),
-                    createEntityTimeIndex()
+                    createGSI("EntityTimeIndex")
                 );
                 break;
             // Events table has no GSIs
@@ -101,19 +101,6 @@ public class DynamoDBTableInitializer implements ApplicationRunner {
     private EnhancedGlobalSecondaryIndex createGSI(String indexName) {
         return EnhancedGlobalSecondaryIndex.builder()
             .indexName(indexName)
-            .provisionedThroughput(ProvisionedThroughput.builder()
-                .readCapacityUnits(5L)
-                .writeCapacityUnits(5L)
-                .build())
-            .projection(Projection.builder()
-                .projectionType(ProjectionType.ALL)
-                .build())
-            .build();
-    }
-    
-    private EnhancedGlobalSecondaryIndex createEntityTimeIndex() {
-        return EnhancedGlobalSecondaryIndex.builder()
-            .indexName("EntityTimeIndex")
             .provisionedThroughput(ProvisionedThroughput.builder()
                 .readCapacityUnits(5L)
                 .writeCapacityUnits(5L)
