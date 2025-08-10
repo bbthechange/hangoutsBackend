@@ -293,7 +293,9 @@ class GroupServiceImplTest {
         pointer.setGroupId(groupId);
         pointer.setHangoutId(hangoutId);
         pointer.setTitle(title);
-        pointer.setHangoutTime(hangoutTime);
+        if (hangoutTime != null) {
+            pointer.setStartTimestamp(hangoutTime.toEpochMilli());
+        }
         // Set keys directly for test purposes
         pointer.setPk("GROUP#" + groupId);
         pointer.setSk("HANGOUT#" + hangoutId);

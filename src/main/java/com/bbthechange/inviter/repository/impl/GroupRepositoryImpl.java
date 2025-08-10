@@ -5,7 +5,6 @@ import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.exception.*;
 import com.bbthechange.inviter.util.QueryPerformanceTracker;
 import com.bbthechange.inviter.util.InviterKeyFactory;
-import org.springframework.stereotype.Repository;
 import org.springframework.beans.factory.annotation.Autowired;
 import software.amazon.awssdk.enhanced.dynamodb.*;
 import software.amazon.awssdk.enhanced.dynamodb.model.*;

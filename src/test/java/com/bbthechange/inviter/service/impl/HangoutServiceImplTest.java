@@ -552,8 +552,8 @@ class HangoutServiceImplTest {
         verify(groupRepository).updateHangoutPointer(
             eq("11111111-1111-1111-1111-111111111111"), 
             eq(hangoutId), 
-            argThat(updates -> updates.containsKey(":startTimestamp") &&
-                updates.get(":startTimestamp").n().equals("1754603600"))
+            argThat(updates -> updates.containsKey("startTimestamp") &&
+                updates.get("startTimestamp").n().equals("1754603600"))
         );
     }
     
