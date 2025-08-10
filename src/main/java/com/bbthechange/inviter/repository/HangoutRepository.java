@@ -59,6 +59,30 @@ public interface HangoutRepository {
     InterestLevel saveInterestLevel(InterestLevel interestLevel);
     void deleteInterestLevel(String eventId, String userId);
     
+    // Hangout Attribute operations (UUID-based for efficient access)
+    /**
+     * Find a specific attribute by hangout ID and attribute ID.
+     * Uses direct key access for optimal performance.
+     */
+    Optional<HangoutAttribute> findAttributeById(String hangoutId, String attributeId);
+    
+    /**
+     * Find all attributes for a hangout in a single query.
+     * Uses single-partition query with PK=EVENT#{hangoutId} and SK begins_with ATTRIBUTE#
+     */
+    List<HangoutAttribute> findAttributesByHangoutId(String hangoutId);
+    
+    /**
+     * Save a hangout attribute. Performs upsert operation.
+     */
+    HangoutAttribute saveAttribute(HangoutAttribute attribute);
+    
+    /**
+     * Delete a hangout attribute by hangout ID and attribute ID.
+     * Idempotent operation - succeeds even if attribute doesn't exist.
+     */
+    void deleteAttribute(String hangoutId, String attributeId);
+    
     // GSI query methods for EntityTimeIndex
     /**
      * Find upcoming hangouts for a participant (user or group) in chronological order.

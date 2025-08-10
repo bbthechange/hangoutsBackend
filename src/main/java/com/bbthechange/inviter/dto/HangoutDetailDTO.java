@@ -11,6 +11,7 @@ import java.util.Map;
 @AllArgsConstructor
 public class HangoutDetailDTO {
     private Hangout hangout;
+    private List<HangoutAttributeDTO> attributes;
     private List<Poll> polls;
     private List<Car> cars;
     private List<Vote> votes;

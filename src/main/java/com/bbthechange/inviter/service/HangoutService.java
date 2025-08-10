@@ -49,6 +49,31 @@ public interface HangoutService {
      */
     void removeUserInterest(String hangoutId, String requestingUserId);
     
+    // Hangout Attribute management methods
+    /**
+     * Create a new attribute for a hangout.
+     * User must have access to the hangout.
+     */
+    HangoutAttributeDTO createAttribute(String hangoutId, CreateAttributeRequest request, String requestingUserId);
+    
+    /**
+     * Update an existing attribute by ID (supports renaming).
+     * User must have access to the hangout.
+     */
+    HangoutAttributeDTO updateAttribute(String hangoutId, String attributeId, UpdateAttributeRequest request, String requestingUserId);
+    
+    /**
+     * Delete an attribute by ID.
+     * User must have access to the hangout. Idempotent operation.
+     */
+    void deleteAttribute(String hangoutId, String attributeId, String requestingUserId);
+    
+    /**
+     * Verify user can access hangout (used by attribute operations).
+     * Throws UnauthorizedException if user lacks access.
+     */
+    void verifyUserCanAccessHangout(String hangoutId, String userId);
+    
     // Legacy event methods for backward compatibility
     /**
      * Get complete event details using item collection pattern.

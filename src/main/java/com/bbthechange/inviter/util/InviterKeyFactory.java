@@ -28,6 +28,7 @@ public final class InviterKeyFactory {
     public static final String OPTION_PREFIX = "OPTION";
     public static final String VOTE_PREFIX = "VOTE";
     public static final String RIDER_PREFIX = "RIDER";
+    public static final String ATTRIBUTE_PREFIX = "ATTRIBUTE";
     
     // Private constructor to prevent instantiation
     private InviterKeyFactory() {
@@ -78,6 +79,12 @@ public final class InviterKeyFactory {
     public static String getAttendanceSk(String userId) {
         validateId(userId, "User");
         return ATTENDANCE_PREFIX + DELIMITER + userId;
+    }
+    
+    // Attribute Keys (UUID-based for safety)
+    public static String getAttributeSk(String attributeId) {
+        validateId(attributeId, "Attribute");
+        return ATTRIBUTE_PREFIX + DELIMITER + attributeId;
     }
     
     // Poll Keys (designed for efficient querying)
@@ -185,6 +192,10 @@ public final class InviterKeyFactory {
     
     public static boolean isHangoutPointer(String sortKey) {
         return sortKey.startsWith(HANGOUT_PREFIX + DELIMITER);
+    }
+    
+    public static boolean isAttributeItem(String sortKey) {
+        return sortKey != null && sortKey.startsWith(ATTRIBUTE_PREFIX + DELIMITER);
     }
     
     public static boolean isGroupMembership(String sortKey) {

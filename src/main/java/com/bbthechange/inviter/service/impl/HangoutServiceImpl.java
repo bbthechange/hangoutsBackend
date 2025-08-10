@@ -117,11 +117,18 @@ public class HangoutServiceImpl implements HangoutService {
             throw new UnauthorizedException("Cannot view hangout");
         }
         
+        // Load attributes for this hangout
+        List<HangoutAttribute> attributes = hangoutRepository.findAttributesByHangoutId(hangoutId);
+        List<HangoutAttributeDTO> attributeDTOs = attributes.stream()
+            .map(HangoutAttributeDTO::fromEntity)
+            .collect(Collectors.toList());
+        
         // Transform to DTO with formatted timeInfo
         TimeInfo timeInfo = formatTimeInfoForResponse(hangout.getTimeInput());
         hangout.setTimeInput(timeInfo);
         return new HangoutDetailDTO(
                 hangout,
+            attributeDTOs, // Now includes actual attributes from single query
             hangoutDetail.getPolls(),
             hangoutDetail.getCars(),
             hangoutDetail.getVotes(),
@@ -723,6 +730,114 @@ public class HangoutServiceImpl implements HangoutService {
             groupRepository.atomicallyUpdateParticipantCount(groupId, hangoutId, delta);
             logger.debug("Updated participantCount by {} for hangout {} in group {}",
                         delta, hangoutId, groupId);
+        }
+    }
+    
+    // ============================================================================
+    // HANGOUT ATTRIBUTE MANAGEMENT METHODS
+    // ============================================================================
+    
+    @Override
+    public HangoutAttributeDTO createAttribute(String hangoutId, CreateAttributeRequest request, String requestingUserId) {
+        logger.info("Creating attribute '{}' for hangout {} by user {}", 
+            request.getAttributeName(), hangoutId, requestingUserId);
+        
+        // Authorization check - user must have access to the hangout
+        verifyUserCanAccessHangout(hangoutId, requestingUserId);
+        
+        // Validate request
+        if (!request.isValid()) {
+            throw new ValidationException("Invalid attribute request: " + request);
+        }
+        
+        // Check for duplicate attribute names (business rule - optional but helpful UX)
+        List<HangoutAttribute> existingAttributes = hangoutRepository.findAttributesByHangoutId(hangoutId);
+        String trimmedName = request.getTrimmedAttributeName();
+        
+        boolean nameExists = existingAttributes.stream()
+            .anyMatch(attr -> trimmedName.equals(attr.getAttributeName()));
+        
+        if (nameExists) {
+            throw new ValidationException("Attribute with name '" + trimmedName + "' already exists");
+        }
+        
+        // Create new attribute
+        HangoutAttribute attribute = new HangoutAttribute(hangoutId, trimmedName, request.getStringValue());
+        
+        // Save to repository
+        HangoutAttribute savedAttribute = hangoutRepository.saveAttribute(attribute);
+        
+        logger.info("Successfully created attribute {} for hangout {}", 
+            savedAttribute.getAttributeId(), hangoutId);
+        
+        return HangoutAttributeDTO.fromEntity(savedAttribute);
+    }
+    
+    @Override
+    public HangoutAttributeDTO updateAttribute(String hangoutId, String attributeId, 
+                                             UpdateAttributeRequest request, String requestingUserId) {
+        logger.info("Updating attribute {} for hangout {} by user {}", 
+            attributeId, hangoutId, requestingUserId);
+        
+        // Authorization check - user must have access to the hangout
+        verifyUserCanAccessHangout(hangoutId, requestingUserId);
+        
+        // Validate request
+        if (!request.isValid()) {
+            throw new ValidationException("Invalid attribute update request: " + request);
+        }
+        
+        // Find existing attribute
+        HangoutAttribute existingAttribute = hangoutRepository.findAttributeById(hangoutId, attributeId)
+            .orElseThrow(() -> new ResourceNotFoundException("Attribute not found: " + attributeId));
+        
+        // Check for duplicate names if renaming
+        String trimmedNewName = request.getTrimmedAttributeName();
+        if (request.isNameChange(existingAttribute.getAttributeName())) {
+            List<HangoutAttribute> allAttributes = hangoutRepository.findAttributesByHangoutId(hangoutId);
+            
+            boolean nameConflict = allAttributes.stream()
+                .filter(attr -> !attr.getAttributeId().equals(attributeId)) // Exclude current attribute
+                .anyMatch(attr -> trimmedNewName.equals(attr.getAttributeName()));
+            
+            if (nameConflict) {
+                throw new ValidationException("Attribute with name '" + trimmedNewName + "' already exists");
+            }
+        }
+        
+        // Update attribute fields
+        existingAttribute.updateAttribute(trimmedNewName, request.getStringValue());
+        
+        // Save updated attribute
+        HangoutAttribute savedAttribute = hangoutRepository.saveAttribute(existingAttribute);
+        
+        logger.info("Successfully updated attribute {} for hangout {}", attributeId, hangoutId);
+        
+        return HangoutAttributeDTO.fromEntity(savedAttribute);
+    }
+    
+    @Override
+    public void deleteAttribute(String hangoutId, String attributeId, String requestingUserId) {
+        logger.info("Deleting attribute {} for hangout {} by user {}", 
+            attributeId, hangoutId, requestingUserId);
+        
+        // Authorization check - user must have access to the hangout
+        verifyUserCanAccessHangout(hangoutId, requestingUserId);
+        
+        // Delete attribute (idempotent operation)
+        hangoutRepository.deleteAttribute(hangoutId, attributeId);
+        
+        logger.info("Successfully deleted attribute {} for hangout {}", attributeId, hangoutId);
+    }
+    
+    @Override
+    public void verifyUserCanAccessHangout(String hangoutId, String userId) {
+        // Get hangout and check authorization using existing logic
+        Hangout hangout = hangoutRepository.findHangoutById(hangoutId)
+            .orElseThrow(() -> new ResourceNotFoundException("Hangout not found: " + hangoutId));
+        
+        if (!canUserViewHangout(userId, hangout)) {
+            throw new UnauthorizedException("User does not have access to this hangout");
         }
     }
 }

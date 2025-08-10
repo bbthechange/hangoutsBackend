@@ -32,6 +32,7 @@ public class HangoutRepositoryImpl implements HangoutRepository {
     private static final Logger logger = LoggerFactory.getLogger(HangoutRepositoryImpl.class);
     
     private final DynamoDbClient dynamoDbClient;
+    private final DynamoDbTable<HangoutAttribute> inviterTable;
     private static final String TABLE_NAME = "InviterTable";
     private final TableSchema<Hangout> hangoutSchema;
     private final TableSchema<Poll> pollSchema;
@@ -40,15 +41,18 @@ public class HangoutRepositoryImpl implements HangoutRepository {
     private final TableSchema<InterestLevel> interestLevelSchema;
     private final TableSchema<CarRider> carRiderSchema;
     private final TableSchema<HangoutPointer> hangoutPointerSchema;
+    private final TableSchema<HangoutAttribute> hangoutAttributeSchema;
     private final QueryPerformanceTracker performanceTracker;
     private final EventRepository eventRepository; // For canonical Event records
     
     @Autowired
     public HangoutRepositoryImpl(
             DynamoDbClient dynamoDbClient,
+            DynamoDbEnhancedClient dynamoDbEnhancedClient,
             QueryPerformanceTracker performanceTracker,
             EventRepository eventRepository) {
         this.dynamoDbClient = dynamoDbClient;
+        this.inviterTable = dynamoDbEnhancedClient.table(TABLE_NAME, TableSchema.fromBean(HangoutAttribute.class));
         this.hangoutSchema = TableSchema.fromBean(Hangout.class);
         this.pollSchema = TableSchema.fromBean(Poll.class);
         this.carSchema = TableSchema.fromBean(Car.class);
@@ -56,6 +60,7 @@ public class HangoutRepositoryImpl implements HangoutRepository {
         this.interestLevelSchema = TableSchema.fromBean(InterestLevel.class);
         this.carRiderSchema = TableSchema.fromBean(CarRider.class);
         this.hangoutPointerSchema = TableSchema.fromBean(HangoutPointer.class);
+        this.hangoutAttributeSchema = TableSchema.fromBean(HangoutAttribute.class);
         this.performanceTracker = performanceTracker;
         this.eventRepository = eventRepository;
     }
@@ -82,6 +87,8 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                     return interestLevelSchema.mapToItem(itemMap);
                 } else if (InviterKeyFactory.isCarRiderItem(sk)) {
                     return carRiderSchema.mapToItem(itemMap);
+                } else if (InviterKeyFactory.isAttributeItem(sk)) {
+                    return hangoutAttributeSchema.mapToItem(itemMap);
                 }
             }
             throw new IllegalStateException("Missing itemType discriminator and unable to determine type from SK");
@@ -101,6 +108,8 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                 return interestLevelSchema.mapToItem(itemMap);
             case "CAR_RIDER":
                 return carRiderSchema.mapToItem(itemMap);
+            case "ATTRIBUTE":
+                return hangoutAttributeSchema.mapToItem(itemMap);
             default:
                 throw new IllegalArgumentException("Unknown item type: " + itemType);
         }
@@ -627,6 +636,121 @@ public class HangoutRepositoryImpl implements HangoutRepository {
             } catch (DynamoDbException e) {
                 logger.error("Failed to query upcoming hangouts for participant {} with prefix {}", participantKey, timePrefix, e);
                 throw new RepositoryException("Failed to query upcoming hangouts from EntityTimeIndex GSI", e);
+            }
+        });
+    }
+    
+    // ============================================================================
+    // HANGOUT ATTRIBUTE OPERATIONS (UUID-based for efficient direct access)
+    // ============================================================================
+    
+    @Override
+    public Optional<HangoutAttribute> findAttributeById(String hangoutId, String attributeId) {
+        return performanceTracker.trackQuery("findAttributeById", "InviterTable", () -> {
+            try {
+                logger.debug("Finding attribute {} for hangout {}", attributeId, hangoutId);
+                
+                // Direct key access - most efficient DynamoDB operation
+                Key key = Key.builder()
+                    .partitionValue(InviterKeyFactory.getEventPk(hangoutId))
+                    .sortValue(InviterKeyFactory.getAttributeSk(attributeId))
+                    .build();
+                
+                HangoutAttribute attribute = inviterTable.getItem(r -> r.key(key));
+                return Optional.ofNullable(attribute);
+                
+            } catch (Exception e) {
+                logger.error("Failed to find attribute {} for hangout {}", attributeId, hangoutId, e);
+                throw new RepositoryException("Failed to retrieve hangout attribute", e);
+            }
+        });
+    }
+    
+    @Override
+    public List<HangoutAttribute> findAttributesByHangoutId(String hangoutId) {
+        return performanceTracker.trackQuery("findAttributesByHangoutId", "InviterTable", () -> {
+            try {
+                logger.debug("Finding all attributes for hangout {}", hangoutId);
+                
+                // Single-partition query - gets all attributes in one efficient query
+                QueryConditional conditional = QueryConditional.sortBeginsWith(
+                    Key.builder()
+                        .partitionValue(InviterKeyFactory.getEventPk(hangoutId))
+                        .sortValue(InviterKeyFactory.ATTRIBUTE_PREFIX + "#")
+                        .build()
+                );
+                
+                PageIterable<HangoutAttribute> pages = inviterTable.query(QueryEnhancedRequest.builder()
+                    .queryConditional(conditional)
+                    .scanIndexForward(true)
+                    .build());
+                
+                List<HangoutAttribute> attributes = new ArrayList<>();
+                pages.items().forEach(attributes::add);
+                
+                logger.debug("Found {} attributes for hangout {}", attributes.size(), hangoutId);
+                return attributes;
+                
+            } catch (Exception e) {
+                logger.error("Failed to find attributes for hangout {}", hangoutId, e);
+                throw new RepositoryException("Failed to retrieve hangout attributes", e);
+            }
+        });
+    }
+    
+    @Override
+    public HangoutAttribute saveAttribute(HangoutAttribute attribute) {
+        return performanceTracker.trackQuery("saveAttribute", "InviterTable", () -> {
+            try {
+                logger.debug("Saving attribute {} for hangout {}", 
+                    attribute.getAttributeId(), attribute.getHangoutId());
+                
+                // Validate attribute before saving
+                if (!attribute.isValid()) {
+                    throw new IllegalArgumentException("Invalid hangout attribute: " + attribute);
+                }
+                
+                // Update timestamp
+                attribute.touch();
+                
+                // Upsert operation - creates or updates
+                inviterTable.putItem(attribute);
+                
+                logger.debug("Successfully saved attribute {} for hangout {}", 
+                    attribute.getAttributeId(), attribute.getHangoutId());
+                return attribute;
+                
+            } catch (IllegalArgumentException e) {
+                logger.error("Validation failed for attribute: {}", attribute, e);
+                throw e; // Re-throw validation errors as-is
+            } catch (Exception e) {
+                logger.error("Failed to save attribute {} for hangout {}", 
+                    attribute.getAttributeId(), attribute.getHangoutId(), e);
+                throw new RepositoryException("Failed to save hangout attribute", e);
+            }
+        });
+    }
+    
+    @Override
+    public void deleteAttribute(String hangoutId, String attributeId) {
+        performanceTracker.trackQuery("deleteAttribute", "InviterTable", () -> {
+            try {
+                logger.debug("Deleting attribute {} for hangout {}", attributeId, hangoutId);
+                
+                // Direct key deletion - idempotent operation
+                Key key = Key.builder()
+                    .partitionValue(InviterKeyFactory.getEventPk(hangoutId))
+                    .sortValue(InviterKeyFactory.getAttributeSk(attributeId))
+                    .build();
+                
+                inviterTable.deleteItem(r -> r.key(key));
+                
+                logger.debug("Successfully deleted attribute {} for hangout {}", attributeId, hangoutId);
+                return null;
+                
+            } catch (Exception e) {
+                logger.error("Failed to delete attribute {} for hangout {}", attributeId, hangoutId, e);
+                throw new RepositoryException("Failed to delete hangout attribute", e);
             }
         });
     }
