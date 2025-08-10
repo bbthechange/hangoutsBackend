@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.service.impl;
 
 import com.bbthechange.inviter.service.FuzzyTimeService;
+import com.bbthechange.inviter.service.UserService;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.model.*;
@@ -14,6 +15,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -33,6 +35,9 @@ class HangoutServiceImplTest {
     
     @Mock
     private FuzzyTimeService fuzzyTimeService;
+    
+    @Mock
+    private UserService userService;
     
     @InjectMocks
     private HangoutServiceImpl hangoutService;
@@ -818,5 +823,266 @@ class HangoutServiceImplTest {
         assertThat(summary.getTimeInfo()).isNotNull();
         assertThat(summary.getTimeInfo().getPeriodGranularity()).isEqualTo("evening");
         assertThat(summary.getTimeInfo().getPeriodStart()).isEqualTo("2025-08-05T19:00:00Z");
+    }
+
+    @Test
+    void setUserInterest_NewInterest_Success() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+        SetInterestRequest request = new SetInterestRequest("GOING", "Excited to attend!");
+
+        Event event = createTestEvent(hangoutId);
+        event.setVisibility(EventVisibility.PUBLIC);
+        event.setAssociatedGroups(List.of("11111111-1111-1111-1111-111111111111"));
+
+        EventDetailData data = new EventDetailData(
+            event, List.of(), List.of(), List.of(), List.of(), List.of()
+        );
+        when(hangoutRepository.getEventDetailData(hangoutId)).thenReturn(data);
+
+        User user = createTestUser(userId);
+        when(userService.getUserById(UUID.fromString(userId))).thenReturn(Optional.of(user));
+
+        InterestLevel mockInterest = createTestInterestLevel();
+        when(hangoutRepository.saveInterestLevel(any(InterestLevel.class))).thenReturn(mockInterest);
+        doNothing().when(groupRepository).atomicallyUpdateParticipantCount(anyString(), anyString(), anyInt());
+
+        // When
+        hangoutService.setUserInterest(hangoutId, request, userId);
+
+        // Then
+        verify(hangoutRepository).saveInterestLevel(argThat(interest ->
+            interest.getEventId().equals(hangoutId) &&
+            interest.getUserId().equals(userId) &&
+            interest.getStatus().equals("GOING") &&
+            interest.getNotes().equals("Excited to attend!")
+        ));
+        verify(groupRepository).atomicallyUpdateParticipantCount("11111111-1111-1111-1111-111111111111", hangoutId, 1);
+    }
+
+    @Test
+    void setUserInterest_UpdateExistingInterest_Success() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+        SetInterestRequest request = new SetInterestRequest("NOT_GOING", "Can't make it");
+
+        Event event = createTestEvent(hangoutId);
+        event.setVisibility(EventVisibility.PUBLIC);
+        event.setAssociatedGroups(List.of("11111111-1111-1111-1111-111111111111"));
+
+        // Existing interest level - user was previously GOING
+        InterestLevel existingInterest = createTestInterestLevel();
+        existingInterest.setUserId(userId);
+        existingInterest.setStatus("GOING");
+
+        EventDetailData data = new EventDetailData(
+            event, List.of(), List.of(), List.of(), List.of(existingInterest), List.of()
+        );
+        when(hangoutRepository.getEventDetailData(hangoutId)).thenReturn(data);
+
+        User user = createTestUser(userId);
+        when(userService.getUserById(UUID.fromString(userId))).thenReturn(Optional.of(user));
+
+        InterestLevel mockInterest2 = createTestInterestLevel();
+        when(hangoutRepository.saveInterestLevel(any(InterestLevel.class))).thenReturn(mockInterest2);
+        doNothing().when(groupRepository).atomicallyUpdateParticipantCount(anyString(), anyString(), anyInt());
+
+        // When
+        hangoutService.setUserInterest(hangoutId, request, userId);
+
+        // Then
+        verify(hangoutRepository).saveInterestLevel(argThat(interest ->
+            interest.getStatus().equals("NOT_GOING") &&
+            interest.getNotes().equals("Can't make it")
+        ));
+        // User changed from GOING to NOT_GOING, so count should decrease by 1
+        verify(groupRepository).atomicallyUpdateParticipantCount("11111111-1111-1111-1111-111111111111", hangoutId, -1);
+    }
+
+    @Test
+    void setUserInterest_UserNotFound_ThrowsException() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+        SetInterestRequest request = new SetInterestRequest("GOING", null);
+
+        Event event = createTestEvent(hangoutId);
+        event.setVisibility(EventVisibility.PUBLIC);
+
+        EventDetailData data = new EventDetailData(
+            event, List.of(), List.of(), List.of(), List.of(), List.of()
+        );
+        when(hangoutRepository.getEventDetailData(hangoutId)).thenReturn(data);
+        when(userService.getUserById(UUID.fromString(userId))).thenReturn(Optional.empty());
+
+        // When/Then
+        assertThatThrownBy(() -> hangoutService.setUserInterest(hangoutId, request, userId))
+            .isInstanceOf(ResourceNotFoundException.class)
+            .hasMessageContaining("User not found");
+
+        verify(hangoutRepository, never()).saveInterestLevel(any());
+        verify(groupRepository, never()).atomicallyUpdateParticipantCount(anyString(), anyString(), anyInt());
+    }
+
+    @Test
+    void setUserInterest_EventNotFound_ThrowsException() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+        SetInterestRequest request = new SetInterestRequest("GOING", null);
+
+        EventDetailData data = new EventDetailData(
+            null, List.of(), List.of(), List.of(), List.of(), List.of()
+        );
+        when(hangoutRepository.getEventDetailData(hangoutId)).thenReturn(data);
+
+        // When/Then
+        assertThatThrownBy(() -> hangoutService.setUserInterest(hangoutId, request, userId))
+            .isInstanceOf(ResourceNotFoundException.class)
+            .hasMessageContaining("Hangout not found");
+
+        verify(userService, never()).getUserById(any());
+        verify(hangoutRepository, never()).saveInterestLevel(any());
+        verify(groupRepository, never()).atomicallyUpdateParticipantCount(anyString(), anyString(), anyInt());
+    }
+
+    @Test
+    void setUserInterest_UnauthorizedUser_ThrowsException() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+        SetInterestRequest request = new SetInterestRequest("GOING", null);
+
+        Event event = createTestEvent(hangoutId);
+        event.setVisibility(EventVisibility.INVITE_ONLY);
+        event.setAssociatedGroups(List.of("11111111-1111-1111-1111-111111111111"));
+
+        EventDetailData data = new EventDetailData(
+            event, List.of(), List.of(), List.of(), List.of(), List.of()
+        );
+        when(hangoutRepository.getEventDetailData(hangoutId)).thenReturn(data);
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.empty());
+
+        // When/Then
+        assertThatThrownBy(() -> hangoutService.setUserInterest(hangoutId, request, userId))
+            .isInstanceOf(UnauthorizedException.class)
+            .hasMessageContaining("Cannot set interest for this event");
+
+        verify(userService, never()).getUserById(any());
+        verify(hangoutRepository, never()).saveInterestLevel(any());
+        verify(groupRepository, never()).atomicallyUpdateParticipantCount(anyString(), anyString(), anyInt());
+    }
+
+    @Test
+    void removeUserInterest_ExistingInterest_Success() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+
+        Event event = createTestEvent(hangoutId);
+        event.setVisibility(EventVisibility.PUBLIC);
+        event.setAssociatedGroups(List.of("11111111-1111-1111-1111-111111111111"));
+
+        InterestLevel existingInterest = createTestInterestLevel();
+        existingInterest.setUserId(userId);
+        existingInterest.setStatus("GOING");
+
+        EventDetailData data = new EventDetailData(
+            event, List.of(), List.of(), List.of(), List.of(existingInterest), List.of()
+        );
+        when(hangoutRepository.getEventDetailData(hangoutId)).thenReturn(data);
+
+        doNothing().when(hangoutRepository).deleteInterestLevel(hangoutId, userId);
+        doNothing().when(groupRepository).atomicallyUpdateParticipantCount(anyString(), anyString(), anyInt());
+
+        // When
+        hangoutService.removeUserInterest(hangoutId, userId);
+
+        // Then
+        verify(hangoutRepository).deleteInterestLevel(hangoutId, userId);
+        // User was GOING, so removing should decrease count by 1
+        verify(groupRepository).atomicallyUpdateParticipantCount("11111111-1111-1111-1111-111111111111", hangoutId, -1);
+    }
+
+    @Test
+    void removeUserInterest_NoExistingInterest_NoCountChange() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+
+        Event event = createTestEvent(hangoutId);
+        event.setVisibility(EventVisibility.PUBLIC);
+        event.setAssociatedGroups(List.of("11111111-1111-1111-1111-111111111111"));
+
+        // No existing interest level for this user
+        EventDetailData data = new EventDetailData(
+            event, List.of(), List.of(), List.of(), List.of(), List.of()
+        );
+        when(hangoutRepository.getEventDetailData(hangoutId)).thenReturn(data);
+
+        doNothing().when(hangoutRepository).deleteInterestLevel(hangoutId, userId);
+
+        // When
+        hangoutService.removeUserInterest(hangoutId, userId);
+
+        // Then
+        verify(hangoutRepository).deleteInterestLevel(hangoutId, userId);
+        // No existing interest, so no count change should occur
+        verify(groupRepository, never()).atomicallyUpdateParticipantCount(anyString(), anyString(), anyInt());
+    }
+
+    @Test
+    void removeUserInterest_EventNotFound_ThrowsException() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+
+        EventDetailData data = new EventDetailData(
+            null, List.of(), List.of(), List.of(), List.of(), List.of()
+        );
+        when(hangoutRepository.getEventDetailData(hangoutId)).thenReturn(data);
+
+        // When/Then
+        assertThatThrownBy(() -> hangoutService.removeUserInterest(hangoutId, userId))
+            .isInstanceOf(ResourceNotFoundException.class)
+            .hasMessageContaining("Hangout not found");
+
+        verify(hangoutRepository, never()).deleteInterestLevel(anyString(), anyString());
+        verify(groupRepository, never()).atomicallyUpdateParticipantCount(anyString(), anyString(), anyInt());
+    }
+
+    @Test
+    void removeUserInterest_UnauthorizedUser_ThrowsException() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+
+        Event event = createTestEvent(hangoutId);
+        event.setVisibility(EventVisibility.INVITE_ONLY);
+        event.setAssociatedGroups(List.of("11111111-1111-1111-1111-111111111111"));
+
+        EventDetailData data = new EventDetailData(
+            event, List.of(), List.of(), List.of(), List.of(), List.of()
+        );
+        when(hangoutRepository.getEventDetailData(hangoutId)).thenReturn(data);
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.empty());
+
+        // When/Then
+        assertThatThrownBy(() -> hangoutService.removeUserInterest(hangoutId, userId))
+            .isInstanceOf(UnauthorizedException.class)
+            .hasMessageContaining("Cannot remove interest for this event");
+
+        verify(hangoutRepository, never()).deleteInterestLevel(anyString(), anyString());
+        verify(groupRepository, never()).atomicallyUpdateParticipantCount(anyString(), anyString(), anyInt());
+    }
+
+    // Helper method for User creation
+    private User createTestUser(String userId) {
+        User user = new User();
+        user.setDisplayName("John Doe");
+        user.setUsername("johndoe");
+        return user;
     }
 }

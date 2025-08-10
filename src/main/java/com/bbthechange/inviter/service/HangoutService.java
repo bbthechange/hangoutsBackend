@@ -39,6 +39,16 @@ public interface HangoutService {
      */
     List<HangoutSummaryDTO> getHangoutsForUser(String userId);
     
+    /**
+     * Set user interest level for a hangout with atomic participant count updates.
+     */
+    void setUserInterest(String hangoutId, SetInterestRequest request, String requestingUserId);
+    
+    /**
+     * Remove user interest level from a hangout with atomic participant count updates.
+     */
+    void removeUserInterest(String hangoutId, String requestingUserId);
+    
     // Legacy event methods for backward compatibility
     /**
      * Get complete event details using item collection pattern.

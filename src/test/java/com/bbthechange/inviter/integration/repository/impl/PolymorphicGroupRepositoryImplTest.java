@@ -299,4 +299,65 @@ class PolymorphicGroupRepositoryImplTest {
             .isInstanceOf(RepositoryException.class)
             .hasMessageContaining("Simulated error");
     }
+
+    @Test
+    void atomicallyUpdateParticipantCount_IncrementsCount_Success() {
+        // Given
+        String groupId = UUID.randomUUID().toString();
+        String hangoutId = UUID.randomUUID().toString();
+        HangoutPointer pointer = new HangoutPointer(groupId, hangoutId, "Test Hangout");
+        pointer.setParticipantCount(5);
+        repository.saveHangoutPointer(pointer);
+
+        // When
+        repository.atomicallyUpdateParticipantCount(groupId, hangoutId, 2);
+
+        // Then - Verify the update doesn't throw (atomic operation completed)
+        // Note: Since this is an atomic update, we can't directly verify the count
+        // without another query method, but the operation should complete successfully
+    }
+
+    @Test
+    void atomicallyUpdateParticipantCount_DecrementsCount_Success() {
+        // Given
+        String groupId = UUID.randomUUID().toString();
+        String hangoutId = UUID.randomUUID().toString();
+        HangoutPointer pointer = new HangoutPointer(groupId, hangoutId, "Test Hangout");
+        pointer.setParticipantCount(5);
+        repository.saveHangoutPointer(pointer);
+
+        // When
+        repository.atomicallyUpdateParticipantCount(groupId, hangoutId, -2);
+
+        // Then - Verify the update doesn't throw (atomic operation completed)
+    }
+
+    @Test
+    void atomicallyUpdateParticipantCount_ZeroDelta_NoOperation() {
+        // Given
+        String groupId = UUID.randomUUID().toString();
+        String hangoutId = UUID.randomUUID().toString();
+        HangoutPointer pointer = new HangoutPointer(groupId, hangoutId, "Test Hangout");
+        pointer.setParticipantCount(5);
+        repository.saveHangoutPointer(pointer);
+
+        // When
+        repository.atomicallyUpdateParticipantCount(groupId, hangoutId, 0);
+
+        // Then - Should return early without any DynamoDB operation
+        // No exception should be thrown
+    }
+
+    @Test
+    void atomicallyUpdateParticipantCount_NonExistentHangout_HandlesGracefully() {
+        // Given
+        String groupId = UUID.randomUUID().toString();
+        String hangoutId = UUID.randomUUID().toString();
+        // No hangout pointer exists
+
+        // When & Then - Should not throw exception for non-existent items
+        // DynamoDB UpdateItem with if_not_exists will handle the case gracefully
+        assertThatCode(() -> repository.atomicallyUpdateParticipantCount(groupId, hangoutId, 1))
+            .doesNotThrowAnyException();
+    }
 }

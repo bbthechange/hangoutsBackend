@@ -2,6 +2,7 @@ package com.bbthechange.inviter.service.impl;
 
 import com.bbthechange.inviter.service.HangoutService;
 import com.bbthechange.inviter.service.FuzzyTimeService;
+import com.bbthechange.inviter.service.UserService;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.model.*;
@@ -17,6 +18,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.ArrayList;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -31,13 +34,15 @@ public class HangoutServiceImpl implements HangoutService {
     private final HangoutRepository hangoutRepository;
     private final GroupRepository groupRepository;
     private final FuzzyTimeService fuzzyTimeService;
+    private final UserService userService;
     
     @Autowired
     public HangoutServiceImpl(HangoutRepository hangoutRepository, GroupRepository groupRepository,
-                              FuzzyTimeService fuzzyTimeService) {
+                              FuzzyTimeService fuzzyTimeService, UserService userService) {
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
         this.fuzzyTimeService = fuzzyTimeService;
+        this.userService = userService;
     }
     
     @Override
@@ -623,6 +628,101 @@ public class HangoutServiceImpl implements HangoutService {
         } catch (Exception e) {
             // Return as-is if parsing fails
             return timeString;
+        }
+    }
+
+    @Override
+    public void setUserInterest(String hangoutId, SetInterestRequest request, String requestingUserId) {
+        // Get event and authorize
+        EventDetailData data = hangoutRepository.getEventDetailData(hangoutId);
+        if (data.getEvent() == null) {
+            throw new ResourceNotFoundException("Hangout not found: " + hangoutId);
+        }
+        if (!canUserViewEvent(requestingUserId, data.getEvent())) {
+            throw new UnauthorizedException("Cannot set interest for this event");
+        }
+
+        // Get existing interest level to determine count change
+        String oldStatus = null;
+        List<InterestLevel> currentAttendance = data.getAttendance();
+        for (InterestLevel interest : currentAttendance) {
+            if (requestingUserId.equals(interest.getUserId())) {
+                oldStatus = interest.getStatus();
+                break;
+            }
+        }
+
+        // Get user for denormalization
+        Optional<User> userOpt = userService.getUserById(UUID.fromString(requestingUserId));
+        if (userOpt.isEmpty()) {
+            throw new ResourceNotFoundException("User not found");
+        }
+        User user = userOpt.get();
+        String displayName = user.getDisplayName() != null ? user.getDisplayName() : user.getUsername();
+
+        // Create/update InterestLevel
+        InterestLevel interestLevel = new InterestLevel(hangoutId, requestingUserId, displayName, request.getStatus());
+        interestLevel.setNotes(request.getNotes());
+        hangoutRepository.saveInterestLevel(interestLevel);
+
+        // Update participant counts using atomic counters
+        List<String> associatedGroups = data.getEvent().getAssociatedGroups();
+        if (associatedGroups != null && !associatedGroups.isEmpty()) {
+            updateParticipantCounts(hangoutId, oldStatus, request.getStatus(), associatedGroups);
+        }
+
+        logger.info("Set interest {} for user {} on hangout {}", request.getStatus(), requestingUserId, hangoutId);
+    }
+
+    @Override
+    public void removeUserInterest(String hangoutId, String requestingUserId) {
+        // Authorization check
+        EventDetailData data = hangoutRepository.getEventDetailData(hangoutId);
+        if (data.getEvent() == null) {
+            throw new ResourceNotFoundException("Hangout not found: " + hangoutId);
+        }
+        if (!canUserViewEvent(requestingUserId, data.getEvent())) {
+            throw new UnauthorizedException("Cannot remove interest for this event");
+        }
+
+        // Get existing status for count calculation
+        String oldStatus = null;
+        List<InterestLevel> currentAttendance = data.getAttendance();
+        for (InterestLevel interest : currentAttendance) {
+            if (requestingUserId.equals(interest.getUserId())) {
+                oldStatus = interest.getStatus();
+                break;
+            }
+        }
+
+        // Delete interest level
+        hangoutRepository.deleteInterestLevel(hangoutId, requestingUserId);
+
+        // Update participant counts (removal = status changes from X to null)
+        List<String> associatedGroups = data.getEvent().getAssociatedGroups();
+        if (associatedGroups != null && !associatedGroups.isEmpty()) {
+            updateParticipantCounts(hangoutId, oldStatus, null, associatedGroups);
+        }
+
+        logger.info("Removed interest for user {} on hangout {}", requestingUserId, hangoutId);
+    }
+
+    private void updateParticipantCounts(String hangoutId, String oldStatus, String newStatus,
+                                       List<String> associatedGroups) {
+        boolean wasGoing = "GOING".equals(oldStatus);
+        boolean nowGoing = "GOING".equals(newStatus);
+
+        if (wasGoing == nowGoing) {
+            return; // No count change needed
+        }
+
+        int delta = nowGoing ? 1 : -1; // +1 if now going, -1 if no longer going
+
+        // Use the atomic counter method
+        for (String groupId : associatedGroups) {
+            groupRepository.atomicallyUpdateParticipantCount(groupId, hangoutId, delta);
+            logger.debug("Updated participantCount by {} for hangout {} in group {}",
+                        delta, hangoutId, groupId);
         }
     }
 }

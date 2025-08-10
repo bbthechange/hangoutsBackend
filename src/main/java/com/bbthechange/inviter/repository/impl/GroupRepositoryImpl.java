@@ -349,6 +349,36 @@ public class GroupRepositoryImpl implements GroupRepository {
         });
     }
     
+    @Override
+    public void atomicallyUpdateParticipantCount(String groupId, String hangoutId, int delta) {
+        if (delta == 0) {
+            return; // No change needed
+        }
+        performanceTracker.trackQuery("UpdateItem", "InviterTable", () -> {
+            try {
+                Map<String, AttributeValue> key = Map.of(
+                    "pk", AttributeValue.builder().s(InviterKeyFactory.getGroupPk(groupId)).build(),
+                    "sk", AttributeValue.builder().s(InviterKeyFactory.getHangoutSk(hangoutId)).build()
+                );
+                UpdateItemRequest request = UpdateItemRequest.builder()
+                    .tableName("InviterTable")
+                    .key(key)
+                    .updateExpression("SET participantCount = if_not_exists(participantCount, :zero) + :delta, updatedAt = :timestamp")
+                    .expressionAttributeValues(Map.of(
+                        ":delta", AttributeValue.builder().n(String.valueOf(delta)).build(),
+                        ":zero", AttributeValue.builder().n("0").build(),
+                        ":timestamp", AttributeValue.builder().s(java.time.Instant.now().toString()).build()
+                    ))
+                    .build();
+                dynamoDbClient.updateItem(request);
+            } catch (DynamoDbException e) {
+                logger.error("Failed to atomically update participant count for hangout {} in group {}", hangoutId, groupId, e);
+                throw new RepositoryException("Failed to update participant count", e);
+            }
+            return null;
+        });
+    }
+    
     // Helper method for DynamoDB attribute conversion
     @SuppressWarnings("unchecked")
     private Map<String, AttributeValue> convertToAttributeValueMap(BaseItem item) {

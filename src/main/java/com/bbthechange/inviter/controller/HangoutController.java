@@ -92,6 +92,29 @@ public class HangoutController extends BaseController {
         
         return ResponseEntity.noContent().build();
     }
+
+    @PutMapping("/hangouts/{hangoutId}/interest")
+    public ResponseEntity<Void> setInterest(
+            @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid hangout ID format") String hangoutId,
+            @Valid @RequestBody SetInterestRequest request,
+            HttpServletRequest httpRequest) {
+
+        String userId = extractUserId(httpRequest);
+        hangoutService.setUserInterest(hangoutId, request, userId);
+        logger.info("User {} set interest {} for hangout {}", userId, request.getStatus(), hangoutId);
+        return ResponseEntity.ok().build();
+    }
+
+    @DeleteMapping("/hangouts/{hangoutId}/interest")
+    public ResponseEntity<Void> removeInterest(
+            @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid hangout ID format") String hangoutId,
+            HttpServletRequest httpRequest) {
+
+        String userId = extractUserId(httpRequest);
+        hangoutService.removeUserInterest(hangoutId, userId);
+        logger.info("User {} removed interest for hangout {}", userId, hangoutId);
+        return ResponseEntity.noContent().build();
+    }
     
     // LEGACY EVENT API ENDPOINTS (for backward compatibility)
     @Deprecated

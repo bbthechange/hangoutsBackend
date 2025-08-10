@@ -47,4 +47,10 @@ public interface GroupRepository {
      * Returns denormalized hangout data for efficient feed rendering.
      */
     List<HangoutPointer> findHangoutsByGroupId(String groupId);
+    
+    /**
+     * Atomically update participant count for a hangout pointer.
+     * Uses DynamoDB atomic ADD operation to safely increment/decrement.
+     */
+    void atomicallyUpdateParticipantCount(String groupId, String hangoutId, int delta);
 }

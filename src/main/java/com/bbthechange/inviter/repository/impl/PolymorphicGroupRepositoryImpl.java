@@ -441,4 +441,44 @@ public class PolymorphicGroupRepositoryImpl implements GroupRepository {
             return null;
         });
     }
+    
+    @Override
+    public void atomicallyUpdateParticipantCount(String groupId, String hangoutId, int delta) {
+        if (delta == 0) {
+            return; // No change needed
+        }
+
+        queryTracker.trackQuery("UpdateItem", TABLE_NAME, () -> {
+            try {
+                // Build the key for the HangoutPointer
+                Map<String, AttributeValue> key = Map.of(
+                    "pk", AttributeValue.builder().s(InviterKeyFactory.getGroupPk(groupId)).build(),
+                    "sk", AttributeValue.builder().s(InviterKeyFactory.getHangoutSk(hangoutId)).build()
+                );
+
+                // Build atomic counter update expression
+                UpdateItemRequest request = UpdateItemRequest.builder()
+                    .tableName(TABLE_NAME)
+                    .key(key)
+                    .updateExpression("SET participantCount = if_not_exists(participantCount, :zero) + :delta, updatedAt = :timestamp")
+                    .expressionAttributeValues(Map.of(
+                        ":delta", AttributeValue.builder().n(String.valueOf(delta)).build(),
+                        ":zero", AttributeValue.builder().n("0").build(),
+                        ":timestamp", AttributeValue.builder().s(Instant.now().toString()).build()
+                    ))
+                    .build();
+
+                dynamoDbClient.updateItem(request);
+                logger.debug("Atomically updated participantCount by {} for hangout {} in group {}",
+                            delta, hangoutId, groupId);
+
+            } catch (DynamoDbException e) {
+                logger.error("Failed to atomically update participant count for hangout {} in group {}",
+                            hangoutId, groupId, e);
+                throw new RepositoryException("Failed to update participant count", e);
+            }
+
+            return null;
+        });
+    }
 }
