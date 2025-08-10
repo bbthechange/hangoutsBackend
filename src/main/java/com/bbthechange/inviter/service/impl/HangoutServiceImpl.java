@@ -633,13 +633,13 @@ public class HangoutServiceImpl implements HangoutService {
 
     @Override
     public void setUserInterest(String hangoutId, SetInterestRequest request, String requestingUserId) {
-        // Get event and authorize
-        EventDetailData data = hangoutRepository.getEventDetailData(hangoutId);
-        if (data.getEvent() == null) {
+        // Get hangout and authorize
+        HangoutDetailData data = hangoutRepository.getHangoutDetailData(hangoutId);
+        if (data.getHangout() == null) {
             throw new ResourceNotFoundException("Hangout not found: " + hangoutId);
         }
-        if (!canUserViewEvent(requestingUserId, data.getEvent())) {
-            throw new UnauthorizedException("Cannot set interest for this event");
+        if (!canUserViewHangout(requestingUserId, data.getHangout())) {
+            throw new UnauthorizedException("Cannot set interest for this hangout");
         }
 
         // Get existing interest level to determine count change
@@ -666,7 +666,7 @@ public class HangoutServiceImpl implements HangoutService {
         hangoutRepository.saveInterestLevel(interestLevel);
 
         // Update participant counts using atomic counters
-        List<String> associatedGroups = data.getEvent().getAssociatedGroups();
+        List<String> associatedGroups = data.getHangout().getAssociatedGroups();
         if (associatedGroups != null && !associatedGroups.isEmpty()) {
             updateParticipantCounts(hangoutId, oldStatus, request.getStatus(), associatedGroups);
         }
@@ -677,12 +677,12 @@ public class HangoutServiceImpl implements HangoutService {
     @Override
     public void removeUserInterest(String hangoutId, String requestingUserId) {
         // Authorization check
-        EventDetailData data = hangoutRepository.getEventDetailData(hangoutId);
-        if (data.getEvent() == null) {
+        HangoutDetailData data = hangoutRepository.getHangoutDetailData(hangoutId);
+        if (data.getHangout() == null) {
             throw new ResourceNotFoundException("Hangout not found: " + hangoutId);
         }
-        if (!canUserViewEvent(requestingUserId, data.getEvent())) {
-            throw new UnauthorizedException("Cannot remove interest for this event");
+        if (!canUserViewHangout(requestingUserId, data.getHangout())) {
+            throw new UnauthorizedException("Cannot remove interest for this hangout");
         }
 
         // Get existing status for count calculation
@@ -699,7 +699,7 @@ public class HangoutServiceImpl implements HangoutService {
         hangoutRepository.deleteInterestLevel(hangoutId, requestingUserId);
 
         // Update participant counts (removal = status changes from X to null)
-        List<String> associatedGroups = data.getEvent().getAssociatedGroups();
+        List<String> associatedGroups = data.getHangout().getAssociatedGroups();
         if (associatedGroups != null && !associatedGroups.isEmpty()) {
             updateParticipantCounts(hangoutId, oldStatus, null, associatedGroups);
         }
