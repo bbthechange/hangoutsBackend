@@ -77,11 +77,6 @@ public interface HangoutService {
     void verifyUserCanAccessHangout(String hangoutId, String userId);
     
     // Legacy event methods for backward compatibility
-    /**
-     * Get complete event details using item collection pattern.
-     * Single query gets ALL data - the power pattern!
-     */
-    EventDetailDTO getEventDetail(String eventId, String requestingUserId);
     
     /**
      * Update event title with pointer coordination.

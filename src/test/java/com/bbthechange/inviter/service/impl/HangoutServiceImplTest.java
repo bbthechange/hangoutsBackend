@@ -43,59 +43,6 @@ class HangoutServiceImplTest {
     private HangoutServiceImpl hangoutService;
     
     @Test
-    void getEventDetail_Success() {
-        // Given
-        String eventId = "12345678-1234-1234-1234-123456789012";
-        String userId = "87654321-4321-4321-4321-210987654321";
-        
-        Event event = createTestEvent(eventId);
-        event.setVisibility(EventVisibility.PUBLIC); // Public event - user can view
-        
-        EventDetailData data = new EventDetailData(
-            event,
-            List.of(createTestPoll()),
-            List.of(createTestCar()),
-            List.of(createTestVote()),
-            List.of(createTestInterestLevel()),
-            List.of()
-        );
-        
-        when(hangoutRepository.getEventDetailData(eventId)).thenReturn(data);
-        
-        // When
-        EventDetailDTO result = hangoutService.getEventDetail(eventId, userId);
-        
-        // Then
-        assertThat(result.getEvent()).isEqualTo(event);
-        assertThat(result.getPolls()).hasSize(1);
-        assertThat(result.getCars()).hasSize(1);
-        assertThat(result.getVotes()).hasSize(1);
-        assertThat(result.getAttendance()).hasSize(1);
-        
-        verify(hangoutRepository).getEventDetailData(eventId);
-    }
-    
-    @Test
-    void getEventDetail_UnauthorizedUser_ThrowsException() {
-        // Given
-        String eventId = "12345678-1234-1234-1234-123456789012";
-        String userId = "33333333-3333-3333-3333-333333333333";
-        
-        Event event = createTestEvent(eventId);
-        event.setVisibility(EventVisibility.INVITE_ONLY); // Private event
-        event.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111"))); // User not in this group
-        
-        EventDetailData data = new EventDetailData(event, List.of(), List.of(), List.of(), List.of(), List.of());
-        when(hangoutRepository.getEventDetailData(eventId)).thenReturn(data);
-        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.empty());
-        
-        // When/Then
-        assertThatThrownBy(() -> hangoutService.getEventDetail(eventId, userId))
-            .isInstanceOf(UnauthorizedException.class)
-            .hasMessageContaining("Cannot view event");
-    }
-    
-    @Test
     void updateEventTitle_Success() {
         // Given
         String eventId = "12345678-1234-1234-1234-123456789012";

@@ -276,26 +276,6 @@ public class HangoutServiceImpl implements HangoutService {
         logger.info("Found {} hangouts for user {}", hangoutSummaries.size(), userId);
         return hangoutSummaries;
     }
-
-    @Override
-    public EventDetailDTO getEventDetail(String eventId, String requestingUserId) {
-        // Single item collection query gets EVERYTHING (the power pattern!)
-        EventDetailData data = hangoutRepository.getEventDetailData(eventId);
-        
-        // Authorization check
-        if (!canUserViewEvent(requestingUserId, data.getEvent())) {
-            throw new UnauthorizedException("Cannot view event");
-        }
-        
-        // All data fetched in one query - just transform to DTO
-        return new EventDetailDTO(
-            data.getEvent(),
-            data.getPolls(),
-            data.getCars(),
-            data.getVotes(),
-            data.getAttendance()
-        );
-    }
     
     @Override
     public void updateEventTitle(String eventId, String newTitle, String requestingUserId) {

@@ -117,25 +117,6 @@ public class HangoutController extends BaseController {
     }
     
     // LEGACY EVENT API ENDPOINTS (for backward compatibility)
-    @Deprecated
-    @GetMapping("/events/{eventId}/detail")
-    public ResponseEntity<EventDetailDTO> getEventDetail(
-            @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid event ID format") String eventId,
-            HttpServletRequest httpRequest) {
-        
-        String userId = extractUserId(httpRequest);
-        
-        // Single item collection query gets ALL data - the power pattern!
-        EventDetailDTO detail = hangoutService.getEventDetail(eventId, userId);
-        
-        logger.debug("Retrieved event detail for {} - {} polls, {} cars, {} attendance records", 
-            eventId, 
-            detail.getPolls().size(),
-            detail.getCars().size(), 
-            detail.getAttendance().size());
-            
-        return ResponseEntity.ok(detail);
-    }
     
     @PatchMapping("/{eventId}")
     public ResponseEntity<Void> updateEvent(
