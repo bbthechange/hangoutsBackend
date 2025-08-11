@@ -38,7 +38,9 @@ public interface HangoutService {
      * Returns chronologically sorted list using EntityTimeIndex GSI.
      */
     List<HangoutSummaryDTO> getHangoutsForUser(String userId);
-    
+
+    boolean canUserEditHangout(String userId, Hangout hangout);
+
     /**
      * Set user interest level for a hangout with atomic participant count updates.
      */

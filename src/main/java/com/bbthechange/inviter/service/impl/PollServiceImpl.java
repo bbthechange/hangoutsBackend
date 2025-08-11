@@ -1,5 +1,6 @@
 package com.bbthechange.inviter.service.impl;
 
+import com.bbthechange.inviter.model.Hangout;
 import com.bbthechange.inviter.service.PollService;
 import com.bbthechange.inviter.service.HangoutService;
 import com.bbthechange.inviter.dto.*;
@@ -38,14 +39,14 @@ public class PollServiceImpl implements PollService {
         logger.info("Creating poll '{}' for event {} by user {}", request.getTitle(), eventId, userId);
         
         // Get event and verify user can edit it
-        EventDetailData eventData = hangoutRepository.getEventDetailData(eventId);
-        if (eventData.getEvent() == null) {
+        HangoutDetailData eventData = hangoutRepository.getHangoutDetailData(eventId);
+        if (eventData.getHangout() == null) {
             throw new EventNotFoundException("Event not found: " + eventId);
         }
         
-        Event event = eventData.getEvent();
-        if (!hangoutService.canUserEditEvent(userId, event)) {
-            throw new UnauthorizedException("Only event hosts can create polls");
+        Hangout hangout = eventData.getHangout();
+        if (!hangoutService.canUserEditHangout(userId, hangout)) {
+            throw new UnauthorizedException("User cannot edit hangout");
         }
         
         // Create poll

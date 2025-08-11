@@ -556,8 +556,9 @@ public class HangoutServiceImpl implements HangoutService {
         
         return false;
     }
-    
-    private boolean canUserEditHangout(String userId, Hangout hangout) {
+
+    @Override
+    public boolean canUserEditHangout(String userId, Hangout hangout) {
         // Check if user is a member of any associated groups
         // For now, any group member can edit - can be refined to admin-only later
         if (hangout.getAssociatedGroups() != null) {
