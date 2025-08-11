@@ -296,7 +296,7 @@ public UploadUrlResponse getUploadUrl(@RequestBody UploadUrlRequest request) {
 # Get valid token for testing
 curl -X POST http://localhost:8080/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"phoneNumber": "+19285251044", "password": "mypass2"}'
+  -d '{"phoneNumber": "+19285251044", "password": "mypass"}'
 ```
 
 #### DynamoDB Access Issues  
@@ -313,7 +313,7 @@ curl -X POST http://localhost:8080/auth/login \
 ```json
 {
   "phoneNumber": "+19285251044",
-  "password": "mypass2",
+  "password": "mypass",
   "username": "jeana",
   "displayName": "Jeana"
 }
