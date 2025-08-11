@@ -37,7 +37,8 @@ public class CarpoolServiceImpl implements CarpoolService {
     @Override
     public Car offerCar(String eventId, OfferCarRequest request, String userId) {
         logger.info("User {} offering car with {} seats for event {}", userId, request.getTotalCapacity(), eventId);
-        
+
+        // TODO switch to hangout
         // Get event and verify user can view it
         EventDetailData eventData = hangoutRepository.getEventDetailData(eventId);
         if (eventData.getEvent() == null) {

@@ -36,6 +36,7 @@ public class HangoutRepositoryImpl implements HangoutRepository {
     private static final String TABLE_NAME = "InviterTable";
     private final TableSchema<Hangout> hangoutSchema;
     private final TableSchema<Poll> pollSchema;
+    private final TableSchema<PollOption> pollOptionSchema;
     private final TableSchema<Car> carSchema;
     private final TableSchema<Vote> voteSchema;
     private final TableSchema<InterestLevel> interestLevelSchema;
@@ -55,6 +56,7 @@ public class HangoutRepositoryImpl implements HangoutRepository {
         this.inviterTable = dynamoDbEnhancedClient.table(TABLE_NAME, TableSchema.fromBean(HangoutAttribute.class));
         this.hangoutSchema = TableSchema.fromBean(Hangout.class);
         this.pollSchema = TableSchema.fromBean(Poll.class);
+        this.pollOptionSchema = TableSchema.fromBean(PollOption.class);
         this.carSchema = TableSchema.fromBean(Car.class);
         this.voteSchema = TableSchema.fromBean(Vote.class);
         this.interestLevelSchema = TableSchema.fromBean(InterestLevel.class);
@@ -79,6 +81,8 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                     return hangoutSchema.mapToItem(itemMap);
                 } else if (InviterKeyFactory.isPollItem(sk)) {
                     return pollSchema.mapToItem(itemMap);
+                } else if (InviterKeyFactory.isPollOption(sk)) {
+                    return pollOptionSchema.mapToItem(itemMap);
                 } else if (InviterKeyFactory.isCarItem(sk)) {
                     return carSchema.mapToItem(itemMap);
                 } else if (InviterKeyFactory.isVoteItem(sk)) {
@@ -100,6 +104,8 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                 return hangoutSchema.mapToItem(itemMap);
             case "POLL":
                 return pollSchema.mapToItem(itemMap);
+            case "POLL_OPTION":
+                return pollOptionSchema.mapToItem(itemMap);
             case "CAR":
                 return carSchema.mapToItem(itemMap);
             case "VOTE":
@@ -137,6 +143,7 @@ public class HangoutRepositoryImpl implements HangoutRepository {
 
                 // Sort by sort key patterns in memory (efficient - documented contract)
                 List<Poll> polls = new ArrayList<>();
+                List<PollOption> pollOptions = new ArrayList<>();
                 List<Car> cars = new ArrayList<>();
                 List<Vote> votes = new ArrayList<>();
                 List<InterestLevel> attendance = new ArrayList<>();
@@ -149,6 +156,8 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                     // Use key patterns to safely identify types (documented contract)
                     if (InviterKeyFactory.isPollItem(sk)) {
                         polls.add((Poll) item); // Safe - key pattern guarantees Poll
+                    } else if (InviterKeyFactory.isPollOption(sk)) {
+                        pollOptions.add((PollOption) item); // Safe - key pattern guarantees PollOption
                     } else if (InviterKeyFactory.isCarItem(sk)) {
                         cars.add((Car) item); // Safe - key pattern guarantees Car
                     } else if (InviterKeyFactory.isVoteItem(sk)) {
@@ -165,19 +174,21 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                 Hangout hangout = hangoutOption
                         .orElseThrow(() -> new ResourceNotFoundException("Event not found: " + eventId));
 
-                return new HangoutDetailData(hangout, polls, cars, votes, attendance, carRiders);
+                return new HangoutDetailData(hangout, polls, pollOptions, cars, votes, attendance, carRiders);
 
             } catch (Exception e) {
                 logger.error("Failed to get event detail data for event {}", eventId, e);
-                throw new RepositoryException("Failed to retrieve event details", e);
+                throw new RepositoryException("Failed to retrieve hangout details", e);
             }
         });
     }
-    
+
+    @Deprecated(since = "Use getHangoutDetailData()")
     @Override
     public EventDetailData getEventDetailData(String eventId) {
         return performanceTracker.trackQuery("getEventDetailData", "InviterTable", () -> {
             try {
+                logger.warn("WARNING getEventDetailData called!!!");
                 // Single query gets ALL event data - the power pattern!
                 QueryRequest request = QueryRequest.builder()
                     .tableName(TABLE_NAME)
@@ -187,13 +198,13 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                     ))
                     .scanIndexForward(true)
                     .build();
-                
+
                 QueryResponse response = dynamoDbClient.query(request);
-                
+
                 List<BaseItem> allItems = response.items().stream()
                     .map(this::deserializeItem)
                     .collect(Collectors.toList());
-                
+
                 // Sort by sort key patterns in memory (efficient - documented contract)
                 List<Poll> polls = new ArrayList<>();
                 List<Car> cars = new ArrayList<>();
@@ -203,7 +214,7 @@ public class HangoutRepositoryImpl implements HangoutRepository {
 
                 for (BaseItem item : allItems) {
                     String sk = item.getSk();
-                    
+
                     // Use key patterns to safely identify types (documented contract)
                     if (InviterKeyFactory.isPollItem(sk)) {
                         polls.add((Poll) item); // Safe - key pattern guarantees Poll
@@ -221,9 +232,9 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                 // Get canonical event record from main Events table
                 Event event = eventRepository.findById(UUID.fromString(eventId))
                     .orElseThrow(() -> new ResourceNotFoundException("Event not found: " + eventId));
-                
+
                 return new EventDetailData(event, polls, cars, votes, attendance, carRiders);
-                
+
             } catch (Exception e) {
                 logger.error("Failed to get event detail data for event {}", eventId, e);
                 throw new RepositoryException("Failed to retrieve event details", e);
@@ -751,6 +762,161 @@ public class HangoutRepositoryImpl implements HangoutRepository {
             } catch (Exception e) {
                 logger.error("Failed to delete attribute {} for hangout {}", attributeId, hangoutId, e);
                 throw new RepositoryException("Failed to delete hangout attribute", e);
+            }
+        });
+    }
+    
+    // ============================================================================
+    // POLL OPTION OPERATIONS
+    // ============================================================================
+    
+    @Override
+    public PollOption savePollOption(PollOption option) {
+        return performanceTracker.trackQuery("savePollOption", "InviterTable", () -> {
+            try {
+                option.touch();
+                Map<String, AttributeValue> itemMap = pollOptionSchema.itemToMap(option, true);
+                
+                PutItemRequest request = PutItemRequest.builder()
+                    .tableName(TABLE_NAME)
+                    .item(itemMap)
+                    .build();
+                
+                dynamoDbClient.putItem(request);
+                return option;
+            } catch (Exception e) {
+                logger.error("Failed to save poll option {} for poll {}", option.getOptionId(), option.getPollId(), e);
+                throw new RepositoryException("Failed to save poll option", e);
+            }
+        });
+    }
+    
+    @Override
+    public List<PollOption> getPollOptions(String eventId, String pollId) {
+        return performanceTracker.trackQuery("getPollOptions", "InviterTable", () -> {
+            try {
+                QueryRequest request = QueryRequest.builder()
+                    .tableName(TABLE_NAME)
+                    .keyConditionExpression("pk = :pk AND begins_with(sk, :sk_prefix)")
+                    .expressionAttributeValues(Map.of(
+                        ":pk", AttributeValue.builder().s(InviterKeyFactory.getEventPk(eventId)).build(),
+                        ":sk_prefix", AttributeValue.builder().s("POLL#" + pollId + "#OPTION#").build()
+                    ))
+                    .build();
+                
+                QueryResponse response = dynamoDbClient.query(request);
+                
+                return response.items().stream()
+                    .map(item -> pollOptionSchema.mapToItem(item))
+                    .collect(Collectors.toList());
+            } catch (Exception e) {
+                logger.error("Failed to get poll options for poll {} in event {}", pollId, eventId, e);
+                throw new RepositoryException("Failed to retrieve poll options", e);
+            }
+        });
+    }
+    
+    @Override
+    public List<BaseItem> getAllPollData(String eventId) {
+        return performanceTracker.trackQuery("getAllPollData", "InviterTable", () -> {
+            try {
+                QueryRequest request = QueryRequest.builder()
+                    .tableName(TABLE_NAME)
+                    .keyConditionExpression("pk = :pk AND begins_with(sk, :sk_prefix)")
+                    .expressionAttributeValues(Map.of(
+                        ":pk", AttributeValue.builder().s(InviterKeyFactory.getEventPk(eventId)).build(),
+                        ":sk_prefix", AttributeValue.builder().s("POLL#").build()
+                    ))
+                    .build();
+                
+                QueryResponse response = dynamoDbClient.query(request);
+                
+                return response.items().stream()
+                    .map(this::deserializeItem)
+                    .collect(Collectors.toList());
+            } catch (Exception e) {
+                logger.error("Failed to get all poll data for event {}", eventId, e);
+                throw new RepositoryException("Failed to retrieve poll data", e);
+            }
+        });
+    }
+    
+    @Override
+    public List<BaseItem> getSpecificPollData(String eventId, String pollId) {
+        return performanceTracker.trackQuery("getSpecificPollData", "InviterTable", () -> {
+            try {
+                QueryRequest request = QueryRequest.builder()
+                    .tableName(TABLE_NAME)
+                    .keyConditionExpression("pk = :pk AND begins_with(sk, :sk_prefix)")
+                    .expressionAttributeValues(Map.of(
+                        ":pk", AttributeValue.builder().s(InviterKeyFactory.getEventPk(eventId)).build(),
+                        ":sk_prefix", AttributeValue.builder().s("POLL#" + pollId).build()
+                    ))
+                    .build();
+                
+                QueryResponse response = dynamoDbClient.query(request);
+                
+                return response.items().stream()
+                    .map(this::deserializeItem)
+                    .collect(Collectors.toList());
+            } catch (Exception e) {
+                logger.error("Failed to get specific poll data for poll {} in event {}", pollId, eventId, e);
+                throw new RepositoryException("Failed to retrieve specific poll data", e);
+            }
+        });
+    }
+    
+    @Override
+    public void deletePollOptionTransaction(String eventId, String pollId, String optionId) {
+        performanceTracker.trackQuery("deletePollOptionTransaction", "InviterTable", () -> {
+            try {
+                // First query to find all votes for this option
+                List<BaseItem> pollData = getSpecificPollData(eventId, pollId);
+                
+                // Find all votes for the option being deleted
+                List<Vote> votesToDelete = pollData.stream()
+                    .filter(item -> InviterKeyFactory.isVoteItem(item.getSk()))
+                    .map(item -> (Vote) item)
+                    .filter(vote -> vote.getOptionId().equals(optionId))
+                    .collect(Collectors.toList());
+                
+                List<TransactWriteItem> transactItems = new ArrayList<>();
+                
+                // Delete the poll option
+                transactItems.add(TransactWriteItem.builder()
+                    .delete(Delete.builder()
+                        .tableName(TABLE_NAME)
+                        .key(Map.of(
+                            "pk", AttributeValue.builder().s(InviterKeyFactory.getEventPk(eventId)).build(),
+                            "sk", AttributeValue.builder().s(InviterKeyFactory.getPollOptionSk(pollId, optionId)).build()
+                        ))
+                        .build())
+                    .build());
+                
+                // Delete all associated votes
+                for (Vote vote : votesToDelete) {
+                    transactItems.add(TransactWriteItem.builder()
+                        .delete(Delete.builder()
+                            .tableName(TABLE_NAME)
+                            .key(Map.of(
+                                "pk", AttributeValue.builder().s(InviterKeyFactory.getEventPk(eventId)).build(),
+                                "sk", AttributeValue.builder().s(InviterKeyFactory.getVoteSk(pollId, vote.getUserId(), optionId)).build()
+                            ))
+                            .build())
+                        .build());
+                }
+                
+                // Execute transaction - either all succeed or all fail
+                TransactWriteItemsRequest request = TransactWriteItemsRequest.builder()
+                    .transactItems(transactItems)
+                    .build();
+                    
+                dynamoDbClient.transactWriteItems(request);
+                return null;
+            } catch (Exception e) {
+                logger.error("Failed to delete poll option {} and its votes from poll {} in event {}", 
+                    optionId, pollId, eventId, e);
+                throw new RepositoryException("Failed to delete poll option transaction", e);
             }
         });
     }

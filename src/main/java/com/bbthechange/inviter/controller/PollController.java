@@ -3,6 +3,7 @@ package com.bbthechange.inviter.controller;
 import com.bbthechange.inviter.service.PollService;
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.model.Poll;
+import com.bbthechange.inviter.model.PollOption;
 import com.bbthechange.inviter.model.Vote;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -24,9 +25,9 @@ import java.util.List;
  * Handles creation, voting, and retrieval of polls.
  */
 @RestController
-@RequestMapping("/events/{eventId}/polls")
+@RequestMapping("/hangouts/{eventId}/polls")
 @Validated
-@Tag(name = "Polls", description = "Poll management within events")
+@Tag(name = "Polls", description = "Poll management within hangouts")
 public class PollController extends BaseController {
     
     private static final Logger logger = LoggerFactory.getLogger(PollController.class);
@@ -125,6 +126,37 @@ public class PollController extends BaseController {
         logger.info("User {} deleting poll {} from event {}", userId, pollId, eventId);
         
         pollService.deletePoll(eventId, pollId, userId);
+        
+        return ResponseEntity.noContent().build();
+    }
+    
+    @PostMapping("/{pollId}/options")
+    @Operation(summary = "Add an option to an existing poll")
+    public ResponseEntity<PollOption> addPollOption(
+            @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid event ID format") String eventId,
+            @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid poll ID format") String pollId,
+            @Valid @RequestBody AddPollOptionRequest request,
+            HttpServletRequest httpRequest) {
+        
+        String userId = extractUserId(httpRequest);
+        logger.info("User {} adding option '{}' to poll {}", userId, request.getText(), pollId);
+        
+        PollOption option = pollService.addPollOption(eventId, pollId, request, userId);
+        return ResponseEntity.status(HttpStatus.CREATED).body(option);
+    }
+    
+    @DeleteMapping("/{pollId}/options/{optionId}")
+    @Operation(summary = "Delete a poll option (host only)")
+    public ResponseEntity<Void> deletePollOption(
+            @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid event ID format") String eventId,
+            @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid poll ID format") String pollId,
+            @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid option ID format") String optionId,
+            HttpServletRequest httpRequest) {
+        
+        String userId = extractUserId(httpRequest);
+        logger.info("User {} requesting deletion of option {} from poll {}", userId, optionId, pollId);
+        
+        pollService.deletePollOption(eventId, pollId, optionId, userId);
         
         return ResponseEntity.noContent().build();
     }

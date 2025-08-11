@@ -1,7 +1,6 @@
 package com.bbthechange.inviter.dto;
 
 import com.bbthechange.inviter.model.Poll;
-import com.bbthechange.inviter.model.Vote;
 import java.util.List;
 
 /**
@@ -73,107 +72,5 @@ public class PollDetailDTO {
     
     public void setTotalVotes(int totalVotes) {
         this.totalVotes = totalVotes;
-    }
-}
-
-/**
- * DTO for poll option with detailed vote information.
- */
-class PollOptionDetailDTO {
-    private String optionId;
-    private String text;
-    private int voteCount;
-    private boolean userVoted;
-    private List<VoteDTO> votes;
-    
-    public PollOptionDetailDTO() {}
-    
-    public PollOptionDetailDTO(String optionId, String text, int voteCount, boolean userVoted, List<VoteDTO> votes) {
-        this.optionId = optionId;
-        this.text = text;
-        this.voteCount = voteCount;
-        this.userVoted = userVoted;
-        this.votes = votes;
-    }
-    
-    public String getOptionId() {
-        return optionId;
-    }
-    
-    public void setOptionId(String optionId) {
-        this.optionId = optionId;
-    }
-    
-    public String getText() {
-        return text;
-    }
-    
-    public void setText(String text) {
-        this.text = text;
-    }
-    
-    public int getVoteCount() {
-        return voteCount;
-    }
-    
-    public void setVoteCount(int voteCount) {
-        this.voteCount = voteCount;
-    }
-    
-    public boolean isUserVoted() {
-        return userVoted;
-    }
-    
-    public void setUserVoted(boolean userVoted) {
-        this.userVoted = userVoted;
-    }
-    
-    public List<VoteDTO> getVotes() {
-        return votes;
-    }
-    
-    public void setVotes(List<VoteDTO> votes) {
-        this.votes = votes;
-    }
-}
-
-/**
- * DTO for individual vote information.
- */
-class VoteDTO {
-    private String userId;
-    private String userName;
-    private String voteType;
-    
-    public VoteDTO() {}
-    
-    public VoteDTO(Vote vote) {
-        this.userId = vote.getUserId();
-        this.userName = vote.getUserName();
-        this.voteType = vote.getVoteType();
-    }
-    
-    public String getUserId() {
-        return userId;
-    }
-    
-    public void setUserId(String userId) {
-        this.userId = userId;
-    }
-    
-    public String getUserName() {
-        return userName;
-    }
-    
-    public void setUserName(String userName) {
-        this.userName = userName;
-    }
-    
-    public String getVoteType() {
-        return voteType;
-    }
-    
-    public void setVoteType(String voteType) {
-        this.voteType = voteType;
     }
 }

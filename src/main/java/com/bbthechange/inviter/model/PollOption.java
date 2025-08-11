@@ -3,40 +3,40 @@ package com.bbthechange.inviter.model;
 import com.bbthechange.inviter.util.InviterKeyFactory;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
 
+import java.util.UUID;
+
 /**
- * Vote entity for the InviterTable.
- * Represents a user's vote on a poll option.
+ * PollOption entity for the InviterTable.
+ * Represents an option/choice within a poll.
  * 
- * Key Pattern: pk = EVENT#{EventID}, sk = POLL#{PollID}#VOTE#{UserID}#OPTION#{OptionID}
+ * Key Pattern: pk = EVENT#{EventID}, sk = POLL#{PollID}#OPTION#{OptionID}
  */
 @DynamoDbBean
-public class Vote extends BaseItem {
+public class PollOption extends BaseItem {
     
     private String eventId;
     private String pollId;
     private String optionId;
-    private String userId;
-    private String voteType;        // Could be "YES", "NO", "MAYBE" or custom values
+    private String text;
     
     // Default constructor for DynamoDB
-    public Vote() {
+    public PollOption() {
         super();
     }
 
     /**
-     * Create a new vote record.
+     * Create a new poll option.
      */
-    public Vote(String eventId, String pollId, String optionId, String userId, String voteType) {
+    public PollOption(String eventId, String pollId, String text) {
         super();
         this.eventId = eventId;
         this.pollId = pollId;
-        this.optionId = optionId;
-        this.userId = userId;
-        this.voteType = voteType;
+        this.optionId = UUID.randomUUID().toString();
+        this.text = text;
         
         // Set keys using InviterKeyFactory
         setPk(InviterKeyFactory.getEventPk(eventId));
-        setSk(InviterKeyFactory.getVoteSk(pollId, userId, optionId));
+        setSk(InviterKeyFactory.getPollOptionSk(pollId, this.optionId));
     }
     
     public String getEventId() {
@@ -63,20 +63,12 @@ public class Vote extends BaseItem {
         this.optionId = optionId;
     }
     
-    public String getUserId() {
-        return userId;
+    public String getText() {
+        return text;
     }
     
-    public void setUserId(String userId) {
-        this.userId = userId;
-    }
-    
-    public String getVoteType() {
-        return voteType;
-    }
-    
-    public void setVoteType(String voteType) {
-        this.voteType = voteType;
+    public void setText(String text) {
+        this.text = text;
         touch();
     }
 }

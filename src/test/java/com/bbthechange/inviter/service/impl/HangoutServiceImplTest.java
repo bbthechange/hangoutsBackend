@@ -139,7 +139,7 @@ class HangoutServiceImplTest {
         // Set up hangout so user can edit it (they're admin in one of the groups they want to associate)
         hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111")));
         
-        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
         
         // Mock fuzzy time service conversion
@@ -184,7 +184,7 @@ class HangoutServiceImplTest {
         // Set up hangout so user can edit it (they're admin in a different group)
         hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("22222222-2222-2222-2222-222222222222")));
         
-        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
         
         // User is admin in existing associated group (so they can edit hangout)
@@ -214,7 +214,7 @@ class HangoutServiceImplTest {
         Hangout hangout = createTestHangout(eventId);
         hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")));
         
-        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
         
         // Mock authorization - user is admin in group-1
@@ -349,7 +349,6 @@ class HangoutServiceImplTest {
         vote.setPollId("11111111-1111-1111-1111-111111111111");
         vote.setOptionId("22222222-2222-2222-2222-222222222222");
         vote.setUserId("87654321-4321-4321-4321-210987654321");
-        vote.setUserName("John Doe");
         vote.setVoteType("YES");
         vote.setPk("EVENT#12345678-1234-1234-1234-123456789012");
         vote.setSk("POLL#11111111-1111-1111-1111-111111111111#VOTE#87654321-4321-4321-4321-210987654321#OPTION#22222222-2222-2222-2222-222222222222");
@@ -602,7 +601,7 @@ class HangoutServiceImplTest {
         hangout.setEndTimestamp(1754571600L);
         hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("22222222-2222-2222-2222-222222222222")));
         
-        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
         
         // Mock fuzzy time service conversion
@@ -747,7 +746,7 @@ class HangoutServiceImplTest {
         timeInput.setPeriodStart("1754557200"); // Unix timestamp for 2025-08-05T19:00:00Z  
         hangout.setTimeInput(timeInput);
         
-        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
         
         // When
@@ -837,7 +836,7 @@ class HangoutServiceImplTest {
         hangout.setAssociatedGroups(List.of("11111111-1111-1111-1111-111111111111"));
 
         HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of()
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 
@@ -878,7 +877,7 @@ class HangoutServiceImplTest {
         existingInterest.setStatus("GOING");
 
         HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(existingInterest), List.of()
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(existingInterest), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 
@@ -912,7 +911,7 @@ class HangoutServiceImplTest {
         hangout.setVisibility(EventVisibility.PUBLIC);
 
         HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of()
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
         when(userService.getUserById(UUID.fromString(userId))).thenReturn(Optional.empty());
@@ -934,7 +933,7 @@ class HangoutServiceImplTest {
         SetInterestRequest request = new SetInterestRequest("GOING", null);
 
         HangoutDetailData data = new HangoutDetailData(
-            null, List.of(), List.of(), List.of(), List.of(), List.of()
+            null, List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 
@@ -960,7 +959,7 @@ class HangoutServiceImplTest {
         hangout.setAssociatedGroups(List.of("11111111-1111-1111-1111-111111111111"));
 
         HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of()
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
         when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.empty());
@@ -990,7 +989,7 @@ class HangoutServiceImplTest {
         existingInterest.setStatus("GOING");
 
         HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(existingInterest), List.of()
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(existingInterest), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 
@@ -1018,7 +1017,7 @@ class HangoutServiceImplTest {
 
         // No existing interest level for this user
         HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of()
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 
@@ -1040,7 +1039,7 @@ class HangoutServiceImplTest {
         String userId = "87654321-4321-4321-4321-210987654321";
 
         HangoutDetailData data = new HangoutDetailData(
-            null, List.of(), List.of(), List.of(), List.of(), List.of()
+            null, List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 
@@ -1064,7 +1063,7 @@ class HangoutServiceImplTest {
         hangout.setAssociatedGroups(List.of("11111111-1111-1111-1111-111111111111"));
 
         HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of()
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
         when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.empty());

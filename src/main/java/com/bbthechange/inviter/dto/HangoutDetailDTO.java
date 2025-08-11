@@ -12,7 +12,7 @@ import java.util.Map;
 public class HangoutDetailDTO {
     private Hangout hangout;
     private List<HangoutAttributeDTO> attributes;
-    private List<Poll> polls;
+    private List<PollWithOptionsDTO> polls;
     private List<Car> cars;
     private List<Vote> votes;
     private List<InterestLevel> attendance;

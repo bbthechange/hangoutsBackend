@@ -14,7 +14,7 @@ import java.util.Optional;
  * Provides the powerful item collection pattern for efficient data retrieval.
  */
 public interface HangoutRepository {
-    
+
     /**
      * Get all event-related data in a single query using item collection pattern.
      * This is the power pattern - one query gets event + polls + cars + votes + attendance!
@@ -47,6 +47,15 @@ public interface HangoutRepository {
     Poll savePoll(Poll poll);
     void deletePoll(String eventId, String pollId);
     
+    // Poll Option operations
+    PollOption savePollOption(PollOption option);
+    List<PollOption> getPollOptions(String eventId, String pollId);
+    void deletePollOptionTransaction(String eventId, String pollId, String optionId);
+    
+    // Query methods for poll data retrieval
+    List<BaseItem> getAllPollData(String eventId);
+    List<BaseItem> getSpecificPollData(String eventId, String pollId);
+    
     Car saveCar(Car car);
     void deleteCar(String eventId, String driverId);
     
@@ -68,7 +77,7 @@ public interface HangoutRepository {
     
     /**
      * Find all attributes for a hangout in a single query.
-     * Uses single-partition query with PK=EVENT#{hangoutId} and SK begins_with ATTRIBUTE#
+     * Uses single-partition query with pk=EVENT#{hangoutId} and SK begins_with ATTRIBUTE#
      */
     List<HangoutAttribute> findAttributesByHangoutId(String hangoutId);
     

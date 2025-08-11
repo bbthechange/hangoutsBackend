@@ -5,9 +5,11 @@ import com.bbthechange.inviter.model.*;
 import java.util.List;
 
 /**
+ * DO NOT USE. Use HangoutDetail instead
  * Data container for all event-related information retrieved from a single item collection query.
  * Contains the event metadata plus all related items (polls, cars, votes, attendance, riders).
  */
+@Deprecated
 public class EventDetailData {
     
     private final Event event;

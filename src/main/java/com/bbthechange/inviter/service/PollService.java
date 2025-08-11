@@ -2,6 +2,7 @@ package com.bbthechange.inviter.service;
 
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.model.Poll;
+import com.bbthechange.inviter.model.PollOption;
 import com.bbthechange.inviter.model.Vote;
 import java.util.List;
 
@@ -45,4 +46,17 @@ public interface PollService {
      * Only event hosts can delete polls.
      */
     void deletePoll(String eventId, String pollId, String userId);
+    
+    /**
+     * Add a new option to an existing poll.
+     * Only event hosts can add options to polls.
+     */
+    PollOption addPollOption(String eventId, String pollId, AddPollOptionRequest request, String userId);
+    
+    /**
+     * Delete a poll option and all its votes.
+     * Only event hosts can delete options. This is a transaction that removes
+     * the option and all associated votes atomically.
+     */
+    void deletePollOption(String eventId, String pollId, String optionId, String userId);
 }

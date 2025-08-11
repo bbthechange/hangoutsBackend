@@ -3,6 +3,7 @@ package com.bbthechange.inviter.service.impl;
 import com.bbthechange.inviter.service.HangoutService;
 import com.bbthechange.inviter.service.FuzzyTimeService;
 import com.bbthechange.inviter.service.UserService;
+import com.bbthechange.inviter.service.PollService;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.model.*;
@@ -35,10 +36,10 @@ public class HangoutServiceImpl implements HangoutService {
     private final GroupRepository groupRepository;
     private final FuzzyTimeService fuzzyTimeService;
     private final UserService userService;
-    
+
     @Autowired
     public HangoutServiceImpl(HangoutRepository hangoutRepository, GroupRepository groupRepository,
-                              FuzzyTimeService fuzzyTimeService, UserService userService) {
+                              FuzzyTimeService fuzzyTimeService, UserService userService, PollService pollService) {
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
         this.fuzzyTimeService = fuzzyTimeService;
@@ -123,13 +124,16 @@ public class HangoutServiceImpl implements HangoutService {
             .map(HangoutAttributeDTO::fromEntity)
             .collect(Collectors.toList());
         
+        // Transform poll data with options and vote counts directly from the single query
+        List<PollWithOptionsDTO> pollsWithOptions = transformPollData(hangoutDetail, requestingUserId);
+        
         // Transform to DTO with formatted timeInfo
         TimeInfo timeInfo = formatTimeInfoForResponse(hangout.getTimeInput());
         hangout.setTimeInput(timeInfo);
         return new HangoutDetailDTO(
                 hangout,
             attributeDTOs, // Now includes actual attributes from single query
-            hangoutDetail.getPolls(),
+            pollsWithOptions,
             hangoutDetail.getCars(),
             hangoutDetail.getVotes(),
             hangoutDetail.getAttendance(),
@@ -840,5 +844,54 @@ public class HangoutServiceImpl implements HangoutService {
         if (!canUserViewHangout(userId, hangout)) {
             throw new UnauthorizedException("User does not have access to this hangout");
         }
+    }
+    
+    /**
+     * Transform raw poll data from single table query into PollWithOptionsDTO.
+     * This method performs the same runtime vote counting as PollService but uses data
+     * already retrieved from the single table query.
+     */
+    private List<PollWithOptionsDTO> transformPollData(HangoutDetailData hangoutDetail, String requestingUserId) {
+        List<Poll> polls = hangoutDetail.getPolls();
+        List<PollOption> allOptions = hangoutDetail.getPollOptions();
+        List<Vote> allVotes = hangoutDetail.getVotes();
+        
+        // Group options and votes by poll ID
+        Map<String, List<PollOption>> optionsByPoll = allOptions.stream()
+            .collect(Collectors.groupingBy(PollOption::getPollId));
+            
+        Map<String, List<Vote>> votesByPoll = allVotes.stream()
+            .collect(Collectors.groupingBy(Vote::getPollId));
+        
+        // Build hierarchical DTOs with runtime vote counting
+        return polls.stream()
+            .map(poll -> {
+                List<PollOption> options = optionsByPoll.getOrDefault(poll.getPollId(), List.of());
+                List<Vote> pollVotes = votesByPoll.getOrDefault(poll.getPollId(), List.of());
+                
+                // Calculate vote counts by option at runtime
+                Map<String, Long> voteCountsByOption = pollVotes.stream()
+                    .collect(Collectors.groupingBy(Vote::getOptionId, Collectors.counting()));
+                
+                List<PollOptionDTO> optionDTOs = options.stream()
+                    .map(option -> {
+                        // Runtime calculation - no denormalized count field needed
+                        int voteCount = voteCountsByOption.getOrDefault(option.getOptionId(), 0L).intValue();
+                        
+                        boolean userVoted = pollVotes.stream()
+                            .anyMatch(vote -> vote.getOptionId().equals(option.getOptionId()) 
+                                           && vote.getUserId().equals(requestingUserId));
+                        
+                        return new PollOptionDTO(option.getOptionId(), option.getText(), 
+                                               voteCount, userVoted);
+                    })
+                    .collect(Collectors.toList());
+                
+                // Total votes = sum of all votes for this poll
+                int totalVotes = pollVotes.size();
+                
+                return new PollWithOptionsDTO(poll, optionDTOs, totalVotes);
+            })
+            .collect(Collectors.toList());
     }
 }
