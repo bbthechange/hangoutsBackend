@@ -5,7 +5,7 @@ import com.bbthechange.inviter.exception.EventNotFoundException;
 import com.bbthechange.inviter.exception.UnauthorizedException;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.HangoutRepository;
-import com.bbthechange.inviter.service.HangoutService;
+import com.bbthechange.inviter.service.AuthorizationService;
 import com.bbthechange.inviter.service.PollService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,7 +27,7 @@ class PollServiceImplTest {
     private HangoutRepository hangoutRepository;
 
     @Mock
-    private HangoutService hangoutService;
+    private AuthorizationService authorizationService;
 
     @InjectMocks
     private PollServiceImpl pollService;
@@ -59,7 +59,7 @@ class PollServiceImplTest {
         HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null);
 
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
-        when(hangoutService.canUserEditHangout(userId, hangout)).thenReturn(true);
+        when(authorizationService.canUserEditHangout(userId, hangout)).thenReturn(true);
         when(hangoutRepository.savePoll(any(Poll.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(hangoutRepository.savePollOption(any(PollOption.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -81,7 +81,7 @@ class PollServiceImplTest {
         HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null,null, null, null, null);
 
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
-        when(hangoutService.canUserEditHangout(userId, hangout)).thenReturn(false);
+        when(authorizationService.canUserEditHangout(userId, hangout)).thenReturn(false);
 
         // When & Then
         assertThatThrownBy(() -> pollService.createPoll(eventId, request, userId))
@@ -104,7 +104,7 @@ class PollServiceImplTest {
         List<BaseItem> pollData = Arrays.asList(poll, option);
 
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
-        when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
+        when(authorizationService.canUserViewHangout(userId, hangout)).thenReturn(true);
         when(hangoutRepository.getSpecificPollData(eventId, pollId)).thenReturn(pollData);
         when(hangoutRepository.saveVote(any(Vote.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -135,7 +135,7 @@ class PollServiceImplTest {
         List<BaseItem> pollData = Arrays.asList(poll, existingVote);
 
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
-        when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
+        when(authorizationService.canUserViewHangout(userId, hangout)).thenReturn(true);
         when(hangoutRepository.getSpecificPollData(eventId, pollId)).thenReturn(pollData);
         when(hangoutRepository.saveVote(any(Vote.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -165,7 +165,7 @@ class PollServiceImplTest {
         List<BaseItem> pollData = Arrays.asList(poll, existingVote);
 
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
-        when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
+        when(authorizationService.canUserViewHangout(userId, hangout)).thenReturn(true);
         when(hangoutRepository.getSpecificPollData(eventId, pollId)).thenReturn(pollData);
         when(hangoutRepository.saveVote(any(Vote.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -194,7 +194,7 @@ class PollServiceImplTest {
         List<BaseItem> pollData = Arrays.asList(poll, option1, option2, vote1, vote2);
 
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
-        when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
+        when(authorizationService.canUserViewHangout(userId, hangout)).thenReturn(true);
         when(hangoutRepository.getAllPollData(eventId)).thenReturn(pollData);
 
         // When
@@ -216,7 +216,7 @@ class PollServiceImplTest {
         HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null);
 
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
-        when(hangoutService.canUserEditHangout(userId, hangout)).thenReturn(true);
+        when(authorizationService.canUserEditHangout(userId, hangout)).thenReturn(true);
         when(hangoutRepository.savePollOption(any(PollOption.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         // When
@@ -241,7 +241,7 @@ class PollServiceImplTest {
         List<BaseItem> pollData = Arrays.asList(poll, option);
 
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
-        when(hangoutService.canUserEditHangout(userId, hangout)).thenReturn(true);
+        when(authorizationService.canUserEditHangout(userId, hangout)).thenReturn(true);
         when(hangoutRepository.getSpecificPollData(eventId, pollId)).thenReturn(pollData);
 
         // When
@@ -262,7 +262,7 @@ class PollServiceImplTest {
         List<BaseItem> pollData = Arrays.asList(poll);
 
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
-        when(hangoutService.canUserEditHangout(userId, hangout)).thenReturn(true);
+        when(authorizationService.canUserEditHangout(userId, hangout)).thenReturn(true);
         when(hangoutRepository.getSpecificPollData(eventId, pollId)).thenReturn(pollData);
 
         // When & Then
@@ -283,7 +283,7 @@ class PollServiceImplTest {
         List<BaseItem> pollData = Arrays.asList(poll, existingVote);
 
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
-        when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
+        when(authorizationService.canUserViewHangout(userId, hangout)).thenReturn(true);
         when(hangoutRepository.getSpecificPollData(eventId, pollId)).thenReturn(pollData);
 
         // When

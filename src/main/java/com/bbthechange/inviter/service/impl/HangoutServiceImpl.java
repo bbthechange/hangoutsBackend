@@ -39,7 +39,7 @@ public class HangoutServiceImpl implements HangoutService {
 
     @Autowired
     public HangoutServiceImpl(HangoutRepository hangoutRepository, GroupRepository groupRepository,
-                              FuzzyTimeService fuzzyTimeService, UserService userService, PollService pollService) {
+                              FuzzyTimeService fuzzyTimeService, UserService userService) {
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
         this.fuzzyTimeService = fuzzyTimeService;

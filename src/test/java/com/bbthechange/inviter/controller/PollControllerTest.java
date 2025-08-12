@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.controller;
 
 import com.bbthechange.inviter.service.PollService;
+import com.bbthechange.inviter.service.JwtService;
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.model.Poll;
 import com.bbthechange.inviter.model.PollOption;
@@ -9,9 +10,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration;
+import org.springframework.boot.autoconfigure.security.servlet.SecurityFilterAutoConfiguration;
+import org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.Arrays;
@@ -23,7 +29,13 @@ import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@WebMvcTest(PollController.class)
+@WebMvcTest(controllers = PollController.class, excludeAutoConfiguration = {
+    SecurityAutoConfiguration.class,
+    SecurityFilterAutoConfiguration.class,
+    UserDetailsServiceAutoConfiguration.class
+})
+@TestPropertySource(locations = "classpath:application-test.properties")
+@ActiveProfiles("test")
 class PollControllerTest {
 
     @Autowired
@@ -34,6 +46,9 @@ class PollControllerTest {
 
     @MockBean
     private PollService pollService;
+    
+    @MockBean 
+    private JwtService jwtService;
 
     private String hangoutId;
     private String pollId;
@@ -58,19 +73,20 @@ class PollControllerTest {
         request.setOptions(Arrays.asList("Option 1", "Option 2"));
 
         Poll mockPoll = new Poll(hangoutId, "Test Poll", "Test Description", false);
-        when(pollService.createPoll(eq(hangoutId), any(CreatePollRequest.class), anyString()))
+        when(pollService.createPoll(eq(hangoutId), any(CreatePollRequest.class), eq(userId)))
                 .thenReturn(mockPoll);
 
         // When & Then
         mockMvc.perform(post("/hangouts/{hangoutId}/polls", hangoutId)
                 .header("Authorization", "Bearer " + validJWT)
+                .requestAttr("userId", userId)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.title").value("Test Poll"))
                 .andExpect(jsonPath("$.description").value("Test Description"));
 
-        verify(pollService).createPoll(eq(hangoutId), any(CreatePollRequest.class), anyString());
+        verify(pollService).createPoll(eq(hangoutId), any(CreatePollRequest.class), eq(userId));
     }
 
     @Test
@@ -80,30 +96,32 @@ class PollControllerTest {
         PollWithOptionsDTO poll2 = new PollWithOptionsDTO();
         List<PollWithOptionsDTO> polls = Arrays.asList(poll1, poll2);
 
-        when(pollService.getEventPolls(eq(hangoutId), anyString())).thenReturn(polls);
+        when(pollService.getEventPolls(eq(hangoutId), eq(userId))).thenReturn(polls);
 
         // When & Then
         mockMvc.perform(get("/hangouts/{hangoutId}/polls", hangoutId)
-                .header("Authorization", "Bearer " + validJWT))
+                .header("Authorization", "Bearer " + validJWT)
+                .requestAttr("userId", userId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2));
 
-        verify(pollService).getEventPolls(eq(hangoutId), anyString());
+        verify(pollService).getEventPolls(eq(hangoutId), eq(userId));
     }
 
     @Test
     void getPollDetail_WithValidIds_ReturnsPollDetail() throws Exception {
         // Given
         PollDetailDTO pollDetail = new PollDetailDTO();
-        when(pollService.getPollDetail(eq(hangoutId), eq(pollId), anyString()))
+        when(pollService.getPollDetail(eq(hangoutId), eq(pollId), eq(userId)))
                 .thenReturn(pollDetail);
 
         // When & Then
         mockMvc.perform(get("/hangouts/{hangoutId}/polls/{pollId}", hangoutId, pollId)
-                .header("Authorization", "Bearer " + validJWT))
+                .header("Authorization", "Bearer " + validJWT)
+                .requestAttr("userId", userId))
                 .andExpect(status().isOk());
 
-        verify(pollService).getPollDetail(eq(hangoutId), eq(pollId), anyString());
+        verify(pollService).getPollDetail(eq(hangoutId), eq(pollId), eq(userId));
     }
 
     @Test
@@ -115,18 +133,19 @@ class PollControllerTest {
         request.setVoteType("YES");
 
         Vote mockVote = new Vote(hangoutId, pollId, optionId, userId, "YES");
-        when(pollService.voteOnPoll(eq(hangoutId), eq(pollId), any(VoteRequest.class), anyString()))
+        when(pollService.voteOnPoll(eq(hangoutId), eq(pollId), any(VoteRequest.class), eq(userId)))
                 .thenReturn(mockVote);
 
         // When & Then
         mockMvc.perform(post("/hangouts/{hangoutId}/polls/{pollId}/vote", hangoutId, pollId)
                 .header("Authorization", "Bearer " + validJWT)
+                .requestAttr("userId", userId)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.voteType").value("YES"));
 
-        verify(pollService).voteOnPoll(eq(hangoutId), eq(pollId), any(VoteRequest.class), anyString());
+        verify(pollService).voteOnPoll(eq(hangoutId), eq(pollId), any(VoteRequest.class), eq(userId));
     }
 
     @Test
@@ -137,58 +156,63 @@ class PollControllerTest {
         request.setText("New Option");
 
         PollOption mockOption = new PollOption(hangoutId, pollId, "New Option");
-        when(pollService.addPollOption(eq(hangoutId), eq(pollId), any(AddPollOptionRequest.class), anyString()))
+        when(pollService.addPollOption(eq(hangoutId), eq(pollId), any(AddPollOptionRequest.class), eq(userId)))
                 .thenReturn(mockOption);
 
         // When & Then
         mockMvc.perform(post("/hangouts/{hangoutId}/polls/{pollId}/options", hangoutId, pollId)
                 .header("Authorization", "Bearer " + validJWT)
+                .requestAttr("userId", userId)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.text").value("New Option"));
 
-        verify(pollService).addPollOption(eq(hangoutId), eq(pollId), any(AddPollOptionRequest.class), anyString());
+        verify(pollService).addPollOption(eq(hangoutId), eq(pollId), any(AddPollOptionRequest.class), eq(userId));
     }
 
     @Test
     void deletePollOption_AsHost_ReturnsNoContent() throws Exception {
         // Given
         String optionId = UUID.randomUUID().toString();
-        doNothing().when(pollService).deletePollOption(eq(hangoutId), eq(pollId), eq(optionId), anyString());
+        doNothing().when(pollService).deletePollOption(eq(hangoutId), eq(pollId), eq(optionId), eq(userId));
 
         // When & Then
         mockMvc.perform(delete("/hangouts/{hangoutId}/polls/{pollId}/options/{optionId}", 
                 hangoutId, pollId, optionId)
-                .header("Authorization", "Bearer " + validJWT))
+                .header("Authorization", "Bearer " + validJWT)
+                .requestAttr("userId", userId))
                 .andExpect(status().isNoContent());
 
-        verify(pollService).deletePollOption(eq(hangoutId), eq(pollId), eq(optionId), anyString());
+        verify(pollService).deletePollOption(eq(hangoutId), eq(pollId), eq(optionId), eq(userId));
     }
 
     @Test
     void removeVote_WithValidRequest_ReturnsNoContent() throws Exception {
         // Given
-        doNothing().when(pollService).removeVote(eq(hangoutId), eq(pollId), isNull(), anyString());
+        doNothing().when(pollService).removeVote(eq(hangoutId), eq(pollId), isNull(), eq(userId));
 
         // When & Then
         mockMvc.perform(delete("/hangouts/{hangoutId}/polls/{pollId}/vote", hangoutId, pollId)
-                .header("Authorization", "Bearer " + validJWT))
+                .header("Authorization", "Bearer " + validJWT)
+                .requestAttr("userId", userId))
                 .andExpect(status().isNoContent());
 
-        verify(pollService).removeVote(eq(hangoutId), eq(pollId), isNull(), anyString());
+        verify(pollService).removeVote(eq(hangoutId), eq(pollId), isNull(), eq(userId));
     }
 
     @Test
     void deletePoll_AsHost_ReturnsNoContent() throws Exception {
         // Given
-        doNothing().when(pollService).deletePoll(eq(hangoutId), eq(pollId), anyString());
+        doNothing().when(pollService).deletePoll(eq(hangoutId), eq(pollId), eq(userId));
 
         // When & Then
         mockMvc.perform(delete("/hangouts/{hangoutId}/polls/{pollId}", hangoutId, pollId)
-                .header("Authorization", "Bearer " + validJWT))
+                .header("Authorization", "Bearer " + validJWT)
+                .requestAttr("userId", userId))
                 .andExpect(status().isNoContent());
 
-        verify(pollService).deletePoll(eq(hangoutId), eq(pollId), anyString());
+        verify(pollService).deletePoll(eq(hangoutId), eq(pollId), eq(userId));
     }
 }
+
