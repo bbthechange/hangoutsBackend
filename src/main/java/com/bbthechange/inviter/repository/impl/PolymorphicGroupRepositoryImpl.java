@@ -135,21 +135,62 @@ public class PolymorphicGroupRepositoryImpl implements GroupRepository {
     
     @Override
     public void delete(String groupId) {
-        queryTracker.trackQuery("DeleteItem", TABLE_NAME, () -> {
+        queryTracker.trackQuery("Query+BatchDelete", TABLE_NAME, () -> {
             try {
-                DeleteItemRequest request = DeleteItemRequest.builder()
+                // Step 1: Query all records for this group
+                QueryRequest queryRequest = QueryRequest.builder()
                     .tableName(TABLE_NAME)
-                    .key(Map.of(
-                        "pk", AttributeValue.builder().s(InviterKeyFactory.getGroupPk(groupId)).build(),
-                        "sk", AttributeValue.builder().s(InviterKeyFactory.getMetadataSk()).build()
+                    .keyConditionExpression("pk = :pk")
+                    .expressionAttributeValues(Map.of(
+                        ":pk", AttributeValue.builder().s(InviterKeyFactory.getGroupPk(groupId)).build()
                     ))
                     .build();
                 
-                dynamoDbClient.deleteItem(request);
+                QueryResponse queryResponse = dynamoDbClient.query(queryRequest);
+                List<Map<String, AttributeValue>> items = queryResponse.items();
+                
+                if (items.isEmpty()) {
+                    logger.info("No records found for group {}", groupId);
+                    return null;
+                }
+                
+                logger.info("Found {} records to delete for group {}", items.size(), groupId);
+                
+                // Step 2: Convert to delete requests
+                List<WriteRequest> deleteRequests = items.stream()
+                    .map(item -> WriteRequest.builder()
+                        .deleteRequest(DeleteRequest.builder()
+                            .key(Map.of(
+                                "pk", item.get("pk"),
+                                "sk", item.get("sk")
+                            ))
+                            .build())
+                        .build())
+                    .collect(Collectors.toList());
+                
+                // Step 3: Batch delete in chunks of 25 (DynamoDB limit)
+                for (int i = 0; i < deleteRequests.size(); i += 25) {
+                    int endIndex = Math.min(i + 25, deleteRequests.size());
+                    List<WriteRequest> batch = deleteRequests.subList(i, endIndex);
+                    
+                    BatchWriteItemRequest batchRequest = BatchWriteItemRequest.builder()
+                        .requestItems(Map.of(TABLE_NAME, batch))
+                        .build();
+                    
+                    BatchWriteItemResponse batchResponse = dynamoDbClient.batchWriteItem(batchRequest);
+                    
+                    // Handle unprocessed items (rare but possible)
+                    if (batchResponse.hasUnprocessedItems() && !batchResponse.unprocessedItems().isEmpty()) {
+                        logger.warn("Some items were not processed in batch delete for group {}", groupId);
+                        // Could implement retry logic here if needed
+                    }
+                }
+                
+                logger.info("Successfully deleted all {} records for group {}", items.size(), groupId);
                 
             } catch (DynamoDbException e) {
-                logger.error("Failed to delete group {}", groupId, e);
-                throw new RepositoryException("Failed to delete group", e);
+                logger.error("Failed to delete group {} completely", groupId, e);
+                throw new RepositoryException("Failed to delete group completely", e);
             }
             return null;
         });

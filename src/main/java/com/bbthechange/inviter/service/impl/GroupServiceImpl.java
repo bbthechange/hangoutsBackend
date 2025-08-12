@@ -84,12 +84,7 @@ public class GroupServiceImpl implements GroupService {
             throw new UnauthorizedException("Only admins can delete groups");
         }
         
-        // TODO: In a full implementation, we'd need to clean up all related data:
-        // - Remove all members
-        // - Remove all hangout pointers  
-        // - Handle cascading deletes
-        // For now, just delete the group metadata
-        
+        // Repository handles complete deletion: group metadata, all members, and hangout pointers
         groupRepository.delete(groupId);
         logger.info("Deleted group {} by user {}", groupId, requestingUserId);
     }
