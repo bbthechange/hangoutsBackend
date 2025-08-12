@@ -46,7 +46,8 @@ public class SecurityConfig {
             "http://localhost:3000", // Local development (AngularJS)
             "http://localhost:4200", // Local development (Angular 19)
             "http://localhost:8080", // Swagger UI
-            "https://d3lm7si4v7xvcj.cloudfront.net", // Production CloudFront domain
+            "https://d3lm7si4v7xvcj.cloudfront.net", // Production CloudFront domain (legacy)
+            "https://d1713f2ygzp5es.cloudfront.net", // Production CloudFront domain (current)
             "https://api.inviter.app", // Production API Gateway domain
             "https://v7ihwy6uv9.execute-api.us-west-2.amazonaws.com", // Staging API Gateway domain
             "http://inviter-webapp-staging-575960429871.s3-website.us-west-2.amazonaws.com" // Staging webapp S3 website
