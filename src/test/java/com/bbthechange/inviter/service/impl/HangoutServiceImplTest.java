@@ -181,55 +181,7 @@ class HangoutServiceImplTest {
         verify(groupRepository).deleteHangoutPointer("11111111-1111-1111-1111-111111111111", eventId); // Remove pointer
     }
     
-    @Test
-    void canUserViewEvent_PublicEvent_ReturnsTrue() {
-        // Given
-        String userId = "87654321-4321-4321-4321-210987654321";
-        Event event = createTestEvent("12345678-1234-1234-1234-123456789012");
-        event.setVisibility(EventVisibility.PUBLIC);
-        
-        // When
-        boolean result = hangoutService.canUserViewEvent(userId, event);
-        
-        // Then
-        assertThat(result).isTrue();
-    }
-    
-    @Test
-    void canUserViewEvent_InviteOnlyEventUserInGroup_ReturnsTrue() {
-        // Given
-        String userId = "87654321-4321-4321-4321-210987654321";
-        Event event = createTestEvent("12345678-1234-1234-1234-123456789012");
-        event.setVisibility(EventVisibility.INVITE_ONLY);
-        event.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111")));
-        
-        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(
-            Optional.of(createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Group One")));
-        
-        // When
-        boolean result = hangoutService.canUserViewEvent(userId, event);
-        
-        // Then
-        assertThat(result).isTrue();
-    }
-    
-    @Test
-    void canUserEditEvent_UserIsAdmin_ReturnsTrue() {
-        // Given
-        String userId = "87654321-4321-4321-4321-210987654321";
-        Event event = createTestEvent("12345678-1234-1234-1234-123456789012");
-        event.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111")));
-        
-        GroupMembership adminMembership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Group One");
-        adminMembership.setRole(GroupRole.ADMIN);
-        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(adminMembership));
-        
-        // When
-        boolean result = hangoutService.canUserEditEvent(userId, event);
-        
-        // Then
-        assertThat(result).isTrue();
-    }
+    // Removed deprecated Event authorization test methods - replaced with Hangout versions
     
     // Helper methods for test data creation
     private Event createTestEvent(String eventId) {

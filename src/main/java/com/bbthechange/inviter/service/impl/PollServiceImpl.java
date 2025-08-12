@@ -69,14 +69,14 @@ public class PollServiceImpl implements PollService {
     public List<PollWithOptionsDTO> getEventPolls(String eventId, String userId) {
         logger.debug("Getting polls for event {} for user {}", eventId, userId);
         
-        // Get event and verify user can view it
-        EventDetailData eventData = hangoutRepository.getEventDetailData(eventId);
-        if (eventData.getEvent() == null) {
+        // Get hangout and verify user can view it
+        HangoutDetailData hangoutData = hangoutRepository.getHangoutDetailData(eventId);
+        if (hangoutData.getHangout() == null) {
             throw new EventNotFoundException("Event not found: " + eventId);
         }
         
-        Event event = eventData.getEvent();
-        if (!authorizationService.canUserViewEvent(userId, event)) {
+        Hangout hangout = hangoutData.getHangout();
+        if (!authorizationService.canUserViewHangout(userId, hangout)) {
             throw new UnauthorizedException("Cannot view event polls");
         }
         
@@ -90,14 +90,14 @@ public class PollServiceImpl implements PollService {
     public PollDetailDTO getPollDetail(String eventId, String pollId, String userId) {
         logger.debug("Getting poll detail for poll {} in event {} for user {}", pollId, eventId, userId);
         
-        // Get event and verify user can view it
-        EventDetailData eventData = hangoutRepository.getEventDetailData(eventId);
-        if (eventData.getEvent() == null) {
+        // Get hangout and verify user can view it
+        HangoutDetailData hangoutData = hangoutRepository.getHangoutDetailData(eventId);
+        if (hangoutData.getHangout() == null) {
             throw new EventNotFoundException("Event not found: " + eventId);
         }
         
-        Event event = eventData.getEvent();
-        if (!authorizationService.canUserViewEvent(userId, event)) {
+        Hangout hangout = hangoutData.getHangout();
+        if (!authorizationService.canUserViewHangout(userId, hangout)) {
             throw new UnauthorizedException("Cannot view event polls");
         }
         
@@ -112,14 +112,14 @@ public class PollServiceImpl implements PollService {
     public Vote voteOnPoll(String eventId, String pollId, VoteRequest request, String userId) {
         logger.info("User {} voting on poll {} option {}", userId, pollId, request.getOptionId());
         
-        // Get event and verify user can view it
-        EventDetailData eventData = hangoutRepository.getEventDetailData(eventId);
-        if (eventData.getEvent() == null) {
+        // Get hangout and verify user can view it
+        HangoutDetailData hangoutData = hangoutRepository.getHangoutDetailData(eventId);
+        if (hangoutData.getHangout() == null) {
             throw new EventNotFoundException("Event not found: " + eventId);
         }
         
-        Event event = eventData.getEvent();
-        if (!authorizationService.canUserViewEvent(userId, event)) {
+        Hangout hangout = hangoutData.getHangout();
+        if (!authorizationService.canUserViewHangout(userId, hangout)) {
             throw new UnauthorizedException("Cannot vote on polls in this event");
         }
         
@@ -171,14 +171,14 @@ public class PollServiceImpl implements PollService {
     public void removeVote(String eventId, String pollId, String optionId, String userId) {
         logger.info("User {} removing vote from poll {}", userId, pollId);
         
-        // Get event and verify user can view it
-        EventDetailData eventData = hangoutRepository.getEventDetailData(eventId);
-        if (eventData.getEvent() == null) {
+        // Get hangout and verify user can view it
+        HangoutDetailData hangoutData = hangoutRepository.getHangoutDetailData(eventId);
+        if (hangoutData.getHangout() == null) {
             throw new EventNotFoundException("Event not found: " + eventId);
         }
         
-        Event event = eventData.getEvent();
-        if (!authorizationService.canUserViewEvent(userId, event)) {
+        Hangout hangout = hangoutData.getHangout();
+        if (!authorizationService.canUserViewHangout(userId, hangout)) {
             throw new UnauthorizedException("Cannot modify votes in this event");
         }
         
@@ -214,14 +214,14 @@ public class PollServiceImpl implements PollService {
     public void deletePoll(String eventId, String pollId, String userId) {
         logger.info("User {} deleting poll {} from event {}", userId, pollId, eventId);
         
-        // Get event and verify user can edit it
-        EventDetailData eventData = hangoutRepository.getEventDetailData(eventId);
-        if (eventData.getEvent() == null) {
+        // Get hangout and verify user can edit it
+        HangoutDetailData hangoutData = hangoutRepository.getHangoutDetailData(eventId);
+        if (hangoutData.getHangout() == null) {
             throw new EventNotFoundException("Event not found: " + eventId);
         }
         
-        Event event = eventData.getEvent();
-        if (!authorizationService.canUserEditEvent(userId, event)) {
+        Hangout hangout = hangoutData.getHangout();
+        if (!authorizationService.canUserEditHangout(userId, hangout)) {
             throw new UnauthorizedException("Only event hosts can delete polls");
         }
         
@@ -257,13 +257,13 @@ public class PollServiceImpl implements PollService {
         logger.info("User {} deleting option {} from poll {} in event {}", userId, optionId, pollId, eventId);
         
         // Authorization check - only hosts can delete options
-        EventDetailData eventData = hangoutRepository.getEventDetailData(eventId);
-        if (eventData.getEvent() == null) {
+        HangoutDetailData hangoutData = hangoutRepository.getHangoutDetailData(eventId);
+        if (hangoutData.getHangout() == null) {
             throw new EventNotFoundException("Event not found: " + eventId);
         }
 
-        Event event = eventData.getEvent();
-        if (!authorizationService.canUserEditEvent(userId, event)) {
+        Hangout hangout = hangoutData.getHangout();
+        if (!authorizationService.canUserEditHangout(userId, hangout)) {
             throw new UnauthorizedException("Only event hosts can delete poll options");
         }
         
