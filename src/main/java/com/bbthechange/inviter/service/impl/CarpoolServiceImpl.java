@@ -174,6 +174,16 @@ public class CarpoolServiceImpl implements CarpoolService {
         car.setAvailableSeats(car.getAvailableSeats() - 1);
         hangoutRepository.saveCar(car);
         
+        // Auto-delete any existing ride request for this user
+        try {
+            hangoutRepository.deleteNeedsRide(eventId, userId);
+            logger.info("Automatically deleted 'needs ride' request for user {} after seat reservation.", userId);
+        } catch (Exception e) {
+            // Log this, but do not fail the transaction. The user has a seat,
+            // which is the most important state. A dangling request is a minor issue.
+            logger.warn("Failed to auto-delete 'needs ride' request for user {}.", userId, e);
+        }
+        
         logger.info("Successfully reserved seat for user {} with driver {} in event {}", userId, driverId, eventId);
         return savedRider;
     }
@@ -299,5 +309,85 @@ public class CarpoolServiceImpl implements CarpoolService {
         
         logger.info("Successfully canceled car offer for driver {} in event {} (removed {} riders)", 
                    driverId, eventId, ridersToRemove.size());
+    }
+
+    @Override
+    public List<NeedsRideDTO> getNeedsRideRequests(String eventId, String userId) {
+        logger.debug("Getting ride requests for event {} by user {}", eventId, userId);
+
+        try {
+            // First try to get ride requests - if this fails, the event likely doesn't exist
+            List<NeedsRide> needsRideList = hangoutRepository.getNeedsRideListForEvent(eventId);
+            
+            // If we got here, the basic query worked. Now check authorization.
+            HangoutDetailData hangoutData = hangoutRepository.getHangoutDetailData(eventId);
+            if (hangoutData.getHangout() == null) {
+                throw new EventNotFoundException("Event not found: " + eventId);
+            }
+            
+            Hangout hangout = hangoutData.getHangout();
+            if (!hangoutService.canUserViewHangout(userId, hangout)) {
+                throw new UnauthorizedException("Cannot view ride requests for this event");
+            }
+            
+            return needsRideList.stream()
+                    .map(NeedsRideDTO::new)
+                    .toList();
+        } catch (Exception e) {
+            logger.warn("Error when getting ride requests for event {}: {} - {}", eventId, e.getClass().getSimpleName(), e.getMessage());
+            throw new EventNotFoundException("Event not found: " + eventId);
+        }
+    }
+
+    @Override
+    public NeedsRide createNeedsRideRequest(String eventId, String userId, NeedsRideRequest request) {
+        logger.info("User {} creating ride request for event {}", userId, eventId);
+
+        // Get hangout and verify user can access it
+        HangoutDetailData hangoutData = hangoutRepository.getHangoutDetailData(eventId);
+        if (hangoutData.getHangout() == null) {
+            throw new EventNotFoundException("Event not found: " + eventId);
+        }
+        
+        Hangout hangout = hangoutData.getHangout();
+        if (!hangoutService.canUserViewHangout(userId, hangout)) {
+            throw new UnauthorizedException("Cannot request ride for this event");
+        }
+
+        // Check if user already has a reserved seat in any car
+        boolean hasReservedSeat = hangoutData.getCarRiders().stream()
+                .anyMatch(rider -> rider.getRiderId().equals(userId));
+        
+        if (hasReservedSeat) {
+            throw new ValidationException("Cannot request a ride when you already have a reserved seat");
+        }
+
+        // Create or update the needs ride request
+        NeedsRide needsRide = new NeedsRide(eventId, userId, request.getNotes());
+        NeedsRide savedNeedsRide = hangoutRepository.saveNeedsRide(needsRide);
+        
+        logger.info("Successfully created/updated ride request for user {} in event {}", userId, eventId);
+        return savedNeedsRide;
+    }
+
+    @Override
+    public void deleteNeedsRideRequest(String eventId, String userId) {
+        logger.info("User {} deleting ride request for event {}", userId, eventId);
+
+        // Get hangout and verify user can access it
+        HangoutDetailData hangoutData = hangoutRepository.getHangoutDetailData(eventId);
+        if (hangoutData.getHangout() == null) {
+            throw new EventNotFoundException("Event not found: " + eventId);
+        }
+        
+        Hangout hangout = hangoutData.getHangout();
+        if (!hangoutService.canUserViewHangout(userId, hangout)) {
+            throw new UnauthorizedException("Cannot delete ride request for this event");
+        }
+
+        // Delete the needs ride request (idempotent operation)
+        hangoutRepository.deleteNeedsRide(eventId, userId);
+        
+        logger.info("Successfully deleted ride request for user {} in event {}", userId, eventId);
     }
 }

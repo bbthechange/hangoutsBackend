@@ -88,6 +88,12 @@ public interface HangoutRepository {
      */
     void deleteAttribute(String hangoutId, String attributeId);
     
+    // Needs Ride operations
+    NeedsRide saveNeedsRide(NeedsRide needsRide);
+    List<NeedsRide> getNeedsRideListForEvent(String eventId);
+    void deleteNeedsRide(String eventId, String userId);
+    Optional<NeedsRide> getNeedsRideRequestForUser(String eventId, String userId);
+    
     // GSI query methods for EntityTimeIndex
     /**
      * Find upcoming hangouts for a participant (user or group) in chronological order.

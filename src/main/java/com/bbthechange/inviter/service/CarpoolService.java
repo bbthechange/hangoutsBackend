@@ -3,6 +3,7 @@ package com.bbthechange.inviter.service;
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.model.Car;
 import com.bbthechange.inviter.model.CarRider;
+import com.bbthechange.inviter.model.NeedsRide;
 import java.util.List;
 
 /**
@@ -52,4 +53,21 @@ public interface CarpoolService {
      * Removes all rider reservations and notifies affected users.
      */
     void cancelCarOffer(String eventId, String driverId, String userId);
+    
+    /**
+     * Get all users who need a ride for an event.
+     * Users must have access to the event to view ride requests.
+     */
+    List<NeedsRideDTO> getNeedsRideRequests(String eventId, String userId);
+    
+    /**
+     * Create or update a ride request for the authenticated user.
+     * Fails if the user already has a reserved seat in a car.
+     */
+    NeedsRide createNeedsRideRequest(String eventId, String userId, NeedsRideRequest request);
+    
+    /**
+     * Delete the ride request for the authenticated user.
+     */
+    void deleteNeedsRideRequest(String eventId, String userId);
 }

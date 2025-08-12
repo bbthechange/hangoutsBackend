@@ -17,4 +17,5 @@ public class HangoutDetailDTO {
     private List<Vote> votes;
     private List<InterestLevel> attendance;
     private List<CarRider> carRiders;
+    private List<NeedsRideDTO> needsRide;
 }

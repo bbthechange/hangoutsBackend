@@ -80,6 +80,13 @@ public abstract class BaseController {
             .body(new ErrorResponse("USER_NOT_FOUND", e.getMessage()));
     }
     
+    @ExceptionHandler(EventNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleEventNotFound(EventNotFoundException e) {
+        logger.debug("Event not found: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+            .body(new ErrorResponse("EVENT_NOT_FOUND", e.getMessage()));
+    }
+    
     @ExceptionHandler(TransactionFailedException.class)
     public ResponseEntity<ErrorResponse> handleTransactionFailed(TransactionFailedException e) {
         logger.error("Transaction failed: {}", e.getMessage(), e);

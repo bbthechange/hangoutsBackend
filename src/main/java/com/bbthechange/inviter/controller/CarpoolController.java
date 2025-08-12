@@ -4,6 +4,7 @@ import com.bbthechange.inviter.service.CarpoolService;
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.model.Car;
 import com.bbthechange.inviter.model.CarRider;
+import com.bbthechange.inviter.model.NeedsRide;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -139,6 +140,55 @@ public class CarpoolController extends BaseController {
         logger.info("User {} canceling car offer for event {}", userId, eventId);
         
         carpoolService.cancelCarOffer(eventId, driverId, userId);
+        
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/riderequests")
+    @Operation(summary = "Get all users who need a ride")
+    public ResponseEntity<List<NeedsRideDTO>> getNeedsRideRequests(
+            @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid event ID format") String eventId,
+            HttpServletRequest httpRequest) {
+        
+        try {
+            String userId = extractUserId(httpRequest);
+            logger.debug("User {} getting ride requests for event {}", userId, eventId);
+            
+            List<NeedsRideDTO> requests = carpoolService.getNeedsRideRequests(eventId, userId);
+            
+            return ResponseEntity.ok(requests);
+        } catch (Exception e) {
+            logger.error("Unexpected error in getNeedsRideRequests for event {}: {} - {}", 
+                eventId, e.getClass().getSimpleName(), e.getMessage(), e);
+            throw e; // Re-throw to let global exception handler manage it
+        }
+    }
+
+    @PostMapping("/riderequests")
+    @Operation(summary = "Signal that you need a ride")
+    public ResponseEntity<NeedsRide> createNeedsRideRequest(
+            @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid event ID format") String eventId,
+            @Valid @RequestBody NeedsRideRequest request,
+            HttpServletRequest httpRequest) {
+        
+        String userId = extractUserId(httpRequest);
+        logger.info("User {} creating ride request for event {}", userId, eventId);
+        
+        NeedsRide needsRide = carpoolService.createNeedsRideRequest(eventId, userId, request);
+        
+        return ResponseEntity.ok(needsRide);
+    }
+
+    @DeleteMapping("/riderequests")
+    @Operation(summary = "Cancel your request for a ride")
+    public ResponseEntity<Void> deleteNeedsRideRequest(
+            @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid event ID format") String eventId,
+            HttpServletRequest httpRequest) {
+        
+        String userId = extractUserId(httpRequest);
+        logger.info("User {} deleting ride request for event {}", userId, eventId);
+        
+        carpoolService.deleteNeedsRideRequest(eventId, userId);
         
         return ResponseEntity.noContent().build();
     }

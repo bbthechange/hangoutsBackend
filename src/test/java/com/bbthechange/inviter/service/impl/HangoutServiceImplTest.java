@@ -52,7 +52,7 @@ class HangoutServiceImplTest {
         Hangout hangout = createTestHangout(eventId);
         hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")));
         
-        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
         
         // Mock authorization - user is admin in group-1
@@ -86,7 +86,7 @@ class HangoutServiceImplTest {
         // Set up hangout so user can edit it (they're admin in one of the groups they want to associate)
         hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111")));
         
-        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
         
         // Mock fuzzy time service conversion
@@ -131,7 +131,7 @@ class HangoutServiceImplTest {
         // Set up hangout so user can edit it (they're admin in a different group)
         hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("22222222-2222-2222-2222-222222222222")));
         
-        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
         
         // User is admin in existing associated group (so they can edit hangout)
@@ -161,7 +161,7 @@ class HangoutServiceImplTest {
         Hangout hangout = createTestHangout(eventId);
         hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")));
         
-        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
         
         // Mock authorization - user is admin in group-1
@@ -500,7 +500,7 @@ class HangoutServiceImplTest {
         hangout.setEndTimestamp(1754571600L);
         hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("22222222-2222-2222-2222-222222222222")));
         
-        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
         
         // Mock fuzzy time service conversion
@@ -645,7 +645,7 @@ class HangoutServiceImplTest {
         timeInput.setPeriodStart("1754557200"); // Unix timestamp for 2025-08-05T19:00:00Z  
         hangout.setTimeInput(timeInput);
         
-        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
         
         // When
@@ -735,7 +735,7 @@ class HangoutServiceImplTest {
         hangout.setAssociatedGroups(List.of("11111111-1111-1111-1111-111111111111"));
 
         HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 
@@ -776,7 +776,7 @@ class HangoutServiceImplTest {
         existingInterest.setStatus("GOING");
 
         HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(existingInterest), List.of()
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(existingInterest), List.of(), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 
@@ -810,7 +810,7 @@ class HangoutServiceImplTest {
         hangout.setVisibility(EventVisibility.PUBLIC);
 
         HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
         when(userService.getUserById(UUID.fromString(userId))).thenReturn(Optional.empty());
@@ -832,7 +832,7 @@ class HangoutServiceImplTest {
         SetInterestRequest request = new SetInterestRequest("GOING", null);
 
         HangoutDetailData data = new HangoutDetailData(
-            null, List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
+            null, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 
@@ -858,7 +858,7 @@ class HangoutServiceImplTest {
         hangout.setAssociatedGroups(List.of("11111111-1111-1111-1111-111111111111"));
 
         HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
         when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.empty());
@@ -888,7 +888,7 @@ class HangoutServiceImplTest {
         existingInterest.setStatus("GOING");
 
         HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(existingInterest), List.of()
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(existingInterest), List.of(), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 
@@ -916,7 +916,7 @@ class HangoutServiceImplTest {
 
         // No existing interest level for this user
         HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 
@@ -938,7 +938,7 @@ class HangoutServiceImplTest {
         String userId = "87654321-4321-4321-4321-210987654321";
 
         HangoutDetailData data = new HangoutDetailData(
-            null, List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
+            null, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 
@@ -962,7 +962,7 @@ class HangoutServiceImplTest {
         hangout.setAssociatedGroups(List.of("11111111-1111-1111-1111-111111111111"));
 
         HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
         when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.empty());
@@ -982,5 +982,224 @@ class HangoutServiceImplTest {
         user.setDisplayName("John Doe");
         user.setUsername("johndoe");
         return user;
+    }
+
+    // ============================================================================
+    // NEEDS RIDE INTEGRATION TESTS
+    // ============================================================================
+
+    @Test
+    void getHangoutDetail_WithNeedsRideData_IncludesNeedsRideInDTO() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        String requesterUserId = UUID.randomUUID().toString();
+        
+        Hangout hangout = new Hangout();
+        hangout.setHangoutId(hangoutId);
+        hangout.setTitle("Test Hangout");
+        hangout.setVisibility(EventVisibility.PUBLIC);
+        
+        NeedsRide needsRide1 = new NeedsRide(hangoutId, userId, "Need a ride from downtown");
+        NeedsRide needsRide2 = new NeedsRide(hangoutId, requesterUserId, "Need a ride from airport");
+        List<NeedsRide> needsRideList = List.of(needsRide1, needsRide2);
+        
+        HangoutDetailData data = new HangoutDetailData(
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), needsRideList
+        );
+        
+        when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
+        when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
+
+        // When
+        HangoutDetailDTO result = hangoutService.getHangoutDetail(hangoutId, requesterUserId);
+
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result.getHangout()).isEqualTo(hangout);
+        assertThat(result.getNeedsRide()).hasSize(2);
+        assertThat(result.getNeedsRide().get(0).getUserId()).isEqualTo(userId);
+        assertThat(result.getNeedsRide().get(0).getNotes()).isEqualTo("Need a ride from downtown");
+        assertThat(result.getNeedsRide().get(1).getUserId()).isEqualTo(requesterUserId);
+        assertThat(result.getNeedsRide().get(1).getNotes()).isEqualTo("Need a ride from airport");
+        
+        verify(hangoutRepository).getHangoutDetailData(hangoutId);
+        verify(hangoutRepository).findAttributesByHangoutId(hangoutId);
+    }
+
+    @Test
+    void getHangoutDetail_WithEmptyNeedsRideData_ReturnsEmptyNeedsRideList() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+        String requesterUserId = UUID.randomUUID().toString();
+        
+        Hangout hangout = new Hangout();
+        hangout.setHangoutId(hangoutId);
+        hangout.setTitle("Test Hangout");
+        hangout.setVisibility(EventVisibility.PUBLIC);
+        
+        HangoutDetailData data = new HangoutDetailData(
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
+        );
+        
+        when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
+        when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
+
+        // When
+        HangoutDetailDTO result = hangoutService.getHangoutDetail(hangoutId, requesterUserId);
+
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result.getHangout()).isEqualTo(hangout);
+        assertThat(result.getNeedsRide()).isEmpty();
+        
+        verify(hangoutRepository).getHangoutDetailData(hangoutId);
+    }
+
+    @Test
+    void getHangoutDetail_WithNullNotesInNeedsRide_HandlesNullGracefully() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        String requesterUserId = UUID.randomUUID().toString();
+        
+        Hangout hangout = new Hangout();
+        hangout.setHangoutId(hangoutId);
+        hangout.setTitle("Test Hangout");
+        hangout.setVisibility(EventVisibility.PUBLIC);
+        
+        NeedsRide needsRideWithNull = new NeedsRide(hangoutId, userId, null);
+        List<NeedsRide> needsRideList = List.of(needsRideWithNull);
+        
+        HangoutDetailData data = new HangoutDetailData(
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), needsRideList
+        );
+        
+        when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
+        when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
+
+        // When
+        HangoutDetailDTO result = hangoutService.getHangoutDetail(hangoutId, requesterUserId);
+
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result.getNeedsRide()).hasSize(1);
+        assertThat(result.getNeedsRide().get(0).getUserId()).isEqualTo(userId);
+        assertThat(result.getNeedsRide().get(0).getNotes()).isNull();
+        
+        verify(hangoutRepository).getHangoutDetailData(hangoutId);
+    }
+
+    @Test
+    void getHangoutDetail_WithMixedNeedsRideData_TransformsAllCorrectly() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+        String user1Id = UUID.randomUUID().toString();
+        String user2Id = UUID.randomUUID().toString();
+        String user3Id = UUID.randomUUID().toString();
+        String requesterUserId = UUID.randomUUID().toString();
+        
+        Hangout hangout = new Hangout();
+        hangout.setHangoutId(hangoutId);
+        hangout.setTitle("Test Hangout");
+        hangout.setVisibility(EventVisibility.PUBLIC);
+        
+        NeedsRide needsRide1 = new NeedsRide(hangoutId, user1Id, "Need a ride from downtown");
+        NeedsRide needsRide2 = new NeedsRide(hangoutId, user2Id, null);
+        NeedsRide needsRide3 = new NeedsRide(hangoutId, user3Id, "");
+        List<NeedsRide> needsRideList = List.of(needsRide1, needsRide2, needsRide3);
+        
+        HangoutDetailData data = new HangoutDetailData(
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), needsRideList
+        );
+        
+        when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
+        when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
+
+        // When
+        HangoutDetailDTO result = hangoutService.getHangoutDetail(hangoutId, requesterUserId);
+
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result.getNeedsRide()).hasSize(3);
+        
+        // Verify each needs ride DTO is correctly transformed
+        assertThat(result.getNeedsRide().get(0).getUserId()).isEqualTo(user1Id);
+        assertThat(result.getNeedsRide().get(0).getNotes()).isEqualTo("Need a ride from downtown");
+        
+        assertThat(result.getNeedsRide().get(1).getUserId()).isEqualTo(user2Id);
+        assertThat(result.getNeedsRide().get(1).getNotes()).isNull();
+        
+        assertThat(result.getNeedsRide().get(2).getUserId()).isEqualTo(user3Id);
+        assertThat(result.getNeedsRide().get(2).getNotes()).isEqualTo("");
+        
+        verify(hangoutRepository).getHangoutDetailData(hangoutId);
+    }
+
+    @Test
+    void getHangoutDetail_WithNonExistentHangout_ThrowsException() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+        String requesterUserId = UUID.randomUUID().toString();
+        
+        // Return data with null hangout (simulating not found)
+        HangoutDetailData data = new HangoutDetailData(
+            null, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
+        );
+        
+        when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
+
+        // When/Then - Service should throw exception for null hangout (no data exposure)
+        assertThatThrownBy(() -> hangoutService.getHangoutDetail(hangoutId, requesterUserId))
+                .isInstanceOf(RuntimeException.class); // Could be NPE or other runtime exception
+        
+        verify(hangoutRepository).getHangoutDetailData(hangoutId);
+    }
+
+    @Test
+    void getHangoutDetail_WithComplexData_IncludesNeedsRideAlongsideOtherData() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+        String requesterUserId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        
+        Hangout hangout = new Hangout();
+        hangout.setHangoutId(hangoutId);
+        hangout.setTitle("Complex Hangout");
+        hangout.setVisibility(EventVisibility.PUBLIC);
+        
+        // Set up various data types
+        List<Car> cars = List.of(new Car(hangoutId, requesterUserId, "Test Driver", 4));
+        List<CarRider> carRiders = List.of(new CarRider(hangoutId, requesterUserId, userId, "Test Rider"));
+        List<NeedsRide> needsRideList = List.of(new NeedsRide(hangoutId, userId, "Still need a ride"));
+        List<InterestLevel> attendance = List.of();
+        List<Vote> votes = List.of();
+        
+        HangoutDetailData data = new HangoutDetailData(
+            hangout, List.of(), List.of(), cars, votes, attendance, carRiders, needsRideList
+        );
+        
+        when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
+        when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
+
+        // When
+        HangoutDetailDTO result = hangoutService.getHangoutDetail(hangoutId, requesterUserId);
+
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result.getHangout()).isEqualTo(hangout);
+        
+        // Verify all data types are included
+        assertThat(result.getCars()).hasSize(1);
+        assertThat(result.getCarRiders()).hasSize(1);
+        assertThat(result.getNeedsRide()).hasSize(1);
+        assertThat(result.getAttendance()).isEmpty();
+        assertThat(result.getVotes()).isEmpty();
+        
+        // Verify specific needsRide data
+        assertThat(result.getNeedsRide().get(0).getUserId()).isEqualTo(userId);
+        assertThat(result.getNeedsRide().get(0).getNotes()).isEqualTo("Still need a ride");
+        
+        verify(hangoutRepository).getHangoutDetailData(hangoutId);
     }
 }

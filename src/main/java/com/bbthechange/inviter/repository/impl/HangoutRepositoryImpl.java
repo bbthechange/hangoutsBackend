@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.Objects;
 
 /**
  * Implementation of HangoutRepository using the powerful item collection pattern.
@@ -42,6 +43,7 @@ public class HangoutRepositoryImpl implements HangoutRepository {
     private final TableSchema<CarRider> carRiderSchema;
     private final TableSchema<HangoutPointer> hangoutPointerSchema;
     private final TableSchema<HangoutAttribute> hangoutAttributeSchema;
+    private final TableSchema<NeedsRide> needsRideSchema;
     private final QueryPerformanceTracker performanceTracker;
     private final EventRepository eventRepository; // For canonical Event records
     
@@ -62,6 +64,7 @@ public class HangoutRepositoryImpl implements HangoutRepository {
         this.carRiderSchema = TableSchema.fromBean(CarRider.class);
         this.hangoutPointerSchema = TableSchema.fromBean(HangoutPointer.class);
         this.hangoutAttributeSchema = TableSchema.fromBean(HangoutAttribute.class);
+        this.needsRideSchema = TableSchema.fromBean(NeedsRide.class);
         this.performanceTracker = performanceTracker;
         this.eventRepository = eventRepository;
     }
@@ -90,6 +93,8 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                     return interestLevelSchema.mapToItem(itemMap);
                 } else if (InviterKeyFactory.isCarRiderItem(sk)) {
                     return carRiderSchema.mapToItem(itemMap);
+                } else if (InviterKeyFactory.isNeedsRideItem(sk)) {
+                    return needsRideSchema.mapToItem(itemMap);
                 } else if (InviterKeyFactory.isAttributeItem(sk)) {
                     return hangoutAttributeSchema.mapToItem(itemMap);
                 }
@@ -113,6 +118,8 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                 return interestLevelSchema.mapToItem(itemMap);
             case "CAR_RIDER":
                 return carRiderSchema.mapToItem(itemMap);
+            case "NEEDS_RIDE":
+                return needsRideSchema.mapToItem(itemMap);
             case "ATTRIBUTE":
                 return hangoutAttributeSchema.mapToItem(itemMap);
             default:
@@ -137,7 +144,16 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                 QueryResponse response = dynamoDbClient.query(request);
 
                 List<BaseItem> allItems = response.items().stream()
-                        .map(this::deserializeItem)
+                        .map(item -> {
+                            try {
+                                return deserializeItem(item);
+                            } catch (Exception e) {
+                                logger.warn("Failed to deserialize item with pk={}, sk={}: {}", 
+                                    item.get("pk"), item.get("sk"), e.getMessage());
+                                return null;
+                            }
+                        })
+                        .filter(Objects::nonNull)
                         .collect(Collectors.toList());
 
                 // Sort by sort key patterns in memory (efficient - documented contract)
@@ -147,6 +163,7 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                 List<Vote> votes = new ArrayList<>();
                 List<InterestLevel> attendance = new ArrayList<>();
                 List<CarRider> carRiders = new ArrayList<>();
+                List<NeedsRide> needsRideList = new ArrayList<>();
                 Optional<Hangout> hangoutOption = Optional.empty();
 
                 for (BaseItem item : allItems) {
@@ -165,6 +182,8 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                         attendance.add((InterestLevel) item); // Safe - key pattern guarantees InterestLevel
                     } else if (InviterKeyFactory.isCarRiderItem(sk)) {
                         carRiders.add((CarRider) item); // Safe - key pattern guarantees CarRider
+                    } else if (InviterKeyFactory.isNeedsRideItem(sk)) {
+                        needsRideList.add((NeedsRide) item); // Safe - key pattern guarantees NeedsRide
                     } else if (InviterKeyFactory.isMetadata(sk)) {
                         hangoutOption = Optional.of((Hangout) item);
                     }
@@ -173,7 +192,7 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                 Hangout hangout = hangoutOption
                         .orElseThrow(() -> new ResourceNotFoundException("Event not found: " + eventId));
 
-                return new HangoutDetailData(hangout, polls, pollOptions, cars, votes, attendance, carRiders);
+                return new HangoutDetailData(hangout, polls, pollOptions, cars, votes, attendance, carRiders, needsRideList);
 
             } catch (Exception e) {
                 logger.error("Failed to get event detail data for event {}", eventId, e);
@@ -880,6 +899,105 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                 logger.error("Failed to delete poll option {} and its votes from poll {} in event {}", 
                     optionId, pollId, eventId, e);
                 throw new RepositoryException("Failed to delete poll option transaction", e);
+            }
+        });
+    }
+
+    @Override
+    public NeedsRide saveNeedsRide(NeedsRide needsRide) {
+        return performanceTracker.trackQuery("PutItem", TABLE_NAME, () -> {
+            try {
+                needsRide.touch();
+                
+                PutItemRequest request = PutItemRequest.builder()
+                        .tableName(TABLE_NAME)
+                        .item(needsRideSchema.itemToMap(needsRide, true))
+                        .build();
+                
+                dynamoDbClient.putItem(request);
+                logger.debug("Saved needs ride request for user {} in event {}", 
+                    needsRide.getUserId(), needsRide.getEventId());
+                
+                return needsRide;
+            } catch (Exception e) {
+                logger.error("Failed to save needs ride request for user {} in event {}", 
+                    needsRide.getUserId(), needsRide.getEventId(), e);
+                throw new RepositoryException("Failed to save needs ride request", e);
+            }
+        });
+    }
+
+    @Override
+    public List<NeedsRide> getNeedsRideListForEvent(String eventId) {
+        return performanceTracker.trackQuery("Query", TABLE_NAME, () -> {
+            try {
+                QueryRequest request = QueryRequest.builder()
+                        .tableName(TABLE_NAME)
+                        .keyConditionExpression("pk = :pk AND begins_with(sk, :sk_prefix)")
+                        .expressionAttributeValues(Map.of(
+                                ":pk", AttributeValue.builder().s(InviterKeyFactory.getEventPk(eventId)).build(),
+                                ":sk_prefix", AttributeValue.builder().s(InviterKeyFactory.NEEDS_RIDE_PREFIX + "#").build()
+                        ))
+                        .build();
+
+                QueryResponse response = dynamoDbClient.query(request);
+                
+                return response.items().stream()
+                        .map(needsRideSchema::mapToItem)
+                        .collect(Collectors.toList());
+            } catch (Exception e) {
+                logger.error("Failed to get needs ride requests for event {}", eventId, e);
+                throw new RepositoryException("Failed to retrieve needs ride requests", e);
+            }
+        });
+    }
+
+    @Override
+    public void deleteNeedsRide(String eventId, String userId) {
+        performanceTracker.trackQuery("DeleteItem", TABLE_NAME, () -> {
+            try {
+                DeleteItemRequest request = DeleteItemRequest.builder()
+                        .tableName(TABLE_NAME)
+                        .key(Map.of(
+                                "pk", AttributeValue.builder().s(InviterKeyFactory.getEventPk(eventId)).build(),
+                                "sk", AttributeValue.builder().s(InviterKeyFactory.getNeedsRideSk(userId)).build()
+                        ))
+                        .build();
+
+                dynamoDbClient.deleteItem(request);
+                logger.debug("Deleted needs ride request for user {} in event {}", userId, eventId);
+                
+                return null;
+            } catch (Exception e) {
+                logger.error("Failed to delete needs ride request for user {} in event {}", userId, eventId, e);
+                throw new RepositoryException("Failed to delete needs ride request", e);
+            }
+        });
+    }
+
+    @Override
+    public Optional<NeedsRide> getNeedsRideRequestForUser(String eventId, String userId) {
+        return performanceTracker.trackQuery("GetItem", TABLE_NAME, () -> {
+            try {
+                GetItemRequest request = GetItemRequest.builder()
+                        .tableName(TABLE_NAME)
+                        .key(Map.of(
+                                "pk", AttributeValue.builder().s(InviterKeyFactory.getEventPk(eventId)).build(),
+                                "sk", AttributeValue.builder().s(InviterKeyFactory.getNeedsRideSk(userId)).build()
+                        ))
+                        .build();
+
+                GetItemResponse response = dynamoDbClient.getItem(request);
+                
+                if (response.item().isEmpty()) {
+                    return Optional.empty();
+                }
+                
+                NeedsRide needsRide = needsRideSchema.mapToItem(response.item());
+                return Optional.of(needsRide);
+            } catch (Exception e) {
+                logger.error("Failed to get needs ride request for user {} in event {}", userId, eventId, e);
+                throw new RepositoryException("Failed to retrieve needs ride request", e);
             }
         });
     }

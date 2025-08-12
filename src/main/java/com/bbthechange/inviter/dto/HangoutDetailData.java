@@ -17,9 +17,11 @@ public class HangoutDetailData {
     private final List<Vote> votes;
     private final List<InterestLevel> attendance;
     private final List<CarRider> carRiders;
+    private final List<NeedsRide> needsRide;
 
     public HangoutDetailData(Hangout hangout, List<Poll> polls, List<PollOption> pollOptions,
-                             List<Car> cars, List<Vote> votes, List<InterestLevel> attendance, List<CarRider> carRiders) {
+                             List<Car> cars, List<Vote> votes, List<InterestLevel> attendance, 
+                             List<CarRider> carRiders, List<NeedsRide> needsRide) {
         this.hangout = hangout;
         this.polls = polls != null ? polls : List.of();
         this.pollOptions = pollOptions != null ? pollOptions : List.of();
@@ -27,6 +29,7 @@ public class HangoutDetailData {
         this.votes = votes != null ? votes : List.of();
         this.attendance = attendance != null ? attendance : List.of();
         this.carRiders = carRiders != null ? carRiders : List.of();
+        this.needsRide = needsRide != null ? needsRide : List.of();
     }
     
     public Hangout getHangout() {
@@ -55,5 +58,9 @@ public class HangoutDetailData {
     
     public List<CarRider> getCarRiders() {
         return carRiders;
+    }
+    
+    public List<NeedsRide> getNeedsRide() {
+        return needsRide;
     }
 }

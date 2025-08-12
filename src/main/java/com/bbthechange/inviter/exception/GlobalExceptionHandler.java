@@ -41,6 +41,19 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(errorResponse, HttpStatus.NOT_FOUND);
     }
     
+    @ExceptionHandler(EventNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleEventNotFoundException(EventNotFoundException e) {
+        logger.warn("Event not found: {}", e.getMessage());
+        
+        Map<String, Object> errorResponse = new HashMap<>();
+        errorResponse.put("error", "EVENT_NOT_FOUND");
+        errorResponse.put("message", e.getMessage());
+        errorResponse.put("timestamp", System.currentTimeMillis());
+        
+        // Return 404 Not Found for missing events
+        return new ResponseEntity<>(errorResponse, HttpStatus.NOT_FOUND);
+    }
+    
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGenericException(Exception e) {
         logger.error("Unexpected error: {}", e.getMessage(), e);

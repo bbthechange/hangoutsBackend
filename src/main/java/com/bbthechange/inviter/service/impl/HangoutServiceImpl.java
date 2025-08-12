@@ -130,6 +130,11 @@ public class HangoutServiceImpl implements HangoutService {
         // Transform to DTO with formatted timeInfo
         TimeInfo timeInfo = formatTimeInfoForResponse(hangout.getTimeInput());
         hangout.setTimeInput(timeInfo);
+        // Transform needs ride data to DTOs
+        List<NeedsRideDTO> needsRideDTOs = hangoutDetail.getNeedsRide().stream()
+            .map(NeedsRideDTO::new)
+            .collect(Collectors.toList());
+
         return new HangoutDetailDTO(
                 hangout,
             attributeDTOs, // Now includes actual attributes from single query
@@ -137,7 +142,8 @@ public class HangoutServiceImpl implements HangoutService {
             hangoutDetail.getCars(),
             hangoutDetail.getVotes(),
             hangoutDetail.getAttendance(),
-            hangoutDetail.getCarRiders()
+            hangoutDetail.getCarRiders(),
+            needsRideDTOs
         );
     }
     
