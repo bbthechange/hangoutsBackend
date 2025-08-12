@@ -38,15 +38,14 @@ public class CarpoolServiceImpl implements CarpoolService {
     public Car offerCar(String eventId, OfferCarRequest request, String userId) {
         logger.info("User {} offering car with {} seats for event {}", userId, request.getTotalCapacity(), eventId);
 
-        // TODO switch to hangout
-        // Get event and verify user can view it
-        EventDetailData eventData = hangoutRepository.getEventDetailData(eventId);
-        if (eventData.getEvent() == null) {
+        // Get hangout and verify user can view it
+        HangoutDetailData hangoutData = hangoutRepository.getHangoutDetailData(eventId);
+        if (hangoutData.getHangout() == null) {
             throw new EventNotFoundException("Event not found: " + eventId);
         }
         
-        Event event = eventData.getEvent();
-        if (!hangoutService.canUserViewEvent(userId, event)) {
+        Hangout hangout = hangoutData.getHangout();
+        if (!hangoutService.canUserViewHangout(userId, hangout)) {
             throw new UnauthorizedException("Cannot offer carpooling for this event");
         }
         
@@ -69,20 +68,20 @@ public class CarpoolServiceImpl implements CarpoolService {
     public List<CarWithRidersDTO> getEventCars(String eventId, String userId) {
         logger.debug("Getting car offers for event {} for user {}", eventId, userId);
         
-        // Get event and verify user can view it
-        EventDetailData eventData = hangoutRepository.getEventDetailData(eventId);
-        if (eventData.getEvent() == null) {
+        // Get hangout and verify user can view it
+        HangoutDetailData hangoutData = hangoutRepository.getHangoutDetailData(eventId);
+        if (hangoutData.getHangout() == null) {
             throw new EventNotFoundException("Event not found: " + eventId);
         }
         
-        Event event = eventData.getEvent();
-        if (!hangoutService.canUserViewEvent(userId, event)) {
+        Hangout hangout = hangoutData.getHangout();
+        if (!hangoutService.canUserViewHangout(userId, hangout)) {
             throw new UnauthorizedException("Cannot view carpooling for this event");
         }
         
-        // Get cars and their riders from event detail data
-        List<Car> cars = eventData.getCars();
-        List<CarRider> allRiders = eventData.getCarRiders();
+        // Get cars and their riders from hangout detail data
+        List<Car> cars = hangoutData.getCars();
+        List<CarRider> allRiders = hangoutData.getCarRiders();
         
         // Build CarWithRidersDTO by grouping riders by driver
         return cars.stream()
@@ -99,19 +98,19 @@ public class CarpoolServiceImpl implements CarpoolService {
     public CarDetailDTO getCarDetail(String eventId, String driverId, String userId) {
         logger.debug("Getting car detail for driver {} in event {} for user {}", driverId, eventId, userId);
         
-        // Get event and verify user can view it
-        EventDetailData eventData = hangoutRepository.getEventDetailData(eventId);
-        if (eventData.getEvent() == null) {
+        // Get hangout and verify user can view it
+        HangoutDetailData hangoutData = hangoutRepository.getHangoutDetailData(eventId);
+        if (hangoutData.getHangout() == null) {
             throw new EventNotFoundException("Event not found: " + eventId);
         }
         
-        Event event = eventData.getEvent();
-        if (!hangoutService.canUserViewEvent(userId, event)) {
+        Hangout hangout = hangoutData.getHangout();
+        if (!hangoutService.canUserViewHangout(userId, hangout)) {
             throw new UnauthorizedException("Cannot view carpooling for this event");
         }
         
         // Find the specific car
-        Car car = eventData.getCars().stream()
+        Car car = hangoutData.getCars().stream()
             .filter(c -> c.getDriverId().equals(driverId))
             .findFirst()
             .orElseThrow(() -> new CarNotFoundException("Car offer not found for driver: " + driverId));
@@ -119,7 +118,7 @@ public class CarpoolServiceImpl implements CarpoolService {
         boolean userIsDriver = userId.equals(driverId);
         
         // Get riders for this car and check if user has reservation
-        List<CarRider> riders = eventData.getCarRiders().stream()
+        List<CarRider> riders = hangoutData.getCarRiders().stream()
             .filter(rider -> rider.getDriverId().equals(driverId))
             .toList();
         boolean userHasReservation = riders.stream()
@@ -132,19 +131,19 @@ public class CarpoolServiceImpl implements CarpoolService {
     public CarRider reserveSeat(String eventId, String driverId, String userId) {
         logger.info("User {} reserving seat with driver {} for event {}", userId, driverId, eventId);
         
-        // Get event and verify user can view it
-        EventDetailData eventData = hangoutRepository.getEventDetailData(eventId);
-        if (eventData.getEvent() == null) {
+        // Get hangout and verify user can view it
+        HangoutDetailData hangoutData = hangoutRepository.getHangoutDetailData(eventId);
+        if (hangoutData.getHangout() == null) {
             throw new EventNotFoundException("Event not found: " + eventId);
         }
         
-        Event event = eventData.getEvent();
-        if (!hangoutService.canUserViewEvent(userId, event)) {
+        Hangout hangout = hangoutData.getHangout();
+        if (!hangoutService.canUserViewHangout(userId, hangout)) {
             throw new UnauthorizedException("Cannot reserve seats for this event");
         }
         
         // Find the car
-        Car car = eventData.getCars().stream()
+        Car car = hangoutData.getCars().stream()
             .filter(c -> c.getDriverId().equals(driverId))
             .findFirst()
             .orElseThrow(() -> new CarNotFoundException("Car offer not found for driver: " + driverId));
@@ -154,7 +153,7 @@ public class CarpoolServiceImpl implements CarpoolService {
         }
         
         // Check if user already has a reservation
-        List<CarRider> existingRiders = eventData.getCarRiders().stream()
+        List<CarRider> existingRiders = hangoutData.getCarRiders().stream()
             .filter(rider -> rider.getDriverId().equals(driverId) && rider.getRiderId().equals(userId))
             .toList();
         
@@ -183,25 +182,25 @@ public class CarpoolServiceImpl implements CarpoolService {
     public void releaseSeat(String eventId, String driverId, String userId) {
         logger.info("User {} releasing seat with driver {} for event {}", userId, driverId, eventId);
         
-        // Get event and verify user can view it
-        EventDetailData eventData = hangoutRepository.getEventDetailData(eventId);
-        if (eventData.getEvent() == null) {
+        // Get hangout and verify user can view it
+        HangoutDetailData hangoutData = hangoutRepository.getHangoutDetailData(eventId);
+        if (hangoutData.getHangout() == null) {
             throw new EventNotFoundException("Event not found: " + eventId);
         }
         
-        Event event = eventData.getEvent();
-        if (!hangoutService.canUserViewEvent(userId, event)) {
+        Hangout hangout = hangoutData.getHangout();
+        if (!hangoutService.canUserViewHangout(userId, hangout)) {
             throw new UnauthorizedException("Cannot modify reservations for this event");
         }
         
         // Find the car
-        Car car = eventData.getCars().stream()
+        Car car = hangoutData.getCars().stream()
             .filter(c -> c.getDriverId().equals(driverId))
             .findFirst()
             .orElseThrow(() -> new CarNotFoundException("Car offer not found for driver: " + driverId));
         
         // Check if user has a reservation
-        List<CarRider> userRiders = eventData.getCarRiders().stream()
+        List<CarRider> userRiders = hangoutData.getCarRiders().stream()
             .filter(rider -> rider.getDriverId().equals(driverId) && rider.getRiderId().equals(userId))
             .toList();
         
@@ -227,19 +226,19 @@ public class CarpoolServiceImpl implements CarpoolService {
             throw new UnauthorizedException("Only the driver can update their car offer");
         }
         
-        // Get event and verify user can view it
-        EventDetailData eventData = hangoutRepository.getEventDetailData(eventId);
-        if (eventData.getEvent() == null) {
+        // Get hangout and verify user can view it
+        HangoutDetailData hangoutData = hangoutRepository.getHangoutDetailData(eventId);
+        if (hangoutData.getHangout() == null) {
             throw new EventNotFoundException("Event not found: " + eventId);
         }
         
-        Event event = eventData.getEvent();
-        if (!hangoutService.canUserViewEvent(userId, event)) {
+        Hangout hangout = hangoutData.getHangout();
+        if (!hangoutService.canUserViewHangout(userId, hangout)) {
             throw new UnauthorizedException("Cannot modify car offers for this event");
         }
         
         // Find the car
-        Car car = eventData.getCars().stream()
+        Car car = hangoutData.getCars().stream()
             .filter(c -> c.getDriverId().equals(driverId))
             .findFirst()
             .orElseThrow(() -> new CarNotFoundException("Car offer not found for driver: " + driverId));
@@ -247,7 +246,7 @@ public class CarpoolServiceImpl implements CarpoolService {
         // Update car details
         if (request.getTotalCapacity() != null) {
             // Count current riders
-            long currentRiders = eventData.getCarRiders().stream()
+            long currentRiders = hangoutData.getCarRiders().stream()
                 .filter(rider -> rider.getDriverId().equals(driverId))
                 .count();
             
@@ -274,19 +273,19 @@ public class CarpoolServiceImpl implements CarpoolService {
             throw new UnauthorizedException("Only the driver can cancel their car offer");
         }
         
-        // Get event and verify user can view it
-        EventDetailData eventData = hangoutRepository.getEventDetailData(eventId);
-        if (eventData.getEvent() == null) {
+        // Get hangout and verify user can view it
+        HangoutDetailData hangoutData = hangoutRepository.getHangoutDetailData(eventId);
+        if (hangoutData.getHangout() == null) {
             throw new EventNotFoundException("Event not found: " + eventId);
         }
         
-        Event event = eventData.getEvent();
-        if (!hangoutService.canUserViewEvent(userId, event)) {
+        Hangout hangout = hangoutData.getHangout();
+        if (!hangoutService.canUserViewHangout(userId, hangout)) {
             throw new UnauthorizedException("Cannot cancel car offers for this event");
         }
         
         // Remove all rider records for this car
-        List<CarRider> ridersToRemove = eventData.getCarRiders().stream()
+        List<CarRider> ridersToRemove = hangoutData.getCarRiders().stream()
             .filter(rider -> rider.getDriverId().equals(driverId))
             .toList();
         

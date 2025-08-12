@@ -9,15 +9,6 @@ import com.bbthechange.inviter.model.Hangout;
  */
 public interface AuthorizationService {
     
-    /**
-     * Check if a user can view an event.
-     */
-    boolean canUserViewEvent(String userId, Event event);
-    
-    /**
-     * Check if a user can edit an event.
-     */
-    boolean canUserEditEvent(String userId, Event event);
     
     /**
      * Check if a user can view a hangout.

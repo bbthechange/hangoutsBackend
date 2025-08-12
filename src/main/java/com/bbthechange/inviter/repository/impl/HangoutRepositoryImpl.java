@@ -4,7 +4,6 @@ import com.bbthechange.inviter.dto.HangoutDetailData;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.EventRepository;
 import com.bbthechange.inviter.model.*;
-import com.bbthechange.inviter.dto.EventDetailData;
 import com.bbthechange.inviter.exception.RepositoryException;
 import com.bbthechange.inviter.exception.ResourceNotFoundException;
 import com.bbthechange.inviter.util.QueryPerformanceTracker;
@@ -183,64 +182,6 @@ public class HangoutRepositoryImpl implements HangoutRepository {
         });
     }
 
-    @Deprecated(since = "Use getHangoutDetailData()")
-    @Override
-    public EventDetailData getEventDetailData(String eventId) {
-        return performanceTracker.trackQuery("getEventDetailData", "InviterTable", () -> {
-            try {
-                logger.warn("WARNING getEventDetailData called!!!");
-                // Single query gets ALL event data - the power pattern!
-                QueryRequest request = QueryRequest.builder()
-                    .tableName(TABLE_NAME)
-                    .keyConditionExpression("pk = :pk")
-                    .expressionAttributeValues(Map.of(
-                        ":pk", AttributeValue.builder().s(InviterKeyFactory.getEventPk(eventId)).build()
-                    ))
-                    .scanIndexForward(true)
-                    .build();
-
-                QueryResponse response = dynamoDbClient.query(request);
-
-                List<BaseItem> allItems = response.items().stream()
-                    .map(this::deserializeItem)
-                    .collect(Collectors.toList());
-
-                // Sort by sort key patterns in memory (efficient - documented contract)
-                List<Poll> polls = new ArrayList<>();
-                List<Car> cars = new ArrayList<>();
-                List<Vote> votes = new ArrayList<>();
-                List<InterestLevel> attendance = new ArrayList<>();
-                List<CarRider> carRiders = new ArrayList<>();
-
-                for (BaseItem item : allItems) {
-                    String sk = item.getSk();
-
-                    // Use key patterns to safely identify types (documented contract)
-                    if (InviterKeyFactory.isPollItem(sk)) {
-                        polls.add((Poll) item); // Safe - key pattern guarantees Poll
-                    } else if (InviterKeyFactory.isCarItem(sk)) {
-                        cars.add((Car) item); // Safe - key pattern guarantees Car
-                    } else if (InviterKeyFactory.isVoteItem(sk)) {
-                        votes.add((Vote) item); // Safe - key pattern guarantees Vote
-                    } else if (InviterKeyFactory.isAttendanceItem(sk)) {
-                        attendance.add((InterestLevel) item); // Safe - key pattern guarantees InterestLevel
-                    } else if (InviterKeyFactory.isCarRiderItem(sk)) {
-                        carRiders.add((CarRider) item); // Safe - key pattern guarantees CarRider
-                    }
-                }
-
-                // Get canonical event record from main Events table
-                Event event = eventRepository.findById(UUID.fromString(eventId))
-                    .orElseThrow(() -> new ResourceNotFoundException("Event not found: " + eventId));
-
-                return new EventDetailData(event, polls, cars, votes, attendance, carRiders);
-
-            } catch (Exception e) {
-                logger.error("Failed to get event detail data for event {}", eventId, e);
-                throw new RepositoryException("Failed to retrieve event details", e);
-            }
-        });
-    }
     
     @Override
     public Hangout createHangout(Hangout hangout) {
@@ -260,6 +201,28 @@ public class HangoutRepositoryImpl implements HangoutRepository {
             } catch (DynamoDbException e) {
                 logger.error("Failed to create hangout {}", hangout.getHangoutId(), e);
                 throw new RepositoryException("Failed to create hangout", e);
+            }
+        });
+    }
+    
+    @Override
+    public Hangout save(Hangout hangout) {
+        return performanceTracker.trackQuery("PutItem", TABLE_NAME, () -> {
+            try {
+                hangout.touch();
+                Map<String, AttributeValue> itemMap = hangoutSchema.itemToMap(hangout, true);
+                
+                PutItemRequest request = PutItemRequest.builder()
+                    .tableName(TABLE_NAME)
+                    .item(itemMap)
+                    .build();
+                
+                dynamoDbClient.putItem(request);
+                return hangout;
+                
+            } catch (DynamoDbException e) {
+                logger.error("Failed to save hangout {}", hangout.getHangoutId(), e);
+                throw new RepositoryException("Failed to save hangout", e);
             }
         });
     }

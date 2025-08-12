@@ -2,7 +2,6 @@ package com.bbthechange.inviter.repository;
 
 import com.bbthechange.inviter.dto.HangoutDetailData;
 import com.bbthechange.inviter.model.*;
-import com.bbthechange.inviter.dto.EventDetailData;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 import java.util.List;
@@ -15,12 +14,6 @@ import java.util.Optional;
  */
 public interface HangoutRepository {
 
-    /**
-     * Get all event-related data in a single query using item collection pattern.
-     * This is the power pattern - one query gets event + polls + cars + votes + attendance!
-     */
-    @Deprecated
-    EventDetailData getEventDetailData(String eventId);
 
     /**
      * Get all event-related data in a single query using item collection pattern.
@@ -33,6 +26,9 @@ public interface HangoutRepository {
     Optional<Hangout> findHangoutById(String hangoutId);
     void updateHangoutMetadata(String hangoutId, Map<String, AttributeValue> updates);
     void deleteHangout(String hangoutId);
+    
+    // Hangout CRUD operations
+    Hangout save(Hangout hangout);
     
     // Legacy Event CRUD for backward compatibility (uses existing Events table)
     Event save(Event event);

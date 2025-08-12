@@ -49,18 +49,18 @@ class HangoutServiceImplTest {
         String newTitle = "Updated Event Title";
         String userId = "87654321-4321-4321-4321-210987654321";
         
-        Event event = createTestEvent(eventId);
-        event.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")));
+        Hangout hangout = createTestHangout(eventId);
+        hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")));
         
-        EventDetailData data = new EventDetailData(event, List.of(), List.of(), List.of(), List.of(), List.of());
-        when(hangoutRepository.getEventDetailData(eventId)).thenReturn(data);
+        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
         
         // Mock authorization - user is admin in group-1
         GroupMembership adminMembership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Test Group");
         adminMembership.setRole(GroupRole.ADMIN);
         when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(adminMembership));
         
-        when(hangoutRepository.save(any(Event.class))).thenReturn(event);
+        when(hangoutRepository.save(any(Hangout.class))).thenReturn(hangout);
         doNothing().when(groupRepository).updateHangoutPointer(anyString(), anyString(), any());
         
         // When
@@ -68,7 +68,7 @@ class HangoutServiceImplTest {
             .doesNotThrowAnyException();
         
         // Then - verify multi-step pointer update pattern
-        verify(hangoutRepository).save(any(Event.class)); // Step 1: Update canonical record
+        verify(hangoutRepository).save(any(Hangout.class)); // Step 1: Update canonical record
         verify(groupRepository, times(2)).updateHangoutPointer(anyString(), eq(eventId), any()); // Step 2: Update pointers
     }
     

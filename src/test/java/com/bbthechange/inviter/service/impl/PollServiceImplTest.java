@@ -95,16 +95,16 @@ class PollServiceImplTest {
         request.setOptionId(optionId);
         request.setVoteType("YES");
 
-        Event event = new Event();
-        // Event ID is handled differently - using eventId as string in tests
-        EventDetailData eventData = new EventDetailData(event, null, null, null, null, null);
+        Hangout hangout = new Hangout();
+        // Hangout ID is handled differently - using eventId as string in tests
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null);
 
         Poll poll = new Poll(eventId, "Test Poll", "Description", false);
         PollOption option = new PollOption(eventId, pollId, "Option Text");
         List<BaseItem> pollData = Arrays.asList(poll, option);
 
-        when(hangoutRepository.getEventDetailData(eventId)).thenReturn(eventData);
-        when(hangoutService.canUserViewEvent(userId, event)).thenReturn(true);
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+        when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
         when(hangoutRepository.getSpecificPollData(eventId, pollId)).thenReturn(pollData);
         when(hangoutRepository.saveVote(any(Vote.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -126,16 +126,16 @@ class PollServiceImplTest {
         request.setOptionId(optionId);
         request.setVoteType("YES");
 
-        Event event = new Event();
-        // Event ID is handled differently - using eventId as string in tests
-        EventDetailData eventData = new EventDetailData(event, null, null, null, null, null);
+        Hangout hangout = new Hangout();
+        // Hangout ID is handled differently - using eventId as string in tests
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null);
 
         Poll poll = new Poll(eventId, "Test Poll", "Description", false);
         Vote existingVote = new Vote(eventId, pollId, oldOptionId, userId, "YES");
         List<BaseItem> pollData = Arrays.asList(poll, existingVote);
 
-        when(hangoutRepository.getEventDetailData(eventId)).thenReturn(eventData);
-        when(hangoutService.canUserViewEvent(userId, event)).thenReturn(true);
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+        when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
         when(hangoutRepository.getSpecificPollData(eventId, pollId)).thenReturn(pollData);
         when(hangoutRepository.saveVote(any(Vote.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -155,17 +155,17 @@ class PollServiceImplTest {
         request.setOptionId(optionId);
         request.setVoteType("YES");
 
-        Event event = new Event();
-        // Event ID is handled differently - using eventId as string in tests
-        EventDetailData eventData = new EventDetailData(event, null, null, null, null, null);
+        Hangout hangout = new Hangout();
+        // Hangout ID is handled differently - using eventId as string in tests
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null);
 
         Poll poll = new Poll(eventId, "Test Poll", "Description", true);
         String otherOptionId = UUID.randomUUID().toString();
         Vote existingVote = new Vote(eventId, pollId, otherOptionId, userId, "YES");
         List<BaseItem> pollData = Arrays.asList(poll, existingVote);
 
-        when(hangoutRepository.getEventDetailData(eventId)).thenReturn(eventData);
-        when(hangoutService.canUserViewEvent(userId, event)).thenReturn(true);
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+        when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
         when(hangoutRepository.getSpecificPollData(eventId, pollId)).thenReturn(pollData);
         when(hangoutRepository.saveVote(any(Vote.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -181,9 +181,9 @@ class PollServiceImplTest {
     @Test
     void getEventPolls_WithValidUser_ReturnsTransformedPolls() {
         // Given
-        Event event = new Event();
-        // Event ID is handled differently - using eventId as string in tests
-        EventDetailData eventData = new EventDetailData(event, null, null, null, null, null);
+        Hangout hangout = new Hangout();
+        // Hangout ID is handled differently - using eventId as string in tests
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null);
 
         Poll poll = new Poll(eventId, "Test Poll", "Description", false);
         PollOption option1 = new PollOption(eventId, poll.getPollId(), "Option 1");
@@ -193,8 +193,8 @@ class PollServiceImplTest {
 
         List<BaseItem> pollData = Arrays.asList(poll, option1, option2, vote1, vote2);
 
-        when(hangoutRepository.getEventDetailData(eventId)).thenReturn(eventData);
-        when(hangoutService.canUserViewEvent(userId, event)).thenReturn(true);
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+        when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
         when(hangoutRepository.getAllPollData(eventId)).thenReturn(pollData);
 
         // When
@@ -231,17 +231,17 @@ class PollServiceImplTest {
     @Test
     void deletePollOption_AsHost_DeletesOptionAndVotes() {
         // Given
-        Event event = new Event();
-        // Event ID is handled differently - using eventId as string in tests
-        EventDetailData eventData = new EventDetailData(event, null, null, null, null, null);
+        Hangout hangout = new Hangout();
+        // Hangout ID is handled differently - using eventId as string in tests
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null);
 
         Poll poll = new Poll(eventId, "Test Poll", "Description", false);
         PollOption option = new PollOption(eventId, pollId, "Option to delete");
         option.setOptionId(optionId);
         List<BaseItem> pollData = Arrays.asList(poll, option);
 
-        when(hangoutRepository.getEventDetailData(eventId)).thenReturn(eventData);
-        when(hangoutService.canUserEditEvent(userId, event)).thenReturn(true);
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+        when(hangoutService.canUserEditHangout(userId, hangout)).thenReturn(true);
         when(hangoutRepository.getSpecificPollData(eventId, pollId)).thenReturn(pollData);
 
         // When
@@ -254,15 +254,15 @@ class PollServiceImplTest {
     @Test
     void deletePollOption_WhenOptionNotFound_ThrowsException() {
         // Given
-        Event event = new Event();
-        // Event ID is handled differently - using eventId as string in tests
-        EventDetailData eventData = new EventDetailData(event, null, null, null, null, null);
+        Hangout hangout = new Hangout();
+        // Hangout ID is handled differently - using eventId as string in tests
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null);
 
         Poll poll = new Poll(eventId, "Test Poll", "Description", false);
         List<BaseItem> pollData = Arrays.asList(poll);
 
-        when(hangoutRepository.getEventDetailData(eventId)).thenReturn(eventData);
-        when(hangoutService.canUserEditEvent(userId, event)).thenReturn(true);
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+        when(hangoutService.canUserEditHangout(userId, hangout)).thenReturn(true);
         when(hangoutRepository.getSpecificPollData(eventId, pollId)).thenReturn(pollData);
 
         // When & Then
@@ -274,16 +274,16 @@ class PollServiceImplTest {
     @Test
     void removeVote_WithValidRequest_DeletesVote() {
         // Given
-        Event event = new Event();
-        // Event ID is handled differently - using eventId as string in tests
-        EventDetailData eventData = new EventDetailData(event, null, null, null, null, null);
+        Hangout hangout = new Hangout();
+        // Hangout ID is handled differently - using eventId as string in tests
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null);
 
         Poll poll = new Poll(eventId, "Test Poll", "Description", false);
         Vote existingVote = new Vote(eventId, pollId, optionId, userId, "YES");
         List<BaseItem> pollData = Arrays.asList(poll, existingVote);
 
-        when(hangoutRepository.getEventDetailData(eventId)).thenReturn(eventData);
-        when(hangoutService.canUserViewEvent(userId, event)).thenReturn(true);
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+        when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
         when(hangoutRepository.getSpecificPollData(eventId, pollId)).thenReturn(pollData);
 
         // When

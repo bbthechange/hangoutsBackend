@@ -280,20 +280,20 @@ public class HangoutServiceImpl implements HangoutService {
     @Override
     public void updateEventTitle(String eventId, String newTitle, String requestingUserId) {
         // Authorization check first
-        EventDetailData data = hangoutRepository.getEventDetailData(eventId);
-        if (!canUserEditEvent(requestingUserId, data.getEvent())) {
+        HangoutDetailData data = hangoutRepository.getHangoutDetailData(eventId);
+        if (!canUserEditHangout(requestingUserId, data.getHangout())) {
             throw new UnauthorizedException("Cannot edit event");
         }
         
         // Multi-step process from implementation plan:
         
         // Step 1: Update canonical record first
-        Event event = data.getEvent();
-        event.setName(newTitle);
-        hangoutRepository.save(event);
+        Hangout hangout = data.getHangout();
+        hangout.setTitle(newTitle);
+        hangoutRepository.save(hangout);
         
         // Step 2: Get associated groups list from canonical record
-        List<String> associatedGroups = event.getAssociatedGroups();
+        List<String> associatedGroups = hangout.getAssociatedGroups();
         
         // Step 3: Update each pointer record
         if (associatedGroups != null && !associatedGroups.isEmpty()) {
@@ -306,15 +306,15 @@ public class HangoutServiceImpl implements HangoutService {
     @Override
     public void updateEventDescription(String eventId, String newDescription, String requestingUserId) {
         // Authorization check first
-        EventDetailData data = hangoutRepository.getEventDetailData(eventId);
-        if (!canUserEditEvent(requestingUserId, data.getEvent())) {
+        HangoutDetailData data = hangoutRepository.getHangoutDetailData(eventId);
+        if (!canUserEditHangout(requestingUserId, data.getHangout())) {
             throw new UnauthorizedException("Cannot edit event");
         }
         
         // Step 1: Update canonical record
-        Event event = data.getEvent();
-        event.setDescription(newDescription);
-        hangoutRepository.save(event);
+        Hangout hangout = data.getHangout();
+        hangout.setDescription(newDescription);
+        hangoutRepository.save(hangout);
         
         logger.info("Updated description for event {} by user {}", eventId, requestingUserId);
     }
@@ -322,22 +322,22 @@ public class HangoutServiceImpl implements HangoutService {
     @Override
     public void updateEventLocation(String eventId, String newLocationName, String requestingUserId) {
         // Authorization check first
-        EventDetailData data = hangoutRepository.getEventDetailData(eventId);
-        if (!canUserEditEvent(requestingUserId, data.getEvent())) {
+        HangoutDetailData data = hangoutRepository.getHangoutDetailData(eventId);
+        if (!canUserEditHangout(requestingUserId, data.getHangout())) {
             throw new UnauthorizedException("Cannot edit event");
         }
         
         // Step 1: Update canonical record
-        Event event = data.getEvent();
-        // Note: Assuming location has a name field - may need to adjust based on Address structure
-        if (event.getLocation() != null) {
+        Hangout hangout = data.getHangout();
+        // TODO: Properly implement Address update logic based on Address structure
+        if (hangout.getLocation() != null) {
             // This would need to be adapted based on the actual Address structure
-            // event.getLocation().setName(newLocationName);
+            // hangout.getLocation().setName(newLocationName);
         }
-        hangoutRepository.save(event);
+        hangoutRepository.save(hangout);
         
         // Step 2: Update pointer records with location
-        List<String> associatedGroups = event.getAssociatedGroups();
+        List<String> associatedGroups = hangout.getAssociatedGroups();
         if (associatedGroups != null && !associatedGroups.isEmpty()) {
             updatePointerRecords(eventId, associatedGroups, Map.of("locationName", newLocationName));
         }
@@ -420,43 +420,6 @@ public class HangoutServiceImpl implements HangoutService {
         logger.info("Disassociated event {} from {} groups by user {}", eventId, groupIds.size(), requestingUserId);
     }
     
-    @Override
-    public boolean canUserViewEvent(String userId, Event event) {
-        // TODO: Implement proper authorization logic
-        // For now, basic check based on event visibility and group membership
-        
-        if (event.getVisibility() == EventVisibility.PUBLIC) {
-            return true;
-        }
-        
-        // For invite-only events, check if user is in any associated groups
-        if (event.getAssociatedGroups() != null) {
-            for (String groupId : event.getAssociatedGroups()) {
-                if (groupRepository.findMembership(groupId, userId).isPresent()) {
-                    return true;
-                }
-            }
-        }
-        
-        return false;
-    }
-    
-    @Override
-    public boolean canUserEditEvent(String userId, Event event) {
-        // TODO: Implement proper edit authorization logic
-        // For now, check if user is admin in any associated groups
-        
-        if (event.getAssociatedGroups() != null) {
-            for (String groupId : event.getAssociatedGroups()) {
-                GroupMembership membership = groupRepository.findMembership(groupId, userId).orElse(null);
-                if (membership != null) {
-                    return true;
-                }
-            }
-        }
-        
-        return false;
-    }
 
     private void updatePointerRecords(String eventId, List<String> groupIds, Map<String, Object> updates) {
         // Convert string updates to AttributeValue updates
@@ -523,7 +486,8 @@ public class HangoutServiceImpl implements HangoutService {
         return locationName.length() > 0 ? locationName.toString() : null;
     }
     
-    private boolean canUserViewHangout(String userId, Hangout hangout) {
+    @Override
+    public boolean canUserViewHangout(String userId, Hangout hangout) {
         // Check if hangout is public
         if (hangout.getVisibility() == EventVisibility.PUBLIC) {
             return true;

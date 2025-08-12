@@ -28,18 +28,6 @@ public class AuthorizationServiceImpl implements AuthorizationService {
         this.groupRepository = groupRepository;
     }
     
-    @Override
-    public boolean canUserViewEvent(String userId, Event event) {
-        // For now, implement basic authorization - this may need to be enhanced
-        // based on the specific Event model structure
-        return true; // Placeholder - needs proper group membership logic
-    }
-    
-    @Override
-    public boolean canUserEditEvent(String userId, Event event) {
-        // For now, same logic as canUserViewEvent - all group members can edit
-        return canUserViewEvent(userId, event);
-    }
     
     @Override
     public boolean canUserViewHangout(String userId, Hangout hangout) {

@@ -39,6 +39,8 @@ public interface HangoutService {
      */
     List<HangoutSummaryDTO> getHangoutsForUser(String userId);
 
+    boolean canUserViewHangout(String userId, Hangout hangout);
+    
     boolean canUserEditHangout(String userId, Hangout hangout);
 
     /**
@@ -104,13 +106,4 @@ public interface HangoutService {
      */
     void disassociateEventFromGroups(String eventId, java.util.List<String> groupIds, String requestingUserId);
     
-    /**
-     * Check if user can view the event (authorization).
-     */
-    boolean canUserViewEvent(String userId, Event event);
-    
-    /**
-     * Check if user can edit the event (authorization).
-     */
-    boolean canUserEditEvent(String userId, Event event);
 }
