@@ -4,4 +4,37 @@ build/generated/
 build/reports/
 build/test-results/
 build/tmp/
-# Include the JAR file by NOT ignoring build/libs/
+
+# Exclude large cached directories (15GB+ bandwidth waste)
+.elasticbeanstalk/app_versions/
+.elasticbeanstalk/logs/
+.git/
+.gradle/
+
+# Exclude documentation and development files
+*.md
+docs/
+bugs/
+Features/
+scripts/
+util/
+.claude/
+.idea/
+.vscode/
+.DS_Store
+
+# Exclude test and development artifacts
+src/test/
+*.log
+*.diff
+*.csv
+*.svg
+*.json
+*.p8
+*.sh
+
+# Keep only essential deployment files
+# application.jar (copied from build/libs/)
+# Procfile
+# .ebextensions/ (if exists)
+# .platform/ (if exists)
