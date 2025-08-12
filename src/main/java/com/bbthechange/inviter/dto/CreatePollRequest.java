@@ -18,7 +18,6 @@ public class CreatePollRequest {
     
     private boolean multipleChoice = false;
     
-    @Size(min = 2, max = 10, message = "Poll must have between 2 and 10 options")
     private List<String> options;
     
     public CreatePollRequest() {}
