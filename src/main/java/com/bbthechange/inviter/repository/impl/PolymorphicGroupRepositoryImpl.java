@@ -298,7 +298,31 @@ public class PolymorphicGroupRepositoryImpl implements GroupRepository {
             }
         });
     }
-    
+
+    @Override
+    public Boolean isUserMemberOfGroup(String groupId, String userId) {
+        return queryTracker.trackQuery("GetItem", TABLE_NAME, () -> {
+            try {
+                QueryRequest request = QueryRequest.builder()
+                        .tableName(TABLE_NAME)
+                        .keyConditionExpression("pk = :pk AND sk = :sk")
+                        .expressionAttributeValues(Map.of(
+                                ":pk", AttributeValue.builder().s(InviterKeyFactory.getGroupPk(groupId)).build(),
+                                ":sk", AttributeValue.builder().s(InviterKeyFactory.getUserSk(userId)).build()
+                        ))
+                        .select(Select.COUNT)
+                        .build();
+
+                QueryResponse response = dynamoDbClient.query(request);
+                return response.count() > 0;
+
+            } catch (DynamoDbException e) {
+                logger.error("Failed to find membership for user {} in group {}", userId, groupId, e);
+                throw new RepositoryException("Failed to retrieve membership", e);
+            }
+        });
+    }
+
     @Override
     public List<GroupMembership> findGroupsByUserId(String userId) {
         return queryTracker.trackQuery("Query", TABLE_NAME, () -> {

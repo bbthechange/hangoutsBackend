@@ -6,6 +6,7 @@ import com.bbthechange.inviter.repository.UserRepository;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.exception.*;
+import com.bbthechange.inviter.service.InviteService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -25,12 +26,19 @@ import static org.mockito.Mockito.*;
  */
 @ExtendWith(MockitoExtension.class)
 class GroupServiceImplTest {
-    
+
+    private static final String GROUP_ID = "12345678-1234-1234-1234-123456789012";
+    private static final String USER_ID = "87654321-4321-4321-4321-210987654321";
+    private static final String PHONE_NUMBER = "+11234567890";
+
     @Mock
     private GroupRepository groupRepository;
     
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private InviteService inviteService;
     
     @InjectMocks
     private GroupServiceImpl groupService;
@@ -76,7 +84,7 @@ class GroupServiceImplTest {
     @Test
     void getUserGroups_UsesGSIEfficiently() {
         // Given
-        String userId = "87654321-4321-4321-4321-210987654321";
+        String userId = USER_ID;
         List<GroupMembership> memberships = List.of(
             createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Group One", GroupRole.ADMIN),
             createTestMembership("22222222-2222-2222-2222-222222222222", userId, "Group Two", GroupRole.MEMBER)
@@ -103,7 +111,7 @@ class GroupServiceImplTest {
     void getGroup_Success() {
         // Given
         String groupId = "12345678-1234-1234-1234-123456789012";
-        String userId = "87654321-4321-4321-4321-210987654321";
+        String userId = USER_ID;
         
         Group group = createTestGroup("Test Group", false, groupId);
         GroupMembership membership = createTestMembership(groupId, userId, "Test Group", GroupRole.MEMBER);
@@ -123,7 +131,7 @@ class GroupServiceImplTest {
     void getGroup_UserNotInGroup_ThrowsUnauthorized() {
         // Given
         String groupId = "12345678-1234-1234-1234-123456789012";
-        String userId = "87654321-4321-4321-4321-210987654321";
+        String userId = USER_ID;
         
         Group group = createTestGroup("Test Group", false, groupId);
         when(groupRepository.findById(groupId)).thenReturn(Optional.of(group));
@@ -136,34 +144,75 @@ class GroupServiceImplTest {
     }
     
     @Test
-    void addMember_ToPublicGroup_Success() {
+    void addMember_ToPublicGroup_byUserId_Success() {
         // Given
-        String groupId = "12345678-1234-1234-1234-123456789012";
-        String userId = "87654321-4321-4321-4321-210987654321";
         String addedBy = "11111111-1111-1111-1111-111111111111";
         
-        Group group = createTestGroup("Public Group", true, groupId); // Public group
+        Group group = createTestGroup("Public Group", true, GROUP_ID); // Public group
         User userToAdd = new User();
-        userToAdd.setId(UUID.fromString(userId));
+        userToAdd.setId(UUID.fromString(USER_ID));
         
-        when(groupRepository.findById(groupId)).thenReturn(Optional.of(group));
-        when(userRepository.findById(UUID.fromString(userId))).thenReturn(Optional.of(userToAdd));
-        when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.empty());
-        when(groupRepository.addMember(any(GroupMembership.class))).thenReturn(createTestMembership(groupId, userId, "Public Group", GroupRole.MEMBER));
+        when(groupRepository.findById(GROUP_ID)).thenReturn(Optional.of(group));
+        when(userRepository.findById(UUID.fromString(USER_ID))).thenReturn(Optional.of(userToAdd));
+        when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(false);
+        when(groupRepository.addMember(any(GroupMembership.class))).thenReturn(createTestMembership(GROUP_ID, USER_ID, "Public Group", GroupRole.MEMBER));
         
         // When
-        assertThatCode(() -> groupService.addMember(groupId, userId, addedBy))
+        assertThatCode(() -> groupService.addMember(GROUP_ID, USER_ID, null, addedBy))
             .doesNotThrowAnyException();
         
         // Then
-        verify(groupRepository).addMember(any(GroupMembership.class));
+        // Make sure the correct user was added to the correct group
+        verify(groupRepository).addMember(argThat(membership ->
+                GROUP_ID.equals(membership.getGroupId()) && USER_ID.equals(membership.getUserId())));
+    }
+
+    @Test
+    void addMember_ToPublicGroup_byPhoneNumber_Success() {
+        // Given
+        String addedBy = "11111111-1111-1111-1111-111111111111";
+
+        Group group = createTestGroup("Public Group", true, GROUP_ID); // Public group
+        User userToAdd = new User();
+        userToAdd.setId(UUID.fromString(USER_ID));
+
+        when(groupRepository.findById(GROUP_ID)).thenReturn(Optional.of(group));
+        when(inviteService.findOrCreateUserByPhoneNumber(PHONE_NUMBER)).thenReturn(userToAdd);
+        when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(false);
+        when(groupRepository.addMember(any(GroupMembership.class))).thenReturn(createTestMembership(GROUP_ID, USER_ID, "Public Group", GroupRole.MEMBER));
+
+        // When
+        assertThatCode(() -> groupService.addMember(GROUP_ID, null, PHONE_NUMBER, addedBy))
+                .doesNotThrowAnyException();
+
+        // Then
+        // Make sure the correct user was added to the correct group
+        verify(groupRepository).addMember(argThat(membership -> 
+            GROUP_ID.equals(membership.getGroupId()) && USER_ID.equals(membership.getUserId())));
+    }
+
+    @Test
+    void addMember_ToPublicGroup_byPhoneNumberAndId_Failure() {
+        // Given
+        String addedBy = "11111111-1111-1111-1111-111111111111";
+
+        Group group = createTestGroup("Public Group", true, GROUP_ID); // Public group
+        User userToAdd = new User();
+        userToAdd.setId(UUID.fromString(USER_ID));
+
+
+        when(groupRepository.findById(GROUP_ID)).thenReturn(Optional.of(group));
+        
+        // When/then
+        assertThatThrownBy(() -> groupService.addMember(GROUP_ID, USER_ID, PHONE_NUMBER, addedBy))
+                .isInstanceOf((IllegalArgumentException.class));
     }
     
     @Test
     void removeMember_UserRemovesThemself_Success() {
         // Given
         String groupId = "12345678-1234-1234-1234-123456789012";
-        String userId = "87654321-4321-4321-4321-210987654321";
+        String userId = USER_ID;
         String removedBy = userId; // Same user removing themselves
         
         GroupMembership membership = createTestMembership(groupId, userId, "Test Group", GroupRole.MEMBER);
@@ -181,7 +230,7 @@ class GroupServiceImplTest {
     void removeMember_AdminRemovesOther_Success() {
         // Given
         String groupId = "12345678-1234-1234-1234-123456789012";
-        String userId = "87654321-4321-4321-4321-210987654321";
+        String userId = USER_ID;
         String removedBy = "11111111-1111-1111-1111-111111111111";
         
         GroupMembership membershipToRemove = createTestMembership(groupId, userId, "Test Group", GroupRole.MEMBER);
@@ -201,7 +250,7 @@ class GroupServiceImplTest {
     @Test
     void isUserInGroup_UserExists_ReturnsTrue() {
         // Given
-        String userId = "87654321-4321-4321-4321-210987654321";
+        String userId = USER_ID;
         String groupId = "12345678-1234-1234-1234-123456789012";
         GroupMembership membership = createTestMembership(groupId, userId, "Test Group", GroupRole.MEMBER);
         
@@ -217,7 +266,7 @@ class GroupServiceImplTest {
     @Test
     void isUserInGroup_UserNotExists_ReturnsFalse() {
         // Given
-        String userId = "87654321-4321-4321-4321-210987654321";
+        String userId = USER_ID;
         String groupId = "12345678-1234-1234-1234-123456789012";
         
         when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.empty());
@@ -233,7 +282,7 @@ class GroupServiceImplTest {
     void getGroupFeed_Success() {
         // Given
         String groupId = "12345678-1234-1234-1234-123456789012";
-        String userId = "87654321-4321-4321-4321-210987654321";
+        String userId = USER_ID;
         
         when(groupRepository.findMembership(groupId, userId)).thenReturn(
             Optional.of(createTestMembership(groupId, userId, "Test Group", GroupRole.MEMBER)));

@@ -215,7 +215,13 @@ public class GroupRepositoryImpl implements GroupRepository {
             }
         });
     }
-    
+
+    @Override
+    public Boolean isUserMemberOfGroup(String groupId, String userId) {
+        Optional<GroupMembership> membership = findMembership(groupId, userId);
+        return membership.isPresent();
+    }
+
     @Override
     public List<GroupMembership> findGroupsByUserId(String userId) {
         return performanceTracker.trackQuery("findGroupsByUserId", "InviterTable", () -> {

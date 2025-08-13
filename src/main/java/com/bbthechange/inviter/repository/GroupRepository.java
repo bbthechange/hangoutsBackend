@@ -28,9 +28,15 @@ public interface GroupRepository {
     // Membership operations
     GroupMembership addMember(GroupMembership membership);
     void removeMember(String groupId, String userId);
+
+    /**
+     * Returns group membership if a user is a member of the given group
+     */
     Optional<GroupMembership> findMembership(String groupId, String userId);
     List<GroupMembership> findMembersByGroupId(String groupId);
-    
+
+    Boolean isUserMemberOfGroup(String groupId, String userId);
+
     /**
      * Find all groups a user belongs to using GSI query.
      * Returns denormalized data with group names - no additional lookups needed.

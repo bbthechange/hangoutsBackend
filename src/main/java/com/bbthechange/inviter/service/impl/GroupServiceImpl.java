@@ -6,6 +6,7 @@ import com.bbthechange.inviter.repository.UserRepository;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.exception.*;
+import com.bbthechange.inviter.service.InviteService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,11 +30,13 @@ public class GroupServiceImpl implements GroupService {
     
     private final GroupRepository groupRepository;
     private final UserRepository userRepository;
+    private final InviteService inviteService;
     
     @Autowired
-    public GroupServiceImpl(GroupRepository groupRepository, UserRepository userRepository) {
+    public GroupServiceImpl(GroupRepository groupRepository, UserRepository userRepository, InviteService inviteService) {
         this.groupRepository = groupRepository;
         this.userRepository = userRepository;
+        this.inviteService = inviteService;
     }
     
     @Override
@@ -42,7 +45,7 @@ public class GroupServiceImpl implements GroupService {
         validateCreateGroupRequest(request);
         
         // Verify creator exists
-        User creator = userRepository.findById(UUID.fromString(creatorId))
+        userRepository.findById(UUID.fromString(creatorId))
             .orElseThrow(() -> new UserNotFoundException("Creator not found: " + creatorId));
         
         // Create both records for atomic operation
@@ -90,23 +93,29 @@ public class GroupServiceImpl implements GroupService {
     }
     
     @Override
-    public void addMember(String groupId, String userId, String addedBy) {
+    public void addMember(String groupId, String userId, String phoneNumber, String addedBy) {
         // Verify group exists
         Group group = groupRepository.findById(groupId)
             .orElseThrow(() -> new ResourceNotFoundException("Group not found: " + groupId));
         
-        // For private groups, only admins can add members
-        if (!group.isPublic()) {
-            groupRepository.findMembership(groupId, addedBy)
-                .orElseThrow(() -> new UnauthorizedException("User not in group"));
+        // For private groups, only group members can add members
+        if (!group.isPublic() && !groupRepository.isUserMemberOfGroup(groupId, addedBy)) {
+            throw  new UnauthorizedException("User requesting add to group not in group");
         }
-        
-        // Verify user to add exists
-        User userToAdd = userRepository.findById(UUID.fromString(userId))
-            .orElseThrow(() -> new UserNotFoundException("User not found: " + userId));
-        
+
+        if ((userId == null && phoneNumber == null) || (userId != null && phoneNumber != null)) {
+            throw new IllegalArgumentException("You must provide exactly one of: userId or phoneNumber");
+        }
+
+        if (phoneNumber != null) {
+            userId = inviteService.findOrCreateUserByPhoneNumber(phoneNumber).getId().toString();
+        } else if (userRepository.findById(UUID.fromString(userId)).isEmpty()) {
+            throw new UserNotFoundException("Cannot add user to group, user not found: " + userId);
+        }
+
+
         // Check if user is already a member
-        if (groupRepository.findMembership(groupId, userId).isPresent()) {
+        if (groupRepository.isUserMemberOfGroup(groupId, userId)) {
             throw new ValidationException("User is already a member of this group");
         }
         

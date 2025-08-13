@@ -90,7 +90,7 @@ public class GroupController extends BaseController {
         
         String addedBy = extractUserId(httpRequest);
         
-        groupService.addMember(groupId, request.getUserId(), addedBy);
+        groupService.addMember(groupId, request.getUserId(), request.getPhoneNumber(), addedBy);
         logger.info("Added member {} to group {} by {}", request.getUserId(), groupId, addedBy);
         
         return ResponseEntity.ok().build();

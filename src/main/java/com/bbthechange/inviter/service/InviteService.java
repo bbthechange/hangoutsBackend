@@ -157,7 +157,7 @@ public class InviteService {
         );
     }
     
-    private User findOrCreateUserByPhoneNumber(String phoneNumber) {
+    public User findOrCreateUserByPhoneNumber(String phoneNumber) {
         Optional<User> existingUser = userRepository.findByPhoneNumber(phoneNumber);
         if (existingUser.isPresent()) {
             return existingUser.get();

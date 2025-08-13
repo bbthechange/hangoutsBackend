@@ -30,7 +30,7 @@ public interface GroupService {
     /**
      * Add a member to a group (admin only for private groups).
      */
-    void addMember(String groupId, String userId, String addedBy);
+    void addMember(String groupId, String userId, String phoneNumber, String addedBy);
     
     /**
      * Remove a member from a group (admin only, or user can remove themselves).
