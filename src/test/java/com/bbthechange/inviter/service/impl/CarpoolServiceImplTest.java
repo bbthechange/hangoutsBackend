@@ -64,10 +64,10 @@ class CarpoolServiceImplTest {
         String userId2 = UUID.randomUUID().toString();
         NeedsRide needsRide2 = new NeedsRide(eventId, userId2, "Need a ride from airport");
         List<NeedsRide> needsRideList = List.of(needsRide1, needsRide2);
-        
+        hangoutData.setNeedsRide(needsRideList);
+
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
         when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
-        when(hangoutRepository.getNeedsRideListForEvent(eventId)).thenReturn(needsRideList);
 
         // When
         List<NeedsRideDTO> result = carpoolService.getNeedsRideRequests(eventId, userId);
@@ -81,7 +81,6 @@ class CarpoolServiceImplTest {
         
         verify(hangoutRepository).getHangoutDetailData(eventId);
         verify(hangoutService).canUserViewHangout(userId, hangout);
-        verify(hangoutRepository).getNeedsRideListForEvent(eventId);
     }
 
     @Test
@@ -119,16 +118,15 @@ class CarpoolServiceImplTest {
     @Test
     void getNeedsRideRequests_WithEmptyList_ReturnsEmptyList() {
         // Given
+        // hangoutData already has an empty list
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
         when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
-        when(hangoutRepository.getNeedsRideListForEvent(eventId)).thenReturn(List.of());
 
         // When
         List<NeedsRideDTO> result = carpoolService.getNeedsRideRequests(eventId, userId);
 
         // Then
         assertThat(result).isEmpty();
-        verify(hangoutRepository).getNeedsRideListForEvent(eventId);
     }
 
     @Test

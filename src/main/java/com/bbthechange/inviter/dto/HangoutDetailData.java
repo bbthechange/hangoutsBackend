@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.dto;
 
 import com.bbthechange.inviter.model.*;
+import lombok.Data;
 
 import java.util.List;
 
@@ -8,16 +9,17 @@ import java.util.List;
  * Data container for all event-related information retrieved from a single item collection query.
  * Contains the event metadata plus all related items (polls, cars, votes, attendance, riders).
  */
+@Data
 public class HangoutDetailData {
 
-    private final Hangout hangout;
-    private final List<Poll> polls;
-    private final List<PollOption> pollOptions;
-    private final List<Car> cars;
-    private final List<Vote> votes;
-    private final List<InterestLevel> attendance;
-    private final List<CarRider> carRiders;
-    private final List<NeedsRide> needsRide;
+    private Hangout hangout;
+    private List<Poll> polls;
+    private List<PollOption> pollOptions;
+    private List<Car> cars;
+    private List<Vote> votes;
+    private List<InterestLevel> attendance;
+    private List<CarRider> carRiders;
+    private List<NeedsRide> needsRide;
 
     public HangoutDetailData(Hangout hangout, List<Poll> polls, List<PollOption> pollOptions,
                              List<Car> cars, List<Vote> votes, List<InterestLevel> attendance, 
@@ -30,37 +32,5 @@ public class HangoutDetailData {
         this.attendance = attendance != null ? attendance : List.of();
         this.carRiders = carRiders != null ? carRiders : List.of();
         this.needsRide = needsRide != null ? needsRide : List.of();
-    }
-    
-    public Hangout getHangout() {
-        return hangout;
-    }
-    
-    public List<Poll> getPolls() {
-        return polls;
-    }
-    
-    public List<PollOption> getPollOptions() {
-        return pollOptions;
-    }
-    
-    public List<Car> getCars() {
-        return cars;
-    }
-    
-    public List<Vote> getVotes() {
-        return votes;
-    }
-    
-    public List<InterestLevel> getAttendance() {
-        return attendance;
-    }
-    
-    public List<CarRider> getCarRiders() {
-        return carRiders;
-    }
-    
-    public List<NeedsRide> getNeedsRide() {
-        return needsRide;
     }
 }

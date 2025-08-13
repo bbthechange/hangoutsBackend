@@ -202,7 +202,7 @@ class GroupServiceImplTest {
 
 
         when(groupRepository.findById(GROUP_ID)).thenReturn(Optional.of(group));
-        
+
         // When/then
         assertThatThrownBy(() -> groupService.addMember(GROUP_ID, USER_ID, PHONE_NUMBER, addedBy))
                 .isInstanceOf((IllegalArgumentException.class));

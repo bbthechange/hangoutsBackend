@@ -315,28 +315,21 @@ public class CarpoolServiceImpl implements CarpoolService {
     public List<NeedsRideDTO> getNeedsRideRequests(String eventId, String userId) {
         logger.debug("Getting ride requests for event {} by user {}", eventId, userId);
 
-        try {
-            // First try to get ride requests - if this fails, the event likely doesn't exist
-            List<NeedsRide> needsRideList = hangoutRepository.getNeedsRideListForEvent(eventId);
-            
-            // If we got here, the basic query worked. Now check authorization.
-            HangoutDetailData hangoutData = hangoutRepository.getHangoutDetailData(eventId);
-            if (hangoutData.getHangout() == null) {
-                throw new EventNotFoundException("Event not found: " + eventId);
-            }
-            
-            Hangout hangout = hangoutData.getHangout();
-            if (!hangoutService.canUserViewHangout(userId, hangout)) {
-                throw new UnauthorizedException("Cannot view ride requests for this event");
-            }
-            
-            return needsRideList.stream()
-                    .map(NeedsRideDTO::new)
-                    .toList();
-        } catch (Exception e) {
-            logger.warn("Error when getting ride requests for event {}: {} - {}", eventId, e.getClass().getSimpleName(), e.getMessage());
+        HangoutDetailData hangoutData = hangoutRepository.getHangoutDetailData(eventId);
+        if (hangoutData.getHangout() == null) {
             throw new EventNotFoundException("Event not found: " + eventId);
         }
+
+        Hangout hangout = hangoutData.getHangout();
+
+        if (!hangoutService.canUserViewHangout(userId, hangout)) {
+            throw new UnauthorizedException("Cannot view ride requests for this event");
+        }
+        List<NeedsRide> needsRideList = hangoutData.getNeedsRide();
+
+        return needsRideList.stream()
+                .map(NeedsRideDTO::new)
+                .toList();
     }
 
     @Override
