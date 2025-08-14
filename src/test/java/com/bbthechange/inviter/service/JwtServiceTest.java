@@ -163,12 +163,12 @@ class JwtServiceTest {
                 .parseSignedClaims(token)
                 .getPayload();
             
-            long expectedExpiration = beforeGeneration + 86400000; // 24 hours
+            long expectedExpiration = beforeGeneration + 1800000; // 30 minutes
             long actualExpiration = claims.getExpiration().getTime();
             
             // Allow for small time differences (within 1 second)
             assertTrue(Math.abs(actualExpiration - expectedExpiration) < 1000,
-                "Token expiration should be approximately 24 hours from generation");
+                "Token expiration should be approximately 30 minutes from generation");
         }
     }
 

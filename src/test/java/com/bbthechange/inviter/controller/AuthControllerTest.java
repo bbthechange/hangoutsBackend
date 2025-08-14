@@ -22,7 +22,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-
+import org.springframework.http.ResponseCookie;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -115,6 +115,7 @@ class AuthControllerTest {
             when(passwordService.encryptPassword("password123")).thenReturn("hashedpassword");
             when(userRepository.save(any(User.class))).thenReturn(testUser);
 
+
             // Act
             ResponseEntity<Map<String, String>> response = authController.register(testUser);
 
@@ -143,6 +144,7 @@ class AuthControllerTest {
             when(passwordService.encryptPassword("password123")).thenReturn("hashedpassword");
             when(userRepository.save(any(User.class))).thenReturn(existingUserWithoutPassword);
 
+
             // Act
             ResponseEntity<Map<String, String>> response = authController.register(testUser);
 
@@ -162,6 +164,7 @@ class AuthControllerTest {
         void register_Conflict_UserAlreadyExists() {
             // Arrange
             when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.of(existingUser));
+
 
             // Act
             ResponseEntity<Map<String, String>> response = authController.register(testUser);
@@ -184,6 +187,7 @@ class AuthControllerTest {
             when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.empty());
             when(passwordService.encryptPassword(null)).thenReturn("hashedpassword");
             when(userRepository.save(any(User.class))).thenReturn(userWithNullPassword);
+
 
             // Act
             ResponseEntity<Map<String, String>> response = authController.register(userWithNullPassword);
@@ -212,6 +216,10 @@ class AuthControllerTest {
             when(request.getHeader("X-Forwarded-For")).thenReturn(null);  // No X-Forwarded-For header
             when(request.getHeader("X-Client-Type")).thenReturn(null);     // Web client (not mobile)
             when(request.getRemoteAddr()).thenReturn("192.168.1.1");
+            
+            // Mock cookie service for web client
+            ResponseCookie mockCookie = ResponseCookie.from("refresh_token", "refresh-token").build();
+            when(cookieService.createRefreshTokenCookie("refresh-token")).thenReturn(mockCookie);
 
             // Act
             ResponseEntity<Map<String, Object>> response = authController.login(loginRequest, request, mockResponse);
@@ -238,6 +246,7 @@ class AuthControllerTest {
             // Arrange
             when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.empty());
 
+
             // Act
             ResponseEntity<Map<String, Object>> response = authController.login(loginRequest, request, mockResponse);
 
@@ -258,6 +267,7 @@ class AuthControllerTest {
             User userWithoutPassword = new User("+1234567890", "testuser", "Test User", null);
             when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.of(userWithoutPassword));
 
+
             // Act
             ResponseEntity<Map<String, Object>> response = authController.login(loginRequest, request, mockResponse);
 
@@ -275,6 +285,7 @@ class AuthControllerTest {
             // Arrange
             when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.of(existingUser));
             when(passwordService.matches("password123", "hashedpassword")).thenReturn(false);
+
 
             // Act
             ResponseEntity<Map<String, Object>> response = authController.login(loginRequest, request, mockResponse);
@@ -294,6 +305,7 @@ class AuthControllerTest {
             loginRequest.setPhoneNumber("");
             when(userRepository.findByPhoneNumber("")).thenReturn(Optional.empty());
 
+
             // Act
             ResponseEntity<Map<String, Object>> response = authController.login(loginRequest, request, mockResponse);
 
@@ -309,6 +321,7 @@ class AuthControllerTest {
             loginRequest.setPassword(null);
             when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.of(existingUser));
             when(passwordService.matches(null, "hashedpassword")).thenReturn(false);
+
 
             // Act
             ResponseEntity<Map<String, Object>> response = authController.login(loginRequest, request, mockResponse);
@@ -329,6 +342,7 @@ class AuthControllerTest {
             // Arrange
             LoginRequest request = new LoginRequest();
             
+
             // Act
             request.setPhoneNumber("+1234567890");
             
@@ -342,6 +356,7 @@ class AuthControllerTest {
             // Arrange
             LoginRequest request = new LoginRequest();
             
+
             // Act
             request.setPassword("testpassword");
             
@@ -355,6 +370,7 @@ class AuthControllerTest {
             // Arrange
             LoginRequest request = new LoginRequest();
             
+
             // Act & Assert
             assertNull(request.getPhoneNumber());
             assertNull(request.getPassword());

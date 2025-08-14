@@ -38,20 +38,19 @@ class RefreshTokenTest {
     void constructor_ShouldSetExpiryDate30DaysFromNow() {
         // Given
         String userId = "user-123";
-        Instant beforeCreation = Instant.now();
+        Instant beforeCreation = Instant.now().truncatedTo(ChronoUnit.SECONDS);
         
         // When
         RefreshToken token = new RefreshToken(userId, "hash", "secHash", "device", "ip");
         
         // Then
-        Instant afterCreation = Instant.now();
+        Instant afterCreation = Instant.now().truncatedTo(ChronoUnit.SECONDS);
         Instant expectedMinExpiry = beforeCreation.plus(30, ChronoUnit.DAYS);
         Instant expectedMaxExpiry = afterCreation.plus(30, ChronoUnit.DAYS);
         
         Instant actualExpiry = Instant.ofEpochSecond(token.getExpiryDate());
         assertThat(actualExpiry).isBetween(expectedMinExpiry, expectedMaxExpiry);
     }
-    
     @Test
     void isExpired_WithFutureExpiryDate_ShouldReturnFalse() {
         // Given
