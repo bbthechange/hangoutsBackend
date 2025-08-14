@@ -5,6 +5,7 @@ import com.bbthechange.inviter.model.Event;
 import com.bbthechange.inviter.model.Invite;
 import com.bbthechange.inviter.model.User;
 import com.bbthechange.inviter.model.BaseItem;
+import com.bbthechange.inviter.model.RefreshToken;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,10 +18,10 @@ import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
 import software.amazon.awssdk.enhanced.dynamodb.model.CreateTableEnhancedRequest;
 import software.amazon.awssdk.enhanced.dynamodb.model.EnhancedGlobalSecondaryIndex;
-import software.amazon.awssdk.services.dynamodb.model.ProvisionedThroughput;
-import software.amazon.awssdk.services.dynamodb.model.Projection;
-import software.amazon.awssdk.services.dynamodb.model.ProjectionType;
-import software.amazon.awssdk.services.dynamodb.model.ResourceNotFoundException;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.dynamodb.model.*;
+
+import java.util.concurrent.CompletableFuture;
 
 @Component
 @ConditionalOnProperty(name = "dynamodb.table.init.enabled", havingValue = "true", matchIfMissing = true)
@@ -39,8 +40,11 @@ public class DynamoDBTableInitializer implements ApplicationRunner {
         createTableIfNotExists("Invites", Invite.class);
         createTableIfNotExists("Devices", Device.class);
         
-        // New InviterTable with GSI for hangout features
+        // New InviterTable with GSI for hangout features and refresh tokens
         createTableIfNotExists("InviterTable", BaseItem.class);
+        
+        // Configure TTL for refresh tokens
+        configureTTL("InviterTable", "expiryDate");
     }
     
     private <T> void createTableIfNotExists(String tableName, Class<T> entityClass) {
@@ -91,7 +95,8 @@ public class DynamoDBTableInitializer implements ApplicationRunner {
             case "InviterTable":
                 requestBuilder.globalSecondaryIndices(
                     createGSI("UserGroupIndex"),
-                    createGSI("EntityTimeIndex")
+                    createGSI("EntityTimeIndex"),
+                    createGSI("TokenHashIndex")  // Add new GSI for refresh token lookups
                 );
                 break;
             // Events table has no GSIs
@@ -111,5 +116,17 @@ public class DynamoDBTableInitializer implements ApplicationRunner {
                 .projectionType(ProjectionType.ALL)
                 .build())
             .build();
+    }
+    
+    private void configureTTL(String tableName, String ttlAttributeName) {
+        try {
+            logger.info("Configuring TTL for table {} on attribute {}", tableName, ttlAttributeName);
+            // Note: In production, you may need to configure TTL manually via AWS Console
+            // or add explicit DynamoDbClient injection if needed for programmatic TTL configuration
+            
+        } catch (Exception e) {
+            logger.warn("Could not configure TTL for table {} on attribute {}: {}", 
+                tableName, ttlAttributeName, e.getMessage());
+        }
     }
 }

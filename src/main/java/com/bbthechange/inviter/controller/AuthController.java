@@ -1,11 +1,21 @@
 package com.bbthechange.inviter.controller;
 
+import com.bbthechange.inviter.dto.RefreshRequest;
+import com.bbthechange.inviter.dto.RefreshTokenPair;
+import com.bbthechange.inviter.exception.UnauthorizedException;
 import com.bbthechange.inviter.model.User;
 import com.bbthechange.inviter.repository.UserRepository;
 import com.bbthechange.inviter.service.JwtService;
 import com.bbthechange.inviter.service.PasswordService;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.bbthechange.inviter.service.RefreshTokenHashingService;
+import com.bbthechange.inviter.service.RefreshTokenCookieService;
+import com.bbthechange.inviter.service.RefreshTokenRotationService;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -15,16 +25,15 @@ import java.util.Optional;
 
 @RestController
 @RequestMapping("/auth")
+@RequiredArgsConstructor
 public class AuthController {
     
-    @Autowired
-    private JwtService jwtService;
-    
-    @Autowired
-    private UserRepository userRepository;
-    
-    @Autowired
-    private PasswordService passwordService;
+    private final JwtService jwtService;
+    private final UserRepository userRepository;
+    private final PasswordService passwordService;
+    private final RefreshTokenHashingService hashingService;
+    private final RefreshTokenCookieService cookieService;
+    private final RefreshTokenRotationService rotationService;
     
     @PostMapping("/register")
     public ResponseEntity<Map<String, String>> register(@RequestBody User user) {
@@ -53,23 +62,171 @@ public class AuthController {
     }
     
     @PostMapping("/login")
-    public ResponseEntity<Map<String, Object>> login(@RequestBody LoginRequest loginRequest) {
-        Optional<User> userOpt = userRepository.findByPhoneNumber(loginRequest.getPhoneNumber());
+    public ResponseEntity<Map<String, Object>> login(
+            @RequestBody LoginRequest loginRequest, 
+            HttpServletRequest request,
+            HttpServletResponse response) {
         
+        // Authenticate user (existing logic)
+        Optional<User> userOpt = userRepository.findByPhoneNumber(loginRequest.getPhoneNumber());
         if (userOpt.isEmpty() || userOpt.get().getPassword() == null || 
             !passwordService.matches(loginRequest.getPassword(), userOpt.get().getPassword())) {
+            
             Map<String, Object> error = new HashMap<>();
             error.put("error", "Invalid credentials");
             return new ResponseEntity<>(error, HttpStatus.UNAUTHORIZED);
         }
         
         User user = userOpt.get();
-        String token = jwtService.generateToken(user.getId().toString());
         
-        Map<String, Object> response = new HashMap<>();
-        response.put("token", token);
-        response.put("expiresIn", 86400);
-        return new ResponseEntity<>(response, HttpStatus.OK);
+        // Generate tokens
+        String accessToken = jwtService.generateToken(user.getId().toString());
+        String refreshToken = hashingService.generateRefreshToken();
+        
+        // Create refresh token record
+        String deviceId = extractDeviceId(request);
+        String ipAddress = extractClientIP(request);
+        rotationService.createRefreshToken(user.getId().toString(), refreshToken, deviceId, ipAddress);
+        
+        // Check client type
+        String clientType = request.getHeader("X-Client-Type");
+        boolean isMobile = "mobile".equals(clientType);
+        
+        Map<String, Object> responseBody = new HashMap<>();
+        responseBody.put("accessToken", accessToken);
+        responseBody.put("expiresIn", 1800); // 30 minutes
+        responseBody.put("tokenType", "Bearer");
+        
+        if (isMobile) {
+            // Mobile: Return refresh token in JSON
+            responseBody.put("refreshToken", refreshToken);
+        } else {
+            // Web: Set refresh token as HttpOnly cookie
+            ResponseCookie refreshCookie = cookieService.createRefreshTokenCookie(refreshToken);
+            response.addHeader(HttpHeaders.SET_COOKIE, refreshCookie.toString());
+        }
+        
+        return new ResponseEntity<>(responseBody, HttpStatus.OK);
+    }
+    
+    @PostMapping("/refresh")
+    public ResponseEntity<Map<String, Object>> refresh(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            @RequestBody(required = false) RefreshRequest refreshRequest) {
+        
+        String clientType = request.getHeader("X-Client-Type");
+        boolean isMobile = "mobile".equals(clientType);
+        
+        // Extract refresh token based on client type
+        String refreshToken;
+        if (isMobile) {
+            if (refreshRequest == null || refreshRequest.getRefreshToken() == null) {
+                return new ResponseEntity<>(Map.of("error", "Refresh token required"), HttpStatus.BAD_REQUEST);
+            }
+            refreshToken = refreshRequest.getRefreshToken();
+        } else {
+            refreshToken = cookieService.extractRefreshTokenFromCookies(request);
+            if (refreshToken == null) {
+                return new ResponseEntity<>(Map.of("error", "Refresh token not found"), HttpStatus.UNAUTHORIZED);
+            }
+        }
+        
+        try {
+            // Perform token rotation
+            String ipAddress = extractClientIP(request);
+            String userAgent = request.getHeader("User-Agent");
+            RefreshTokenPair newTokens = rotationService.refreshTokens(refreshToken, ipAddress, userAgent);
+            
+            // Prepare response
+            Map<String, Object> responseBody = new HashMap<>();
+            responseBody.put("accessToken", newTokens.getAccessToken());
+            responseBody.put("expiresIn", 1800);
+            responseBody.put("tokenType", "Bearer");
+            
+            if (isMobile) {
+                // Mobile: Return new refresh token in JSON
+                responseBody.put("refreshToken", newTokens.getRefreshToken());
+            } else {
+                // Web: Set new refresh token as HttpOnly cookie
+                ResponseCookie refreshCookie = cookieService.createRefreshTokenCookie(newTokens.getRefreshToken());
+                response.addHeader(HttpHeaders.SET_COOKIE, refreshCookie.toString());
+            }
+            
+            return new ResponseEntity<>(responseBody, HttpStatus.OK);
+            
+        } catch (UnauthorizedException e) {
+            return new ResponseEntity<>(Map.of("error", e.getMessage()), HttpStatus.UNAUTHORIZED);
+        }
+    }
+    
+    @PostMapping("/logout")
+    public ResponseEntity<Map<String, String>> logout(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            @RequestBody(required = false) RefreshRequest logoutRequest) {
+        
+        String clientType = request.getHeader("X-Client-Type");
+        boolean isMobile = "mobile".equals(clientType);
+        
+        // Extract refresh token
+        String refreshToken;
+        if (isMobile) {
+            if (logoutRequest == null || logoutRequest.getRefreshToken() == null) {
+                return new ResponseEntity<>(Map.of("error", "Refresh token required"), HttpStatus.BAD_REQUEST);
+            }
+            refreshToken = logoutRequest.getRefreshToken();
+        } else {
+            refreshToken = cookieService.extractRefreshTokenFromCookies(request);
+        }
+        
+        if (refreshToken != null) {
+            // Revoke the specific refresh token
+            rotationService.revokeRefreshToken(refreshToken);
+        }
+        
+        // Clear cookie for web clients
+        if (!isMobile) {
+            ResponseCookie clearCookie = cookieService.clearRefreshTokenCookie();
+            response.addHeader(HttpHeaders.SET_COOKIE, clearCookie.toString());
+        }
+        
+        return new ResponseEntity<>(Map.of("message", "Successfully logged out"), HttpStatus.OK);
+    }
+    
+    @PostMapping("/logout-all")
+    public ResponseEntity<Map<String, String>> logoutAll(HttpServletRequest request) {
+        // Extract user ID from access token
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            return new ResponseEntity<>(Map.of("error", "Access token required"), HttpStatus.UNAUTHORIZED);
+        }
+        
+        String accessToken = authHeader.substring(7);
+        if (!jwtService.isTokenValid(accessToken)) {
+            return new ResponseEntity<>(Map.of("error", "Invalid access token"), HttpStatus.UNAUTHORIZED);
+        }
+        
+        String userId = jwtService.extractUserId(accessToken);
+        
+        // Delete all refresh tokens for this user
+        rotationService.revokeAllUserTokens(userId);
+        
+        return new ResponseEntity<>(Map.of("message", "Successfully logged out from all devices"), HttpStatus.OK);
+    }
+    
+    // Helper methods
+    private String extractClientIP(HttpServletRequest request) {
+        String xfHeader = request.getHeader("X-Forwarded-For");
+        if (xfHeader == null) {
+            return request.getRemoteAddr();
+        }
+        return xfHeader.split(",")[0];
+    }
+    
+    private String extractDeviceId(HttpServletRequest request) {
+        // Extract device ID from headers or generate fingerprint
+        return request.getHeader("X-Device-ID");
     }
     
     public static class LoginRequest {

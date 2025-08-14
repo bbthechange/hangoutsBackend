@@ -29,6 +29,11 @@ public class UserRepository {
         userTable.putItem(user);
         return user;
     }
+
+    public Optional<User> findById(String id) {
+        User user = userTable.getItem(Key.builder().partitionValue(id).build());
+        return Optional.ofNullable(user);
+    }
     
     public Optional<User> findById(UUID id) {
         User user = userTable.getItem(Key.builder().partitionValue(id.toString()).build());

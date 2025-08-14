@@ -53,8 +53,14 @@ public class SecurityConfig {
             "http://inviter-webapp-staging-575960429871.s3-website.us-west-2.amazonaws.com" // Staging webapp S3 website
         ));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(Arrays.asList("Content-Type", "Authorization", "X-Requested-With"));
-        configuration.setAllowCredentials(true);
+        configuration.setAllowedHeaders(Arrays.asList(
+            "Content-Type", 
+            "Authorization", 
+            "X-Requested-With",
+            "X-Client-Type"           // Add client type header
+        ));
+        configuration.setAllowCredentials(true);  // Required for HttpOnly cookies
+        configuration.setMaxAge(3600L);           // Cache preflight for 1 hour
         
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
