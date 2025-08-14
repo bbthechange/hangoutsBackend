@@ -11,7 +11,6 @@ import java.util.UUID;
 
 @Data
 @EqualsAndHashCode(callSuper = true)
-@NoArgsConstructor
 @DynamoDbBean
 public class RefreshToken extends BaseItem {
     
@@ -22,6 +21,11 @@ public class RefreshToken extends BaseItem {
     private Long expiryDate;          // Unix timestamp (30 days from creation) - also serves as TTL
     private String deviceId;          // Optional: for device binding
     private String ipAddress;         // Optional: IP binding for extra security
+    
+    public RefreshToken() {
+        super();
+        this.setItemType("REFRESH_TOKEN");
+    }
     
     public RefreshToken(String userId, String tokenHash, String securityHash, String deviceId, String ipAddress) {
         super();
@@ -54,6 +58,6 @@ public class RefreshToken extends BaseItem {
      * Check if the refresh token is expired
      */
     public boolean isExpired() {
-        return expiryDate < Instant.now().getEpochSecond();
+        return expiryDate <= Instant.now().getEpochSecond();
     }
 }

@@ -3,7 +3,9 @@ package com.bbthechange.inviter.controller;
 import com.bbthechange.inviter.dto.RefreshRequest;
 import com.bbthechange.inviter.dto.RefreshTokenPair;
 import com.bbthechange.inviter.exception.UnauthorizedException;
+import com.bbthechange.inviter.model.RefreshToken;
 import com.bbthechange.inviter.model.User;
+import com.bbthechange.inviter.repository.RefreshTokenRepository;
 import com.bbthechange.inviter.repository.UserRepository;
 import com.bbthechange.inviter.service.JwtService;
 import com.bbthechange.inviter.service.PasswordService;
@@ -34,6 +36,7 @@ public class AuthController {
     private final RefreshTokenHashingService hashingService;
     private final RefreshTokenCookieService cookieService;
     private final RefreshTokenRotationService rotationService;
+    private final RefreshTokenRepository refreshTokenRepository;
     
     @PostMapping("/register")
     public ResponseEntity<Map<String, String>> register(@RequestBody User user) {
@@ -86,7 +89,20 @@ public class AuthController {
         // Create refresh token record
         String deviceId = extractDeviceId(request);
         String ipAddress = extractClientIP(request);
-        rotationService.createRefreshToken(user.getId().toString(), refreshToken, deviceId, ipAddress);
+        
+        // Generate hashes for the refresh token
+        String tokenHash = hashingService.generateLookupHash(refreshToken);
+        String securityHash = hashingService.generateSecurityHash(refreshToken);
+        
+        // Create and save refresh token
+        RefreshToken refreshTokenRecord = new RefreshToken(
+            user.getId().toString(), 
+            tokenHash, 
+            securityHash, 
+            deviceId, 
+            ipAddress
+        );
+        refreshTokenRepository.save(refreshTokenRecord);
         
         // Check client type
         String clientType = request.getHeader("X-Client-Type");

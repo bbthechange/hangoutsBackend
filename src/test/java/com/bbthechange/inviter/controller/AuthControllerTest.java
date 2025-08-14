@@ -1,10 +1,17 @@
 package com.bbthechange.inviter.controller;
 
 import com.bbthechange.inviter.controller.AuthController.LoginRequest;
+import com.bbthechange.inviter.model.RefreshToken;
 import com.bbthechange.inviter.model.User;
+import com.bbthechange.inviter.repository.RefreshTokenRepository;
 import com.bbthechange.inviter.repository.UserRepository;
 import com.bbthechange.inviter.service.JwtService;
 import com.bbthechange.inviter.service.PasswordService;
+import com.bbthechange.inviter.service.RefreshTokenHashingService;
+import com.bbthechange.inviter.service.RefreshTokenCookieService;
+import com.bbthechange.inviter.service.RefreshTokenRotationService;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -45,7 +52,24 @@ class AuthControllerTest {
     @Mock
     private PasswordService passwordService;
 
-    @InjectMocks
+    @Mock
+    private RefreshTokenHashingService hashingService;
+
+    @Mock
+    private RefreshTokenCookieService cookieService;
+
+    @Mock
+    private RefreshTokenRotationService rotationService;
+
+    @Mock
+    private RefreshTokenRepository refreshTokenRepository;
+
+    @Mock
+    private HttpServletRequest request;
+
+    @Mock
+    private HttpServletResponse mockResponse;
+
     private AuthController authController;
 
     private User testUser;
@@ -55,6 +79,17 @@ class AuthControllerTest {
 
     @BeforeEach
     void setUp() {
+        // Manually create AuthController with mocked dependencies
+        authController = new AuthController(
+            jwtService,
+            userRepository,
+            passwordService,
+            hashingService,
+            cookieService,
+            rotationService,
+            refreshTokenRepository
+        );
+        
         testUserId = UUID.randomUUID();
         
         testUser = new User("+1234567890", "testuser", "Test User", "password123");
@@ -170,19 +205,31 @@ class AuthControllerTest {
             when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.of(existingUser));
             when(passwordService.matches("password123", "hashedpassword")).thenReturn(true);
             when(jwtService.generateToken(testUserId.toString())).thenReturn("jwt-token");
+            when(hashingService.generateRefreshToken()).thenReturn("refresh-token");
+            when(hashingService.generateLookupHash("refresh-token")).thenReturn("lookup-hash");
+            when(hashingService.generateSecurityHash("refresh-token")).thenReturn("security-hash");
+            when(request.getHeader("X-Device-ID")).thenReturn("device-123");
+            when(request.getHeader("X-Forwarded-For")).thenReturn(null);  // No X-Forwarded-For header
+            when(request.getHeader("X-Client-Type")).thenReturn(null);     // Web client (not mobile)
+            when(request.getRemoteAddr()).thenReturn("192.168.1.1");
 
             // Act
-            ResponseEntity<Map<String, Object>> response = authController.login(loginRequest);
+            ResponseEntity<Map<String, Object>> response = authController.login(loginRequest, request, mockResponse);
 
             // Assert
             assertEquals(HttpStatus.OK, response.getStatusCode());
             assertNotNull(response.getBody());
-            assertEquals("jwt-token", response.getBody().get("token"));
-            assertEquals(86400, response.getBody().get("expiresIn"));
+            assertEquals("jwt-token", response.getBody().get("accessToken"));
+            assertEquals(1800, response.getBody().get("expiresIn"));
+            assertEquals("Bearer", response.getBody().get("tokenType"));
             
             verify(userRepository).findByPhoneNumber("+1234567890");
             verify(passwordService).matches("password123", "hashedpassword");
             verify(jwtService).generateToken(testUserId.toString());
+            verify(hashingService).generateRefreshToken();
+            verify(hashingService).generateLookupHash("refresh-token");
+            verify(hashingService).generateSecurityHash("refresh-token");
+            verify(refreshTokenRepository).save(any(RefreshToken.class));
         }
 
         @Test
@@ -192,7 +239,7 @@ class AuthControllerTest {
             when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.empty());
 
             // Act
-            ResponseEntity<Map<String, Object>> response = authController.login(loginRequest);
+            ResponseEntity<Map<String, Object>> response = authController.login(loginRequest, request, mockResponse);
 
             // Assert
             assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
@@ -212,7 +259,7 @@ class AuthControllerTest {
             when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.of(userWithoutPassword));
 
             // Act
-            ResponseEntity<Map<String, Object>> response = authController.login(loginRequest);
+            ResponseEntity<Map<String, Object>> response = authController.login(loginRequest, request, mockResponse);
 
             // Assert
             assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
@@ -230,7 +277,7 @@ class AuthControllerTest {
             when(passwordService.matches("password123", "hashedpassword")).thenReturn(false);
 
             // Act
-            ResponseEntity<Map<String, Object>> response = authController.login(loginRequest);
+            ResponseEntity<Map<String, Object>> response = authController.login(loginRequest, request, mockResponse);
 
             // Assert
             assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
@@ -248,7 +295,7 @@ class AuthControllerTest {
             when(userRepository.findByPhoneNumber("")).thenReturn(Optional.empty());
 
             // Act
-            ResponseEntity<Map<String, Object>> response = authController.login(loginRequest);
+            ResponseEntity<Map<String, Object>> response = authController.login(loginRequest, request, mockResponse);
 
             // Assert
             assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
@@ -264,7 +311,7 @@ class AuthControllerTest {
             when(passwordService.matches(null, "hashedpassword")).thenReturn(false);
 
             // Act
-            ResponseEntity<Map<String, Object>> response = authController.login(loginRequest);
+            ResponseEntity<Map<String, Object>> response = authController.login(loginRequest, request, mockResponse);
 
             // Assert
             assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());

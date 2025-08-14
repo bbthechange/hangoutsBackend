@@ -30,7 +30,6 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("JwtService Tests")
 class JwtServiceTest {
 
-    @InjectMocks
     private JwtService jwtService;
 
     private static final String SECRET_KEY = "mySecretKeyForJWTTokenGenerationThatIsLongEnough123456789";
@@ -41,6 +40,19 @@ class JwtServiceTest {
 
     @BeforeEach
     void setUp() {
+        // Manually create and initialize JwtService for testing
+        jwtService = new JwtService();
+        // Use reflection to set the private secretKey field
+        try {
+            java.lang.reflect.Field secretKeyField = JwtService.class.getDeclaredField("secretKey");
+            secretKeyField.setAccessible(true);
+            secretKeyField.set(jwtService, SECRET_KEY);
+            // Call the init method to initialize the key
+            jwtService.init();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to initialize JwtService in test", e);
+        }
+        
         testUserId = "550e8400-e29b-41d4-a716-446655440000";
         // Generate a fresh token for each test
         validToken = jwtService.generateToken(testUserId);
