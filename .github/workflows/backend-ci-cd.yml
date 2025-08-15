@@ -9,7 +9,7 @@ name: Backend CI/CD (v4)
 on:
   # Triggers the workflow on push events to the "main" branch.
   push:
-    branches: [ "main" ]
+    branches: [ "main", "workflows" ]
   # Allows you to run this workflow manually from the Actions tab in GitHub.
   workflow_dispatch:
 
@@ -34,7 +34,7 @@ jobs:
         run: ./gradlew build
 
       - name: Prepare artifact for deployment
-        run: cp build/libs/*.jar application.jar
+        run: cp build/libs/inviter-0.0.1-SNAPSHOT.jar application.jar
 
       - name: Upload deployment package
         uses: actions/upload-artifact@v4
