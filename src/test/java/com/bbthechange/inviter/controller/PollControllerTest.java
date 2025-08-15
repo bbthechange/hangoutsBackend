@@ -101,7 +101,8 @@ class PollControllerTest {
         // When & Then
         mockMvc.perform(get("/hangouts/{hangoutId}/polls", hangoutId)
                 .header("Authorization", "Bearer " + validJWT)
-                .requestAttr("userId", userId))
+                .requestAttr("userId", userId)
+                .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2));
 
@@ -109,17 +110,23 @@ class PollControllerTest {
     }
 
     @Test
-    void getPollDetail_WithValidIds_ReturnsPollDetail() throws Exception {
+    void getPoll_WithValidIds_ReturnsSpecificPoll() throws Exception {
         // Given
         PollDetailDTO pollDetail = new PollDetailDTO();
-        when(pollService.getPollDetail(eq(hangoutId), eq(pollId), eq(userId)))
-                .thenReturn(pollDetail);
+        pollDetail.setPollId(pollId);
+        pollDetail.setTitle("Test Poll");
+        pollDetail.setDescription("Test Description");
+
+        when(pollService.getPollDetail(eq(hangoutId), eq(pollId), eq(userId))).thenReturn(pollDetail);
 
         // When & Then
         mockMvc.perform(get("/hangouts/{hangoutId}/polls/{pollId}", hangoutId, pollId)
                 .header("Authorization", "Bearer " + validJWT)
-                .requestAttr("userId", userId))
-                .andExpect(status().isOk());
+                .requestAttr("userId", userId)
+                .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.pollId").value(pollId))
+                .andExpect(jsonPath("$.title").value("Test Poll"));
 
         verify(pollService).getPollDetail(eq(hangoutId), eq(pollId), eq(userId));
     }
@@ -130,7 +137,6 @@ class PollControllerTest {
         String optionId = UUID.randomUUID().toString();
         VoteRequest request = new VoteRequest();
         request.setOptionId(optionId);
-        request.setVoteType("YES");
 
         Vote mockVote = new Vote(hangoutId, pollId, optionId, userId, "YES");
         when(pollService.voteOnPoll(eq(hangoutId), eq(pollId), any(VoteRequest.class), eq(userId)))
@@ -149,9 +155,40 @@ class PollControllerTest {
     }
 
     @Test
-    void addPollOption_AsHost_ReturnsCreatedOption() throws Exception {
+    void removeVote_WithValidIds_ReturnsNoContent() throws Exception {
         // Given
-        String optionId = UUID.randomUUID().toString();
+        String optionId = "option-123";
+        doNothing().when(pollService).removeVote(eq(hangoutId), eq(pollId), eq(optionId), eq(userId));
+
+        // When & Then
+        mockMvc.perform(delete("/hangouts/{hangoutId}/polls/{pollId}/vote", hangoutId, pollId)
+                .header("Authorization", "Bearer " + validJWT)
+                .requestAttr("userId", userId)
+                .param("optionId", optionId)
+                .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isNoContent());
+
+        verify(pollService).removeVote(eq(hangoutId), eq(pollId), eq(optionId), eq(userId));
+    }
+
+    @Test
+    void deletePoll_WithValidIds_ReturnsNoContent() throws Exception {
+        // Given
+        doNothing().when(pollService).deletePoll(eq(hangoutId), eq(pollId), eq(userId));
+
+        // When & Then
+        mockMvc.perform(delete("/hangouts/{hangoutId}/polls/{pollId}", hangoutId, pollId)
+                .header("Authorization", "Bearer " + validJWT)
+                .requestAttr("userId", userId)
+                .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isNoContent());
+
+        verify(pollService).deletePoll(eq(hangoutId), eq(pollId), eq(userId));
+    }
+
+    @Test
+    void addPollOption_WithValidRequest_ReturnsCreatedOption() throws Exception {
+        // Given
         AddPollOptionRequest request = new AddPollOptionRequest();
         request.setText("New Option");
 
@@ -172,47 +209,19 @@ class PollControllerTest {
     }
 
     @Test
-    void deletePollOption_AsHost_ReturnsNoContent() throws Exception {
+    void deletePollOption_WithValidIds_ReturnsNoContent() throws Exception {
         // Given
         String optionId = UUID.randomUUID().toString();
         doNothing().when(pollService).deletePollOption(eq(hangoutId), eq(pollId), eq(optionId), eq(userId));
 
         // When & Then
-        mockMvc.perform(delete("/hangouts/{hangoutId}/polls/{pollId}/options/{optionId}", 
-                hangoutId, pollId, optionId)
+        mockMvc.perform(delete("/hangouts/{hangoutId}/polls/{pollId}/options/{optionId}", hangoutId, pollId, optionId)
                 .header("Authorization", "Bearer " + validJWT)
-                .requestAttr("userId", userId))
+                .requestAttr("userId", userId)
+                .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isNoContent());
 
         verify(pollService).deletePollOption(eq(hangoutId), eq(pollId), eq(optionId), eq(userId));
-    }
-
-    @Test
-    void removeVote_WithValidRequest_ReturnsNoContent() throws Exception {
-        // Given
-        doNothing().when(pollService).removeVote(eq(hangoutId), eq(pollId), isNull(), eq(userId));
-
-        // When & Then
-        mockMvc.perform(delete("/hangouts/{hangoutId}/polls/{pollId}/vote", hangoutId, pollId)
-                .header("Authorization", "Bearer " + validJWT)
-                .requestAttr("userId", userId))
-                .andExpect(status().isNoContent());
-
-        verify(pollService).removeVote(eq(hangoutId), eq(pollId), isNull(), eq(userId));
-    }
-
-    @Test
-    void deletePoll_AsHost_ReturnsNoContent() throws Exception {
-        // Given
-        doNothing().when(pollService).deletePoll(eq(hangoutId), eq(pollId), eq(userId));
-
-        // When & Then
-        mockMvc.perform(delete("/hangouts/{hangoutId}/polls/{pollId}", hangoutId, pollId)
-                .header("Authorization", "Bearer " + validJWT)
-                .requestAttr("userId", userId))
-                .andExpect(status().isNoContent());
-
-        verify(pollService).deletePoll(eq(hangoutId), eq(pollId), eq(userId));
     }
 }
 

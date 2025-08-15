@@ -3,6 +3,8 @@ package com.bbthechange.inviter.controller;
 import com.bbthechange.inviter.service.CarpoolService;
 import com.bbthechange.inviter.service.JwtService;
 import com.bbthechange.inviter.dto.*;
+import com.bbthechange.inviter.model.Car;
+import com.bbthechange.inviter.model.CarRider;
 import com.bbthechange.inviter.model.NeedsRide;
 import com.bbthechange.inviter.exception.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -375,5 +377,149 @@ class CarpoolControllerTest {
 
         // Service should not be called due to validation failure
         verify(carpoolService, never()).deleteNeedsRideRequest(any(), any());
+    }
+
+    // ============================================================================
+    // CAR OFFER ENDPOINT TESTS
+    // ============================================================================
+
+    @Test
+    void offerCar_WithValidRequest_ReturnsCreatedCar() throws Exception {
+        // Given
+        OfferCarRequest request = new OfferCarRequest();
+        request.setTotalCapacity(4);
+        request.setNotes("Comfortable sedan");
+
+        Car mockCar = new Car(eventId, userId, "Test Driver", 4);
+        mockCar.setNotes("Comfortable sedan");
+        when(carpoolService.offerCar(eq(eventId), any(OfferCarRequest.class), eq(userId)))
+                .thenReturn(mockCar);
+
+        // When & Then
+        mockMvc.perform(post("/events/{eventId}/carpool/cars", eventId)
+                .header("Authorization", "Bearer " + validJWT)
+                .requestAttr("userId", userId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.driverId").value(userId))
+                .andExpect(jsonPath("$.totalCapacity").value(4));
+
+        verify(carpoolService).offerCar(eq(eventId), any(OfferCarRequest.class), eq(userId));
+    }
+
+    @Test
+    void getEventCars_WithValidEventId_ReturnsListOfCars() throws Exception {
+        // Given
+        CarWithRidersDTO car1 = new CarWithRidersDTO();
+        CarWithRidersDTO car2 = new CarWithRidersDTO();
+        List<CarWithRidersDTO> cars = Arrays.asList(car1, car2);
+
+        when(carpoolService.getEventCars(eq(eventId), eq(userId))).thenReturn(cars);
+
+        // When & Then
+        mockMvc.perform(get("/events/{eventId}/carpool/cars", eventId)
+                .header("Authorization", "Bearer " + validJWT)
+                .requestAttr("userId", userId)
+                .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2));
+
+        verify(carpoolService).getEventCars(eq(eventId), eq(userId));
+    }
+
+    @Test
+    void reserveSeat_WithValidRequest_ReturnsCarRider() throws Exception {
+        // Given
+        String driverId = UUID.randomUUID().toString();
+        CarRider mockRider = new CarRider(eventId, driverId, userId, "Test Rider");
+        when(carpoolService.reserveSeat(eq(eventId), eq(driverId), eq(userId)))
+                .thenReturn(mockRider);
+
+        // When & Then
+        mockMvc.perform(post("/events/{eventId}/carpool/cars/{driverId}/reserve", eventId, driverId)
+                .header("Authorization", "Bearer " + validJWT)
+                .requestAttr("userId", userId)
+                .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.riderId").value(userId));
+
+        verify(carpoolService).reserveSeat(eq(eventId), eq(driverId), eq(userId));
+    }
+
+    @Test
+    void releaseSeat_WithValidRequest_ReturnsNoContent() throws Exception {
+        // Given
+        String driverId = UUID.randomUUID().toString();
+        doNothing().when(carpoolService).releaseSeat(eq(eventId), eq(driverId), eq(userId));
+
+        // When & Then
+        mockMvc.perform(delete("/events/{eventId}/carpool/cars/{driverId}/reserve", eventId, driverId)
+                .header("Authorization", "Bearer " + validJWT)
+                .requestAttr("userId", userId)
+                .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isNoContent());
+
+        verify(carpoolService).releaseSeat(eq(eventId), eq(driverId), eq(userId));
+    }
+
+    @Test
+    void getCarDetail_WithValidIds_ReturnsCarDetail() throws Exception {
+        // Given
+        String driverId = UUID.randomUUID().toString();
+        CarDetailDTO mockDetail = new CarDetailDTO();
+        when(carpoolService.getCarDetail(eq(eventId), eq(driverId), eq(userId)))
+                .thenReturn(mockDetail);
+
+        // When & Then
+        mockMvc.perform(get("/events/{eventId}/carpool/cars/{driverId}", eventId, driverId)
+                .header("Authorization", "Bearer " + validJWT)
+                .requestAttr("userId", userId)
+                .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk());
+
+        verify(carpoolService).getCarDetail(eq(eventId), eq(driverId), eq(userId));
+    }
+
+    @Test
+    void updateCarOffer_WithValidRequest_ReturnsUpdatedCar() throws Exception {
+        // Given
+        String driverId = UUID.randomUUID().toString();
+        UpdateCarRequest request = new UpdateCarRequest();
+        request.setTotalCapacity(4);
+        request.setNotes("Updated notes");
+
+        Car mockCar = new Car(eventId, driverId, "Test Driver", 4);
+        mockCar.setAvailableSeats(2);
+        mockCar.setNotes("Updated notes");
+        when(carpoolService.updateCarOffer(eq(eventId), eq(driverId), any(UpdateCarRequest.class), eq(userId)))
+                .thenReturn(mockCar);
+
+        // When & Then
+        mockMvc.perform(put("/events/{eventId}/carpool/cars/{driverId}", eventId, driverId)
+                .header("Authorization", "Bearer " + validJWT)
+                .requestAttr("userId", userId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.availableSeats").value(2));
+
+        verify(carpoolService).updateCarOffer(eq(eventId), eq(driverId), any(UpdateCarRequest.class), eq(userId));
+    }
+
+    @Test
+    void cancelCarOffer_WithValidRequest_ReturnsNoContent() throws Exception {
+        // Given
+        String driverId = UUID.randomUUID().toString();
+        doNothing().when(carpoolService).cancelCarOffer(eq(eventId), eq(driverId), eq(userId));
+
+        // When & Then
+        mockMvc.perform(delete("/events/{eventId}/carpool/cars/{driverId}", eventId, driverId)
+                .header("Authorization", "Bearer " + validJWT)
+                .requestAttr("userId", userId)
+                .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isNoContent());
+
+        verify(carpoolService).cancelCarOffer(eq(eventId), eq(driverId), eq(userId));
     }
 }
