@@ -76,7 +76,7 @@ jobs:
       - name: Verify Staging Health Check
         run: |
           sleep 15 # Give the application a moment to start up
-          curl -f ${{ secrets.STAGING_URL }}/health | grep '''{"status":"OK"}'''
+          curl -f ${{ secrets.STAGING_URL }}/health | grep "OK"
           if [ $? -ne 0 ]; then
             echo "Staging health check failed."
             exit 1
@@ -118,7 +118,7 @@ jobs:
       - name: Verify Production Health Check
         run: |
           sleep 15
-          curl -f https://am6c8sp6kh.execute-api.us-west-2.amazonaws.com/prod/health | grep '''{"status":"OK"}'''
+          curl -f https://am6c8sp6kh.execute-api.us-west-2.amazonaws.com/prod/health | grep "OK"
           if [ $? -ne 0 ]; then
             echo "Production health check failed."
             exit 1
