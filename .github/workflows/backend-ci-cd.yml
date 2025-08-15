@@ -1,15 +1,15 @@
 # GitHub Actions CI/CD workflow for the Inviter Backend
-# Version 4: Corrected and simplified workflow.
+# Version 6: Explicitly create deployment zip package.
 #
 # This pipeline automates the building, testing, and deployment of the application
 # to staging and production environments on AWS Elastic Beanstalk.
 #
-name: Backend CI/CD (v4)
+name: Backend CI/CD (v6)
 
 on:
   # Triggers the workflow on push events to the "main" branch.
   push:
-    branches: [ "main" ]
+    branches: [ "main", "workflows" ]
   # Allows you to run this workflow manually from the Actions tab in GitHub.
   workflow_dispatch:
 
@@ -34,13 +34,12 @@ jobs:
         run: ./gradlew build
 
       - name: Prepare artifact for deployment
-        run: cp build/libs/*.jar application.jar
+        run: cp build/libs/inviter-0.0.1-SNAPSHOT.jar application.jar
 
       - name: Upload deployment package
         uses: actions/upload-artifact@v4
         with:
           name: deployment-package
-          # Upload the entire repository as it contains all necessary files.
           path: .
 
   # =====================================================================================
@@ -59,31 +58,45 @@ jobs:
           name: deployment-package
           path: .
 
-      - name: Configure AWS Credentials for Staging
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Create deployment zip
+        run: zip -r deployment.zip . -x ".git/*" ".github/*"
 
       - name: Deploy to Elastic Beanstalk Staging
         uses: einaregilsson/beanstalk-deploy@v21
         with:
+          aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           application_name: ${{ secrets.EB_APP_NAME_STAGING }}
           environment_name: ${{ secrets.EB_ENV_NAME_STAGING }}
           version_label: "v${{ github.run_number }}-${{ github.sha }}"
           region: ${{ secrets.AWS_REGION }}
+          deployment_package: deployment.zip
           wait_for_environment_recovery: 60
 
       - name: Verify Staging Health Check
         run: |
-          sleep 15 # Give the application a moment to start up
-          curl -f ${{ secrets.STAGING_URL }}/health | grep '''{"status":"UP"}'''
-          if [ $? -ne 0 ]; then
-            echo "Staging health check failed."
-            exit 1
-          fi
-          echo "Staging health check passed."
+          echo "Waiting for application to start..."
+          sleep 30 # Give the application more time to start up
+          
+          # Retry health check up to 3 times
+          for i in {1..3}; do
+            echo "Health check attempt $i..."
+            RESPONSE=$(curl -f -s ${{ secrets.STAGING_URL }}/health || echo "FAILED")
+            echo "Response: $RESPONSE"
+            
+            if [ "$RESPONSE" = "OK" ]; then
+              echo "Staging health check passed!"
+              exit 0
+            fi
+            
+            if [ $i -lt 3 ]; then
+              echo "Health check failed, retrying in 10 seconds..."
+              sleep 10
+            fi
+          done
+          
+          echo "Staging health check failed after 3 attempts."
+          exit 1
 
   # =====================================================================================
   # DEPLOY-PRODUCTION JOB: Deploys the application to the production environment.
@@ -92,10 +105,8 @@ jobs:
     name: Deploy to Production
     needs: deploy-staging
     runs-on: ubuntu-latest
-    # Require manual approval to deploy to production
     environment:
       name: production
-    # Only run this job on pushes to the main branch.
     if: github.ref == 'refs/heads/main'
     steps:
       - name: Download deployment package
@@ -103,6 +114,9 @@ jobs:
         with:
           name: deployment-package
           path: .
+
+      - name: Create deployment zip
+        run: zip -r deployment.zip . -x ".git/*" ".github/*"
 
       - name: Deploy to Elastic Beanstalk Production
         uses: einaregilsson/beanstalk-deploy@v21
@@ -113,14 +127,30 @@ jobs:
           environment_name: ${{ secrets.EB_ENV_NAME_PROD }}
           version_label: "v${{ github.run_number }}-${{ github.sha }}"
           region: ${{ secrets.AWS_REGION }}
+          deployment_package: deployment.zip
           wait_for_environment_recovery: 60
 
       - name: Verify Production Health Check
         run: |
-          sleep 15
-          curl -f https://am6c8sp6kh.execute-api.us-west-2.amazonaws.com/prod/health | grep '''{"status":"UP"}'''
-          if [ $? -ne 0 ]; then
-            echo "Production health check failed."
-            exit 1
-          fi
-          echo "Production health check passed."
+          echo "Waiting for application to start..."
+          sleep 30 # Give the application more time to start up
+          
+          # Retry health check up to 3 times
+          for i in {1..3}; do
+            echo "Health check attempt $i..."
+            RESPONSE=$(curl -f -s https://am6c8sp6kh.execute-api.us-west-2.amazonaws.com/prod/health || echo "FAILED")
+            echo "Response: $RESPONSE"
+            
+            if [ "$RESPONSE" = "OK" ]; then
+              echo "Production health check passed!"
+              exit 0
+            fi
+            
+            if [ $i -lt 3 ]; then
+              echo "Health check failed, retrying in 10 seconds..."
+              sleep 10
+            fi
+          done
+          
+          echo "Production health check failed after 3 attempts."
+          exit 1
