@@ -1,10 +1,10 @@
 # GitHub Actions CI/CD workflow for the Inviter Backend
-# Version 3: Aligned secret names with GitHub Environments best practices.
+# Version 4: Corrected and simplified workflow.
 #
 # This pipeline automates the building, testing, and deployment of the application
 # to staging and production environments on AWS Elastic Beanstalk.
 #
-name: Backend CI/CD (v3)
+name: Backend CI/CD (v4)
 
 on:
   # Triggers the workflow on push events to the "main" branch.
@@ -24,25 +24,20 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
-      - name: List files in workspace
-        run: ls -R
-
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           java-version: '21'
           distribution: 'temurin'
 
-      
-
       - name: Build with Gradle
-        working-directory: ./inviter
         run: ./gradlew build
 
       - name: Upload deployment package
         uses: actions/upload-artifact@v4
         with:
           name: deployment-package
+          # Upload the entire repository as it contains all necessary files.
           path: .
 
   # =====================================================================================
