@@ -1,10 +1,10 @@
 # GitHub Actions CI/CD workflow for the Inviter Backend
-# Version 5: Added secret debugging and fixed inconsistent deploy steps.
+# Version 6: Explicitly create deployment zip package.
 #
 # This pipeline automates the building, testing, and deployment of the application
 # to staging and production environments on AWS Elastic Beanstalk.
 #
-name: Backend CI/CD (v5)
+name: Backend CI/CD (v6)
 
 on:
   # Triggers the workflow on push events to the "main" branch.
@@ -58,18 +58,8 @@ jobs:
           name: deployment-package
           path: .
 
-      - name: Check for secrets
-        run: |
-          if [ -z "${{ secrets.AWS_ACCESS_KEY_ID }}" ]; then
-            echo "AWS_ACCESS_KEY_ID is NOT set"
-          else
-            echo "AWS_ACCESS_KEY_ID is set"
-          fi
-          if [ -z "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ]; then
-            echo "AWS_SECRET_ACCESS_KEY is NOT set"
-          else
-            echo "AWS_SECRET_ACCESS_KEY is set"
-          fi
+      - name: Create deployment zip
+        run: zip -r deployment.zip . -x ".git/*" ".github/*"
 
       - name: Deploy to Elastic Beanstalk Staging
         uses: einaregilsson/beanstalk-deploy@v21
@@ -80,6 +70,7 @@ jobs:
           environment_name: ${{ secrets.EB_ENV_NAME_STAGING }}
           version_label: "v${{ github.run_number }}-${{ github.sha }}"
           region: ${{ secrets.AWS_REGION }}
+          deployment_package: deployment.zip
           wait_for_environment_recovery: 60
 
       - name: Verify Staging Health Check
@@ -109,6 +100,9 @@ jobs:
           name: deployment-package
           path: .
 
+      - name: Create deployment zip
+        run: zip -r deployment.zip . -x ".git/*" ".github/*"
+
       - name: Deploy to Elastic Beanstalk Production
         uses: einaregilsson/beanstalk-deploy@v21
         with:
@@ -118,6 +112,7 @@ jobs:
           environment_name: ${{ secrets.EB_ENV_NAME_PROD }}
           version_label: "v${{ github.run_number }}-${{ github.sha }}"
           region: ${{ secrets.AWS_REGION }}
+          deployment_package: deployment.zip
           wait_for_environment_recovery: 60
 
       - name: Verify Production Health Check
