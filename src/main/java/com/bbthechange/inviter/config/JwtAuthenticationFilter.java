@@ -45,13 +45,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 SecurityContextHolder.getContext().setAuthentication(authentication);
                 
                 request.setAttribute("userId", userId);
-            } else {
-                // Token is present but invalid/expired - return 401 Unauthorized
-                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                response.setContentType("application/json");
-                response.getWriter().write("{\"error\":\"Token expired or invalid\",\"code\":\"TOKEN_EXPIRED\"}");
-                return;
             }
+            // If token is invalid, don't set authentication - let AuthenticationEntryPoint handle it
         }
         
         filterChain.doFilter(request, response);
