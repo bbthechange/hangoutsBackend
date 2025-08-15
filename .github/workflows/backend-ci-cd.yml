@@ -33,6 +33,9 @@ jobs:
       - name: Build with Gradle
         run: ./gradlew build
 
+      - name: Prepare artifact for deployment
+        run: cp build/libs/*.jar application.jar
+
       - name: Upload deployment package
         uses: actions/upload-artifact@v4
         with:
@@ -101,16 +104,11 @@ jobs:
           name: deployment-package
           path: .
 
-      - name: Configure AWS Credentials for Production
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
       - name: Deploy to Elastic Beanstalk Production
         uses: einaregilsson/beanstalk-deploy@v21
         with:
+          aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           application_name: ${{ secrets.EB_APP_NAME_PROD }}
           environment_name: ${{ secrets.EB_ENV_NAME_PROD }}
           version_label: "v${{ github.run_number }}-${{ github.sha }}"
