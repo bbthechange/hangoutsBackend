@@ -43,7 +43,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: deployment-package
-          path: ./inviter
+          path: .
 
   # =====================================================================================
   # DEPLOY-STAGING JOB: Deploys the application to the staging environment.
