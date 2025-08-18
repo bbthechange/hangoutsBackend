@@ -7,7 +7,10 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
+import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbIgnore;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -34,6 +37,18 @@ public class IdeaList extends BaseItem {
     private String note;
     @Getter @Setter
     private String createdBy;
+    
+    // Transient field - not stored in DynamoDB but populated by repository
+    private List<IdeaListMember> members = new ArrayList<>();
+    
+    @DynamoDbIgnore
+    public List<IdeaListMember> getMembers() {
+        return members;
+    }
+    
+    public void setMembers(List<IdeaListMember> members) {
+        this.members = members;
+    }
 
     /**
      * Create a new idea list with generated UUID.

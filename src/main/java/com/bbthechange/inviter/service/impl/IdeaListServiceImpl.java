@@ -239,12 +239,10 @@ public class IdeaListServiceImpl implements IdeaListService {
     private IdeaListDTO convertToDTO(IdeaList ideaList) {
         IdeaListDTO dto = new IdeaListDTO(ideaList);
         
-        // Get ideas for this list
-        List<IdeaListMember> members = ideaListRepository.findMembersByListId(ideaList.getGroupId(), ideaList.getListId());
-        List<IdeaDTO> ideaDTOs = members.stream()
+        // Convert members that are already attached to the idea list (no additional DB call needed!)
+        List<IdeaDTO> ideaDTOs = ideaList.getMembers().stream()
                 .map(IdeaDTO::new)
-                .sorted((a, b) -> b.getAddedTime().compareTo(a.getAddedTime())) // Most recent first
-                .collect(Collectors.toList());
+                .collect(Collectors.toList()); // Already sorted in repository
         
         dto.setIdeas(ideaDTOs);
         return dto;

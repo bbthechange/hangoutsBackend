@@ -205,9 +205,19 @@ public class IdeaListRepositoryImpl implements IdeaListRepository {
                     }
                 }
                 
-                // Create result list with populated members
+                // Attach members to their respective idea lists
+                for (IdeaList ideaList : ideaListsMap.values()) {
+                    List<IdeaListMember> members = membersMap.get(ideaList.getListId());
+                    if (members != null) {
+                        // Sort members by most recent first
+                        members.sort((a, b) -> b.getAddedTime().compareTo(a.getAddedTime()));
+                        ideaList.setMembers(members);
+                    }
+                }
+                
+                // Create result list sorted by most recent first
                 List<IdeaList> result = ideaListsMap.values().stream()
-                        .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt())) // Most recent first
+                        .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt())) 
                         .collect(Collectors.toList());
                 
                 logger.debug("Found {} idea lists with members for group: {}", result.size(), groupId);
@@ -254,6 +264,9 @@ public class IdeaListRepositoryImpl implements IdeaListRepository {
                 }
                 
                 if (ideaList != null) {
+                    // Sort members by most recent first and attach to idea list
+                    members.sort((a, b) -> b.getAddedTime().compareTo(a.getAddedTime()));
+                    ideaList.setMembers(members);
                     logger.debug("Found idea list: {} with {} members", listId, members.size());
                     return Optional.of(ideaList);
                 }
