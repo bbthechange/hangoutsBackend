@@ -1,9 +1,11 @@
 package com.bbthechange.inviter.model;
 
 import com.bbthechange.inviter.util.InviterKeyFactory;
-import lombok.Data;
 import lombok.EqualsAndHashCode;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
+import lombok.ToString;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
 
 import java.time.Instant;
@@ -15,7 +17,9 @@ import java.util.UUID;
  * 
  * Key Pattern: PK = GROUP#{GroupID}, SK = IDEALIST#{ListID}#IDEA#{IdeaID}
  */
-@Data
+@Getter
+@Setter
+@ToString
 @NoArgsConstructor
 @EqualsAndHashCode(callSuper = true)
 @DynamoDbBean

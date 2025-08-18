@@ -82,7 +82,7 @@ public class IdeaListServiceImpl implements IdeaListService {
         IdeaList savedList = ideaListRepository.saveIdeaList(ideaList);
         logger.debug("Created idea list: {} in group: {} by user: {}", savedList.getListId(), groupId, requestingUserId);
         
-        return convertToDTO(savedList);
+        return new IdeaListDTO(savedList);
     }
     
     @Override

@@ -43,7 +43,7 @@ public class IdeaListRepositoryImpl implements IdeaListRepository {
     @Override
     public IdeaList saveIdeaList(IdeaList ideaList) {
         try {
-            Map<String, AttributeValue> item = ideaListSchema.itemToMap(ideaList, false);
+            Map<String, AttributeValue> item = ideaListSchema.itemToMap(ideaList, true);
             
             PutItemRequest request = PutItemRequest.builder()
                     .tableName(TABLE_NAME)
@@ -109,7 +109,7 @@ public class IdeaListRepositoryImpl implements IdeaListRepository {
     @Override
     public IdeaListMember saveIdeaListMember(IdeaListMember member) {
         try {
-            Map<String, AttributeValue> item = ideaMemberSchema.itemToMap(member, false);
+            Map<String, AttributeValue> item = ideaMemberSchema.itemToMap(member, true);
             
             PutItemRequest request = PutItemRequest.builder()
                     .tableName(TABLE_NAME)
@@ -333,7 +333,6 @@ public class IdeaListRepositoryImpl implements IdeaListRepository {
                 QueryRequest request = QueryRequest.builder()
                         .tableName(TABLE_NAME)
                         .keyConditionExpression("pk = :pk AND begins_with(sk, :skPrefix)")
-                        .filterExpression("contains(sk, :ideaPrefix)")
                         .expressionAttributeValues(Map.of(
                                 ":pk", AttributeValue.builder().s(InviterKeyFactory.getGroupPk(groupId)).build(),
                                 ":skPrefix", AttributeValue.builder().s(InviterKeyFactory.getIdeaListPrefix(listId)).build(),
