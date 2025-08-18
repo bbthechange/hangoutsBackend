@@ -29,6 +29,8 @@ public final class InviterKeyFactory {
     public static final String VOTE_PREFIX = "VOTE";
     public static final String RIDER_PREFIX = "RIDER";
     public static final String ATTRIBUTE_PREFIX = "ATTRIBUTE";
+    public static final String IDEALIST_PREFIX = "IDEALIST";
+    public static final String IDEA_PREFIX = "IDEA";
     
     // Private constructor to prevent instantiation
     private InviterKeyFactory() {
@@ -200,5 +202,38 @@ public final class InviterKeyFactory {
     
     public static boolean isGroupMembership(String sortKey) {
         return sortKey.startsWith(USER_PREFIX + DELIMITER);
+    }
+    
+    // Idea List Keys
+    public static String getIdeaListSk(String listId) {
+        validateId(listId, "IdeaList");
+        return IDEALIST_PREFIX + DELIMITER + listId;
+    }
+    
+    public static String getIdeaListMemberSk(String listId, String ideaId) {
+        validateId(listId, "IdeaList");
+        validateId(ideaId, "Idea");
+        return String.join(DELIMITER, IDEALIST_PREFIX, listId, IDEA_PREFIX, ideaId);
+    }
+    
+    // Query prefix for getting all items in an idea list
+    public static String getIdeaListPrefix(String listId) {
+        validateId(listId, "IdeaList");
+        return IDEALIST_PREFIX + DELIMITER + listId;
+    }
+    
+    // Query prefix for getting all idea lists in a group
+    public static String getIdeaListQueryPrefix() {
+        return IDEALIST_PREFIX + DELIMITER;
+    }
+    
+    // Helper methods for type-safe filtering
+    public static boolean isIdeaList(String sortKey) {
+        return sortKey != null && sortKey.startsWith(IDEALIST_PREFIX + DELIMITER) && 
+               !sortKey.contains(DELIMITER + IDEA_PREFIX + DELIMITER);
+    }
+    
+    public static boolean isIdeaListMember(String sortKey) {
+        return sortKey != null && sortKey.contains(DELIMITER + IDEA_PREFIX + DELIMITER);
     }
 }
