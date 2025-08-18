@@ -335,8 +335,7 @@ public class IdeaListRepositoryImpl implements IdeaListRepository {
                         .keyConditionExpression("pk = :pk AND begins_with(sk, :skPrefix)")
                         .expressionAttributeValues(Map.of(
                                 ":pk", AttributeValue.builder().s(InviterKeyFactory.getGroupPk(groupId)).build(),
-                                ":skPrefix", AttributeValue.builder().s(InviterKeyFactory.getIdeaListPrefix(listId)).build(),
-                                ":ideaPrefix", AttributeValue.builder().s("#" + InviterKeyFactory.IDEA_PREFIX + "#").build()
+                                ":skPrefix", AttributeValue.builder().s(InviterKeyFactory.getIdeaListPrefix(listId)).build()
                         ))
                         .build();
                         
