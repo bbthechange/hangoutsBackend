@@ -2,6 +2,7 @@ package com.bbthechange.inviter.repository;
 
 import com.bbthechange.inviter.dto.HangoutDetailData;
 import com.bbthechange.inviter.model.*;
+import com.bbthechange.inviter.util.PaginatedResult;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 import java.util.List;
@@ -100,4 +101,17 @@ public interface HangoutRepository {
      * Only returns hangouts that start after the current time.
      */
     List<BaseItem> findUpcomingHangoutsForParticipant(String participantKey, String timePrefix);
+    
+    /**
+     * Find a paginated set of upcoming hangouts for a participant (user or group).
+     * Uses true database-level pagination with DynamoDB ExclusiveStartKey.
+     * 
+     * @param participantKey The participant key (e.g., "GROUP#groupId" or "USER#userId")
+     * @param timePrefix The time prefix for filtering (e.g., "T#")
+     * @param limit Maximum number of items to return in this page
+     * @param startToken Pagination token from previous request, or null for first page
+     * @return PaginatedResult containing the hangouts for this page and next page token
+     */
+    PaginatedResult<HangoutPointer> findUpcomingHangoutsPage(String participantKey, String timePrefix, 
+                                                            int limit, String startToken);
 }

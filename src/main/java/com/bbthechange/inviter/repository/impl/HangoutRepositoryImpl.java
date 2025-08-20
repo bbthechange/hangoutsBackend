@@ -8,6 +8,7 @@ import com.bbthechange.inviter.exception.RepositoryException;
 import com.bbthechange.inviter.exception.ResourceNotFoundException;
 import com.bbthechange.inviter.util.QueryPerformanceTracker;
 import com.bbthechange.inviter.util.InviterKeyFactory;
+import com.bbthechange.inviter.util.PaginatedResult;
 import org.springframework.stereotype.Repository;
 import org.springframework.beans.factory.annotation.Autowired;
 import software.amazon.awssdk.enhanced.dynamodb.*;
@@ -635,6 +636,130 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                 throw new RepositoryException("Failed to query upcoming hangouts from EntityTimeIndex GSI", e);
             }
         });
+    }
+    
+    @Override
+    public PaginatedResult<HangoutPointer> findUpcomingHangoutsPage(String participantKey, String timePrefix, 
+                                                                   int limit, String startToken) {
+        return performanceTracker.trackQuery("findUpcomingHangoutsPage", "EntityTimeIndex", () -> {
+            try {
+                // Get current timestamp for filtering future events only
+                String currentTimestamp = String.valueOf(System.currentTimeMillis() / 1000);
+                
+                QueryRequest.Builder requestBuilder = QueryRequest.builder()
+                    .tableName(TABLE_NAME)
+                    .indexName("EntityTimeIndex")
+                    .keyConditionExpression("gsi1pk = :participantKey AND startTimestamp > :timestampPrefix")
+                    .expressionAttributeValues(Map.of(
+                        ":participantKey", AttributeValue.builder().s(participantKey).build(),
+                        ":timestampPrefix", AttributeValue.builder().n(currentTimestamp).build()
+                    ))
+                    .scanIndexForward(true) // Sort by timestamp ascending (chronological order)
+                    .limit(limit);
+                
+                // Add pagination token if provided
+                if (startToken != null && !startToken.trim().isEmpty()) {
+                    try {
+                        Map<String, AttributeValue> exclusiveStartKey = parseStartToken(startToken);
+                        requestBuilder.exclusiveStartKey(exclusiveStartKey);
+                    } catch (Exception e) {
+                        logger.warn("Invalid start token provided for pagination: {}", startToken, e);
+                        throw new IllegalArgumentException("Invalid pagination token");
+                    }
+                }
+                
+                QueryResponse response = dynamoDbClient.query(requestBuilder.build());
+                
+                // Convert items to HangoutPointer objects
+                List<HangoutPointer> hangoutPointers = response.items().stream()
+                    .map(this::deserializeItem)
+                    .filter(item -> item instanceof HangoutPointer)
+                    .map(item -> (HangoutPointer) item)
+                    .collect(Collectors.toList());
+                
+                // Generate next page token if more results exist
+                String nextToken = null;
+                if (response.lastEvaluatedKey() != null && !response.lastEvaluatedKey().isEmpty()) {
+                    nextToken = encodeStartToken(response.lastEvaluatedKey());
+                }
+                
+                logger.debug("Found {} hangout pointers for participant {} (requested limit: {}, hasMore: {})", 
+                    hangoutPointers.size(), participantKey, limit, nextToken != null);
+                
+                return new PaginatedResult<>(hangoutPointers, nextToken);
+                
+            } catch (DynamoDbException e) {
+                logger.error("Failed to query paginated upcoming hangouts for participant {} with limit {}", 
+                    participantKey, limit, e);
+                throw new RepositoryException("Failed to query paginated upcoming hangouts from EntityTimeIndex GSI", e);
+            }
+        });
+    }
+    
+    /**
+     * Parse a pagination start token into DynamoDB ExclusiveStartKey format.
+     * The token is expected to be base64-encoded JSON containing the GSI key attributes.
+     */
+    private Map<String, AttributeValue> parseStartToken(String startToken) {
+        try {
+            String decoded = new String(Base64.getDecoder().decode(startToken));
+            // Simple JSON parsing for the key attributes
+            // Expected format: {"gsi1pk":"GROUP#id","startTimestamp":"123456789","pk":"EVENT#id","sk":"HANGOUT#id"}
+            Map<String, String> tokenData = parseSimpleJson(decoded);
+            
+            Map<String, AttributeValue> exclusiveStartKey = new HashMap<>();
+            exclusiveStartKey.put("gsi1pk", AttributeValue.builder().s(tokenData.get("gsi1pk")).build());
+            exclusiveStartKey.put("startTimestamp", AttributeValue.builder().n(tokenData.get("startTimestamp")).build());
+            exclusiveStartKey.put("pk", AttributeValue.builder().s(tokenData.get("pk")).build());
+            exclusiveStartKey.put("sk", AttributeValue.builder().s(tokenData.get("sk")).build());
+            
+            return exclusiveStartKey;
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Failed to parse pagination token", e);
+        }
+    }
+    
+    /**
+     * Encode DynamoDB LastEvaluatedKey into a pagination token.
+     */
+    private String encodeStartToken(Map<String, AttributeValue> lastEvaluatedKey) {
+        try {
+            // Create simple JSON representation of the key
+            StringBuilder json = new StringBuilder("{");
+            json.append("\"gsi1pk\":\"").append(lastEvaluatedKey.get("gsi1pk").s()).append("\",");
+            json.append("\"startTimestamp\":\"").append(lastEvaluatedKey.get("startTimestamp").n()).append("\",");
+            json.append("\"pk\":\"").append(lastEvaluatedKey.get("pk").s()).append("\",");
+            json.append("\"sk\":\"").append(lastEvaluatedKey.get("sk").s()).append("\"");
+            json.append("}");
+            
+            return Base64.getEncoder().encodeToString(json.toString().getBytes());
+        } catch (Exception e) {
+            logger.warn("Failed to encode pagination token", e);
+            return null;
+        }
+    }
+    
+    /**
+     * Simple JSON parser for pagination token data.
+     * Only handles the specific format needed for pagination tokens.
+     */
+    private Map<String, String> parseSimpleJson(String json) {
+        Map<String, String> result = new HashMap<>();
+        
+        // Remove braces and split by commas
+        String content = json.replaceAll("[{}]", "");
+        String[] pairs = content.split(",");
+        
+        for (String pair : pairs) {
+            String[] keyValue = pair.split(":");
+            if (keyValue.length == 2) {
+                String key = keyValue[0].trim().replaceAll("\"", "");
+                String value = keyValue[1].trim().replaceAll("\"", "");
+                result.put(key, value);
+            }
+        }
+        
+        return result;
     }
     
     // ============================================================================

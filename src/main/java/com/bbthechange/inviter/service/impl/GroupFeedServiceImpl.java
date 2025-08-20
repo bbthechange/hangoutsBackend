@@ -9,6 +9,7 @@ import com.bbthechange.inviter.service.GroupFeedService;
 import com.bbthechange.inviter.service.GroupService;
 import com.bbthechange.inviter.util.GroupFeedPaginationToken;
 import com.bbthechange.inviter.util.InviterKeyFactory;
+import com.bbthechange.inviter.util.PaginatedResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,7 +27,7 @@ import java.util.stream.Collectors;
 public class GroupFeedServiceImpl implements GroupFeedService {
     
     private static final Logger logger = LoggerFactory.getLogger(GroupFeedServiceImpl.class);
-    private static final int EVENTS_BATCH_SIZE = 10;
+    private static final int EVENTS_PAGE_SIZE = 10;
     
     private final HangoutRepository hangoutRepository;
     private final GroupService groupService;
@@ -47,109 +48,67 @@ public class GroupFeedServiceImpl implements GroupFeedService {
         }
         
         List<FeedItemDTO> feedItems = new ArrayList<>();
-        GroupFeedPaginationToken currentToken = null;
-        
-        // Decode start token if provided
-        if (startToken != null && !startToken.trim().isEmpty()) {
-            try {
-                currentToken = GroupFeedPaginationToken.decode(startToken);
-                logger.debug("Decoded start token: lastEventId={}, lastTimestamp={}", 
-                    currentToken.getLastEventId(), currentToken.getLastTimestamp());
-            } catch (Exception e) {
-                logger.warn("Invalid start token provided: {}", startToken);
-                throw new IllegalArgumentException("Invalid pagination token");
-            }
-        }
+        String nextEventPageToken = startToken;
+        boolean hasMoreEvents = true;
         
         // Build participant key for GSI query (following existing pattern from HangoutServiceImpl)
         String participantKey = "GROUP#" + groupId;
         logger.debug("Querying upcoming hangouts for participant key: {}", participantKey);
         
-        // Get upcoming hangouts for the group using GSI
-        List<BaseItem> upcomingHangouts = hangoutRepository.findUpcomingHangoutsForParticipant(participantKey, "T#");
-        
-        // Filter and sort hangout pointers
-        List<HangoutPointer> hangoutPointers = upcomingHangouts.stream()
-            .filter(item -> item instanceof HangoutPointer)
-            .map(item -> (HangoutPointer) item)
-            .sorted((h1, h2) -> Long.compare(h1.getStartTimestamp(), h2.getStartTimestamp()))
-            .collect(Collectors.toList());
-        
-        logger.debug("Found {} upcoming hangouts for group {}", hangoutPointers.size(), groupId);
-        
-        // Apply pagination cursor if provided
-        if (currentToken != null) {
-            String lastEventId = currentToken.getLastEventId();
-            hangoutPointers = hangoutPointers.stream()
-                .dropWhile(pointer -> !pointer.getHangoutId().equals(lastEventId))
-                .skip(1) // Skip the last processed event
-                .collect(Collectors.toList());
-            logger.debug("After applying cursor, {} hangouts remaining", hangoutPointers.size());
-        }
-        
-        // Process events in batches until we have enough items
-        String lastProcessedEventId = null;
-        LocalDateTime lastProcessedTimestamp = null;
-        
-        for (int i = 0; i < hangoutPointers.size() && feedItems.size() < limit; i += EVENTS_BATCH_SIZE) {
-            int endIndex = Math.min(i + EVENTS_BATCH_SIZE, hangoutPointers.size());
-            List<HangoutPointer> batch = hangoutPointers.subList(i, endIndex);
+        // Process events in pages until we have enough feed items or no more events
+        while (feedItems.size() < limit && hasMoreEvents) {
+            logger.debug("Fetching page of events with token: {}", nextEventPageToken);
             
-            logger.debug("Processing batch of {} events (items {}-{})", batch.size(), i, endIndex - 1);
+            // Get one page of events from the database using true database pagination
+            PaginatedResult<HangoutPointer> eventPage = hangoutRepository.findUpcomingHangoutsPage(
+                participantKey, "T#", EVENTS_PAGE_SIZE, nextEventPageToken);
             
-            // Process each event in the batch
-            for (HangoutPointer pointer : batch) {
+            logger.debug("Retrieved {} events in this page (hasMore: {})", 
+                eventPage.size(), eventPage.hasMore());
+            
+            // Process only the events in this small page
+            for (HangoutPointer pointer : eventPage.getResults()) {
                 String eventId = pointer.getHangoutId();
                 String eventTitle = pointer.getTitle();
                 
-                // Track last processed event for pagination
-                lastProcessedEventId = eventId;
-                if (pointer.getStartTimestamp() != null) {
-                    lastProcessedTimestamp = LocalDateTime.ofEpochSecond(pointer.getStartTimestamp(), 0, 
-                        java.time.ZoneOffset.UTC);
-                } else {
-                    lastProcessedTimestamp = LocalDateTime.now();
-                }
+                logger.debug("Processing event {} ({})", eventId, eventTitle);
                 
                 // Get actionable items for this event
                 List<FeedItemDTO> eventFeedItems = getActionableItemsForEvent(eventId, eventTitle);
                 feedItems.addAll(eventFeedItems);
                 
-                logger.debug("Found {} actionable items for event {} ({})", 
-                    eventFeedItems.size(), eventId, eventTitle);
+                logger.debug("Found {} actionable items for event {} (total feed items: {})", 
+                    eventFeedItems.size(), eventId, feedItems.size());
                 
-                // If we've reached our target, include all items from this final event
+                // If we've reached our target, stop processing
                 if (feedItems.size() >= limit) {
-                    logger.debug("Reached target limit of {} items, stopping at event {}", limit, eventId);
+                    logger.debug("Reached target limit of {} items, stopping processing", limit);
                     break;
                 }
             }
-        }
-        
-        // Generate next page token if there are more events
-        String nextPageToken = null;
-        if (lastProcessedEventId != null && !hangoutPointers.isEmpty()) {
-            // Check if there are more events after the last processed one
-            final String finalLastProcessedEventId = lastProcessedEventId;
-            final List<HangoutPointer> finalHangoutPointers = hangoutPointers;
             
-            boolean hasMoreEvents = hangoutPointers.stream()
-                .anyMatch(pointer -> {
-                    int currentIndex = finalHangoutPointers.indexOf(pointer);
-                    return pointer.getHangoutId().equals(finalLastProcessedEventId) && 
-                           currentIndex < finalHangoutPointers.size() - 1;
-                });
+            // Prepare for next iteration
+            nextEventPageToken = eventPage.getNextToken();
+            hasMoreEvents = eventPage.hasMore();
             
-            if (hasMoreEvents) {
-                GroupFeedPaginationToken nextToken = new GroupFeedPaginationToken(
-                    lastProcessedEventId, lastProcessedTimestamp);
-                nextPageToken = nextToken.encode();
-                logger.debug("Generated next page token for continuation");
+            // If we've reached the limit, we need to check if there are more events
+            // to determine if we should return a continuation token
+            if (feedItems.size() >= limit && hasMoreEvents) {
+                logger.debug("Reached feed item limit but more events available - will return continuation token");
+                break;
             }
         }
         
-        logger.info("Returning {} feed items for group {} (requested limit: {})", 
-            feedItems.size(), groupId, limit);
+        // Generate next page token if there are more events to process
+        String nextPageToken = null;
+        if (hasMoreEvents && feedItems.size() >= limit) {
+            // Return the database pagination token as our feed pagination token
+            nextPageToken = nextEventPageToken;
+            logger.debug("Generated next page token for continuation");
+        }
+        
+        logger.info("Returning {} feed items for group {} (requested limit: {}, hasMore: {})", 
+            feedItems.size(), groupId, limit, nextPageToken != null);
         
         return new GroupFeedItemsResponse(feedItems, nextPageToken);
     }

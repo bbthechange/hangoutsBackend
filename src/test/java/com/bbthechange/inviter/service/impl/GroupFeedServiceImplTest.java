@@ -6,6 +6,7 @@ import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.service.GroupService;
 import com.bbthechange.inviter.util.GroupFeedPaginationToken;
+import com.bbthechange.inviter.util.PaginatedResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -47,10 +48,11 @@ class GroupFeedServiceImplTest {
         // Given
         when(groupService.isUserInGroup(USER_ID, GROUP_ID)).thenReturn(true);
         
-        // Mock upcoming hangouts
-        List<BaseItem> upcomingHangouts = createMockHangoutPointers();
-        when(hangoutRepository.findUpcomingHangoutsForParticipant("GROUP#" + GROUP_ID, "T#"))
-            .thenReturn(upcomingHangouts);
+        // Mock paginated hangouts - first page with two events
+        List<HangoutPointer> hangoutPointers = createMockHangoutPointers();
+        PaginatedResult<HangoutPointer> firstPage = new PaginatedResult<>(hangoutPointers, null); // No more pages
+        when(hangoutRepository.findUpcomingHangoutsPage("GROUP#" + GROUP_ID, "T#", 10, null))
+            .thenReturn(firstPage);
         
         // Mock poll data for first event
         List<BaseItem> pollData1 = createMockPollData(EVENT_ID_1, POLL_ID_1);
@@ -90,9 +92,9 @@ class GroupFeedServiceImplTest {
         assertThat(attributeItem.getData().get("name")).isEqualTo("Meeting Location");
         assertThat(attributeItem.getData().get("isDecided")).isEqualTo(false);
         
-        // Verify repository interactions
+        // Verify repository interactions - now uses paginated method
         verify(groupService).isUserInGroup(USER_ID, GROUP_ID);
-        verify(hangoutRepository).findUpcomingHangoutsForParticipant("GROUP#" + GROUP_ID, "T#");
+        verify(hangoutRepository).findUpcomingHangoutsPage("GROUP#" + GROUP_ID, "T#", 10, null);
         verify(hangoutRepository).getAllPollData(EVENT_ID_1);
         verify(hangoutRepository).findAttributesByHangoutId(EVENT_ID_1);
     }
@@ -116,28 +118,28 @@ class GroupFeedServiceImplTest {
         // Given
         when(groupService.isUserInGroup(USER_ID, GROUP_ID)).thenReturn(true);
         
-        // Create pagination token for first event
-        GroupFeedPaginationToken token = new GroupFeedPaginationToken(EVENT_ID_1, LocalDateTime.now());
-        String startToken = token.encode();
+        // Create a database pagination token (simulating continuation from previous page)
+        String dbPaginationToken = "some-db-token";
         
-        List<BaseItem> upcomingHangouts = createMockHangoutPointers();
-        when(hangoutRepository.findUpcomingHangoutsForParticipant("GROUP#" + GROUP_ID, "T#"))
-            .thenReturn(upcomingHangouts);
-        
-        // Mock empty data for second event (after cursor)
-        when(hangoutRepository.getAllPollData(EVENT_ID_2)).thenReturn(new ArrayList<>());
-        when(hangoutRepository.findAttributesByHangoutId(EVENT_ID_2)).thenReturn(new ArrayList<>());
+        // Mock empty page when starting from continuation token (no more events)
+        PaginatedResult<HangoutPointer> emptyPage = new PaginatedResult<>(new ArrayList<>(), null);
+        when(hangoutRepository.findUpcomingHangoutsPage("GROUP#" + GROUP_ID, "T#", 10, dbPaginationToken))
+            .thenReturn(emptyPage);
         
         // When
-        GroupFeedItemsResponse response = groupFeedService.getFeedItems(GROUP_ID, 10, startToken, USER_ID);
+        GroupFeedItemsResponse response = groupFeedService.getFeedItems(GROUP_ID, 10, dbPaginationToken, USER_ID);
         
         // Then
         assertThat(response).isNotNull();
-        assertThat(response.getItems()).isEmpty(); // No items after cursor
+        assertThat(response.getItems()).isEmpty(); // No items in continuation page
+        assertThat(response.getNextPageToken()).isNull(); // No more pages
         
-        // Should not query the first event (before cursor)
-        verify(hangoutRepository, never()).getAllPollData(EVENT_ID_1);
-        verify(hangoutRepository, never()).findAttributesByHangoutId(EVENT_ID_1);
+        // Verify correct repository call with pagination token
+        verify(hangoutRepository).findUpcomingHangoutsPage("GROUP#" + GROUP_ID, "T#", 10, dbPaginationToken);
+        
+        // Should not query any specific events since page was empty
+        verify(hangoutRepository, never()).getAllPollData(any());
+        verify(hangoutRepository, never()).findAttributesByHangoutId(any());
     }
     
     @Test
@@ -146,21 +148,28 @@ class GroupFeedServiceImplTest {
         when(groupService.isUserInGroup(USER_ID, GROUP_ID)).thenReturn(true);
         String invalidToken = "invalid-token";
         
+        // Mock repository to throw exception for invalid token
+        when(hangoutRepository.findUpcomingHangoutsPage("GROUP#" + GROUP_ID, "T#", 10, invalidToken))
+            .thenThrow(new IllegalArgumentException("Invalid pagination token"));
+        
         // When & Then
         assertThatThrownBy(() -> groupFeedService.getFeedItems(GROUP_ID, 10, invalidToken, USER_ID))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Invalid pagination token");
         
         verify(groupService).isUserInGroup(USER_ID, GROUP_ID);
-        verifyNoInteractions(hangoutRepository);
+        verify(hangoutRepository).findUpcomingHangoutsPage("GROUP#" + GROUP_ID, "T#", 10, invalidToken);
     }
     
     @Test
     void getFeedItems_WithNoUpcomingEvents_ReturnsEmptyResponse() {
         // Given
         when(groupService.isUserInGroup(USER_ID, GROUP_ID)).thenReturn(true);
-        when(hangoutRepository.findUpcomingHangoutsForParticipant("GROUP#" + GROUP_ID, "T#"))
-            .thenReturn(new ArrayList<>());
+        
+        // Mock empty page (no upcoming events)
+        PaginatedResult<HangoutPointer> emptyPage = new PaginatedResult<>(new ArrayList<>(), null);
+        when(hangoutRepository.findUpcomingHangoutsPage("GROUP#" + GROUP_ID, "T#", 10, null))
+            .thenReturn(emptyPage);
         
         // When
         GroupFeedItemsResponse response = groupFeedService.getFeedItems(GROUP_ID, 10, null, USER_ID);
@@ -170,11 +179,11 @@ class GroupFeedServiceImplTest {
         assertThat(response.getItems()).isEmpty();
         assertThat(response.getNextPageToken()).isNull();
         
-        verify(hangoutRepository).findUpcomingHangoutsForParticipant("GROUP#" + GROUP_ID, "T#");
+        verify(hangoutRepository).findUpcomingHangoutsPage("GROUP#" + GROUP_ID, "T#", 10, null);
     }
     
-    private List<BaseItem> createMockHangoutPointers() {
-        List<BaseItem> pointers = new ArrayList<>();
+    private List<HangoutPointer> createMockHangoutPointers() {
+        List<HangoutPointer> pointers = new ArrayList<>();
         
         // First event
         HangoutPointer pointer1 = new HangoutPointer();
