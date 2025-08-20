@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.controller;
 
 import com.bbthechange.inviter.service.GroupService;
+import com.bbthechange.inviter.service.GroupFeedService;
 import com.bbthechange.inviter.dto.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -13,6 +14,8 @@ import org.slf4j.LoggerFactory;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Max;
 import java.util.List;
 
 /**
@@ -27,10 +30,12 @@ public class GroupController extends BaseController {
     private static final Logger logger = LoggerFactory.getLogger(GroupController.class);
     
     private final GroupService groupService;
+    private final GroupFeedService groupFeedService;
     
     @Autowired
-    public GroupController(GroupService groupService) {
+    public GroupController(GroupService groupService, GroupFeedService groupFeedService) {
         this.groupService = groupService;
+        this.groupFeedService = groupFeedService;
     }
     
     @PostMapping
@@ -133,5 +138,21 @@ public class GroupController extends BaseController {
         // Single query gets all hangout pointers - very efficient!
         GroupFeedDTO feed = groupService.getGroupFeed(groupId, userId);
         return ResponseEntity.ok(feed);
+    }
+    
+    @GetMapping("/{groupId}/feed-items")
+    public ResponseEntity<GroupFeedItemsResponse> getGroupFeedItems(
+            @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid group ID format") String groupId,
+            @RequestParam(defaultValue = "10") @Min(1) @Max(50) Integer limit,
+            @RequestParam(required = false) String startToken,
+            HttpServletRequest httpRequest) {
+        
+        String userId = extractUserId(httpRequest);
+        logger.info("Getting feed items for group {} with limit {} for user {}", groupId, limit, userId);
+        
+        GroupFeedItemsResponse response = groupFeedService.getFeedItems(groupId, limit, startToken, userId);
+        logger.debug("Retrieved {} feed items for group {}", response.getItems().size(), groupId);
+        
+        return ResponseEntity.ok(response);
     }
 }

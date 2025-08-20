@@ -97,6 +97,8 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                     return needsRideSchema.mapToItem(itemMap);
                 } else if (InviterKeyFactory.isAttributeItem(sk)) {
                     return hangoutAttributeSchema.mapToItem(itemMap);
+                } else if (InviterKeyFactory.isHangoutPointer(sk)) {
+                    return hangoutPointerSchema.mapToItem(itemMap);
                 }
             }
             throw new IllegalStateException("Missing itemType discriminator and unable to determine type from SK");
@@ -122,6 +124,8 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                 return needsRideSchema.mapToItem(itemMap);
             case "ATTRIBUTE":
                 return hangoutAttributeSchema.mapToItem(itemMap);
+            case "HANGOUT_POINTER":
+                return hangoutPointerSchema.mapToItem(itemMap);
             default:
                 throw new IllegalArgumentException("Unknown item type: " + itemType);
         }
