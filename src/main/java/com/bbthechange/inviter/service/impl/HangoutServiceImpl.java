@@ -15,12 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.ArrayList;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -671,8 +666,9 @@ public class HangoutServiceImpl implements HangoutService {
 
     private void updateParticipantCounts(String hangoutId, String oldStatus, String newStatus,
                                        List<String> associatedGroups) {
-        boolean wasGoing = "GOING".equals(oldStatus);
-        boolean nowGoing = "GOING".equals(newStatus);
+        List<String> interested = Arrays.asList("GOING","INTERESTED");
+        boolean wasGoing = interested.contains(oldStatus);
+        boolean nowGoing = interested.contains(newStatus);
 
         if (wasGoing == nowGoing) {
             return; // No count change needed
