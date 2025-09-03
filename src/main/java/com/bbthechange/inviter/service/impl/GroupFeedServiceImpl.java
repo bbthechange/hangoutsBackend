@@ -173,28 +173,25 @@ public class GroupFeedServiceImpl implements GroupFeedService {
                 pollDataMap.put("description", poll.getDescription());
                 pollDataMap.put("multipleChoice", poll.isMultipleChoice());
                 
-                // Add options with vote counts
+                // Add options with voter information
                 List<Map<String, Object>> optionsList = new ArrayList<>();
-                int totalVotes = 0;
                 
                 for (PollOption option : options) {
                     Map<String, Object> optionMap = new HashMap<>();
                     optionMap.put("optionId", option.getOptionId());
                     optionMap.put("text", option.getText());
                     
-                    // Count votes for this option
-                    int voteCount = (int) votes.stream()
+                    // Get user IDs who voted for this option
+                    List<String> voterUserIds = votes.stream()
                         .filter(vote -> vote.getOptionId().equals(option.getOptionId()))
-                        .count();
+                        .map(Vote::getUserId)
+                        .collect(Collectors.toList());
                     
-                    optionMap.put("voteCount", voteCount);
-                    optionMap.put("userVoted", false); // Would need current user context to determine this
+                    optionMap.put("voters", voterUserIds);
                     optionsList.add(optionMap);
-                    totalVotes += voteCount;
                 }
                 
                 pollDataMap.put("options", optionsList);
-                pollDataMap.put("totalVotes", totalVotes);
                 
                 FeedItemDTO pollItem = new FeedItemDTO(POLL, eventInfo, pollDataMap);
                 items.add(pollItem);
