@@ -3,12 +3,11 @@ package com.bbthechange.inviter.util;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
-import java.time.LocalDateTime;
 import java.util.Base64;
 
 /**
  * Utility class for encoding and decoding pagination tokens for the group feed API.
- * The token contains the last processed event ID and timestamp for cursor-based pagination.
+ * The token contains the last processed event ID, timestamp, and direction for cursor-based pagination.
  */
 public class GroupFeedPaginationToken {
     
@@ -16,13 +15,15 @@ public class GroupFeedPaginationToken {
             .registerModule(new JavaTimeModule());
     
     private String lastEventId;
-    private LocalDateTime lastTimestamp;
+    private Long lastTimestamp;
+    private boolean isForward; // true for forward pagination, false for backward
     
     public GroupFeedPaginationToken() {}
     
-    public GroupFeedPaginationToken(String lastEventId, LocalDateTime lastTimestamp) {
+    public GroupFeedPaginationToken(String lastEventId, Long lastTimestamp, boolean isForward) {
         this.lastEventId = lastEventId;
         this.lastTimestamp = lastTimestamp;
+        this.isForward = isForward;
     }
     
     /**
@@ -58,11 +59,19 @@ public class GroupFeedPaginationToken {
         this.lastEventId = lastEventId;
     }
     
-    public LocalDateTime getLastTimestamp() {
+    public Long getLastTimestamp() {
         return lastTimestamp;
     }
     
-    public void setLastTimestamp(LocalDateTime lastTimestamp) {
+    public void setLastTimestamp(Long lastTimestamp) {
         this.lastTimestamp = lastTimestamp;
+    }
+    
+    public boolean isForward() {
+        return isForward;
+    }
+    
+    public void setForward(boolean forward) {
+        isForward = forward;
     }
 }

@@ -134,12 +134,13 @@ public class HangoutPointer extends BaseItem {
     }
 
     @Override
-    @DynamoDbSecondaryPartitionKey(indexNames = {"UserGroupIndex", "EntityTimeIndex"})
+    @DynamoDbSecondaryPartitionKey(indexNames = {"UserGroupIndex", "EntityTimeIndex", "EndTimestampIndex"})
     public String getGsi1pk() {
         return super.getGsi1pk();
     }
     
     @DynamoDbAttribute("endTimestamp")
+    @DynamoDbSecondarySortKey(indexNames = "EndTimestampIndex")
     public Long getEndTimestamp() {
         return endTimestamp;
     }

@@ -131,12 +131,18 @@ public class GroupController extends BaseController {
     @GetMapping("/{groupId}/feed")
     public ResponseEntity<GroupFeedDTO> getGroupFeed(
             @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid group ID format") String groupId,
+            @RequestParam(required = false) @Min(1) Integer limit,
+            @RequestParam(required = false) String startingAfter,
+            @RequestParam(required = false) String endingBefore,
             HttpServletRequest httpRequest) {
         
         String userId = extractUserId(httpRequest);
         
-        // Single query gets all hangout pointers - very efficient!
-        GroupFeedDTO feed = groupService.getGroupFeed(groupId, userId);
+        // Enhanced chronological feed with bi-directional pagination
+        GroupFeedDTO feed = groupService.getGroupFeed(groupId, userId, limit, startingAfter, endingBefore);
+        logger.debug("Retrieved group feed for group {} with {} chronological events", 
+                    groupId, feed.getWithDay().size());
+        
         return ResponseEntity.ok(feed);
     }
     

@@ -54,8 +54,16 @@ public interface GroupService {
     boolean isUserInGroup(String userId, String groupId);
     
     /**
-     * Get the group feed showing all hangouts organized by status.
-     * Single query gets all hangout pointers - very efficient!
+     * Get the group feed showing current/future hangouts chronologically with pagination support.
+     * Uses parallel queries for optimal performance - future events + in-progress events.
+     * 
+     * @param groupId The group ID
+     * @param requestingUserId The user requesting the feed (for authorization)
+     * @param limit Maximum number of events to return (null for no limit)
+     * @param startingAfter Pagination token for forward pagination (get more future events)
+     * @param endingBefore Pagination token for backward pagination (get past events)
+     * @return GroupFeedDTO with chronological events and pagination tokens
      */
-    GroupFeedDTO getGroupFeed(String groupId, String requestingUserId);
+    GroupFeedDTO getGroupFeed(String groupId, String requestingUserId, Integer limit, 
+                             String startingAfter, String endingBefore);
 }

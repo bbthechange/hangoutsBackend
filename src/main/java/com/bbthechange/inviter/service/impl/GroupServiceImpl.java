@@ -2,6 +2,7 @@ package com.bbthechange.inviter.service.impl;
 
 import com.bbthechange.inviter.service.GroupService;
 import com.bbthechange.inviter.repository.GroupRepository;
+import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.UserRepository;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.dto.*;
@@ -17,6 +18,12 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.concurrent.CompletableFuture;
+import java.util.ArrayList;
+import com.bbthechange.inviter.util.PaginatedResult;
+import com.bbthechange.inviter.util.GroupFeedPaginationToken;
+import com.bbthechange.inviter.util.RepositoryTokenData;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Implementation of GroupService with atomic operations and efficient GSI patterns.
@@ -27,14 +34,18 @@ import java.util.stream.Collectors;
 public class GroupServiceImpl implements GroupService {
     
     private static final Logger logger = LoggerFactory.getLogger(GroupServiceImpl.class);
+    private static final ObjectMapper objectMapper = new ObjectMapper();
     
     private final GroupRepository groupRepository;
+    private final HangoutRepository hangoutRepository;
     private final UserRepository userRepository;
     private final InviteService inviteService;
     
     @Autowired
-    public GroupServiceImpl(GroupRepository groupRepository, UserRepository userRepository, InviteService inviteService) {
+    public GroupServiceImpl(GroupRepository groupRepository, HangoutRepository hangoutRepository,
+                           UserRepository userRepository, InviteService inviteService) {
         this.groupRepository = groupRepository;
+        this.hangoutRepository = hangoutRepository;
         this.userRepository = userRepository;
         this.inviteService = inviteService;
     }
@@ -188,28 +199,190 @@ public class GroupServiceImpl implements GroupService {
     }
     
     @Override
-    public GroupFeedDTO getGroupFeed(String groupId, String requestingUserId) {
+    public GroupFeedDTO getGroupFeed(String groupId, String requestingUserId, Integer limit, 
+                                    String startingAfter, String endingBefore) {
         // Authorization check
         if (!isUserInGroup(requestingUserId, groupId)) {
             throw new UnauthorizedException("User not in group");
         }
         
-        // Single query gets all hangout pointers for group
-        List<HangoutPointer> hangouts = groupRepository.findHangoutsByGroupId(groupId);
+        long nowTimestamp = System.currentTimeMillis() / 1000; // Unix timestamp in seconds
         
-        // Separate by status in memory (fast)
-        List<HangoutSummaryDTO> withDay = hangouts.stream()
-            .filter(h -> h.getStartTimestamp() != null)
-            .sorted(Comparator.comparing(HangoutPointer::getStartTimestamp))
-            .map(HangoutSummaryDTO::new)
-            .collect(Collectors.toList());
+        // Determine query type based on pagination parameters
+        if (endingBefore != null) {
+            // Backward pagination - get past events
+            return getPastEvents(groupId, nowTimestamp, limit, endingBefore);
+        } else {
+            // Default or forward pagination - get current/future events
+            return getCurrentAndFutureEvents(groupId, nowTimestamp, limit, startingAfter);
+        }
+    }
+    
+    /**
+     * Get current and future events using parallel queries for optimal performance.
+     */
+    private GroupFeedDTO getCurrentAndFutureEvents(String groupId, long nowTimestamp, 
+                                                  Integer limit, String startingAfter) {
+        try {
+            // Parallel queries for maximum efficiency
+            CompletableFuture<PaginatedResult<HangoutPointer>> futureEventsFuture = 
+                CompletableFuture.supplyAsync(() -> 
+                    hangoutRepository.getFutureEventsPage(groupId, nowTimestamp, limit, startingAfter));
+                    
+            CompletableFuture<PaginatedResult<HangoutPointer>> inProgressEventsFuture = 
+                CompletableFuture.supplyAsync(() -> 
+                    hangoutRepository.getInProgressEventsPage(groupId, nowTimestamp, limit, startingAfter));
             
-        List<HangoutSummaryDTO> needsDay = hangouts.stream()
-            .filter(h -> h.getStartTimestamp() == null)
-            .map(HangoutSummaryDTO::new)
-            .collect(Collectors.toList());
+            // Wait for both queries to complete
+            PaginatedResult<HangoutPointer> futureEvents = futureEventsFuture.get();
+            PaginatedResult<HangoutPointer> inProgressEvents = inProgressEventsFuture.get();
             
-        return new GroupFeedDTO(groupId, withDay, needsDay);
+            // Merge results
+            List<HangoutPointer> allEvents = new ArrayList<>();
+            allEvents.addAll(futureEvents.getResults());
+            allEvents.addAll(inProgressEvents.getResults());
+            
+            // Sort chronologically by start timestamp (oldest first)
+            allEvents.sort(Comparator.comparing(HangoutPointer::getStartTimestamp, 
+                Comparator.nullsLast(Comparator.naturalOrder())));
+            
+            // Convert to DTOs - use withDay for chronological events, needsDay for unscheduled
+            List<HangoutSummaryDTO> withDay = allEvents.stream()
+                .filter(h -> h.getStartTimestamp() != null)
+                .map(HangoutSummaryDTO::new)
+                .collect(Collectors.toList());
+                
+            List<HangoutSummaryDTO> needsDay = allEvents.stream()
+                .filter(h -> h.getStartTimestamp() == null)
+                .map(HangoutSummaryDTO::new)
+                .collect(Collectors.toList());
+            
+            // Repository is the source of truth for pagination tokens
+            String nextPageToken = null;
+            if (futureEvents.hasMore()) {
+                // Convert repository token to custom format for API response
+                nextPageToken = getCustomToken(futureEvents.getNextToken(), true);
+            }
+            
+            // Always provide a token to access past events when viewing current/future events
+            String previousPageToken = generatePreviousPageToken(allEvents, nowTimestamp);
+            
+            return new GroupFeedDTO(groupId, withDay, needsDay, nextPageToken, previousPageToken);
+            
+        } catch (Exception e) {
+            logger.error("Failed to get current and future events for group {}", groupId, e);
+            throw new RepositoryException("Failed to retrieve group feed", e);
+        }
+    }
+    
+    /**
+     * Get past events for backward pagination.
+     */
+    private GroupFeedDTO getPastEvents(String groupId, long nowTimestamp, Integer limit, String endingBefore) {
+        try {
+            // Convert our custom pagination token to the format the repository expects
+            String repositoryToken = getRepositoryToken(endingBefore, groupId);
+            
+            PaginatedResult<HangoutPointer> pastEvents = 
+                hangoutRepository.getPastEventsPage(groupId, nowTimestamp, limit, repositoryToken);
+                
+            // Convert to DTOs
+            List<HangoutSummaryDTO> withDay = pastEvents.getResults().stream()
+                .map(HangoutSummaryDTO::new)
+                .collect(Collectors.toList());
+            
+            // For past events, needsDay is empty (past events must have timestamps)
+            List<HangoutSummaryDTO> needsDay = List.of();
+            
+            // Generate pagination tokens for past events
+            String nextPageToken = null; // No next page for past events (would go back to current/future)
+            String previousPageToken = null;
+            
+            // Use repository's native token if available (more items available)
+            if (pastEvents.getNextToken() != null) {
+                // Convert repository token back to our custom format
+                previousPageToken = getCustomToken(pastEvents.getNextToken(), false);
+            }
+            
+            return new GroupFeedDTO(groupId, withDay, needsDay, nextPageToken, previousPageToken);
+            
+        } catch (Exception e) {
+            logger.error("Failed to get past events for group {}", groupId, e);
+            throw new RepositoryException("Failed to retrieve past events", e);
+        }
+    }
+    
+    /**
+     * Generate previous page token for backward pagination.
+     */
+    private String generatePreviousPageToken(List<HangoutPointer> events, long nowTimestamp) {
+        // Always provide a token to access past events when viewing current/future events
+        // Use the current timestamp as the boundary for past events
+        GroupFeedPaginationToken token = new GroupFeedPaginationToken(
+            null, // No specific event ID needed for initial past events query
+            nowTimestamp, 
+            false // isForward = false (backward pagination)
+        );
+        return token.encode();
+    }
+    
+    /**
+     * Convert custom pagination token to repository format using safe JSON handling.
+     */
+    private String getRepositoryToken(String customToken, String groupId) {
+        if (customToken == null) {
+            return null;
+        }
+        
+        try {
+            GroupFeedPaginationToken token = GroupFeedPaginationToken.decode(customToken);
+            
+            // If no specific event ID, this is the first query - no repository token needed
+            if (token.getLastEventId() == null) {
+                return null;
+            }
+            
+            // Use Jackson for safe JSON serialization
+            RepositoryTokenData tokenData = new RepositoryTokenData(
+                "GROUP#" + groupId,
+                String.valueOf(token.getLastTimestamp()),
+                "GROUP#" + groupId,
+                "HANGOUT#" + token.getLastEventId()
+            );
+            
+            String json = objectMapper.writeValueAsString(tokenData);
+            return java.util.Base64.getEncoder().encodeToString(json.getBytes());
+            
+        } catch (Exception e) {
+            logger.warn("Failed to convert custom token to repository token: {}", customToken, e);
+            return null;
+        }
+    }
+    
+    /**
+     * Convert repository token back to custom format using safe JSON handling.
+     */
+    private String getCustomToken(String repositoryToken, boolean isForward) {
+        if (repositoryToken == null) {
+            return null;
+        }
+        
+        try {
+            // Decode the repository token and parse with Jackson
+            String decoded = new String(java.util.Base64.getDecoder().decode(repositoryToken));
+            RepositoryTokenData tokenData = objectMapper.readValue(decoded, RepositoryTokenData.class);
+            
+            // Extract event ID and timestamp from the structured data
+            String eventId = tokenData.getSk().replace("HANGOUT#", "");
+            long timestamp = Long.parseLong(tokenData.getStartTimestamp());
+            
+            GroupFeedPaginationToken customToken = new GroupFeedPaginationToken(eventId, timestamp, isForward);
+            return customToken.encode();
+            
+        } catch (Exception e) {
+            logger.warn("Failed to convert repository token to custom token: {}", repositoryToken, e);
+            return null;
+        }
     }
     
     private void validateCreateGroupRequest(CreateGroupRequest request) {

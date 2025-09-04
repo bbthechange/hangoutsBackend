@@ -114,4 +114,45 @@ public interface HangoutRepository {
      */
     PaginatedResult<HangoutPointer> findUpcomingHangoutsPage(String participantKey, String timePrefix, 
                                                             int limit, String startToken);
+    
+    // Enhanced Group Feed Pagination Methods
+    
+    /**
+     * Get future events for a group using EntityTimeIndex.
+     * Queries events with startTimestamp > nowTimestamp.
+     * 
+     * @param groupId The group ID
+     * @param nowTimestamp Current timestamp
+     * @param limit Maximum number of events to return (null for no limit)
+     * @param startToken Pagination token for continuing from previous query
+     * @return PaginatedResult containing future events
+     */
+    PaginatedResult<HangoutPointer> getFutureEventsPage(String groupId, long nowTimestamp, 
+                                                       Integer limit, String startToken);
+    
+    /**
+     * Get in-progress events for a group using EndTimestampIndex.
+     * Queries events with endTimestamp > nowTimestamp and applies filter startTimestamp <= nowTimestamp.
+     * 
+     * @param groupId The group ID
+     * @param nowTimestamp Current timestamp
+     * @param limit Maximum number of events to return (null for no limit)
+     * @param startToken Pagination token for continuing from previous query
+     * @return PaginatedResult containing in-progress events
+     */
+    PaginatedResult<HangoutPointer> getInProgressEventsPage(String groupId, long nowTimestamp,
+                                                           Integer limit, String startToken);
+    
+    /**
+     * Get past events for a group using EntityTimeIndex in reverse order.
+     * Queries events with startTimestamp < nowTimestamp.
+     * 
+     * @param groupId The group ID
+     * @param nowTimestamp Current timestamp
+     * @param limit Maximum number of events to return (null for no limit)
+     * @param endToken Pagination token for continuing backwards from previous query
+     * @return PaginatedResult containing past events
+     */
+    PaginatedResult<HangoutPointer> getPastEventsPage(String groupId, long nowTimestamp,
+                                                     Integer limit, String endToken);
 }

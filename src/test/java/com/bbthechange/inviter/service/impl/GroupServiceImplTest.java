@@ -2,11 +2,13 @@ package com.bbthechange.inviter.service.impl;
 
 import com.bbthechange.inviter.service.GroupService;
 import com.bbthechange.inviter.repository.GroupRepository;
+import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.UserRepository;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.exception.*;
 import com.bbthechange.inviter.service.InviteService;
+import com.bbthechange.inviter.util.PaginatedResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -33,6 +35,9 @@ class GroupServiceImplTest {
 
     @Mock
     private GroupRepository groupRepository;
+    
+    @Mock
+    private HangoutRepository hangoutRepository;
     
     @Mock
     private UserRepository userRepository;
@@ -287,21 +292,28 @@ class GroupServiceImplTest {
         when(groupRepository.findMembership(groupId, userId)).thenReturn(
             Optional.of(createTestMembership(groupId, userId, "Test Group", GroupRole.MEMBER)));
         
-        // Create hangout pointers with timeInfo
+        // Mock the new hangout repository methods for enhanced group feed
+        // Create future events
         HangoutPointer futureHangout = createHangoutPointer(groupId, "11111111-1111-1111-1111-111111111111", "Future Hangout", java.time.Instant.now().plusSeconds(3600));
         TimeInfo timeInfo = new TimeInfo();
         timeInfo.setPeriodGranularity("evening");
         timeInfo.setPeriodStart("2025-08-05T19:00:00Z");
         futureHangout.setTimeInput(timeInfo);
         
+        // Create unscheduled events (needs day)
         HangoutPointer needsScheduling = createHangoutPointer(groupId, "22222222-2222-2222-2222-222222222222", "Needs Scheduling", null);
-        // No timeInfo for this one to test both scenarios
         
-        List<HangoutPointer> hangouts = List.of(futureHangout, needsScheduling);
-        when(groupRepository.findHangoutsByGroupId(groupId)).thenReturn(hangouts);
+        // Mock the repository methods that the enhanced service uses
+        PaginatedResult<HangoutPointer> futureEventsResult = new PaginatedResult<>(List.of(futureHangout), null);
+        PaginatedResult<HangoutPointer> inProgressEventsResult = new PaginatedResult<>(List.of(needsScheduling), null);
+        
+        when(hangoutRepository.getFutureEventsPage(eq(groupId), anyLong(), isNull(), isNull()))
+            .thenReturn(futureEventsResult);
+        when(hangoutRepository.getInProgressEventsPage(eq(groupId), anyLong(), isNull(), isNull()))
+            .thenReturn(inProgressEventsResult);
         
         // When
-        GroupFeedDTO result = groupService.getGroupFeed(groupId, userId);
+        GroupFeedDTO result = groupService.getGroupFeed(groupId, userId, null, null, null);
         
         // Then
         assertThat(result.getGroupId()).isEqualTo(groupId);
@@ -343,7 +355,7 @@ class GroupServiceImplTest {
         pointer.setHangoutId(hangoutId);
         pointer.setTitle(title);
         if (hangoutTime != null) {
-            pointer.setStartTimestamp(hangoutTime.toEpochMilli());
+            pointer.setStartTimestamp(hangoutTime.getEpochSecond()); // Use seconds, not milliseconds
         }
         // Set keys directly for test purposes
         pointer.setPk("GROUP#" + groupId);

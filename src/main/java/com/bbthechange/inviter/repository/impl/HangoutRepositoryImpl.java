@@ -1130,4 +1130,220 @@ public class HangoutRepositoryImpl implements HangoutRepository {
             }
         });
     }
+
+    @Override
+    public PaginatedResult<HangoutPointer> getFutureEventsPage(String groupId, long nowTimestamp, 
+                                                              Integer limit, String startToken) {
+        return performanceTracker.trackQuery("getFutureEventsPage", "EntityTimeIndex", () -> {
+            try {
+                String participantKey = InviterKeyFactory.getGroupPk(groupId);
+                
+                QueryRequest.Builder requestBuilder = QueryRequest.builder()
+                    .tableName(TABLE_NAME)
+                    .indexName("EntityTimeIndex")
+                    .keyConditionExpression("gsi1pk = :participantKey AND startTimestamp > :nowTimestamp")
+                    .expressionAttributeValues(Map.of(
+                        ":participantKey", AttributeValue.builder().s(participantKey).build(),
+                        ":nowTimestamp", AttributeValue.builder().n(String.valueOf(nowTimestamp)).build()
+                    ))
+                    .scanIndexForward(true); // Chronological order (oldest first)
+                
+                if (limit != null) {
+                    requestBuilder.limit(limit);
+                }
+                
+                // Add pagination token if provided
+                if (startToken != null && !startToken.trim().isEmpty()) {
+                    try {
+                        Map<String, AttributeValue> exclusiveStartKey = parseStartToken(startToken);
+                        requestBuilder.exclusiveStartKey(exclusiveStartKey);
+                    } catch (Exception e) {
+                        logger.warn("Invalid start token provided for getFutureEventsPage: {}", startToken, e);
+                        throw new IllegalArgumentException("Invalid pagination token");
+                    }
+                }
+                
+                QueryResponse response = dynamoDbClient.query(requestBuilder.build());
+                
+                // Convert items to HangoutPointer objects
+                List<HangoutPointer> hangoutPointers = response.items().stream()
+                    .map(this::deserializeItem)
+                    .filter(item -> item instanceof HangoutPointer)
+                    .map(item -> (HangoutPointer) item)
+                    .collect(Collectors.toList());
+                
+                // Generate next page token if more results exist
+                String nextToken = null;
+                if (response.lastEvaluatedKey() != null && !response.lastEvaluatedKey().isEmpty()) {
+                    nextToken = encodeStartToken(response.lastEvaluatedKey());
+                }
+                
+                logger.debug("Found {} future events for group {} (requested limit: {}, hasMore: {})", 
+                    hangoutPointers.size(), groupId, limit, nextToken != null);
+                
+                return new PaginatedResult<>(hangoutPointers, nextToken);
+                
+            } catch (DynamoDbException e) {
+                logger.error("Failed to query future events for group {} with limit {}", groupId, limit, e);
+                throw new RepositoryException("Failed to query future events", e);
+            }
+        });
+    }
+
+    @Override
+    public PaginatedResult<HangoutPointer> getInProgressEventsPage(String groupId, long nowTimestamp,
+                                                                  Integer limit, String startToken) {
+        return performanceTracker.trackQuery("getInProgressEventsPage", "EndTimestampIndex", () -> {
+            try {
+                String participantKey = InviterKeyFactory.getGroupPk(groupId);
+                
+                QueryRequest.Builder requestBuilder = QueryRequest.builder()
+                    .tableName(TABLE_NAME)
+                    .indexName("EndTimestampIndex")
+                    .keyConditionExpression("gsi1pk = :participantKey AND endTimestamp > :nowTimestamp")
+                    .filterExpression("startTimestamp <= :nowTimestamp") // Only events that have started
+                    .expressionAttributeValues(Map.of(
+                        ":participantKey", AttributeValue.builder().s(participantKey).build(),
+                        ":nowTimestamp", AttributeValue.builder().n(String.valueOf(nowTimestamp)).build()
+                    ))
+                    .scanIndexForward(true); // Order by endTimestamp ascending
+                
+                if (limit != null) {
+                    requestBuilder.limit(limit);
+                }
+                
+                // Add pagination token if provided
+                if (startToken != null && !startToken.trim().isEmpty()) {
+                    try {
+                        Map<String, AttributeValue> exclusiveStartKey = parseEndTimestampToken(startToken);
+                        requestBuilder.exclusiveStartKey(exclusiveStartKey);
+                    } catch (Exception e) {
+                        logger.warn("Invalid start token provided for getInProgressEventsPage: {}", startToken, e);
+                        throw new IllegalArgumentException("Invalid pagination token");
+                    }
+                }
+                
+                QueryResponse response = dynamoDbClient.query(requestBuilder.build());
+                
+                // Convert items to HangoutPointer objects
+                List<HangoutPointer> hangoutPointers = response.items().stream()
+                    .map(this::deserializeItem)
+                    .filter(item -> item instanceof HangoutPointer)
+                    .map(item -> (HangoutPointer) item)
+                    .collect(Collectors.toList());
+                
+                // Generate next page token if more results exist
+                String nextToken = null;
+                if (response.lastEvaluatedKey() != null && !response.lastEvaluatedKey().isEmpty()) {
+                    nextToken = encodeEndTimestampToken(response.lastEvaluatedKey());
+                }
+                
+                logger.debug("Found {} in-progress events for group {} (requested limit: {}, hasMore: {})", 
+                    hangoutPointers.size(), groupId, limit, nextToken != null);
+                
+                return new PaginatedResult<>(hangoutPointers, nextToken);
+                
+            } catch (DynamoDbException e) {
+                logger.error("Failed to query in-progress events for group {} with limit {}", groupId, limit, e);
+                throw new RepositoryException("Failed to query in-progress events", e);
+            }
+        });
+    }
+
+    @Override
+    public PaginatedResult<HangoutPointer> getPastEventsPage(String groupId, long nowTimestamp,
+                                                            Integer limit, String endToken) {
+        return performanceTracker.trackQuery("getPastEventsPage", "EntityTimeIndex", () -> {
+            try {
+                String participantKey = InviterKeyFactory.getGroupPk(groupId);
+                
+                QueryRequest.Builder requestBuilder = QueryRequest.builder()
+                    .tableName(TABLE_NAME)
+                    .indexName("EntityTimeIndex")
+                    .keyConditionExpression("gsi1pk = :participantKey AND startTimestamp < :nowTimestamp")
+                    .expressionAttributeValues(Map.of(
+                        ":participantKey", AttributeValue.builder().s(participantKey).build(),
+                        ":nowTimestamp", AttributeValue.builder().n(String.valueOf(nowTimestamp)).build()
+                    ))
+                    .scanIndexForward(false); // Reverse chronological order (newest first)
+                
+                if (limit != null) {
+                    requestBuilder.limit(limit);
+                }
+                
+                // Add pagination token if provided
+                if (endToken != null && !endToken.trim().isEmpty()) {
+                    try {
+                        Map<String, AttributeValue> exclusiveStartKey = parseStartToken(endToken);
+                        requestBuilder.exclusiveStartKey(exclusiveStartKey);
+                    } catch (Exception e) {
+                        logger.warn("Invalid end token provided for getPastEventsPage: {}", endToken, e);
+                        throw new IllegalArgumentException("Invalid pagination token");
+                    }
+                }
+                
+                QueryResponse response = dynamoDbClient.query(requestBuilder.build());
+                
+                // Convert items to HangoutPointer objects
+                List<HangoutPointer> hangoutPointers = response.items().stream()
+                    .map(this::deserializeItem)
+                    .filter(item -> item instanceof HangoutPointer)
+                    .map(item -> (HangoutPointer) item)
+                    .collect(Collectors.toList());
+                
+                // Generate next page token if more results exist
+                String nextToken = null;
+                if (response.lastEvaluatedKey() != null && !response.lastEvaluatedKey().isEmpty()) {
+                    nextToken = encodeStartToken(response.lastEvaluatedKey());
+                }
+                
+                logger.debug("Found {} past events for group {} (requested limit: {}, hasMore: {})", 
+                    hangoutPointers.size(), groupId, limit, nextToken != null);
+                
+                return new PaginatedResult<>(hangoutPointers, nextToken);
+                
+            } catch (DynamoDbException e) {
+                logger.error("Failed to query past events for group {} with limit {}", groupId, limit, e);
+                throw new RepositoryException("Failed to query past events", e);
+            }
+        });
+    }
+
+    /**
+     * Parse a pagination token for EndTimestampIndex into DynamoDB ExclusiveStartKey format.
+     */
+    private Map<String, AttributeValue> parseEndTimestampToken(String token) {
+        try {
+            String decoded = new String(Base64.getDecoder().decode(token));
+            Map<String, String> tokenData = parseSimpleJson(decoded);
+            
+            Map<String, AttributeValue> exclusiveStartKey = new HashMap<>();
+            exclusiveStartKey.put("gsi1pk", AttributeValue.builder().s(tokenData.get("gsi1pk")).build());
+            exclusiveStartKey.put("endTimestamp", AttributeValue.builder().n(tokenData.get("endTimestamp")).build());
+            exclusiveStartKey.put("pk", AttributeValue.builder().s(tokenData.get("pk")).build());
+            exclusiveStartKey.put("sk", AttributeValue.builder().s(tokenData.get("sk")).build());
+            
+            return exclusiveStartKey;
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Failed to parse EndTimestamp pagination token", e);
+        }
+    }
+    
+    /**
+     * Encode DynamoDB LastEvaluatedKey for EndTimestampIndex into a pagination token.
+     */
+    private String encodeEndTimestampToken(Map<String, AttributeValue> lastEvaluatedKey) {
+        try {
+            StringBuilder json = new StringBuilder("{");
+            json.append("\"gsi1pk\":\"").append(lastEvaluatedKey.get("gsi1pk").s()).append("\",");
+            json.append("\"endTimestamp\":\"").append(lastEvaluatedKey.get("endTimestamp").n()).append("\",");
+            json.append("\"pk\":\"").append(lastEvaluatedKey.get("pk").s()).append("\",");
+            json.append("\"sk\":\"").append(lastEvaluatedKey.get("sk").s()).append("\"");
+            json.append("}");
+            
+            return Base64.getEncoder().encodeToString(json.toString().getBytes());
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to encode EndTimestamp pagination token", e);
+        }
+    }
 }
