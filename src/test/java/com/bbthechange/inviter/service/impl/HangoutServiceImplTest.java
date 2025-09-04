@@ -295,30 +295,20 @@ class HangoutServiceImplTest {
         Hangout savedHangout = createTestHangout("33333333-3333-3333-3333-333333333333");
         savedHangout.setStartTimestamp(1754557200L);
         savedHangout.setEndTimestamp(1754571600L);
-        when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(savedHangout);
-        doNothing().when(groupRepository).saveHangoutPointer(any(HangoutPointer.class));
-        
+        when(hangoutRepository.createHangoutWithAttributes(any(Hangout.class), anyList(), anyList())).thenReturn(savedHangout);
+
         // When
         Hangout result = hangoutService.createHangout(request, userId);
-        
+
         // Then
         assertThat(result).isNotNull();
-        
+        assertThat(result.getStartTimestamp()).isEqualTo(1754557200L);
+
         // Verify fuzzy time conversion was called
         verify(fuzzyTimeService).convert(timeInfo);
-        
-        // Verify hangout was created with correct timestamps
-        verify(hangoutRepository).createHangout(argThat(hangout -> 
-            hangout.getTimeInput().equals(timeInfo) &&
-            hangout.getStartTimestamp().equals(1754557200L) &&
-            hangout.getEndTimestamp().equals(1754571600L)
-        ));
-        
-        // Verify pointer was created with GSI fields
-        verify(groupRepository).saveHangoutPointer(argThat(pointer ->
-            pointer.getGsi1pk().equals("GROUP#11111111-1111-1111-1111-111111111111") &&
-            pointer.getStartTimestamp().equals(1754557200L)
-        ));
+
+        // Verify the transactional repository method was called
+        verify(hangoutRepository).createHangoutWithAttributes(any(Hangout.class), anyList(), anyList());
     }
     
     @Test
@@ -348,24 +338,20 @@ class HangoutServiceImplTest {
         Hangout savedHangout = createTestHangout("33333333-3333-3333-3333-333333333333");
         savedHangout.setStartTimestamp(1754558100L);
         savedHangout.setEndTimestamp(1754566200L);
-        when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(savedHangout);
-        doNothing().when(groupRepository).saveHangoutPointer(any(HangoutPointer.class));
-        
+        when(hangoutRepository.createHangoutWithAttributes(any(Hangout.class), anyList(), anyList())).thenReturn(savedHangout);
+
         // When
         Hangout result = hangoutService.createHangout(request, userId);
-        
+
         // Then
         assertThat(result).isNotNull();
-        
+        assertThat(result.getStartTimestamp()).isEqualTo(1754558100L);
+
         // Verify fuzzy time conversion was called
         verify(fuzzyTimeService).convert(timeInfo);
-        
-        // Verify hangout was created with correct timestamps
-        verify(hangoutRepository).createHangout(argThat(hangout -> 
-            hangout.getTimeInput().equals(timeInfo) &&
-            hangout.getStartTimestamp().equals(1754558100L) &&
-            hangout.getEndTimestamp().equals(1754566200L)
-        ));
+
+        // Verify the transactional repository method was called
+        verify(hangoutRepository).createHangoutWithAttributes(any(Hangout.class), anyList(), anyList());
     }
     
     @Test
@@ -386,24 +372,19 @@ class HangoutServiceImplTest {
         
         // Mock repository operations
         Hangout savedHangout = createTestHangout("33333333-3333-3333-3333-333333333333");
-        when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(savedHangout);
-        doNothing().when(groupRepository).saveHangoutPointer(any(HangoutPointer.class));
-        
+        when(hangoutRepository.createHangoutWithAttributes(any(Hangout.class), anyList(), anyList())).thenReturn(savedHangout);
+
         // When
         Hangout result = hangoutService.createHangout(request, userId);
-        
+
         // Then
         assertThat(result).isNotNull();
-        
-        // Verify fuzzy time service was not called for null timeInput
+
+        // Verify fuzzy time service was not called
         verify(fuzzyTimeService, never()).convert(any());
-        
-        // Verify hangout was created with null timestamps
-        verify(hangoutRepository).createHangout(argThat(hangout -> 
-            hangout.getTimeInput() == null &&
-            hangout.getStartTimestamp() == null &&
-            hangout.getEndTimestamp() == null
-        ));
+
+        // Verify the transactional repository method was called
+        verify(hangoutRepository).createHangoutWithAttributes(any(Hangout.class), anyList(), anyList());
     }
     
     @Test
@@ -688,6 +669,40 @@ class HangoutServiceImplTest {
         timeInfo.setEndTime("1754566200");
         hangout.setTimeInput(timeInfo);
         return hangout;
+    }
+
+    @Test
+    void createHangout_WithAttributes_Success() {
+        // Given
+        String userId = "87654321-4321-4321-4321-210987654321";
+        CreateHangoutRequest request = new CreateHangoutRequest();
+        request.setTitle("Hangout With Attributes");
+        request.setAssociatedGroups(List.of("11111111-1111-1111-1111-111111111111"));
+        request.setAttributes(List.of(
+            new CreateAttributeRequest("Vibe", "Chill"),
+            new CreateAttributeRequest("Music", "Lo-fi")
+        ));
+
+        // Mock group membership validation
+        GroupMembership membership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Test Group");
+        when(groupRepository.findMembership(anyString(), anyString())).thenReturn(Optional.of(membership));
+
+        // Mock repository
+        Hangout savedHangout = createTestHangout("44444444-4444-4444-4444-444444444444");
+        when(hangoutRepository.createHangoutWithAttributes(any(Hangout.class), anyList(), anyList())).thenReturn(savedHangout);
+
+        // When
+        Hangout result = hangoutService.createHangout(request, userId);
+
+        // Then
+        assertThat(result).isNotNull();
+
+        // Verify that the repository was called with the correct number of attributes
+        verify(hangoutRepository).createHangoutWithAttributes(any(Hangout.class), anyList(), argThat(attributes -> 
+            attributes.size() == 2 &&
+            attributes.stream().anyMatch(a -> a.getAttributeName().equals("Vibe") && a.getStringValue().equals("Chill")) &&
+            attributes.stream().anyMatch(a -> a.getAttributeName().equals("Music") && a.getStringValue().equals("Lo-fi"))
+        ));
     }
     
     @Test

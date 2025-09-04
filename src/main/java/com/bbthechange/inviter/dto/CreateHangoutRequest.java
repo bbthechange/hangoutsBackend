@@ -14,5 +14,6 @@ public class CreateHangoutRequest {
     private EventVisibility visibility;
     private String mainImagePath;
     private List<String> associatedGroups; // Groups to associate this hangout with
+    private List<CreateAttributeRequest> attributes;
     private boolean carpoolEnabled;
 }

@@ -78,10 +78,8 @@ public class HangoutServiceImpl implements HangoutService {
             hangout.setAssociatedGroups(request.getAssociatedGroups());
         }
         
-        // Save canonical hangout record
-        hangout = hangoutRepository.createHangout(hangout);
-        
-        // Create hangout pointer records for each associated group
+        // Prepare pointer records
+        List<HangoutPointer> pointers = new ArrayList<>();
         if (request.getAssociatedGroups() != null) {
             for (String groupId : request.getAssociatedGroups()) {
                 HangoutPointer pointer = new HangoutPointer(groupId, hangout.getHangoutId(), hangout.getTitle());
@@ -95,11 +93,32 @@ public class HangoutServiceImpl implements HangoutService {
                 pointer.setStartTimestamp(hangout.getStartTimestamp()); // GSI sort key
                 pointer.setEndTimestamp(hangout.getEndTimestamp());     // For completeness
 
-                groupRepository.saveHangoutPointer(pointer);
+                pointers.add(pointer);
+            }
+        }
+
+        // Prepare attribute records
+        List<HangoutAttribute> attributes = new ArrayList<>();
+        if (request.getAttributes() != null) {
+            for (CreateAttributeRequest attrRequest : request.getAttributes()) {
+                if (!attrRequest.isValid()) {
+                    throw new ValidationException("Invalid attribute request: " + attrRequest);
+                }
+                // Simple duplicate name check within the request itself
+                long nameCount = request.getAttributes().stream()
+                    .filter(a -> a.getTrimmedAttributeName().equals(attrRequest.getTrimmedAttributeName()))
+                    .count();
+                if (nameCount > 1) {
+                    throw new ValidationException("Duplicate attribute name in request: " + attrRequest.getTrimmedAttributeName());
+                }
+                attributes.add(new HangoutAttribute(hangout.getHangoutId(), attrRequest.getTrimmedAttributeName(), attrRequest.getStringValue()));
             }
         }
         
-        logger.info("Created hangout {} by user {}", hangout.getHangoutId(), requestingUserId);
+        // Save everything in a single transaction
+        hangout = hangoutRepository.createHangoutWithAttributes(hangout, pointers, attributes);
+        
+        logger.info("Created hangout {} with {} attributes by user {}", hangout.getHangoutId(), attributes.size(), requestingUserId);
         return hangout;
     }
     

@@ -228,6 +228,58 @@ public class HangoutRepositoryImpl implements HangoutRepository {
             }
         });
     }
+
+    @Override
+    public Hangout createHangoutWithAttributes(Hangout hangout, List<HangoutPointer> pointers, List<HangoutAttribute> attributes) {
+        return performanceTracker.trackQuery("createHangoutWithAttributes", TABLE_NAME, () -> {
+            try {
+                hangout.touch();
+                
+                // Prepare all transact write items
+                List<TransactWriteItem> transactItems = new ArrayList<>();
+                
+                // 1. Add Hangout (canonical record)
+                Map<String, AttributeValue> hangoutItem = hangoutSchema.itemToMap(hangout, true);
+                transactItems.add(TransactWriteItem.builder()
+                    .put(Put.builder().tableName(TABLE_NAME).item(hangoutItem).build())
+                    .build());
+                
+                // 2. Add HangoutPointers (for group feeds)
+                for (HangoutPointer pointer : pointers) {
+                    pointer.touch();
+                    Map<String, AttributeValue> pointerItem = hangoutPointerSchema.itemToMap(pointer, true);
+                    transactItems.add(TransactWriteItem.builder()
+                        .put(Put.builder().tableName(TABLE_NAME).item(pointerItem).build())
+                        .build());
+                }
+
+                // 3. Add HangoutAttributes
+                for (HangoutAttribute attribute : attributes) {
+                    attribute.touch();
+                    Map<String, AttributeValue> attributeItem = hangoutAttributeSchema.itemToMap(attribute, true);
+                    transactItems.add(TransactWriteItem.builder()
+                        .put(Put.builder().tableName(TABLE_NAME).item(attributeItem).build())
+                        .build());
+                }
+                
+                // Execute atomic transaction
+                TransactWriteItemsRequest request = TransactWriteItemsRequest.builder()
+                    .transactItems(transactItems)
+                    .build();
+                
+                dynamoDbClient.transactWriteItems(request);
+                
+                logger.info("Atomically created hangout {} with {} pointers and {} attributes.",
+                    hangout.getHangoutId(), pointers.size(), attributes.size());
+                
+                return hangout;
+                
+            } catch (DynamoDbException e) {
+                logger.error("Failed to atomically create hangout {}, pointers, and attributes", hangout.getHangoutId(), e);
+                throw new RepositoryException("Failed to atomically create hangout with attributes", e);
+            }
+        });
+    }
     
     @Override
     public Hangout save(Hangout hangout) {
