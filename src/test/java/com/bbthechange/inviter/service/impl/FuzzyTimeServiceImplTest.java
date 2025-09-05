@@ -187,18 +187,19 @@ class FuzzyTimeServiceImplTest {
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
             fuzzyTimeService.convert(timeInfo);
         });
-        assertEquals("timeInput must contain either exact time (startTime + endTime) or fuzzy time (periodGranularity + periodStart)", exception.getMessage());
+        assertEquals("timeInput must contain either exact time (startTime + optional endTime) or fuzzy time (periodGranularity + periodStart)", exception.getMessage());
     }
 
     @Test
-    @DisplayName("Should throw exception for incomplete exact time (missing endTime)")
-    void shouldThrowExceptionForIncompleteExactTime() {
+    @DisplayName("Should handle exact time with only startTime (for hangouts)")
+    void shouldHandleExactTimeWithOnlyStartTime() {
         TimeInfo timeInfo = new TimeInfo(null, null, "2025-08-05T19:15:00Z", null);
 
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
-            fuzzyTimeService.convert(timeInfo);
-        });
-        assertEquals("endTime cannot be null or empty", exception.getMessage());
+        FuzzyTimeService.TimeConversionResult result = fuzzyTimeService.convert(timeInfo);
+
+        // 2025-08-05T19:15:00Z = Unix timestamp 1754421300
+        assertEquals(1754421300L, result.startTimestamp);
+        assertNull(result.endTimestamp); // endTime is optional for hangouts
     }
 
     @Test
@@ -235,25 +236,27 @@ class FuzzyTimeServiceImplTest {
     }
 
     @Test
-    @DisplayName("Should throw exception for null endTime")
-    void shouldThrowExceptionForNullEndTime() {
+    @DisplayName("Should handle null endTime (for hangouts)")
+    void shouldHandleNullEndTime() {
         TimeInfo timeInfo = new TimeInfo(null, null, "2025-08-05T19:15:00Z", null);
 
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
-            fuzzyTimeService.convert(timeInfo);
-        });
-        assertEquals("endTime cannot be null or empty", exception.getMessage());
+        FuzzyTimeService.TimeConversionResult result = fuzzyTimeService.convert(timeInfo);
+
+        // 2025-08-05T19:15:00Z = Unix timestamp 1754421300
+        assertEquals(1754421300L, result.startTimestamp);
+        assertNull(result.endTimestamp); // endTime is optional for hangouts
     }
 
     @Test
-    @DisplayName("Should throw exception for empty endTime")
-    void shouldThrowExceptionForEmptyEndTime() {
+    @DisplayName("Should handle empty endTime (for hangouts)")
+    void shouldHandleEmptyEndTime() {
         TimeInfo timeInfo = new TimeInfo(null, null, "2025-08-05T19:15:00Z", "   ");
 
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
-            fuzzyTimeService.convert(timeInfo);
-        });
-        assertEquals("endTime cannot be null or empty", exception.getMessage());
+        FuzzyTimeService.TimeConversionResult result = fuzzyTimeService.convert(timeInfo);
+
+        // 2025-08-05T19:15:00Z = Unix timestamp 1754421300
+        assertEquals(1754421300L, result.startTimestamp);
+        assertNull(result.endTimestamp); // empty endTime is treated as null for hangouts
     }
 
     @Test

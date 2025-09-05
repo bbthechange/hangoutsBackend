@@ -41,12 +41,13 @@ public class FuzzyTimeServiceImpl implements FuzzyTimeService {
         }
         
         throw new IllegalArgumentException(
-            "timeInput must contain either exact time (startTime + endTime) or fuzzy time (periodGranularity + periodStart)"
+            "timeInput must contain either exact time (startTime + optional endTime) or fuzzy time (periodGranularity + periodStart)"
         );
     }
     
     /**
-     * Handle exact time input with startTime and endTime ISO 8601 strings.
+     * Handle exact time input with startTime and optionally endTime ISO 8601 strings.
+     * For hangouts, endTime is optional since many hangouts don't have definitive end times.
      */
     private TimeConversionResult handleExactTime(TimeInfo timeInfo) {
         String startTimeStr = timeInfo.getStartTime();
@@ -55,21 +56,26 @@ public class FuzzyTimeServiceImpl implements FuzzyTimeService {
         if (startTimeStr == null || startTimeStr.trim().isEmpty()) {
             throw new IllegalArgumentException("startTime cannot be null or empty");
         }
-        if (endTimeStr == null || endTimeStr.trim().isEmpty()) {
-            throw new IllegalArgumentException("endTime cannot be null or empty");
-        }
         
         try {
             // Parse ISO 8601 with timezone to UTC Unix timestamp
             Long startTimestamp = parseIso8601ToUnixTimestamp(startTimeStr);
-            Long endTimestamp = parseIso8601ToUnixTimestamp(endTimeStr);
+            Long endTimestamp = null;
             
-            if (endTimestamp <= startTimestamp) {
-                throw new IllegalArgumentException("endTime must be after startTime");
+            // endTime is optional for hangouts - only validate if provided
+            if (endTimeStr != null && !endTimeStr.trim().isEmpty()) {
+                endTimestamp = parseIso8601ToUnixTimestamp(endTimeStr);
+                
+                if (endTimestamp <= startTimestamp) {
+                    throw new IllegalArgumentException("endTime must be after startTime");
+                }
+                
+                logger.debug("Converted exact time: {} -> {}, {} -> {}", 
+                    startTimeStr, startTimestamp, endTimeStr, endTimestamp);
+            } else {
+                logger.debug("Converted exact time (start only): {} -> {}", 
+                    startTimeStr, startTimestamp);
             }
-            
-            logger.debug("Converted exact time: {} -> {}, {} -> {}", 
-                startTimeStr, startTimestamp, endTimeStr, endTimestamp);
             
             return new TimeConversionResult(startTimestamp, endTimestamp);
             
