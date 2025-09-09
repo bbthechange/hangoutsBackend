@@ -106,7 +106,7 @@ jobs:
     needs: deploy-staging
     runs-on: ubuntu-latest
     environment:
-      name: production
+      name: Prod
     if: github.ref == 'refs/heads/main'
     steps:
       - name: Download deployment package
