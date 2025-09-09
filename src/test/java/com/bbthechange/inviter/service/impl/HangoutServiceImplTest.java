@@ -432,12 +432,16 @@ class HangoutServiceImplTest {
             hangout.getEndTimestamp().equals(1754618000L)
         ));
         
-        // Verify pointer was updated with new GSI1SK
+        // Verify pointer was updated with timeInput, startTimestamp, and endTimestamp
         verify(groupRepository).updateHangoutPointer(
             eq("11111111-1111-1111-1111-111111111111"), 
             eq(hangoutId), 
-            argThat(updates -> updates.containsKey("startTimestamp") &&
-                updates.get("startTimestamp").n().equals("1754603600"))
+            argThat(updates -> 
+                updates.containsKey("timeInput") &&
+                updates.containsKey("startTimestamp") &&
+                updates.containsKey("endTimestamp") &&
+                updates.get("startTimestamp").n().equals("1754603600") &&
+                updates.get("endTimestamp").n().equals("1754618000"))
         );
     }
     

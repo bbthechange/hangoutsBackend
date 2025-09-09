@@ -195,6 +195,7 @@ public class HangoutServiceImpl implements HangoutService {
             // TODO participantCount? Not used yet, not sure we should use it
             if (hangout.getAssociatedGroups() != null) {
                 needsPointerUpdate = true;
+                pointerUpdates.put("timeInput", request.getTimeInfo());
                 pointerUpdates.put("startTimestamp", timeResult.startTimestamp);
                 pointerUpdates.put("endTimestamp", timeResult.endTimestamp);
             }
@@ -454,6 +455,25 @@ public class HangoutServiceImpl implements HangoutService {
                 attributeValue = AttributeValue.builder().s((String) value).build();
             } else if (value instanceof Number) {
                 attributeValue = AttributeValue.builder().n(value.toString()).build();
+            } else if (value instanceof TimeInfo) {
+                // Handle TimeInfo objects by storing as a DynamoDB Map (M type)
+                TimeInfo timeInfo = (TimeInfo) value;
+                Map<String, AttributeValue> timeInfoMap = new HashMap<>();
+                
+                if (timeInfo.getStartTime() != null) {
+                    timeInfoMap.put("startTime", AttributeValue.builder().s(timeInfo.getStartTime()).build());
+                }
+                if (timeInfo.getEndTime() != null) {
+                    timeInfoMap.put("endTime", AttributeValue.builder().s(timeInfo.getEndTime()).build());
+                }
+                if (timeInfo.getPeriodGranularity() != null) {
+                    timeInfoMap.put("periodGranularity", AttributeValue.builder().s(timeInfo.getPeriodGranularity()).build());
+                }
+                if (timeInfo.getPeriodStart() != null) {
+                    timeInfoMap.put("periodStart", AttributeValue.builder().s(timeInfo.getPeriodStart()).build());
+                }
+                
+                attributeValue = AttributeValue.builder().m(timeInfoMap).build();
             } else {
                 // Add more types here if needed (e.g., Boolean)
                 logger.warn("Unsupported type in pointer update for key {}: {}", key, value.getClass().getName());
