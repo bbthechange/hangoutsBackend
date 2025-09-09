@@ -1,9 +1,5 @@
 # EB should ignore most build artifacts but include the final JAR
-build/classes/
-build/generated/
-build/reports/
-build/test-results/
-build/tmp/
+build/
 
 # Exclude large cached directories (15GB+ bandwidth waste)
 .elasticbeanstalk/app_versions/
