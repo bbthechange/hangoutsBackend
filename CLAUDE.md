@@ -243,16 +243,34 @@ Health: http://localhost:8080/health
 - **URL**: http://inviter-test.eba-meudu6bv.us-west-2.elasticbeanstalk.com
 
 ### Deployment Process
+
+**⚠️ CRITICAL: Always verify artifact freshness to prevent stale deployments**
+
 ```bash
-# Build application  
+# 1. Build application with latest code
 ./gradlew clean build
 
-# Copy JAR for EB deployment
+# 2. Copy fresh JAR for EB deployment  
 cp build/libs/inviter-0.0.1-SNAPSHOT.jar ./application.jar
 
-# Deploy to production
+# 3. MANDATORY: Verify artifact timestamp is current
+ls -la application.jar
+# Must show CURRENT timestamp - if stale, repeat steps 1-2
+
+# 4. Deploy to production
 eb deploy
+
+# 5. MANDATORY: Verify deployment version after completion
+eb status | grep "Deployed Version"
+# Should show version matching current commit hash and timestamp
 ```
+
+**Deployment Verification Checklist:**
+- [ ] Fresh build completed (`BUILD SUCCESSFUL`)
+- [ ] Artifact timestamp is current (within last few minutes)
+- [ ] Deployment version reflects current commit
+- [ ] Production health check passes
+- [ ] API behavior matches localhost (if using same database)
 
 ### Production Configuration
 - **Procfile**: `web: java -jar application.jar --server.port=5000 --spring.profiles.active=prod`
