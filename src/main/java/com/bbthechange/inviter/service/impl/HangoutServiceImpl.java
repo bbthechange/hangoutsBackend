@@ -476,7 +476,7 @@ public class HangoutServiceImpl implements HangoutService {
                 attributeValue = AttributeValue.builder().m(timeInfoMap).build();
             } else {
                 // Add more types here if needed (e.g., Boolean)
-                logger.warn("Unsupported type in pointer update for key {}: {}", key, value.getClass().getName());
+                logger.warn("Unsupported type in pointer update for key {}: {}", key, value == null? null : value.getClass().getName());
                 continue; // Skip unsupported types
             }
             updateValues.put(key, attributeValue);
