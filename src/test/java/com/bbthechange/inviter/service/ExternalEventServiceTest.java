@@ -1,5 +1,6 @@
 package com.bbthechange.inviter.service;
 
+import com.bbthechange.inviter.config.ExternalParserProperties;
 import com.bbthechange.inviter.dto.ParsedEventDetailsDto;
 import com.bbthechange.inviter.exception.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -11,8 +12,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.unit.DataSize;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
+
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -24,13 +28,23 @@ class ExternalEventServiceTest {
     @Mock
     private RestTemplate restTemplate;
 
+    @Mock
+    private ExternalParserProperties properties;
+
     private ObjectMapper objectMapper;
     private ExternalEventService externalEventService;
 
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper();
-        externalEventService = new ExternalEventService(restTemplate, objectMapper);
+        
+        // Mock properties with default values using lenient stubbing
+        lenient().when(properties.getMaxResponseSize()).thenReturn(DataSize.ofMegabytes(2));
+        lenient().when(properties.getConnectionTimeout()).thenReturn(Duration.ofSeconds(5));
+        lenient().when(properties.getReadTimeout()).thenReturn(Duration.ofSeconds(10));
+        lenient().when(properties.getMaxRedirects()).thenReturn(3);
+        
+        externalEventService = new ExternalEventService(restTemplate, objectMapper, properties);
     }
 
     @Test

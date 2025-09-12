@@ -1,5 +1,6 @@
 package com.bbthechange.inviter.service;
 
+import com.bbthechange.inviter.config.ExternalParserProperties;
 import com.bbthechange.inviter.dto.Address;
 import com.bbthechange.inviter.dto.ParsedEventDetailsDto;
 import com.bbthechange.inviter.dto.TicketOffer;
@@ -40,9 +41,7 @@ public class ExternalEventService {
 
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
-
-    private static final long MAX_RESPONSE_SIZE = 2 * 1024 * 1024; // 2MB
-    private static final int MAX_REDIRECTS = 3;
+    private final ExternalParserProperties properties;
 
     private static final List<String> BLOCKED_CIDR = List.of(
         "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", // Private networks
@@ -60,9 +59,12 @@ public class ExternalEventService {
         "localhost", "127.0.0.1", "0.0.0.0", "::1"
     );
 
-    public ExternalEventService(@Qualifier("externalRestTemplate") RestTemplate restTemplate, ObjectMapper objectMapper) {
+    public ExternalEventService(@Qualifier("externalRestTemplate") RestTemplate restTemplate, 
+                               ObjectMapper objectMapper,
+                               ExternalParserProperties properties) {
         this.restTemplate = restTemplate;
         this.objectMapper = objectMapper;
+        this.properties = properties;
     }
 
     public ParsedEventDetailsDto parseUrl(String urlString) {
@@ -143,10 +145,9 @@ public class ExternalEventService {
 
         } catch (MalformedURLException e) {
             throw new UnsafeUrlException("Invalid URL format: " + e.getMessage(), e);
+        } catch (UnsafeUrlException e) {
+            throw e;
         } catch (Exception e) {
-            if (e instanceof UnsafeUrlException) {
-                throw e;
-            }
             throw new UnsafeUrlException("URL validation failed: " + e.getMessage(), e);
         }
     }
@@ -157,7 +158,7 @@ public class ExternalEventService {
         if (contentLength != null) {
             try {
                 long size = Long.parseLong(contentLength);
-                if (size > MAX_RESPONSE_SIZE) {
+                if (size > properties.getMaxResponseSize().toBytes()) {
                     throw new ContentValidationException("Response too large: " + size + " bytes");
                 }
             } catch (NumberFormatException e) {

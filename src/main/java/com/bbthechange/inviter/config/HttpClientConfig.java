@@ -5,16 +5,21 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestTemplate;
-import java.time.Duration;
 
 @Configuration
 public class HttpClientConfig {
 
+    private final ExternalParserProperties properties;
+
+    public HttpClientConfig(ExternalParserProperties properties) {
+        this.properties = properties;
+    }
+
     @Bean("externalRestTemplate")
     public RestTemplate externalRestTemplate() {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(Duration.ofSeconds(5));
-        factory.setReadTimeout(Duration.ofSeconds(10));
+        factory.setConnectTimeout(properties.getConnectionTimeout());
+        factory.setReadTimeout(properties.getReadTimeout());
         
         RestTemplate restTemplate = new RestTemplate(factory);
         return restTemplate;
