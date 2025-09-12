@@ -6,6 +6,7 @@ import lombok.AllArgsConstructor;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 @Builder
@@ -18,5 +19,7 @@ public class ParsedEventDetailsDto {
     private LocalDateTime endTime;
     private Address location;
     private String imageUrl;
+    private String url;
     private String sourceUrl;
+    private List<TicketOffer> ticketOffers;
 }

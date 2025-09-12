@@ -2,6 +2,7 @@ package com.bbthechange.inviter.service;
 
 import com.bbthechange.inviter.dto.Address;
 import com.bbthechange.inviter.dto.ParsedEventDetailsDto;
+import com.bbthechange.inviter.dto.TicketOffer;
 import com.bbthechange.inviter.exception.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.commons.net.util.SubnetUtils;
@@ -19,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
+import java.math.BigDecimal;
 import java.net.InetAddress;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -26,6 +28,7 @@ import java.net.UnknownHostException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -233,11 +236,13 @@ public class ExternalEventService {
         String name = (String) map.get("name");
         String description = (String) map.get("description");
         String imageUrl = extractImageUrl(map.get("image"));
+        String eventUrl = (String) map.get("url");
         
         LocalDateTime startTime = parseDate(map.get("startDate"));
         LocalDateTime endTime = parseDate(map.get("endDate"));
 
         Address address = extractAddress(map.get("location"));
+        List<TicketOffer> ticketOffers = extractTicketOffers(map.get("offers"));
 
         return ParsedEventDetailsDto.builder()
             .title(name)
@@ -246,7 +251,9 @@ public class ExternalEventService {
             .endTime(endTime)
             .location(address)
             .imageUrl(imageUrl)
+            .url(eventUrl)
             .sourceUrl(sourceUrl)
+            .ticketOffers(ticketOffers)
             .build();
     }
 
@@ -274,24 +281,81 @@ public class ExternalEventService {
         }
 
         Map<String, Object> locationMap = (Map<String, Object>) locationObj;
+        String locationName = (String) locationMap.get("name");
         Object addressObj = locationMap.get("address");
         
         if (addressObj instanceof String) {
             // Simple string address
-            return new Address((String) addressObj);
+            Address address = new Address((String) addressObj);
+            address.setName(locationName);
+            return address;
         } else if (addressObj instanceof Map) {
             // Structured address
             Map<String, Object> addressMap = (Map<String, Object>) addressObj;
-            return new Address(
+            Address address = new Address(
+                locationName,
                 (String) addressMap.get("streetAddress"),
                 (String) addressMap.get("addressLocality"),
                 (String) addressMap.get("addressRegion"),
                 (String) addressMap.get("postalCode"),
                 (String) addressMap.get("addressCountry")
             );
+            return address;
         }
         
         return null;
+    }
+
+    private List<TicketOffer> extractTicketOffers(Object offersObj) {
+        List<TicketOffer> ticketOffers = new ArrayList<>();
+        
+        if (!(offersObj instanceof List)) {
+            return ticketOffers;
+        }
+
+        List<?> offersList = (List<?>) offersObj;
+        for (Object offerObj : offersList) {
+            if (!(offerObj instanceof Map)) {
+                continue;
+            }
+
+            Map<String, Object> offerMap = (Map<String, Object>) offerObj;
+            String type = (String) offerMap.get("@type");
+            
+            // Skip AggregateOffer as it's a summary, focus on individual Offer objects
+            if ("AggregateOffer".equals(type)) {
+                continue;
+            }
+
+            String name = (String) offerMap.get("name");
+            String url = (String) offerMap.get("url");
+            String priceCurrency = (String) offerMap.get("priceCurrency");
+            String availability = (String) offerMap.get("availability");
+            
+            BigDecimal price = null;
+            Object priceObj = offerMap.get("price");
+            if (priceObj instanceof Number) {
+                price = new BigDecimal(priceObj.toString());
+            } else if (priceObj instanceof String) {
+                try {
+                    price = new BigDecimal((String) priceObj);
+                } catch (NumberFormatException e) {
+                    logger.debug("Could not parse price: {}", priceObj);
+                }
+            }
+
+            TicketOffer ticketOffer = TicketOffer.builder()
+                .name(name)
+                .url(url)
+                .price(price)
+                .priceCurrency(priceCurrency)
+                .availability(availability)
+                .build();
+            
+            ticketOffers.add(ticketOffer);
+        }
+        
+        return ticketOffers;
     }
     
     private LocalDateTime parseDate(Object dateObj) {

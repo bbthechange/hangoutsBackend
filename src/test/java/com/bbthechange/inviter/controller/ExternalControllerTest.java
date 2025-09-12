@@ -14,6 +14,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.ResponseEntity;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.when;
@@ -31,13 +32,15 @@ class ExternalControllerTest {
     void parseEventDetails_WithValidUrl_ReturnsEventDetails() {
         // Given
         String url = "https://eventbrite.com/event/123";
-        Address address = new Address("123 Main St", "San Francisco", "CA", "94102", "USA");
+        Address address = new Address("Venue Name", "123 Main St", "San Francisco", "CA", "94102", "USA");
         ParsedEventDetailsDto expectedDto = ParsedEventDetailsDto.builder()
             .title("Test Concert")
             .description("Amazing show")
             .startTime(LocalDateTime.of(2024, 12, 25, 20, 0))
             .location(address)
+            .url("https://clean.url/event")
             .sourceUrl(url)
+            .ticketOffers(List.of())
             .build();
 
         when(externalEventService.parseUrl(url)).thenReturn(expectedDto);
@@ -51,7 +54,9 @@ class ExternalControllerTest {
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().getTitle()).isEqualTo("Test Concert");
         assertThat(response.getBody().getDescription()).isEqualTo("Amazing show");
+        assertThat(response.getBody().getUrl()).isEqualTo("https://clean.url/event");
         assertThat(response.getBody().getSourceUrl()).isEqualTo(url);
+        assertThat(response.getBody().getTicketOffers()).isEmpty();
     }
 
     @Test

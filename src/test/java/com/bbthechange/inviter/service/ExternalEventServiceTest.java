@@ -44,16 +44,28 @@ class ExternalEventServiceTest {
                 "@type": "Event",
                 "name": "Test Concert",
                 "description": "Amazing show",
+                "url": "https://eventbrite.com/events/clean-url",
                 "startDate": "2024-12-25T20:00:00",
                 "endDate": "2024-12-25T23:00:00",
                 "location": {
+                    "name": "The Venue",
                     "address": {
                         "streetAddress": "123 Main St",
                         "addressLocality": "San Francisco",
                         "addressRegion": "CA",
                         "postalCode": "94102"
                     }
-                }
+                },
+                "offers": [
+                    {
+                        "@type": "Offer",
+                        "name": "General Admission",
+                        "price": 25.00,
+                        "priceCurrency": "USD",
+                        "url": "https://eventbrite.com/buy",
+                        "availability": "InStock"
+                    }
+                ]
             }
             </script>
             </html>
@@ -69,9 +81,14 @@ class ExternalEventServiceTest {
         assertThat(result).isNotNull();
         assertThat(result.getTitle()).isEqualTo("Test Concert");
         assertThat(result.getDescription()).isEqualTo("Amazing show");
+        assertThat(result.getUrl()).isEqualTo("https://eventbrite.com/events/clean-url");
         assertThat(result.getStartTime()).isNotNull();
         assertThat(result.getLocation()).isNotNull();
+        assertThat(result.getLocation().getName()).isEqualTo("The Venue");
         assertThat(result.getLocation().getStreetAddress()).isEqualTo("123 Main St");
+        assertThat(result.getTicketOffers()).hasSize(1);
+        assertThat(result.getTicketOffers().get(0).getName()).isEqualTo("General Admission");
+        assertThat(result.getTicketOffers().get(0).getPrice()).isEqualByComparingTo(new java.math.BigDecimal("25.00"));
         assertThat(result.getSourceUrl()).isEqualTo(url);
     }
 
@@ -265,5 +282,82 @@ class ExternalEventServiceTest {
         assertThatThrownBy(() -> externalEventService.parseUrl(url))
             .isInstanceOf(NetworkException.class)
             .hasMessageContaining("empty response");
+    }
+
+    @Test
+    void parseUrl_WithMultipleTicketOffers_ParsesAllOffers() {
+        // Given
+        String url = "https://eventbrite.com/event/123";
+        String htmlContent = """
+            <html>
+            <script type="application/ld+json">
+            {
+                "@type": "Event",
+                "name": "Multi-Tier Event",
+                "offers": [
+                    {
+                        "@type": "AggregateOffer",
+                        "lowPrice": 25.87,
+                        "highPrice": 31.94
+                    },
+                    {
+                        "@type": "Offer",
+                        "name": "Early Bird GA",
+                        "price": 25.87,
+                        "priceCurrency": "USD",
+                        "availability": "SoldOut"
+                    },
+                    {
+                        "@type": "Offer",
+                        "name": "Regular GA",
+                        "price": 31.94,
+                        "priceCurrency": "USD",
+                        "availability": "InStock"
+                    }
+                ]
+            }
+            </script>
+            </html>
+            """;
+
+        ResponseEntity<String> response = new ResponseEntity<>(htmlContent, HttpStatus.OK);
+        when(restTemplate.exchange(eq(url), any(), any(), eq(String.class))).thenReturn(response);
+
+        // When
+        ParsedEventDetailsDto result = externalEventService.parseUrl(url);
+
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result.getTicketOffers()).hasSize(2); // AggregateOffer should be skipped
+        assertThat(result.getTicketOffers().get(0).getName()).isEqualTo("Early Bird GA");
+        assertThat(result.getTicketOffers().get(0).getAvailability()).isEqualTo("SoldOut");
+        assertThat(result.getTicketOffers().get(1).getName()).isEqualTo("Regular GA");
+        assertThat(result.getTicketOffers().get(1).getAvailability()).isEqualTo("InStock");
+    }
+
+    @Test
+    void parseUrl_WithNoOffers_ReturnsEmptyTicketList() {
+        // Given
+        String url = "https://example.com/event";
+        String htmlContent = """
+            <html>
+            <script type="application/ld+json">
+            {
+                "@type": "Event",
+                "name": "Free Event"
+            }
+            </script>
+            </html>
+            """;
+
+        ResponseEntity<String> response = new ResponseEntity<>(htmlContent, HttpStatus.OK);
+        when(restTemplate.exchange(eq(url), any(), any(), eq(String.class))).thenReturn(response);
+
+        // When
+        ParsedEventDetailsDto result = externalEventService.parseUrl(url);
+
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result.getTicketOffers()).isEmpty();
     }
 }

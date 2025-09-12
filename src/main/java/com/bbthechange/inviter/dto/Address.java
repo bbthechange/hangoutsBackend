@@ -13,6 +13,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 @AllArgsConstructor
 @DynamoDbBean
 public class Address {
+    private String name;
     private String streetAddress;
     private String city;
     private String state;
