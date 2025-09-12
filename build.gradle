@@ -39,9 +39,14 @@ dependencies {
 	implementation 'software.amazon.awssdk:s3:2.28.29'
 	implementation 'com.eatthepath:pushy:0.15.4'
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.7.0'
+	// For parsing schema.org data from HTML
+	implementation 'org.jsoup:jsoup:1.17.1'
+	// For security checks (IP address validation against CIDR blocks)
+	implementation 'commons-net:commons-net:3.10.0'
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testImplementation 'org.springframework.security:spring-security-test'
 	testImplementation 'org.testcontainers:testcontainers:1.19.3'
 	testImplementation 'org.testcontainers:junit-jupiter:1.19.3' 
 	testImplementation 'org.testcontainers:localstack:1.19.3'
