@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.*;
 import jakarta.validation.Valid;
 
 @RestController
-@RequestMapping("/api/external")
+@RequestMapping("/external")
 @Tag(name = "External Event Parser", description = "Parse event details from external URLs")
 public class ExternalController {
 

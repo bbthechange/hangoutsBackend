@@ -350,6 +350,97 @@ class ExternalEventServiceTest {
     }
 
     @Test
+    void parseUrl_WithTimezoneInfo_PreservesTimezone() {
+        // Given
+        String url = "https://eventbrite.com/event/123";
+        String htmlContent = """
+            <html>
+            <script type="application/ld+json">
+            {
+                "@type": "Event",
+                "name": "Timezone Test Event",
+                "startDate": "2024-12-25T20:00:00-05:00",
+                "endDate": "2024-12-25T23:00:00-05:00"
+            }
+            </script>
+            </html>
+            """;
+
+        ResponseEntity<String> response = new ResponseEntity<>(htmlContent, HttpStatus.OK);
+        when(restTemplate.exchange(eq(url), any(), any(), eq(String.class))).thenReturn(response);
+
+        // When
+        ParsedEventDetailsDto result = externalEventService.parseUrl(url);
+
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result.getStartTime()).isNotNull();
+        assertThat(result.getEndTime()).isNotNull();
+        assertThat(result.getStartTime().getOffset().toString()).isEqualTo("-05:00");
+        assertThat(result.getEndTime().getOffset().toString()).isEqualTo("-05:00");
+        assertThat(result.getStartTime().getHour()).isEqualTo(20);
+        assertThat(result.getEndTime().getHour()).isEqualTo(23);
+    }
+
+    @Test
+    void parseUrl_WithUtcTimezone_PreservesUtc() {
+        // Given
+        String url = "https://eventbrite.com/event/123";
+        String htmlContent = """
+            <html>
+            <script type="application/ld+json">
+            {
+                "@type": "Event",
+                "name": "UTC Event",
+                "startDate": "2024-12-25T20:00:00Z"
+            }
+            </script>
+            </html>
+            """;
+
+        ResponseEntity<String> response = new ResponseEntity<>(htmlContent, HttpStatus.OK);
+        when(restTemplate.exchange(eq(url), any(), any(), eq(String.class))).thenReturn(response);
+
+        // When
+        ParsedEventDetailsDto result = externalEventService.parseUrl(url);
+
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result.getStartTime()).isNotNull();
+        assertThat(result.getStartTime().getOffset().toString()).isEqualTo("Z");
+        assertThat(result.getStartTime().getHour()).isEqualTo(20);
+    }
+
+    @Test
+    void parseUrl_WithNoTimezone_DefaultsToUtc() {
+        // Given
+        String url = "https://eventbrite.com/event/123";
+        String htmlContent = """
+            <html>
+            <script type="application/ld+json">
+            {
+                "@type": "Event",
+                "name": "Local Time Event",
+                "startDate": "2024-12-25T20:00:00"
+            }
+            </script>
+            </html>
+            """;
+
+        ResponseEntity<String> response = new ResponseEntity<>(htmlContent, HttpStatus.OK);
+        when(restTemplate.exchange(eq(url), any(), any(), eq(String.class))).thenReturn(response);
+
+        // When
+        ParsedEventDetailsDto result = externalEventService.parseUrl(url);
+
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result.getStartTime()).isNotNull();
+        assertThat(result.getStartTime().getOffset().toString()).isEqualTo("Z"); // Should default to UTC
+        assertThat(result.getStartTime().getHour()).isEqualTo(20);
+    }
+
+    @Test
     void parseUrl_WithNoOffers_ReturnsEmptyTicketList() {
         // Given
         String url = "https://example.com/event";

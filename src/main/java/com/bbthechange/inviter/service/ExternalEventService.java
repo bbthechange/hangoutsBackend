@@ -27,6 +27,8 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.UnknownHostException;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -239,8 +241,8 @@ public class ExternalEventService {
         String imageUrl = extractImageUrl(map.get("image"));
         String eventUrl = (String) map.get("url");
         
-        LocalDateTime startTime = parseDate(map.get("startDate"));
-        LocalDateTime endTime = parseDate(map.get("endDate"));
+        OffsetDateTime startTime = parseDate(map.get("startDate"));
+        OffsetDateTime endTime = parseDate(map.get("endDate"));
 
         Address address = extractAddress(map.get("location"));
         List<TicketOffer> ticketOffers = extractTicketOffers(map.get("offers"));
@@ -359,26 +361,58 @@ public class ExternalEventService {
         return ticketOffers;
     }
     
-    private LocalDateTime parseDate(Object dateObj) {
+    private OffsetDateTime parseDate(Object dateObj) {
         if (!(dateObj instanceof String)) {
             return null;
         }
 
         String dateStr = (String) dateObj;
         
-        // Try different date format patterns
-        DateTimeFormatter[] formatters = {
-            DateTimeFormatter.ISO_OFFSET_DATE_TIME,
-            DateTimeFormatter.ISO_LOCAL_DATE_TIME,
-            DateTimeFormatter.ISO_DATE_TIME,
+        // First try to parse with timezone information
+        try {
+            // Try OffsetDateTime first (handles +00:00, Z, etc.)
+            return OffsetDateTime.parse(dateStr, DateTimeFormatter.ISO_OFFSET_DATE_TIME);
+        } catch (DateTimeParseException e) {
+            // Continue to other formats
+        }
+        
+        try {
+            // Try ZonedDateTime and convert to OffsetDateTime
+            ZonedDateTime zonedDateTime = ZonedDateTime.parse(dateStr, DateTimeFormatter.ISO_ZONED_DATE_TIME);
+            return zonedDateTime.toOffsetDateTime();
+        } catch (DateTimeParseException e) {
+            // Continue to other formats
+        }
+        
+        // Try custom patterns with timezone
+        DateTimeFormatter[] offsetFormatters = {
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX"),
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX"),
+            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSZ"),
+            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssZ")
+        };
+
+        for (DateTimeFormatter formatter : offsetFormatters) {
+            try {
+                return OffsetDateTime.parse(dateStr, formatter);
+            } catch (DateTimeParseException e) {
+                // Try next formatter
+            }
+        }
+        
+        // Fallback to LocalDateTime patterns (without timezone) and assume UTC
+        DateTimeFormatter[] localFormatters = {
+            DateTimeFormatter.ISO_LOCAL_DATE_TIME,
+            DateTimeFormatter.ISO_DATE_TIME,
+            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS"),
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss")
         };
 
-        for (DateTimeFormatter formatter : formatters) {
+        for (DateTimeFormatter formatter : localFormatters) {
             try {
-                return LocalDateTime.parse(dateStr, formatter);
+                LocalDateTime localDateTime = LocalDateTime.parse(dateStr, formatter);
+                // Assume UTC if no timezone information is provided
+                return localDateTime.atOffset(java.time.ZoneOffset.UTC);
             } catch (DateTimeParseException e) {
                 // Try next formatter
             }

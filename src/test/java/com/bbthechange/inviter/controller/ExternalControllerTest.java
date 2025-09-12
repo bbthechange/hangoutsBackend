@@ -13,7 +13,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.ResponseEntity;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.*;
@@ -36,7 +36,7 @@ class ExternalControllerTest {
         ParsedEventDetailsDto expectedDto = ParsedEventDetailsDto.builder()
             .title("Test Concert")
             .description("Amazing show")
-            .startTime(LocalDateTime.of(2024, 12, 25, 20, 0))
+            .startTime(OffsetDateTime.of(2024, 12, 25, 20, 0, 0, 0, java.time.ZoneOffset.UTC))
             .location(address)
             .url("https://clean.url/event")
             .sourceUrl(url)
