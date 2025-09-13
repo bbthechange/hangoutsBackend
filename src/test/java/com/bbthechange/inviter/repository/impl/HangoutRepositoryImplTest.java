@@ -3,6 +3,7 @@ package com.bbthechange.inviter.repository.impl;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.EventRepository;
 import com.bbthechange.inviter.util.QueryPerformanceTracker;
+import com.bbthechange.inviter.util.InviterKeyFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -395,5 +396,113 @@ class HangoutRepositoryImplTest {
         GetItemRequest request = captor.getValue();
         assertThat(request.key().get("pk").s()).isEqualTo("EVENT#" + differentEventId);
         assertThat(request.key().get("sk").s()).isEqualTo("NEEDS_RIDE#" + differentUserId);
+    }
+
+    // ============================================================================
+    // SERIES-RELATED TESTS
+    // ============================================================================
+
+    @Test
+    void findHangoutsBySeriesId_GivenValidId_ShouldQuerySeriesIndexAndReturnHangouts() {
+        // GIVEN: A series ID and a list of hangouts we expect to get back
+        String testSeriesId = UUID.randomUUID().toString();
+        
+        // Create mock response items representing hangouts in DynamoDB format
+        List<Map<String, AttributeValue>> mockItems = Arrays.asList(
+            createMockHangoutItem("hangout1", testSeriesId, 1000L),
+            createMockHangoutItem("hangout2", testSeriesId, 2000L)
+        );
+        
+        QueryResponse mockResponse = QueryResponse.builder()
+            .items(mockItems)
+            .build();
+        
+        // MOCKING: Configure mock to return our expected hangouts when SeriesIndex is queried
+        when(dynamoDbClient.query(any(QueryRequest.class))).thenReturn(mockResponse);
+
+        // WHEN: We call the method we are testing
+        List<Hangout> actualHangouts = repository.findHangoutsBySeriesId(testSeriesId);
+
+        // THEN: We verify the results
+        // 1. Confirm the SeriesIndex was used and not the main table
+        ArgumentCaptor<QueryRequest> captor = ArgumentCaptor.forClass(QueryRequest.class);
+        verify(dynamoDbClient).query(captor.capture());
+        
+        QueryRequest request = captor.getValue();
+        assertThat(request.tableName()).isEqualTo("InviterTable");
+        assertThat(request.indexName()).isEqualTo("SeriesIndex");
+        assertThat(request.keyConditionExpression()).isEqualTo("seriesId = :seriesId");
+        assertThat(request.expressionAttributeValues().get(":seriesId").s()).isEqualTo(testSeriesId);
+        assertThat(request.scanIndexForward()).isTrue(); // Chronological order
+        
+        // 2. Confirm the data returned is what we expected
+        assertThat(actualHangouts).isNotNull();
+        assertThat(actualHangouts).hasSize(2);
+        assertThat(actualHangouts.get(0).getHangoutId()).isEqualTo("hangout1");
+        assertThat(actualHangouts.get(1).getHangoutId()).isEqualTo("hangout2");
+    }
+
+    @Test
+    void findHangoutsBySeriesId_GivenSeriesWithNoHangouts_ShouldReturnEmptyList() {
+        // GIVEN: A series ID with no hangouts
+        String testSeriesId = UUID.randomUUID().toString();
+        
+        QueryResponse mockResponse = QueryResponse.builder()
+            .items(Collections.emptyList())
+            .build();
+        
+        when(dynamoDbClient.query(any(QueryRequest.class))).thenReturn(mockResponse);
+
+        // WHEN: We call the method
+        List<Hangout> actualHangouts = repository.findHangoutsBySeriesId(testSeriesId);
+
+        // THEN: We get an empty list and SeriesIndex was queried
+        assertThat(actualHangouts).isNotNull();
+        assertThat(actualHangouts).isEmpty();
+        
+        ArgumentCaptor<QueryRequest> captor = ArgumentCaptor.forClass(QueryRequest.class);
+        verify(dynamoDbClient).query(captor.capture());
+        
+        QueryRequest request = captor.getValue();
+        assertThat(request.indexName()).isEqualTo("SeriesIndex");
+        assertThat(request.expressionAttributeValues().get(":seriesId").s()).isEqualTo(testSeriesId);
+    }
+
+    @Test
+    void findHangoutsBySeriesId_GivenDifferentSeriesId_ShouldQueryWithCorrectSeriesId() {
+        // GIVEN: A different series ID
+        String differentSeriesId = UUID.randomUUID().toString();
+        
+        QueryResponse mockResponse = QueryResponse.builder()
+            .items(Collections.emptyList())
+            .build();
+        
+        when(dynamoDbClient.query(any(QueryRequest.class))).thenReturn(mockResponse);
+
+        // WHEN: We call the method with different series ID
+        repository.findHangoutsBySeriesId(differentSeriesId);
+
+        // THEN: The query should use the correct series ID parameter
+        ArgumentCaptor<QueryRequest> captor = ArgumentCaptor.forClass(QueryRequest.class);
+        verify(dynamoDbClient).query(captor.capture());
+        
+        QueryRequest request = captor.getValue();
+        assertThat(request.expressionAttributeValues().get(":seriesId").s()).isEqualTo(differentSeriesId);
+    }
+
+    /**
+     * Helper method to create mock hangout items in DynamoDB attribute format.
+     */
+    private Map<String, AttributeValue> createMockHangoutItem(String hangoutId, String seriesId, Long timestamp) {
+        return Map.of(
+            "pk", AttributeValue.builder().s(InviterKeyFactory.getEventPk(hangoutId)).build(),
+            "sk", AttributeValue.builder().s(InviterKeyFactory.getMetadataSk()).build(),
+            "itemType", AttributeValue.builder().s("HANGOUT").build(),
+            "hangoutId", AttributeValue.builder().s(hangoutId).build(),
+            "seriesId", AttributeValue.builder().s(seriesId).build(),
+            "startTimestamp", AttributeValue.builder().n(timestamp.toString()).build(),
+            "title", AttributeValue.builder().s("Test Hangout " + hangoutId).build(),
+            "description", AttributeValue.builder().s("Test description").build()
+        );
     }
 }

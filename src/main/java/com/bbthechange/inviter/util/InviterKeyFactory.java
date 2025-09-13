@@ -18,6 +18,7 @@ public final class InviterKeyFactory {
     public static final String GROUP_PREFIX = "GROUP";
     public static final String USER_PREFIX = "USER";
     public static final String EVENT_PREFIX = "EVENT";
+    public static final String SERIES_PREFIX = "SERIES";
     public static final String METADATA_SUFFIX = "METADATA";
     public static final String POLL_PREFIX = "POLL";
     public static final String CAR_PREFIX = "CAR";
@@ -81,6 +82,12 @@ public final class InviterKeyFactory {
     public static String getAttendanceSk(String userId) {
         validateId(userId, "User");
         return ATTENDANCE_PREFIX + DELIMITER + userId;
+    }
+    
+    // Series Keys
+    public static String getSeriesPk(String seriesId) {
+        validateId(seriesId, "Series");
+        return SERIES_PREFIX + DELIMITER + seriesId;
     }
     
     // Attribute Keys (UUID-based for safety)
@@ -202,6 +209,10 @@ public final class InviterKeyFactory {
     
     public static boolean isGroupMembership(String sortKey) {
         return sortKey.startsWith(USER_PREFIX + DELIMITER);
+    }
+    
+    public static boolean isSeriesItem(String sortKey) {
+        return sortKey != null && METADATA_SUFFIX.equals(sortKey);
     }
     
     // Idea List Keys

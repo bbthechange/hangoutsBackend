@@ -29,6 +29,7 @@ public class HangoutPointer extends BaseItem {
     private TimeInfo timeInfo;    // Denormalized for efficient reads
     private Long startTimestamp;    // GSI sort key for EntityTimeIndex
     private Long endTimestamp;      // Denormalized for completeness
+    private String seriesId;        // Denormalized series ID for feed grouping
     
     // Default constructor for DynamoDB
     public HangoutPointer() {
@@ -147,6 +148,15 @@ public class HangoutPointer extends BaseItem {
     
     public void setEndTimestamp(Long endTimestamp) {
         this.endTimestamp = endTimestamp;
+        touch();
+    }
+    
+    public String getSeriesId() {
+        return seriesId;
+    }
+    
+    public void setSeriesId(String seriesId) {
+        this.seriesId = seriesId;
         touch();
     }
 }

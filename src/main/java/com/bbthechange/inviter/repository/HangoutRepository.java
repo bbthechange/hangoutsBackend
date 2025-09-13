@@ -156,4 +156,18 @@ public interface HangoutRepository {
      */
     PaginatedResult<HangoutPointer> getPastEventsPage(String groupId, long nowTimestamp,
                                                      Integer limit, String endToken);
+    
+    // Series-related operations
+    
+    /**
+     * Find all hangouts that belong to a specific EventSeries.
+     * Uses the SeriesIndex GSI for efficient querying.
+     * 
+     * ⚠️ PERFORMANCE CRITICAL: This method MUST use the SeriesIndex GSI.
+     * Never fetch all hangouts and filter in memory - this would be a severe performance issue.
+     * 
+     * @param seriesId The series identifier
+     * @return List of hangouts in the series, ordered by start timestamp
+     */
+    List<Hangout> findHangoutsBySeriesId(String seriesId);
 }

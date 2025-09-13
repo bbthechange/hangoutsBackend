@@ -4,6 +4,7 @@ import com.bbthechange.inviter.dto.HangoutDetailData;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.EventRepository;
 import com.bbthechange.inviter.model.*;
+import com.bbthechange.inviter.model.EventSeries;
 import com.bbthechange.inviter.exception.RepositoryException;
 import com.bbthechange.inviter.exception.ResourceNotFoundException;
 import com.bbthechange.inviter.util.QueryPerformanceTracker;
@@ -45,6 +46,7 @@ public class HangoutRepositoryImpl implements HangoutRepository {
     private final TableSchema<HangoutPointer> hangoutPointerSchema;
     private final TableSchema<HangoutAttribute> hangoutAttributeSchema;
     private final TableSchema<NeedsRide> needsRideSchema;
+    private final TableSchema<EventSeries> eventSeriesSchema;
     private final QueryPerformanceTracker performanceTracker;
     private final EventRepository eventRepository; // For canonical Event records
     
@@ -66,6 +68,7 @@ public class HangoutRepositoryImpl implements HangoutRepository {
         this.hangoutPointerSchema = TableSchema.fromBean(HangoutPointer.class);
         this.hangoutAttributeSchema = TableSchema.fromBean(HangoutAttribute.class);
         this.needsRideSchema = TableSchema.fromBean(NeedsRide.class);
+        this.eventSeriesSchema = TableSchema.fromBean(EventSeries.class);
         this.performanceTracker = performanceTracker;
         this.eventRepository = eventRepository;
     }
@@ -127,6 +130,8 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                 return hangoutAttributeSchema.mapToItem(itemMap);
             case "HANGOUT_POINTER":
                 return hangoutPointerSchema.mapToItem(itemMap);
+            case "EVENT_SERIES":
+                return eventSeriesSchema.mapToItem(itemMap);
             default:
                 throw new IllegalArgumentException("Unknown item type: " + itemType);
         }
@@ -1397,5 +1402,37 @@ public class HangoutRepositoryImpl implements HangoutRepository {
         } catch (Exception e) {
             throw new RuntimeException("Failed to encode EndTimestamp pagination token", e);
         }
+    }
+    
+    @Override
+    public List<Hangout> findHangoutsBySeriesId(String seriesId) {
+        return performanceTracker.trackQuery("findHangoutsBySeriesId", "SeriesIndex", () -> {
+            try {
+                logger.debug("Finding hangouts for series {}", seriesId);
+                
+                QueryRequest request = QueryRequest.builder()
+                    .tableName(TABLE_NAME)
+                    .indexName("SeriesIndex")
+                    .keyConditionExpression("seriesId = :seriesId")
+                    .expressionAttributeValues(Map.of(
+                        ":seriesId", AttributeValue.builder().s(seriesId).build()
+                    ))
+                    .scanIndexForward(true) // Sort by startTimestamp ascending (chronological order)
+                    .build();
+                
+                QueryResponse response = dynamoDbClient.query(request);
+                
+                List<Hangout> hangouts = response.items().stream()
+                    .map(hangoutSchema::mapToItem)
+                    .collect(Collectors.toList());
+                
+                logger.debug("Found {} hangouts for series {}", hangouts.size(), seriesId);
+                return hangouts;
+                
+            } catch (DynamoDbException e) {
+                logger.error("Failed to query hangouts for series {}", seriesId, e);
+                throw new RepositoryException("Failed to query hangouts from SeriesIndex GSI", e);
+            }
+        });
     }
 }

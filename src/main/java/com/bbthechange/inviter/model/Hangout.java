@@ -5,6 +5,8 @@ import com.bbthechange.inviter.dto.TimeInfo;
 import com.bbthechange.inviter.util.InviterKeyFactory;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbAttribute;
+import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSecondaryPartitionKey;
+import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSecondarySortKey;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -34,6 +36,7 @@ public class Hangout extends BaseItem {
     private TimeInfo timeInfo; // Original fuzzy time input from client
     private Long startTimestamp; // Canonical UTC Unix timestamp (seconds since epoch) for start time
     private Long endTimestamp; // Canonical UTC Unix timestamp (seconds since epoch) for end time
+    private String seriesId; // Link to EventSeries if this hangout is part of a multi-part event
     
     // Default constructor for DynamoDB
     public Hangout() {
@@ -206,6 +209,7 @@ public class Hangout extends BaseItem {
         touch(); // Update timestamp
     }
     
+    @DynamoDbSecondarySortKey(indexNames = "SeriesIndex")
     public Long getStartTimestamp() {
         return startTimestamp;
     }
@@ -221,6 +225,16 @@ public class Hangout extends BaseItem {
     
     public void setEndTimestamp(Long endTimestamp) {
         this.endTimestamp = endTimestamp;
+        touch(); // Update timestamp
+    }
+    
+    @DynamoDbSecondaryPartitionKey(indexNames = "SeriesIndex")
+    public String getSeriesId() {
+        return seriesId;
+    }
+    
+    public void setSeriesId(String seriesId) {
+        this.seriesId = seriesId;
         touch(); // Update timestamp
     }
 }
