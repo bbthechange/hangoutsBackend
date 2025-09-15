@@ -3,6 +3,7 @@ package com.bbthechange.inviter.repository.impl;
 import com.bbthechange.inviter.model.EventSeries;
 import com.bbthechange.inviter.model.Hangout;
 import com.bbthechange.inviter.model.HangoutPointer;
+import com.bbthechange.inviter.model.SeriesPointer;
 import com.bbthechange.inviter.repository.SeriesTransactionRepository;
 import com.bbthechange.inviter.exception.RepositoryException;
 import com.bbthechange.inviter.util.QueryPerformanceTracker;
@@ -37,6 +38,7 @@ public class SeriesTransactionRepositoryImpl implements SeriesTransactionReposit
     private final TableSchema<EventSeries> eventSeriesSchema;
     private final TableSchema<Hangout> hangoutSchema;
     private final TableSchema<HangoutPointer> hangoutPointerSchema;
+    private final TableSchema<SeriesPointer> seriesPointerSchema;
     
     @Autowired
     public SeriesTransactionRepositoryImpl(
@@ -49,6 +51,7 @@ public class SeriesTransactionRepositoryImpl implements SeriesTransactionReposit
         this.eventSeriesSchema = TableSchema.fromBean(EventSeries.class);
         this.hangoutSchema = TableSchema.fromBean(Hangout.class);
         this.hangoutPointerSchema = TableSchema.fromBean(HangoutPointer.class);
+        this.seriesPointerSchema = TableSchema.fromBean(SeriesPointer.class);
     }
     
     @Override
@@ -57,7 +60,8 @@ public class SeriesTransactionRepositoryImpl implements SeriesTransactionReposit
             Hangout hangoutToUpdate,
             List<HangoutPointer> pointersToUpdate,
             Hangout newHangoutToCreate,
-            List<HangoutPointer> newPointersToCreate) {
+            List<HangoutPointer> newPointersToCreate,
+            List<SeriesPointer> seriesPointersToCreate) {
         
         performanceTracker.trackQuery("createSeriesWithNewPart", TABLE_NAME, () -> {
             try {
@@ -129,6 +133,17 @@ public class SeriesTransactionRepositoryImpl implements SeriesTransactionReposit
                     transactItems.add(createNewPointerItem);
                 }
                 
+                // 6. Create ALL new SeriesPointers (PUT operations)
+                for (SeriesPointer seriesPointerToCreate : seriesPointersToCreate) {
+                    TransactWriteItem createSeriesPointerItem = TransactWriteItem.builder()
+                        .put(Put.builder()
+                            .tableName(TABLE_NAME)
+                            .item(seriesPointerSchema.itemToMap(seriesPointerToCreate, true))
+                            .build())
+                        .build();
+                    transactItems.add(createSeriesPointerItem);
+                }
+                
                 // Execute the transaction
                 TransactWriteItemsRequest transactRequest = TransactWriteItemsRequest.builder()
                     .transactItems(transactItems)
@@ -156,7 +171,8 @@ public class SeriesTransactionRepositoryImpl implements SeriesTransactionReposit
     public void addPartToExistingSeries(
             String seriesId,
             Hangout newHangoutToCreate,
-            List<HangoutPointer> newPointersToCreate) {
+            List<HangoutPointer> newPointersToCreate,
+            List<SeriesPointer> seriesPointersToUpdate) {
         
         performanceTracker.trackQuery("addPartToExistingSeries", TABLE_NAME, () -> {
             try {
@@ -200,6 +216,28 @@ public class SeriesTransactionRepositoryImpl implements SeriesTransactionReposit
                             .build())
                         .build();
                     transactItems.add(createNewPointerItem);
+                }
+                
+                // 4. Update ALL existing SeriesPointers to include the new hangout (UPDATE operations)
+                for (SeriesPointer seriesPointerToUpdate : seriesPointersToUpdate) {
+                    TransactWriteItem updateSeriesPointerItem = TransactWriteItem.builder()
+                        .update(Update.builder()
+                            .tableName(TABLE_NAME)
+                            .key(Map.of(
+                                "pk", AttributeValue.builder().s(seriesPointerToUpdate.getPk()).build(),
+                                "sk", AttributeValue.builder().s(seriesPointerToUpdate.getSk()).build()
+                            ))
+                            .updateExpression("SET hangoutIds = list_append(hangoutIds, :newId), updatedAt = :updated, version = version + :inc")
+                            .expressionAttributeValues(Map.of(
+                                ":newId", AttributeValue.builder().l(
+                                    AttributeValue.builder().s(newHangoutToCreate.getHangoutId()).build()
+                                ).build(),
+                                ":updated", AttributeValue.builder().n(String.valueOf(System.currentTimeMillis())).build(),
+                                ":inc", AttributeValue.builder().n("1").build()
+                            ))
+                            .build())
+                        .build();
+                    transactItems.add(updateSeriesPointerItem);
                 }
                 
                 // Execute the transaction

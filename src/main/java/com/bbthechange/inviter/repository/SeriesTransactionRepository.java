@@ -3,6 +3,7 @@ package com.bbthechange.inviter.repository;
 import com.bbthechange.inviter.model.EventSeries;
 import com.bbthechange.inviter.model.Hangout;
 import com.bbthechange.inviter.model.HangoutPointer;
+import com.bbthechange.inviter.model.SeriesPointer;
 import java.util.List;
 
 /**
@@ -23,6 +24,7 @@ public interface SeriesTransactionRepository {
      * 3. Updating ALL existing Hangout's Pointers to link them to the series
      * 4. Creating the new Hangout part with series linkage
      * 5. Creating ALL new Hangout's Pointers with series linkage
+     * 6. Creating ALL new SeriesPointer records (one per associated group)
      * 
      * If any step fails, the entire transaction is rolled back by DynamoDB.
      *
@@ -31,6 +33,7 @@ public interface SeriesTransactionRepository {
      * @param pointersToUpdate List of existing HangoutPointers that need their seriesId field set
      * @param newHangoutToCreate The fully-prepared new Hangout object to create
      * @param newPointersToCreate List of fully-prepared new HangoutPointer objects to create
+     * @param seriesPointersToCreate List of fully-prepared SeriesPointer objects to create (one per group)
      * @throws com.bbthechange.inviter.exception.RepositoryException if the transaction fails
      */
     void createSeriesWithNewPart(
@@ -38,7 +41,8 @@ public interface SeriesTransactionRepository {
         Hangout hangoutToUpdate,
         List<HangoutPointer> pointersToUpdate,
         Hangout newHangoutToCreate,
-        List<HangoutPointer> newPointersToCreate
+        List<HangoutPointer> newPointersToCreate,
+        List<SeriesPointer> seriesPointersToCreate
     );
     
     /**
@@ -47,17 +51,20 @@ public interface SeriesTransactionRepository {
      * 1. Updating the EventSeries to add the new hangout ID to its list
      * 2. Creating the new Hangout part with series linkage
      * 3. Creating ALL new Hangout's Pointers with series linkage
+     * 4. Updating ALL existing SeriesPointer records to reflect the new hangout
      * 
      * If any step fails, the entire transaction is rolled back by DynamoDB.
      *
      * @param seriesId The ID of the existing series to update
      * @param newHangoutToCreate The fully-prepared new Hangout object to create
      * @param newPointersToCreate List of fully-prepared new HangoutPointer objects to create
+     * @param seriesPointersToUpdate List of existing SeriesPointer records to update with the new hangout
      * @throws com.bbthechange.inviter.exception.RepositoryException if the transaction fails
      */
     void addPartToExistingSeries(
         String seriesId,
         Hangout newHangoutToCreate,
-        List<HangoutPointer> newPointersToCreate
+        List<HangoutPointer> newPointersToCreate,
+        List<SeriesPointer> seriesPointersToUpdate
     );
 }

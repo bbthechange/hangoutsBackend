@@ -90,6 +90,11 @@ public final class InviterKeyFactory {
         return SERIES_PREFIX + DELIMITER + seriesId;
     }
     
+    public static String getSeriesSk(String seriesId) {
+        validateId(seriesId, "Series");
+        return SERIES_PREFIX + DELIMITER + seriesId;
+    }
+    
     // Attribute Keys (UUID-based for safety)
     public static String getAttributeSk(String attributeId) {
         validateId(attributeId, "Attribute");

@@ -3,6 +3,7 @@ package com.bbthechange.inviter.service.impl;
 import com.bbthechange.inviter.model.EventSeries;
 import com.bbthechange.inviter.model.Hangout;
 import com.bbthechange.inviter.model.HangoutPointer;
+import com.bbthechange.inviter.model.SeriesPointer;
 import com.bbthechange.inviter.service.EventSeriesService;
 import com.bbthechange.inviter.dto.CreateHangoutRequest;
 import com.bbthechange.inviter.repository.HangoutRepository;
@@ -157,6 +158,14 @@ public class EventSeriesServiceImpl implements EventSeriesService {
             existingPointer.setSeriesId(seriesId);
         }
         
+        // Create SeriesPointers for all groups that this series is associated with
+        // Groups are determined from the existing hangout's pointers (which represent all associated groups)
+        List<SeriesPointer> seriesPointers = new ArrayList<>();
+        for (HangoutPointer existingPointer : existingPointers) {
+            SeriesPointer seriesPointer = SeriesPointer.fromEventSeries(newSeries, existingPointer.getGroupId());
+            seriesPointers.add(seriesPointer);
+        }
+        
         // 3. Persistence (The Single Transactional Call)
         try {
             seriesTransactionRepository.createSeriesWithNewPart(
@@ -164,7 +173,8 @@ public class EventSeriesServiceImpl implements EventSeriesService {
                 existingHangout,
                 existingPointers,
                 newHangout,
-                newPointers
+                newPointers,
+                seriesPointers
             );
             
             logger.info("Successfully created series {} from hangout {}", seriesId, existingHangoutId);
@@ -249,16 +259,24 @@ public class EventSeriesServiceImpl implements EventSeriesService {
             newPointers.add(newPointer);
         }
         
+        // Create updated SeriesPointers for all groups
+        // We need to update all SeriesPointers to include the new hangout ID
+        // Since SeriesPointers are denormalized, we create updated versions with the new hangout added
+        series.getHangoutIds().add(newHangoutId); // Add to series first so SeriesPointer gets updated list
+        List<SeriesPointer> updatedSeriesPointers = new ArrayList<>();
+        for (String groupId : newHangout.getAssociatedGroups()) {
+            SeriesPointer updatedPointer = SeriesPointer.fromEventSeries(series, groupId);
+            updatedSeriesPointers.add(updatedPointer);
+        }
+        
         // 3. Persistence
         try {
             seriesTransactionRepository.addPartToExistingSeries(
                 seriesId,
                 newHangout,
-                newPointers
+                newPointers,
+                updatedSeriesPointers
             );
-            
-            // Update the in-memory series object to include the new hangout ID
-            series.getHangoutIds().add(newHangoutId);
             
             logger.info("Successfully added hangout {} to series {}", newHangoutId, seriesId);
             

@@ -7,6 +7,7 @@ import com.bbthechange.inviter.exception.UnauthorizedException;
 import com.bbthechange.inviter.model.EventSeries;
 import com.bbthechange.inviter.model.Hangout;
 import com.bbthechange.inviter.model.HangoutPointer;
+import com.bbthechange.inviter.model.SeriesPointer;
 import com.bbthechange.inviter.model.User;
 import com.bbthechange.inviter.repository.EventSeriesRepository;
 import com.bbthechange.inviter.repository.HangoutRepository;
@@ -133,7 +134,8 @@ class EventSeriesServiceImplTest {
             existingHangoutCaptor.capture(),
             existingPointersCaptor.capture(),
             newHangoutCaptor.capture(),
-            newPointersCaptor.capture()
+            newPointersCaptor.capture(),
+            any(List.class) // SeriesPointer list
         );
         
         // Verify transaction parameters
@@ -177,7 +179,7 @@ class EventSeriesServiceImplTest {
             .hasMessageContaining("Hangout not found: " + existingHangoutId);
         
         // Verify no transaction methods are called
-        verify(seriesTransactionRepository, never()).createSeriesWithNewPart(any(), any(), any(), any(), any());
+        verify(seriesTransactionRepository, never()).createSeriesWithNewPart(any(), any(), any(), any(), any(), any());
     }
     
     @Test
@@ -208,7 +210,7 @@ class EventSeriesServiceImplTest {
             .hasMessageContaining("No HangoutPointer records found for hangout: " + existingHangoutId);
         
         // Verify transaction is not attempted
-        verify(seriesTransactionRepository, never()).createSeriesWithNewPart(any(), any(), any(), any(), any());
+        verify(seriesTransactionRepository, never()).createSeriesWithNewPart(any(), any(), any(), any(), any(), any());
     }
     
     @Test
@@ -234,7 +236,7 @@ class EventSeriesServiceImplTest {
             .hasMessageContaining("User " + userId + " not found");
         
         // Verify no transaction methods are called
-        verify(seriesTransactionRepository, never()).createSeriesWithNewPart(any(), any(), any(), any(), any());
+        verify(seriesTransactionRepository, never()).createSeriesWithNewPart(any(), any(), any(), any(), any(), any());
     }
     
     @Test
@@ -276,7 +278,7 @@ class EventSeriesServiceImplTest {
         
         RuntimeException originalException = new RuntimeException("Transaction failed");
         doThrow(originalException).when(seriesTransactionRepository)
-            .createSeriesWithNewPart(any(), any(), any(), any(), any());
+            .createSeriesWithNewPart(any(), any(), any(), any(), any(), any());
         
         // When & Then
         assertThatThrownBy(() -> eventSeriesService.convertToSeriesWithNewMember(
@@ -335,7 +337,8 @@ class EventSeriesServiceImplTest {
         verify(seriesTransactionRepository).addPartToExistingSeries(
             seriesIdCaptor.capture(),
             newHangoutCaptor.capture(),
-            newPointersCaptor.capture()
+            newPointersCaptor.capture(),
+            any(List.class) // SeriesPointer list
         );
         
         // Verify transaction parameters
@@ -371,6 +374,6 @@ class EventSeriesServiceImplTest {
             .hasMessageContaining("EventSeries not found: " + seriesId);
         
         // Verify no transaction methods are called
-        verify(seriesTransactionRepository, never()).addPartToExistingSeries(any(), any(), any());
+        verify(seriesTransactionRepository, never()).addPartToExistingSeries(any(), any(), any(), any());
     }
 }

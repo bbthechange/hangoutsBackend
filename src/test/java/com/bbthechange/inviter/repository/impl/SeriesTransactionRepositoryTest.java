@@ -3,6 +3,7 @@ package com.bbthechange.inviter.repository.impl;
 import com.bbthechange.inviter.model.EventSeries;
 import com.bbthechange.inviter.model.Hangout;
 import com.bbthechange.inviter.model.HangoutPointer;
+import com.bbthechange.inviter.model.SeriesPointer;
 import com.bbthechange.inviter.exception.RepositoryException;
 import com.bbthechange.inviter.util.QueryPerformanceTracker;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,6 +16,7 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.*;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -109,7 +111,7 @@ class SeriesTransactionRepositoryTest {
         // When
         repository.createSeriesWithNewPart(
             series, existingHangout, existingPointers, 
-            newHangout, newPointers
+            newHangout, newPointers, Collections.emptyList()
         );
 
         // Then
@@ -158,7 +160,7 @@ class SeriesTransactionRepositoryTest {
 
         // When & Then
         assertThatThrownBy(() -> repository.createSeriesWithNewPart(
-            series, existingHangout, existingPointers, newHangout, newPointers))
+            series, existingHangout, existingPointers, newHangout, newPointers, Collections.emptyList()))
             .isInstanceOf(RepositoryException.class)
             .hasMessageContaining("transaction cancelled")
             .hasCause(canceledException);
@@ -187,7 +189,7 @@ class SeriesTransactionRepositoryTest {
 
         // When & Then
         assertThatThrownBy(() -> repository.createSeriesWithNewPart(
-            series, existingHangout, existingPointers, newHangout, newPointers))
+            series, existingHangout, existingPointers, newHangout, newPointers, Collections.emptyList()))
             .isInstanceOf(RepositoryException.class)
             .hasMessageContaining("DynamoDB error")
             .hasCause(dynamoException);
@@ -211,7 +213,7 @@ class SeriesTransactionRepositoryTest {
         // When
         repository.createSeriesWithNewPart(
             series, existingHangout, existingPointers, 
-            newHangout, newPointers
+            newHangout, newPointers, Collections.emptyList()
         );
 
         // Then
@@ -254,7 +256,7 @@ class SeriesTransactionRepositoryTest {
         // When
         repository.createSeriesWithNewPart(
             series, existingHangout, existingPointers, 
-            newHangout, newPointers
+            newHangout, newPointers, Collections.emptyList()
         );
 
         // Then
@@ -290,7 +292,7 @@ class SeriesTransactionRepositoryTest {
         );
 
         // When
-        repository.addPartToExistingSeries(seriesId, newHangout, newPointers);
+        repository.addPartToExistingSeries(seriesId, newHangout, newPointers, Collections.emptyList());
 
         // Then
         ArgumentCaptor<TransactWriteItemsRequest> captor = 
@@ -324,7 +326,7 @@ class SeriesTransactionRepositoryTest {
         );
 
         // When
-        repository.addPartToExistingSeries(seriesId, newHangout, newPointers);
+        repository.addPartToExistingSeries(seriesId, newHangout, newPointers, Collections.emptyList());
 
         // Then
         ArgumentCaptor<TransactWriteItemsRequest> captor = 
@@ -366,7 +368,7 @@ class SeriesTransactionRepositoryTest {
             .thenThrow(canceledException);
 
         // When & Then
-        assertThatThrownBy(() -> repository.addPartToExistingSeries(seriesId, newHangout, newPointers))
+        assertThatThrownBy(() -> repository.addPartToExistingSeries(seriesId, newHangout, newPointers, Collections.emptyList()))
             .isInstanceOf(RepositoryException.class)
             .hasMessageContaining("transaction cancelled")
             .hasCause(canceledException);
@@ -390,7 +392,7 @@ class SeriesTransactionRepositoryTest {
             .thenThrow(dynamoException);
 
         // When & Then
-        assertThatThrownBy(() -> repository.addPartToExistingSeries(seriesId, newHangout, newPointers))
+        assertThatThrownBy(() -> repository.addPartToExistingSeries(seriesId, newHangout, newPointers, Collections.emptyList()))
             .isInstanceOf(RepositoryException.class)
             .hasMessageContaining("DynamoDB error")
             .hasCause(dynamoException);
@@ -416,7 +418,7 @@ class SeriesTransactionRepositoryTest {
         // When
         repository.createSeriesWithNewPart(
             series, existingHangout, existingPointers, 
-            newHangout, newPointers
+            newHangout, newPointers, Collections.emptyList()
         );
 
         // Then
@@ -439,7 +441,7 @@ class SeriesTransactionRepositoryTest {
         );
 
         // When
-        repository.addPartToExistingSeries(seriesId, newHangout, newPointers);
+        repository.addPartToExistingSeries(seriesId, newHangout, newPointers, Collections.emptyList());
 
         // Then
         verify(performanceTracker).trackQuery(
@@ -472,7 +474,7 @@ class SeriesTransactionRepositoryTest {
 
         // When & Then
         assertThatThrownBy(() -> repository.createSeriesWithNewPart(
-            series, existingHangout, existingPointers, newHangout, newPointers))
+            series, existingHangout, existingPointers, newHangout, newPointers, Collections.emptyList()))
             .isEqualTo(trackingException);
     }
 
@@ -496,7 +498,7 @@ class SeriesTransactionRepositoryTest {
         // When
         repository.createSeriesWithNewPart(
             series, existingHangout, existingPointers, 
-            newHangout, newPointers
+            newHangout, newPointers, Collections.emptyList()
         );
 
         // Then
@@ -524,7 +526,7 @@ class SeriesTransactionRepositoryTest {
         );
 
         // When
-        repository.addPartToExistingSeries(seriesId, newHangout, newPointers);
+        repository.addPartToExistingSeries(seriesId, newHangout, newPointers, Collections.emptyList());
 
         // Then
         ArgumentCaptor<TransactWriteItemsRequest> captor = 
