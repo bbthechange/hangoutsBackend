@@ -14,6 +14,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.*;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -89,20 +90,26 @@ class SeriesTransactionRepositoryTest {
     // 1. createSeriesWithNewPart() Tests
 
     @Test
-    void createSeriesWithNewPart_WithValidInputs_ShouldCreateTransactionWith5Items() {
+    void createSeriesWithNewPart_WithValidInputs_ShouldCreateTransactionWithCorrectItems() {
         // Given
         EventSeries series = createTestEventSeries();
         String hangout1Id = UUID.randomUUID().toString();
         String hangout2Id = UUID.randomUUID().toString();
         Hangout existingHangout = createTestHangout(hangout1Id);
-        HangoutPointer existingPointer = createTestPointer(hangout1Id, series.getGroupId());
+        List<HangoutPointer> existingPointers = Arrays.asList(
+            createTestPointer(hangout1Id, series.getGroupId()),
+            createTestPointer(hangout1Id, "group-2")
+        );
         Hangout newHangout = createTestHangout(hangout2Id);
-        HangoutPointer newPointer = createTestPointer(hangout2Id, series.getGroupId());
+        List<HangoutPointer> newPointers = Arrays.asList(
+            createTestPointer(hangout2Id, series.getGroupId()),
+            createTestPointer(hangout2Id, "group-2")
+        );
 
         // When
         repository.createSeriesWithNewPart(
-            series, existingHangout, existingPointer, 
-            newHangout, newPointer
+            series, existingHangout, existingPointers, 
+            newHangout, newPointers
         );
 
         // Then
@@ -111,15 +118,18 @@ class SeriesTransactionRepositoryTest {
         verify(dynamoDbClient).transactWriteItems(captor.capture());
         
         TransactWriteItemsRequest request = captor.getValue();
-        assertThat(request.transactItems()).hasSize(5);
+        // Should have: 1 series + 1 hangout update + 2 pointer updates + 1 new hangout + 2 new pointers = 7 items
+        assertThat(request.transactItems()).hasSize(7);
         
         // Verify operation types in correct order
         List<TransactWriteItem> items = request.transactItems();
         assertThat(items.get(0).put()).isNotNull(); // Create series
         assertThat(items.get(1).update()).isNotNull(); // Update existing hangout
-        assertThat(items.get(2).update()).isNotNull(); // Update existing pointer
-        assertThat(items.get(3).put()).isNotNull(); // Create new hangout
-        assertThat(items.get(4).put()).isNotNull(); // Create new pointer
+        assertThat(items.get(2).update()).isNotNull(); // Update existing pointer 1
+        assertThat(items.get(3).update()).isNotNull(); // Update existing pointer 2
+        assertThat(items.get(4).put()).isNotNull(); // Create new hangout
+        assertThat(items.get(5).put()).isNotNull(); // Create new pointer 1
+        assertThat(items.get(6).put()).isNotNull(); // Create new pointer 2
         
         // Verify performance tracking
         verify(performanceTracker).trackQuery(eq("createSeriesWithNewPart"), eq("InviterTable"), any());
@@ -132,9 +142,13 @@ class SeriesTransactionRepositoryTest {
         String hangout1Id = UUID.randomUUID().toString();
         String hangout2Id = UUID.randomUUID().toString();
         Hangout existingHangout = createTestHangout(hangout1Id);
-        HangoutPointer existingPointer = createTestPointer(hangout1Id, series.getGroupId());
+        List<HangoutPointer> existingPointers = Arrays.asList(
+            createTestPointer(hangout1Id, series.getGroupId())
+        );
         Hangout newHangout = createTestHangout(hangout2Id);
-        HangoutPointer newPointer = createTestPointer(hangout2Id, series.getGroupId());
+        List<HangoutPointer> newPointers = Arrays.asList(
+            createTestPointer(hangout2Id, series.getGroupId())
+        );
         
         TransactionCanceledException canceledException = TransactionCanceledException.builder()
             .message("Transaction cancelled")
@@ -144,7 +158,7 @@ class SeriesTransactionRepositoryTest {
 
         // When & Then
         assertThatThrownBy(() -> repository.createSeriesWithNewPart(
-            series, existingHangout, existingPointer, newHangout, newPointer))
+            series, existingHangout, existingPointers, newHangout, newPointers))
             .isInstanceOf(RepositoryException.class)
             .hasMessageContaining("transaction cancelled")
             .hasCause(canceledException);
@@ -157,9 +171,13 @@ class SeriesTransactionRepositoryTest {
         String hangout1Id = UUID.randomUUID().toString();
         String hangout2Id = UUID.randomUUID().toString();
         Hangout existingHangout = createTestHangout(hangout1Id);
-        HangoutPointer existingPointer = createTestPointer(hangout1Id, series.getGroupId());
+        List<HangoutPointer> existingPointers = Arrays.asList(
+            createTestPointer(hangout1Id, series.getGroupId())
+        );
         Hangout newHangout = createTestHangout(hangout2Id);
-        HangoutPointer newPointer = createTestPointer(hangout2Id, series.getGroupId());
+        List<HangoutPointer> newPointers = Arrays.asList(
+            createTestPointer(hangout2Id, series.getGroupId())
+        );
         
         DynamoDbException dynamoException = ProvisionedThroughputExceededException.builder()
             .message("DynamoDB error")
@@ -169,7 +187,7 @@ class SeriesTransactionRepositoryTest {
 
         // When & Then
         assertThatThrownBy(() -> repository.createSeriesWithNewPart(
-            series, existingHangout, existingPointer, newHangout, newPointer))
+            series, existingHangout, existingPointers, newHangout, newPointers))
             .isInstanceOf(RepositoryException.class)
             .hasMessageContaining("DynamoDB error")
             .hasCause(dynamoException);
@@ -182,14 +200,18 @@ class SeriesTransactionRepositoryTest {
         String hangout1Id = UUID.randomUUID().toString();
         String hangout2Id = UUID.randomUUID().toString();
         Hangout existingHangout = createTestHangout(hangout1Id);
-        HangoutPointer existingPointer = createTestPointer(hangout1Id, series.getGroupId());
+        List<HangoutPointer> existingPointers = Arrays.asList(
+            createTestPointer(hangout1Id, series.getGroupId())
+        );
         Hangout newHangout = createTestHangout(hangout2Id);
-        HangoutPointer newPointer = createTestPointer(hangout2Id, series.getGroupId());
+        List<HangoutPointer> newPointers = Arrays.asList(
+            createTestPointer(hangout2Id, series.getGroupId())
+        );
 
         // When
         repository.createSeriesWithNewPart(
-            series, existingHangout, existingPointer, 
-            newHangout, newPointer
+            series, existingHangout, existingPointers, 
+            newHangout, newPointers
         );
 
         // Then
@@ -223,13 +245,16 @@ class SeriesTransactionRepositoryTest {
         String hangout2Id = UUID.randomUUID().toString();
         Hangout existingHangout = createTestHangout(hangout1Id);
         HangoutPointer existingPointer = createTestPointer(hangout1Id, series.getGroupId());
+        List<HangoutPointer> existingPointers = Arrays.asList(existingPointer);
         Hangout newHangout = createTestHangout(hangout2Id);
-        HangoutPointer newPointer = createTestPointer(hangout2Id, series.getGroupId());
+        List<HangoutPointer> newPointers = Arrays.asList(
+            createTestPointer(hangout2Id, series.getGroupId())
+        );
 
         // When
         repository.createSeriesWithNewPart(
-            series, existingHangout, existingPointer, 
-            newHangout, newPointer
+            series, existingHangout, existingPointers, 
+            newHangout, newPointers
         );
 
         // Then
@@ -253,16 +278,19 @@ class SeriesTransactionRepositoryTest {
     // 2. addPartToExistingSeries() Tests
 
     @Test
-    void addPartToExistingSeries_WithValidInputs_ShouldCreateTransactionWith3Items() {
+    void addPartToExistingSeries_WithValidInputs_ShouldCreateTransactionWithCorrectItems() {
         // Given
         String seriesId = UUID.randomUUID().toString();
         String hangout3Id = UUID.randomUUID().toString();
         String groupId = UUID.randomUUID().toString();
         Hangout newHangout = createTestHangout(hangout3Id);
-        HangoutPointer newPointer = createTestPointer(hangout3Id, groupId);
+        List<HangoutPointer> newPointers = Arrays.asList(
+            createTestPointer(hangout3Id, groupId),
+            createTestPointer(hangout3Id, "group-2")
+        );
 
         // When
-        repository.addPartToExistingSeries(seriesId, newHangout, newPointer);
+        repository.addPartToExistingSeries(seriesId, newHangout, newPointers);
 
         // Then
         ArgumentCaptor<TransactWriteItemsRequest> captor = 
@@ -270,13 +298,15 @@ class SeriesTransactionRepositoryTest {
         verify(dynamoDbClient).transactWriteItems(captor.capture());
         
         TransactWriteItemsRequest request = captor.getValue();
-        assertThat(request.transactItems()).hasSize(3);
+        // Should have: 1 series update + 1 new hangout + 2 new pointers = 4 items
+        assertThat(request.transactItems()).hasSize(4);
         
         // Verify operation types in correct order
         List<TransactWriteItem> items = request.transactItems();
         assertThat(items.get(0).update()).isNotNull(); // Update series
         assertThat(items.get(1).put()).isNotNull(); // Create new hangout
-        assertThat(items.get(2).put()).isNotNull(); // Create new pointer
+        assertThat(items.get(2).put()).isNotNull(); // Create new pointer 1
+        assertThat(items.get(3).put()).isNotNull(); // Create new pointer 2
         
         // Verify performance tracking
         verify(performanceTracker).trackQuery(eq("addPartToExistingSeries"), eq("InviterTable"), any());
@@ -289,10 +319,12 @@ class SeriesTransactionRepositoryTest {
         String hangout3Id = UUID.randomUUID().toString();
         String groupId = UUID.randomUUID().toString();
         Hangout newHangout = createTestHangout(hangout3Id);
-        HangoutPointer newPointer = createTestPointer(hangout3Id, groupId);
+        List<HangoutPointer> newPointers = Arrays.asList(
+            createTestPointer(hangout3Id, groupId)
+        );
 
         // When
-        repository.addPartToExistingSeries(seriesId, newHangout, newPointer);
+        repository.addPartToExistingSeries(seriesId, newHangout, newPointers);
 
         // Then
         ArgumentCaptor<TransactWriteItemsRequest> captor = 
@@ -323,7 +355,9 @@ class SeriesTransactionRepositoryTest {
         String hangout3Id = UUID.randomUUID().toString();
         String groupId = UUID.randomUUID().toString();
         Hangout newHangout = createTestHangout(hangout3Id);
-        HangoutPointer newPointer = createTestPointer(hangout3Id, groupId);
+        List<HangoutPointer> newPointers = Arrays.asList(
+            createTestPointer(hangout3Id, groupId)
+        );
         
         TransactionCanceledException canceledException = TransactionCanceledException.builder()
             .message("Transaction cancelled")
@@ -332,7 +366,7 @@ class SeriesTransactionRepositoryTest {
             .thenThrow(canceledException);
 
         // When & Then
-        assertThatThrownBy(() -> repository.addPartToExistingSeries(seriesId, newHangout, newPointer))
+        assertThatThrownBy(() -> repository.addPartToExistingSeries(seriesId, newHangout, newPointers))
             .isInstanceOf(RepositoryException.class)
             .hasMessageContaining("transaction cancelled")
             .hasCause(canceledException);
@@ -345,7 +379,9 @@ class SeriesTransactionRepositoryTest {
         String hangout3Id = UUID.randomUUID().toString();
         String groupId = UUID.randomUUID().toString();
         Hangout newHangout = createTestHangout(hangout3Id);
-        HangoutPointer newPointer = createTestPointer(hangout3Id, groupId);
+        List<HangoutPointer> newPointers = Arrays.asList(
+            createTestPointer(hangout3Id, groupId)
+        );
         
         DynamoDbException dynamoException = ProvisionedThroughputExceededException.builder()
             .message("DynamoDB error")
@@ -354,7 +390,7 @@ class SeriesTransactionRepositoryTest {
             .thenThrow(dynamoException);
 
         // When & Then
-        assertThatThrownBy(() -> repository.addPartToExistingSeries(seriesId, newHangout, newPointer))
+        assertThatThrownBy(() -> repository.addPartToExistingSeries(seriesId, newHangout, newPointers))
             .isInstanceOf(RepositoryException.class)
             .hasMessageContaining("DynamoDB error")
             .hasCause(dynamoException);
@@ -369,14 +405,18 @@ class SeriesTransactionRepositoryTest {
         String hangout1Id = UUID.randomUUID().toString();
         String hangout2Id = UUID.randomUUID().toString();
         Hangout existingHangout = createTestHangout(hangout1Id);
-        HangoutPointer existingPointer = createTestPointer(hangout1Id, series.getGroupId());
+        List<HangoutPointer> existingPointers = Arrays.asList(
+            createTestPointer(hangout1Id, series.getGroupId())
+        );
         Hangout newHangout = createTestHangout(hangout2Id);
-        HangoutPointer newPointer = createTestPointer(hangout2Id, series.getGroupId());
+        List<HangoutPointer> newPointers = Arrays.asList(
+            createTestPointer(hangout2Id, series.getGroupId())
+        );
 
         // When
         repository.createSeriesWithNewPart(
-            series, existingHangout, existingPointer, 
-            newHangout, newPointer
+            series, existingHangout, existingPointers, 
+            newHangout, newPointers
         );
 
         // Then
@@ -394,10 +434,12 @@ class SeriesTransactionRepositoryTest {
         String hangout3Id = UUID.randomUUID().toString();
         String groupId = UUID.randomUUID().toString();
         Hangout newHangout = createTestHangout(hangout3Id);
-        HangoutPointer newPointer = createTestPointer(hangout3Id, groupId);
+        List<HangoutPointer> newPointers = Arrays.asList(
+            createTestPointer(hangout3Id, groupId)
+        );
 
         // When
-        repository.addPartToExistingSeries(seriesId, newHangout, newPointer);
+        repository.addPartToExistingSeries(seriesId, newHangout, newPointers);
 
         // Then
         verify(performanceTracker).trackQuery(
@@ -414,9 +456,13 @@ class SeriesTransactionRepositoryTest {
         String hangout1Id = UUID.randomUUID().toString();
         String hangout2Id = UUID.randomUUID().toString();
         Hangout existingHangout = createTestHangout(hangout1Id);
-        HangoutPointer existingPointer = createTestPointer(hangout1Id, series.getGroupId());
+        List<HangoutPointer> existingPointers = Arrays.asList(
+            createTestPointer(hangout1Id, series.getGroupId())
+        );
         Hangout newHangout = createTestHangout(hangout2Id);
-        HangoutPointer newPointer = createTestPointer(hangout2Id, series.getGroupId());
+        List<HangoutPointer> newPointers = Arrays.asList(
+            createTestPointer(hangout2Id, series.getGroupId())
+        );
         
         RuntimeException trackingException = new RuntimeException("Tracking failed");
         // Reset the mock to override the default behavior
@@ -426,7 +472,7 @@ class SeriesTransactionRepositoryTest {
 
         // When & Then
         assertThatThrownBy(() -> repository.createSeriesWithNewPart(
-            series, existingHangout, existingPointer, newHangout, newPointer))
+            series, existingHangout, existingPointers, newHangout, newPointers))
             .isEqualTo(trackingException);
     }
 
@@ -439,14 +485,18 @@ class SeriesTransactionRepositoryTest {
         String hangout1Id = UUID.randomUUID().toString();
         String hangout2Id = UUID.randomUUID().toString();
         Hangout existingHangout = createTestHangout(hangout1Id);
-        HangoutPointer existingPointer = createTestPointer(hangout1Id, series.getGroupId());
+        List<HangoutPointer> existingPointers = Arrays.asList(
+            createTestPointer(hangout1Id, series.getGroupId())
+        );
         Hangout newHangout = createTestHangout(hangout2Id);
-        HangoutPointer newPointer = createTestPointer(hangout2Id, series.getGroupId());
+        List<HangoutPointer> newPointers = Arrays.asList(
+            createTestPointer(hangout2Id, series.getGroupId())
+        );
 
         // When
         repository.createSeriesWithNewPart(
-            series, existingHangout, existingPointer, 
-            newHangout, newPointer
+            series, existingHangout, existingPointers, 
+            newHangout, newPointers
         );
 
         // Then
@@ -469,10 +519,12 @@ class SeriesTransactionRepositoryTest {
         String hangout3Id = UUID.randomUUID().toString();
         String groupId = UUID.randomUUID().toString();
         Hangout newHangout = createTestHangout(hangout3Id);
-        HangoutPointer newPointer = createTestPointer(hangout3Id, groupId);
+        List<HangoutPointer> newPointers = Arrays.asList(
+            createTestPointer(hangout3Id, groupId)
+        );
 
         // When
-        repository.addPartToExistingSeries(seriesId, newHangout, newPointer);
+        repository.addPartToExistingSeries(seriesId, newHangout, newPointers);
 
         // Then
         ArgumentCaptor<TransactWriteItemsRequest> captor = 

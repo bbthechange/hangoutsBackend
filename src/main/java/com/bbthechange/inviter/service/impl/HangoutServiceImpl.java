@@ -3,7 +3,6 @@ package com.bbthechange.inviter.service.impl;
 import com.bbthechange.inviter.service.HangoutService;
 import com.bbthechange.inviter.service.FuzzyTimeService;
 import com.bbthechange.inviter.service.UserService;
-import com.bbthechange.inviter.service.PollService;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.model.*;
@@ -43,41 +42,8 @@ public class HangoutServiceImpl implements HangoutService {
     
     @Override
     public Hangout createHangout(CreateHangoutRequest request, String requestingUserId) {
-        // Convert timeInput to canonical timestamps
-        FuzzyTimeService.TimeConversionResult timeResult = null;
-        if (request.getTimeInfo() != null) {
-            timeResult = fuzzyTimeService.convert(request.getTimeInfo());
-        }
-        
-        // Create the hangout
-        Hangout hangout = new Hangout(
-            request.getTitle(),
-            request.getDescription(),
-            null, // startTime - will be populated from timeInput later
-            null, // endTime - will be populated from timeInput later
-            request.getLocation(),
-            request.getVisibility(),
-            request.getMainImagePath()
-        );
-        
-        // Set the timeInput for fuzzy time support and canonical timestamps
-        hangout.setTimeInput(request.getTimeInfo());
-        if (timeResult != null) {
-            hangout.setStartTimestamp(timeResult.startTimestamp);
-            hangout.setEndTimestamp(timeResult.endTimestamp);
-        }
-        hangout.setCarpoolEnabled(request.isCarpoolEnabled());
-        
-        // Verify user is in all specified groups
-        if (request.getAssociatedGroups() != null) {
-            for (String groupId : request.getAssociatedGroups()) {
-                if (!groupRepository.findMembership(groupId, requestingUserId).isPresent()) {
-                    throw new UnauthorizedException("User not in group: " + groupId);
-                }
-            }
-            hangout.setAssociatedGroups(request.getAssociatedGroups());
-        }
-        
+        Hangout hangout = hangoutFromHangoutRequest(request, requestingUserId);
+
         // Prepare pointer records
         List<HangoutPointer> pointers = new ArrayList<>();
         if (request.getAssociatedGroups() != null) {
@@ -121,7 +87,46 @@ public class HangoutServiceImpl implements HangoutService {
         logger.info("Created hangout {} with {} attributes by user {}", hangout.getHangoutId(), attributes.size(), requestingUserId);
         return hangout;
     }
-    
+
+    @Override
+    public Hangout hangoutFromHangoutRequest(CreateHangoutRequest request, String requestingUserId) {
+        // Convert timeInput to canonical timestamps
+        FuzzyTimeService.TimeConversionResult timeResult = null;
+        if (request.getTimeInfo() != null) {
+            timeResult = fuzzyTimeService.convert(request.getTimeInfo());
+        }
+
+        // Create the hangout
+        Hangout hangout = new Hangout(
+            request.getTitle(),
+            request.getDescription(),
+            null, // startTime - will be populated from timeInput later
+            null, // endTime - will be populated from timeInput later
+            request.getLocation(),
+            request.getVisibility(),
+            request.getMainImagePath()
+        );
+
+        // Set the timeInput for fuzzy time support and canonical timestamps
+        hangout.setTimeInput(request.getTimeInfo());
+        if (timeResult != null) {
+            hangout.setStartTimestamp(timeResult.startTimestamp);
+            hangout.setEndTimestamp(timeResult.endTimestamp);
+        }
+        hangout.setCarpoolEnabled(request.isCarpoolEnabled());
+
+        // Verify user is in all specified groups
+        if (request.getAssociatedGroups() != null) {
+            for (String groupId : request.getAssociatedGroups()) {
+                if (!groupRepository.findMembership(groupId, requestingUserId).isPresent()) {
+                    throw new UnauthorizedException("User not in group: " + groupId);
+                }
+            }
+            hangout.setAssociatedGroups(request.getAssociatedGroups());
+        }
+        return hangout;
+    }
+
     @Override
     public HangoutDetailDTO getHangoutDetail(String hangoutId, String requestingUserId) {
         // Single item collection query gets EVERYTHING (the power pattern!)

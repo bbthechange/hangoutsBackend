@@ -1435,4 +1435,64 @@ public class HangoutRepositoryImpl implements HangoutRepository {
             }
         });
     }
+    
+    @Override
+    public List<HangoutPointer> findPointersForHangout(Hangout hangout) {
+        return performanceTracker.trackQuery("findPointersForHangout", TABLE_NAME, () -> {
+            try {
+                List<String> associatedGroups = hangout.getAssociatedGroups();
+                if (associatedGroups == null || associatedGroups.isEmpty()) {
+                    return new ArrayList<>();
+                }
+                
+                // Build keys for batch get - one pointer per group
+                List<Map<String, AttributeValue>> keysToGet = new ArrayList<>();
+                for (String groupId : associatedGroups) {
+                    Map<String, AttributeValue> key = new HashMap<>();
+                    key.put("pk", AttributeValue.builder()
+                        .s(InviterKeyFactory.getGroupPk(groupId))
+                        .build());
+                    key.put("sk", AttributeValue.builder()
+                        .s(InviterKeyFactory.getHangoutSk(hangout.getHangoutId()))
+                        .build());
+                    keysToGet.add(key);
+                }
+                
+                // Build batch get request
+                BatchGetItemRequest batchGetRequest = BatchGetItemRequest.builder()
+                    .requestItems(Map.of(TABLE_NAME, 
+                        KeysAndAttributes.builder()
+                            .keys(keysToGet)
+                            .build()))
+                    .build();
+                
+                // Execute batch get
+                BatchGetItemResponse response = dynamoDbClient.batchGetItem(batchGetRequest);
+                
+                // Parse results
+                List<HangoutPointer> pointers = new ArrayList<>();
+                List<Map<String, AttributeValue>> items = response.responses().get(TABLE_NAME);
+                if (items != null) {
+                    for (Map<String, AttributeValue> item : items) {
+                        HangoutPointer pointer = hangoutPointerSchema.mapToItem(item);
+                        pointers.add(pointer);
+                    }
+                }
+                
+                // Check for unprocessed keys (shouldn't happen with small batches)
+                if (response.hasUnprocessedKeys() && !response.unprocessedKeys().isEmpty()) {
+                    logger.warn("BatchGetItem had unprocessed keys for hangout {}", hangout.getHangoutId());
+                }
+                
+                logger.debug("Found {} pointers for hangout {} across {} groups", 
+                    pointers.size(), hangout.getHangoutId(), associatedGroups.size());
+                
+                return pointers;
+                
+            } catch (DynamoDbException e) {
+                logger.error("Failed to batch get pointers for hangout {}", hangout.getHangoutId(), e);
+                throw new RepositoryException("Failed to retrieve hangout pointers", e);
+            }
+        });
+    }
 }

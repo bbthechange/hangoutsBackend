@@ -17,7 +17,12 @@ public interface HangoutService {
      * Create a new hangout and associate it with groups (creates pointer records).
      */
     Hangout createHangout(CreateHangoutRequest request, String requestingUserId);
-    
+
+    /*
+     * Create a hangout from a CreateHangoutRequest, adding the correct time info and validations
+     */
+    Hangout hangoutFromHangoutRequest(CreateHangoutRequest request, String requestingUserId);
+
     /**
      * Get hangout details by ID using item collection pattern.
      */

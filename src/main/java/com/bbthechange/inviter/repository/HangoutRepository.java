@@ -157,6 +157,20 @@ public interface HangoutRepository {
     PaginatedResult<HangoutPointer> getPastEventsPage(String groupId, long nowTimestamp,
                                                      Integer limit, String endToken);
     
+    // HangoutPointer operations
+    
+    /**
+     * Find all HangoutPointer records for a specific hangout across all its associated groups.
+     * Uses BatchGetItem for efficient retrieval of multiple pointer records.
+     * 
+     * Since a hangout can be associated with multiple groups, there will be one pointer
+     * record per group (e.g., PK=GROUP#A, SK=HANGOUT#123 for each group).
+     * 
+     * @param hangout The hangout to find pointers for
+     * @return List of HangoutPointer records (one per associated group)
+     */
+    List<HangoutPointer> findPointersForHangout(Hangout hangout);
+    
     // Series-related operations
     
     /**

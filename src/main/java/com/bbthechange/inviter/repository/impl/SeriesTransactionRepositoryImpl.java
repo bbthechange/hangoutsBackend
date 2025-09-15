@@ -55,9 +55,9 @@ public class SeriesTransactionRepositoryImpl implements SeriesTransactionReposit
     public void createSeriesWithNewPart(
             EventSeries seriesToCreate,
             Hangout hangoutToUpdate,
-            HangoutPointer pointerToUpdate,
+            List<HangoutPointer> pointersToUpdate,
             Hangout newHangoutToCreate,
-            HangoutPointer newPointerToCreate) {
+            List<HangoutPointer> newPointersToCreate) {
         
         performanceTracker.trackQuery("createSeriesWithNewPart", TABLE_NAME, () -> {
             try {
@@ -90,23 +90,24 @@ public class SeriesTransactionRepositoryImpl implements SeriesTransactionReposit
                     .build();
                 transactItems.add(updateHangoutItem);
                 
-                // 3. Update the existing HangoutPointer's seriesId (UPDATE operation)
-                
-                TransactWriteItem updatePointerItem = TransactWriteItem.builder()
-                    .update(Update.builder()
-                        .tableName(TABLE_NAME)
-                        .key(Map.of(
-                            "pk", AttributeValue.builder().s(pointerToUpdate.getPk()).build(),
-                            "sk", AttributeValue.builder().s(pointerToUpdate.getSk()).build()
-                        ))
-                        .updateExpression("SET seriesId = :sid, updatedAt = :updated")
-                        .expressionAttributeValues(Map.of(
-                            ":sid", AttributeValue.builder().s(seriesToCreate.getSeriesId()).build(),
-                            ":updated", AttributeValue.builder().n(String.valueOf(System.currentTimeMillis())).build()
-                        ))
-                        .build())
-                    .build();
-                transactItems.add(updatePointerItem);
+                // 3. Update ALL existing HangoutPointers' seriesId (UPDATE operations)
+                for (HangoutPointer pointerToUpdate : pointersToUpdate) {
+                    TransactWriteItem updatePointerItem = TransactWriteItem.builder()
+                        .update(Update.builder()
+                            .tableName(TABLE_NAME)
+                            .key(Map.of(
+                                "pk", AttributeValue.builder().s(pointerToUpdate.getPk()).build(),
+                                "sk", AttributeValue.builder().s(pointerToUpdate.getSk()).build()
+                            ))
+                            .updateExpression("SET seriesId = :sid, updatedAt = :updated")
+                            .expressionAttributeValues(Map.of(
+                                ":sid", AttributeValue.builder().s(seriesToCreate.getSeriesId()).build(),
+                                ":updated", AttributeValue.builder().n(String.valueOf(System.currentTimeMillis())).build()
+                            ))
+                            .build())
+                        .build();
+                    transactItems.add(updatePointerItem);
+                }
                 
                 // 4. Create the new Hangout part (PUT operation)
                 TransactWriteItem createNewHangoutItem = TransactWriteItem.builder()
@@ -117,14 +118,16 @@ public class SeriesTransactionRepositoryImpl implements SeriesTransactionReposit
                     .build();
                 transactItems.add(createNewHangoutItem);
                 
-                // 5. Create the new HangoutPointer (PUT operation)
-                TransactWriteItem createNewPointerItem = TransactWriteItem.builder()
-                    .put(Put.builder()
-                        .tableName(TABLE_NAME)
-                        .item(hangoutPointerSchema.itemToMap(newPointerToCreate, true))
-                        .build())
-                    .build();
-                transactItems.add(createNewPointerItem);
+                // 5. Create ALL new HangoutPointers (PUT operations)
+                for (HangoutPointer newPointerToCreate : newPointersToCreate) {
+                    TransactWriteItem createNewPointerItem = TransactWriteItem.builder()
+                        .put(Put.builder()
+                            .tableName(TABLE_NAME)
+                            .item(hangoutPointerSchema.itemToMap(newPointerToCreate, true))
+                            .build())
+                        .build();
+                    transactItems.add(createNewPointerItem);
+                }
                 
                 // Execute the transaction
                 TransactWriteItemsRequest transactRequest = TransactWriteItemsRequest.builder()
@@ -153,7 +156,7 @@ public class SeriesTransactionRepositoryImpl implements SeriesTransactionReposit
     public void addPartToExistingSeries(
             String seriesId,
             Hangout newHangoutToCreate,
-            HangoutPointer newPointerToCreate) {
+            List<HangoutPointer> newPointersToCreate) {
         
         performanceTracker.trackQuery("addPartToExistingSeries", TABLE_NAME, () -> {
             try {
@@ -188,14 +191,16 @@ public class SeriesTransactionRepositoryImpl implements SeriesTransactionReposit
                     .build();
                 transactItems.add(createNewHangoutItem);
                 
-                // 3. Create the new HangoutPointer (PUT operation)
-                TransactWriteItem createNewPointerItem = TransactWriteItem.builder()
-                    .put(Put.builder()
-                        .tableName(TABLE_NAME)
-                        .item(hangoutPointerSchema.itemToMap(newPointerToCreate, true))
-                        .build())
-                    .build();
-                transactItems.add(createNewPointerItem);
+                // 3. Create ALL new HangoutPointers (PUT operations)
+                for (HangoutPointer newPointerToCreate : newPointersToCreate) {
+                    TransactWriteItem createNewPointerItem = TransactWriteItem.builder()
+                        .put(Put.builder()
+                            .tableName(TABLE_NAME)
+                            .item(hangoutPointerSchema.itemToMap(newPointerToCreate, true))
+                            .build())
+                        .build();
+                    transactItems.add(createNewPointerItem);
+                }
                 
                 // Execute the transaction
                 TransactWriteItemsRequest transactRequest = TransactWriteItemsRequest.builder()
