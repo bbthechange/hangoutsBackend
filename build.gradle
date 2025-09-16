@@ -56,7 +56,8 @@ dependencies {
 tasks.named('test') {
 	useJUnitPlatform()
 	exclude '**/integration/**'  // Exclude integration tests directory
-	exclude '**/*RepositoryImplTest*' // Exclude TestContainers tests by name
+	exclude '**/PolymorphicGroupRepositoryImplTest*' // Exclude integration test by name
+	exclude '**/GroupRepositoryImplTest*' // Exclude integration test by name
 	finalizedBy jacocoTestReport
 }
 
