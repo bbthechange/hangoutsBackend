@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.model;
 
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.*;
+import com.bbthechange.inviter.util.InstantAsLongAttributeConverter;
 
 import java.time.Instant;
 
@@ -69,6 +70,7 @@ public abstract class BaseItem {
         this.itemType = itemType;
     }
     
+    @DynamoDbConvertedBy(InstantAsLongAttributeConverter.class)
     public Instant getCreatedAt() {
         return createdAt;
     }
@@ -77,6 +79,7 @@ public abstract class BaseItem {
         this.createdAt = createdAt;
     }
     
+    @DynamoDbConvertedBy(InstantAsLongAttributeConverter.class)
     public Instant getUpdatedAt() {
         return updatedAt;
     }
