@@ -31,6 +31,7 @@ public class SeriesPointer extends BaseItem {
     private Long startTimestamp;        // Timestamp of the first event in the series (for GSI)
     private Long endTimestamp;          // Timestamp of the last event in the series
     private List<String> hangoutIds;   // List of hangout IDs that are part of this series
+    private List<HangoutPointer> parts; // Denormalized list of HangoutPointer objects for each part
     private Long version;               // Copy of series version for consistency
     
     // Default constructor for DynamoDB
@@ -38,6 +39,7 @@ public class SeriesPointer extends BaseItem {
         super();
         setItemType("SERIES_POINTER");
         this.hangoutIds = new ArrayList<>();
+        this.parts = new ArrayList<>();
         this.version = 1L;
     }
     
@@ -51,6 +53,7 @@ public class SeriesPointer extends BaseItem {
         this.seriesId = seriesId;
         this.seriesTitle = seriesTitle;
         this.hangoutIds = new ArrayList<>();
+        this.parts = new ArrayList<>();
         this.version = 1L;
         
         // Set keys using InviterKeyFactory
@@ -199,5 +202,48 @@ public class SeriesPointer extends BaseItem {
         setEndTimestamp(series.getEndTimestamp());
         setHangoutIds(series.getHangoutIds() != null ? new ArrayList<>(series.getHangoutIds()) : new ArrayList<>());
         setVersion(series.getVersion());
+    }
+    
+    /**
+     * Get the denormalized list of HangoutPointer objects for all parts in this series.
+     * These are sorted chronologically if they have timestamps.
+     */
+    public List<HangoutPointer> getParts() {
+        if (parts != null && !parts.isEmpty() && parts.get(0).getStartTimestamp() != null) {
+            // Ensure parts are returned in chronological order
+            parts.sort((a, b) -> {
+                if (a.getStartTimestamp() == null || b.getStartTimestamp() == null) {
+                    return 0;
+                }
+                return a.getStartTimestamp().compareTo(b.getStartTimestamp());
+            });
+        }
+        return parts;
+    }
+    
+    /**
+     * Set the denormalized list of HangoutPointer objects for all parts in this series.
+     */
+    public void setParts(List<HangoutPointer> parts) {
+        this.parts = parts != null ? parts : new ArrayList<>();
+        touch(); // Update timestamp
+    }
+    
+    /**
+     * Add a HangoutPointer to the parts list.
+     */
+    public void addPart(HangoutPointer part) {
+        if (this.parts == null) {
+            this.parts = new ArrayList<>();
+        }
+        this.parts.add(part);
+        touch(); // Update timestamp
+    }
+    
+    /**
+     * Get the number of parts in this series (from the denormalized list).
+     */
+    public int getPartsCount() {
+        return this.parts != null ? this.parts.size() : 0;
     }
 }

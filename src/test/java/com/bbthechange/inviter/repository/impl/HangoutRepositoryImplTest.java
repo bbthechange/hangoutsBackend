@@ -677,7 +677,35 @@ class HangoutRepositoryImplTest {
             "description", AttributeValue.builder().s("Test description").build()
         );
     }
-    
+
+    // ================= SeriesPointer Deserialization Tests =================
+
+    @Test
+    void deserializeItem_WithSeriesPointerItemType_ShouldReturnSeriesPointer() {
+        // Given
+        Map<String, AttributeValue> itemMap = createSeriesPointerItemMap();
+
+        // When
+        BaseItem result = repository.deserializeItem(itemMap);
+
+        // Then
+        assertThat(result).isInstanceOf(SeriesPointer.class);
+        SeriesPointer seriesPointer = (SeriesPointer) result;
+        assertThat(seriesPointer.getSeriesId()).isEqualTo("test-series-id");
+    }
+
+    @Test
+    void deserializeItem_WithSeriesSkPattern_ShouldReturnSeriesPointer() {
+        // Given: Item without itemType but with SERIES# SK pattern
+        Map<String, AttributeValue> itemMap = createItemMapWithSk("SERIES#123");
+
+        // When
+        BaseItem result = repository.deserializeItem(itemMap);
+
+        // Then
+        assertThat(result).isInstanceOf(SeriesPointer.class);
+    }
+
     /**
      * Helper method to create mock HangoutPointer items in DynamoDB attribute format.
      */
@@ -690,6 +718,29 @@ class HangoutRepositoryImplTest {
             "hangoutId", AttributeValue.builder().s(hangoutId).build(),
             "title", AttributeValue.builder().s(title).build(),
             "participantCount", AttributeValue.builder().n("1").build()
+        );
+    }
+
+    private Map<String, AttributeValue> createSeriesPointerItemMap() {
+        return Map.of(
+            "pk", AttributeValue.builder().s(InviterKeyFactory.getGroupPk("test-group")).build(),
+            "sk", AttributeValue.builder().s(InviterKeyFactory.getSeriesSk("test-series-id")).build(),
+            "itemType", AttributeValue.builder().s("SERIES_POINTER").build(),
+            "seriesId", AttributeValue.builder().s("test-series-id").build(),
+            "seriesTitle", AttributeValue.builder().s("Test Series").build(),
+            "groupId", AttributeValue.builder().s("test-group").build(),
+            "startTimestamp", AttributeValue.builder().n("1000").build(),
+            "endTimestamp", AttributeValue.builder().n("5000").build()
+        );
+    }
+
+    private Map<String, AttributeValue> createItemMapWithSk(String sk) {
+        return Map.of(
+            "pk", AttributeValue.builder().s(InviterKeyFactory.getGroupPk("test-group")).build(),
+            "sk", AttributeValue.builder().s(sk).build(),
+            "seriesId", AttributeValue.builder().s("test-series-id").build(),
+            "seriesTitle", AttributeValue.builder().s("Test Series").build(),
+            "groupId", AttributeValue.builder().s("test-group").build()
         );
     }
 }

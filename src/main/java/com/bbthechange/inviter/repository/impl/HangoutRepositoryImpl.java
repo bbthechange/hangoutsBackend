@@ -44,6 +44,7 @@ public class HangoutRepositoryImpl implements HangoutRepository {
     private final TableSchema<InterestLevel> interestLevelSchema;
     private final TableSchema<CarRider> carRiderSchema;
     private final TableSchema<HangoutPointer> hangoutPointerSchema;
+    private final TableSchema<SeriesPointer> seriesPointerSchema;
     private final TableSchema<HangoutAttribute> hangoutAttributeSchema;
     private final TableSchema<NeedsRide> needsRideSchema;
     private final TableSchema<EventSeries> eventSeriesSchema;
@@ -66,6 +67,7 @@ public class HangoutRepositoryImpl implements HangoutRepository {
         this.interestLevelSchema = TableSchema.fromBean(InterestLevel.class);
         this.carRiderSchema = TableSchema.fromBean(CarRider.class);
         this.hangoutPointerSchema = TableSchema.fromBean(HangoutPointer.class);
+        this.seriesPointerSchema = TableSchema.fromBean(SeriesPointer.class);
         this.hangoutAttributeSchema = TableSchema.fromBean(HangoutAttribute.class);
         this.needsRideSchema = TableSchema.fromBean(NeedsRide.class);
         this.eventSeriesSchema = TableSchema.fromBean(EventSeries.class);
@@ -76,7 +78,7 @@ public class HangoutRepositoryImpl implements HangoutRepository {
     /**
      * Deserialize a DynamoDB item based on its itemType discriminator or SK pattern.
      */
-    private BaseItem deserializeItem(Map<String, AttributeValue> itemMap) {
+    BaseItem deserializeItem(Map<String, AttributeValue> itemMap) {
         AttributeValue typeAttr = itemMap.get("itemType");
         if (typeAttr == null || typeAttr.s() == null) {
             // Fallback to SK pattern matching for backward compatibility
@@ -103,6 +105,8 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                     return hangoutAttributeSchema.mapToItem(itemMap);
                 } else if (InviterKeyFactory.isHangoutPointer(sk)) {
                     return hangoutPointerSchema.mapToItem(itemMap);
+                } else if (InviterKeyFactory.isSeriesPointer(sk)) {
+                    return seriesPointerSchema.mapToItem(itemMap);
                 }
             }
             throw new IllegalStateException("Missing itemType discriminator and unable to determine type from SK");
@@ -130,6 +134,8 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                 return hangoutAttributeSchema.mapToItem(itemMap);
             case "HANGOUT_POINTER":
                 return hangoutPointerSchema.mapToItem(itemMap);
+            case "SERIES_POINTER":
+                return seriesPointerSchema.mapToItem(itemMap);
             case "EVENT_SERIES":
                 return eventSeriesSchema.mapToItem(itemMap);
             default:
@@ -1189,8 +1195,8 @@ public class HangoutRepositoryImpl implements HangoutRepository {
     }
 
     @Override
-    public PaginatedResult<HangoutPointer> getFutureEventsPage(String groupId, long nowTimestamp, 
-                                                              Integer limit, String startToken) {
+    public PaginatedResult<BaseItem> getFutureEventsPage(String groupId, long nowTimestamp, 
+                                                        Integer limit, String startToken) {
         return performanceTracker.trackQuery("getFutureEventsPage", "EntityTimeIndex", () -> {
             try {
                 String participantKey = InviterKeyFactory.getGroupPk(groupId);
@@ -1222,11 +1228,10 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                 
                 QueryResponse response = dynamoDbClient.query(requestBuilder.build());
                 
-                // Convert items to HangoutPointer objects
-                List<HangoutPointer> hangoutPointers = response.items().stream()
+                // Convert items to BaseItem objects (includes both HangoutPointer and SeriesPointer)
+                List<BaseItem> baseItems = response.items().stream()
                     .map(this::deserializeItem)
-                    .filter(item -> item instanceof HangoutPointer)
-                    .map(item -> (HangoutPointer) item)
+                    .filter(Objects::nonNull)
                     .collect(Collectors.toList());
                 
                 // Generate next page token if more results exist
@@ -1236,9 +1241,9 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                 }
                 
                 logger.debug("Found {} future events for group {} (requested limit: {}, hasMore: {})", 
-                    hangoutPointers.size(), groupId, limit, nextToken != null);
+                    baseItems.size(), groupId, limit, nextToken != null);
                 
-                return new PaginatedResult<>(hangoutPointers, nextToken);
+                return new PaginatedResult<>(baseItems, nextToken);
                 
             } catch (DynamoDbException e) {
                 logger.error("Failed to query future events for group {} with limit {}", groupId, limit, e);
@@ -1248,8 +1253,8 @@ public class HangoutRepositoryImpl implements HangoutRepository {
     }
 
     @Override
-    public PaginatedResult<HangoutPointer> getInProgressEventsPage(String groupId, long nowTimestamp,
-                                                                  Integer limit, String startToken) {
+    public PaginatedResult<BaseItem> getInProgressEventsPage(String groupId, long nowTimestamp,
+                                                            Integer limit, String startToken) {
         return performanceTracker.trackQuery("getInProgressEventsPage", "EndTimestampIndex", () -> {
             try {
                 String participantKey = InviterKeyFactory.getGroupPk(groupId);
@@ -1282,11 +1287,10 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                 
                 QueryResponse response = dynamoDbClient.query(requestBuilder.build());
                 
-                // Convert items to HangoutPointer objects
-                List<HangoutPointer> hangoutPointers = response.items().stream()
+                // Convert items to BaseItem objects (includes both HangoutPointer and SeriesPointer)
+                List<BaseItem> baseItems = response.items().stream()
                     .map(this::deserializeItem)
-                    .filter(item -> item instanceof HangoutPointer)
-                    .map(item -> (HangoutPointer) item)
+                    .filter(Objects::nonNull)
                     .collect(Collectors.toList());
                 
                 // Generate next page token if more results exist
@@ -1296,9 +1300,9 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                 }
                 
                 logger.debug("Found {} in-progress events for group {} (requested limit: {}, hasMore: {})", 
-                    hangoutPointers.size(), groupId, limit, nextToken != null);
+                    baseItems.size(), groupId, limit, nextToken != null);
                 
-                return new PaginatedResult<>(hangoutPointers, nextToken);
+                return new PaginatedResult<>(baseItems, nextToken);
                 
             } catch (DynamoDbException e) {
                 logger.error("Failed to query in-progress events for group {} with limit {}", groupId, limit, e);
@@ -1308,8 +1312,8 @@ public class HangoutRepositoryImpl implements HangoutRepository {
     }
 
     @Override
-    public PaginatedResult<HangoutPointer> getPastEventsPage(String groupId, long nowTimestamp,
-                                                            Integer limit, String endToken) {
+    public PaginatedResult<BaseItem> getPastEventsPage(String groupId, long nowTimestamp,
+                                                      Integer limit, String endToken) {
         return performanceTracker.trackQuery("getPastEventsPage", "EntityTimeIndex", () -> {
             try {
                 String participantKey = InviterKeyFactory.getGroupPk(groupId);
@@ -1341,11 +1345,10 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                 
                 QueryResponse response = dynamoDbClient.query(requestBuilder.build());
                 
-                // Convert items to HangoutPointer objects
-                List<HangoutPointer> hangoutPointers = response.items().stream()
+                // Convert items to BaseItem objects (includes both HangoutPointer and SeriesPointer)
+                List<BaseItem> baseItems = response.items().stream()
                     .map(this::deserializeItem)
-                    .filter(item -> item instanceof HangoutPointer)
-                    .map(item -> (HangoutPointer) item)
+                    .filter(Objects::nonNull)
                     .collect(Collectors.toList());
                 
                 // Generate next page token if more results exist
@@ -1355,9 +1358,9 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                 }
                 
                 logger.debug("Found {} past events for group {} (requested limit: {}, hasMore: {})", 
-                    hangoutPointers.size(), groupId, limit, nextToken != null);
+                    baseItems.size(), groupId, limit, nextToken != null);
                 
-                return new PaginatedResult<>(hangoutPointers, nextToken);
+                return new PaginatedResult<>(baseItems, nextToken);
                 
             } catch (DynamoDbException e) {
                 logger.error("Failed to query past events for group {} with limit {}", groupId, limit, e);

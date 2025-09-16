@@ -4,9 +4,10 @@ import com.bbthechange.inviter.model.HangoutPointer;
 
 /**
  * Data Transfer Object for Hangout summary information in group feeds.
+ * Represents a standalone hangout event in the feed.
  */
 // TODO @Data?
-public class HangoutSummaryDTO {
+public class HangoutSummaryDTO implements FeedItem {
     
     private String hangoutId;
     private String title;
@@ -14,6 +15,7 @@ public class HangoutSummaryDTO {
     private TimeInfo timeInfo; // Fuzzy time information for display
     private String locationName;
     private int participantCount;
+    private String type = "hangout"; // Type discriminator for client-side handling
     
     public HangoutSummaryDTO(HangoutPointer pointer) {
         this.hangoutId = pointer.getHangoutId();
@@ -70,5 +72,13 @@ public class HangoutSummaryDTO {
     
     public void setParticipantCount(int participantCount) {
         this.participantCount = participantCount;
+    }
+    
+    public String getType() {
+        return type;
+    }
+    
+    public void setType(String type) {
+        this.type = type;
     }
 }

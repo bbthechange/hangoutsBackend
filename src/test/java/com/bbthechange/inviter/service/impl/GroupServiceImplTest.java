@@ -15,6 +15,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -304,8 +305,9 @@ class GroupServiceImplTest {
         HangoutPointer needsScheduling = createHangoutPointer(groupId, "22222222-2222-2222-2222-222222222222", "Needs Scheduling", null);
         
         // Mock the repository methods that the enhanced service uses
-        PaginatedResult<HangoutPointer> futureEventsResult = new PaginatedResult<>(List.of(futureHangout), null);
-        PaginatedResult<HangoutPointer> inProgressEventsResult = new PaginatedResult<>(List.of(needsScheduling), null);
+        // Repository methods now return PaginatedResult<BaseItem> containing HangoutPointer objects
+        PaginatedResult<BaseItem> futureEventsResult = new PaginatedResult<>(List.of(futureHangout), null);
+        PaginatedResult<BaseItem> inProgressEventsResult = new PaginatedResult<>(List.of(needsScheduling), null);
         
         when(hangoutRepository.getFutureEventsPage(eq(groupId), anyLong(), isNull(), isNull()))
             .thenReturn(futureEventsResult);
@@ -320,8 +322,8 @@ class GroupServiceImplTest {
         assertThat(result.getWithDay()).hasSize(1);
         assertThat(result.getNeedsDay()).hasSize(1);
         
-        // Verify hangout details and timeInfo
-        HangoutSummaryDTO futureHangoutSummary = result.getWithDay().get(0);
+        // Verify hangout details and timeInfo - cast FeedItem to HangoutSummaryDTO
+        HangoutSummaryDTO futureHangoutSummary = (HangoutSummaryDTO) result.getWithDay().get(0);
         assertThat(futureHangoutSummary.getTitle()).isEqualTo("Future Hangout");
         assertThat(futureHangoutSummary.getTimeInfo()).isNotNull();
         assertThat(futureHangoutSummary.getTimeInfo().getPeriodGranularity()).isEqualTo("evening");
@@ -355,8 +357,8 @@ class GroupServiceImplTest {
             createHangoutPointer(groupId, "future5", "Future Event 5", java.time.Instant.now().plusSeconds(5000))
         );
         
-        PaginatedResult<HangoutPointer> futureEventsResult = new PaginatedResult<>(futureEvents, null); // No more pages
-        PaginatedResult<HangoutPointer> inProgressEventsResult = new PaginatedResult<>(List.of(), null); // No in-progress
+        PaginatedResult<BaseItem> futureEventsResult = new PaginatedResult<>(futureEvents.stream().map(BaseItem.class::cast).toList(), null); // No more pages
+        PaginatedResult<BaseItem> inProgressEventsResult = new PaginatedResult<>(List.of(), null); // No in-progress
         
         when(hangoutRepository.getFutureEventsPage(eq(groupId), anyLong(), isNull(), isNull()))
             .thenReturn(futureEventsResult);
@@ -378,9 +380,9 @@ class GroupServiceImplTest {
         // Events sorted chronologically (oldest first)  
         // Since HangoutSummaryDTO doesn't expose startTimestamp directly,
         // verify sorting by checking the titles correspond to our expected order
-        List<HangoutSummaryDTO> withDay = result.getWithDay();
-        assertThat(withDay.get(0).getTitle()).isEqualTo("Future Event 1"); // Earliest timestamp
-        assertThat(withDay.get(4).getTitle()).isEqualTo("Future Event 5"); // Latest timestamp
+        List<FeedItem> withDay = result.getWithDay();
+        assertThat(((HangoutSummaryDTO) withDay.get(0)).getTitle()).isEqualTo("Future Event 1"); // Earliest timestamp
+        assertThat(((HangoutSummaryDTO) withDay.get(4)).getTitle()).isEqualTo("Future Event 5"); // Latest timestamp
     }
     
     @Test
@@ -404,8 +406,8 @@ class GroupServiceImplTest {
             createHangoutPointer(groupId, "inprogress2", "In Progress Event 2", null)  // No timestamp
         );
         
-        PaginatedResult<HangoutPointer> futureEventsResult = new PaginatedResult<>(futureEvents, null);
-        PaginatedResult<HangoutPointer> inProgressEventsResult = new PaginatedResult<>(inProgressEvents, null);
+        PaginatedResult<BaseItem> futureEventsResult = new PaginatedResult<>(futureEvents.stream().map(BaseItem.class::cast).toList(), null);
+        PaginatedResult<BaseItem> inProgressEventsResult = new PaginatedResult<>(inProgressEvents.stream().map(BaseItem.class::cast).toList(), null);
         
         when(hangoutRepository.getFutureEventsPage(eq(groupId), anyLong(), isNull(), isNull()))
             .thenReturn(futureEventsResult);
@@ -421,10 +423,10 @@ class GroupServiceImplTest {
         assertThat(result.getNeedsDay()).hasSize(2); // In-progress events (no timestamps) go to needsDay
         
         // Verify events are sorted chronologically by checking expected title order
-        List<HangoutSummaryDTO> withDay = result.getWithDay();
-        assertThat(withDay.get(0).getTitle()).isEqualTo("Future Event 1"); // Earliest (1000s)
-        assertThat(withDay.get(1).getTitle()).isEqualTo("Future Event 2"); // Middle (3000s) 
-        assertThat(withDay.get(2).getTitle()).isEqualTo("Future Event 3"); // Latest (5000s)
+        List<FeedItem> withDay = result.getWithDay();
+        assertThat(((HangoutSummaryDTO) withDay.get(0)).getTitle()).isEqualTo("Future Event 1"); // Earliest (1000s)
+        assertThat(((HangoutSummaryDTO) withDay.get(1)).getTitle()).isEqualTo("Future Event 2"); // Middle (3000s) 
+        assertThat(((HangoutSummaryDTO) withDay.get(2)).getTitle()).isEqualTo("Future Event 3"); // Latest (5000s)
         
         // Verify needsDay contains in-progress events
         assertThat(result.getNeedsDay().get(0).getTitle()).isEqualTo("In Progress Event 1");
@@ -451,8 +453,8 @@ class GroupServiceImplTest {
             createHangoutPointer(groupId, "future3", "Future Event 3", java.time.Instant.now().plusSeconds(3000))
         );
         
-        PaginatedResult<HangoutPointer> futureEventsResult = new PaginatedResult<>(futureEvents, mockNextToken);
-        PaginatedResult<HangoutPointer> inProgressEventsResult = new PaginatedResult<>(List.of(), null);
+        PaginatedResult<BaseItem> futureEventsResult = new PaginatedResult<>(futureEvents.stream().map(BaseItem.class::cast).toList(), mockNextToken);
+        PaginatedResult<BaseItem> inProgressEventsResult = new PaginatedResult<>(List.of(), null);
         
         when(hangoutRepository.getFutureEventsPage(eq(groupId), anyLong(), eq(limit), isNull()))
             .thenReturn(futureEventsResult);
@@ -489,8 +491,8 @@ class GroupServiceImplTest {
             createHangoutPointer(groupId, "future4", "Future Event 4", java.time.Instant.now().plusSeconds(4000))
         );
         
-        PaginatedResult<HangoutPointer> futureEventsResult = new PaginatedResult<>(futureEvents, null); // No more pages
-        PaginatedResult<HangoutPointer> inProgressEventsResult = new PaginatedResult<>(List.of(), null);
+        PaginatedResult<BaseItem> futureEventsResult = new PaginatedResult<>(futureEvents.stream().map(BaseItem.class::cast).toList(), null); // No more pages
+        PaginatedResult<BaseItem> inProgressEventsResult = new PaginatedResult<>(List.of(), null);
         
         when(hangoutRepository.getFutureEventsPage(eq(groupId), anyLong(), eq(limit), isNull()))
             .thenReturn(futureEventsResult);
@@ -526,8 +528,8 @@ class GroupServiceImplTest {
             createHangoutPointer(groupId, "future5", "Future Event 5", java.time.Instant.now().plusSeconds(5000))
         );
         
-        PaginatedResult<HangoutPointer> futureEventsResult = new PaginatedResult<>(futureEvents, mockRepositoryNextToken);
-        PaginatedResult<HangoutPointer> inProgressEventsResult = new PaginatedResult<>(List.of(), null);
+        PaginatedResult<BaseItem> futureEventsResult = new PaginatedResult<>(futureEvents.stream().map(BaseItem.class::cast).toList(), mockRepositoryNextToken);
+        PaginatedResult<BaseItem> inProgressEventsResult = new PaginatedResult<>(List.of(), null);
         
         when(hangoutRepository.getFutureEventsPage(eq(groupId), anyLong(), isNull(), any()))
             .thenReturn(futureEventsResult);
@@ -562,8 +564,8 @@ class GroupServiceImplTest {
             createHangoutPointer(groupId, "future5", "Future Event 5", java.time.Instant.now().plusSeconds(5000))
         );
         
-        PaginatedResult<HangoutPointer> futureEventsResult = new PaginatedResult<>(futureEvents, null); // Last page
-        PaginatedResult<HangoutPointer> inProgressEventsResult = new PaginatedResult<>(List.of(), null);
+        PaginatedResult<BaseItem> futureEventsResult = new PaginatedResult<>(futureEvents.stream().map(BaseItem.class::cast).toList(), null); // Last page
+        PaginatedResult<BaseItem> inProgressEventsResult = new PaginatedResult<>(List.of(), null);
         
         when(hangoutRepository.getFutureEventsPage(eq(groupId), anyLong(), isNull(), any()))
             .thenReturn(futureEventsResult);
@@ -597,8 +599,8 @@ class GroupServiceImplTest {
             createHangoutPointer(groupId, "future1", "Future Event 1", java.time.Instant.now().plusSeconds(1000))
         );
         
-        PaginatedResult<HangoutPointer> futureEventsResult = new PaginatedResult<>(futureEvents, null);
-        PaginatedResult<HangoutPointer> inProgressEventsResult = new PaginatedResult<>(List.of(), null);
+        PaginatedResult<BaseItem> futureEventsResult = new PaginatedResult<>(futureEvents.stream().map(BaseItem.class::cast).toList(), null);
+        PaginatedResult<BaseItem> inProgressEventsResult = new PaginatedResult<>(List.of(), null);
         
         when(hangoutRepository.getFutureEventsPage(eq(groupId), anyLong(), isNull(), any()))
             .thenReturn(futureEventsResult);
@@ -636,7 +638,7 @@ class GroupServiceImplTest {
         );
         
         String mockNextToken = createMockRepositoryToken("HANGOUT#past1", "2000");
-        PaginatedResult<HangoutPointer> pastEventsResult = new PaginatedResult<>(pastEvents, mockNextToken);
+        PaginatedResult<BaseItem> pastEventsResult = new PaginatedResult<>(pastEvents.stream().map(BaseItem.class::cast).toList(), mockNextToken);
         
         when(hangoutRepository.getPastEventsPage(eq(groupId), anyLong(), isNull(), any()))
             .thenReturn(pastEventsResult);
@@ -674,7 +676,7 @@ class GroupServiceImplTest {
             createHangoutPointer(groupId, "past2", "Past Event 2", java.time.Instant.now().minusSeconds(2000))
         );
         
-        PaginatedResult<HangoutPointer> pastEventsResult = new PaginatedResult<>(pastEvents, null);
+        PaginatedResult<BaseItem> pastEventsResult = new PaginatedResult<>(pastEvents.stream().map(BaseItem.class::cast).toList(), null);
         
         when(hangoutRepository.getPastEventsPage(eq(groupId), anyLong(), isNull(), isNull()))
             .thenReturn(pastEventsResult);
@@ -709,7 +711,7 @@ class GroupServiceImplTest {
         );
         
         String mockNextToken = createMockRepositoryToken("HANGOUT#past2", "1000");
-        PaginatedResult<HangoutPointer> pastEventsResult = new PaginatedResult<>(pastEvents, mockNextToken);
+        PaginatedResult<BaseItem> pastEventsResult = new PaginatedResult<>(pastEvents.stream().map(BaseItem.class::cast).toList(), mockNextToken);
         
         when(hangoutRepository.getPastEventsPage(eq(groupId), anyLong(), isNull(), any()))
             .thenReturn(pastEventsResult);
@@ -740,7 +742,7 @@ class GroupServiceImplTest {
             createHangoutPointer(groupId, "past1", "Past Event 1", java.time.Instant.now().minusSeconds(3000))
         );
         
-        PaginatedResult<HangoutPointer> pastEventsResult = new PaginatedResult<>(pastEvents, null); // Last page
+        PaginatedResult<BaseItem> pastEventsResult = new PaginatedResult<>(pastEvents.stream().map(BaseItem.class::cast).toList(), null); // Last page
         
         when(hangoutRepository.getPastEventsPage(eq(groupId), anyLong(), isNull(), any()))
             .thenReturn(pastEventsResult);
@@ -776,7 +778,7 @@ class GroupServiceImplTest {
         List<HangoutPointer> pastEvents = List.of(
             createHangoutPointer(groupId, "past1", "Past Event 1", java.time.Instant.now().minusSeconds(3000))
         );
-        PaginatedResult<HangoutPointer> pastEventsResult = new PaginatedResult<>(pastEvents, null);
+        PaginatedResult<BaseItem> pastEventsResult = new PaginatedResult<>(pastEvents.stream().map(BaseItem.class::cast).toList(), null);
         
         when(hangoutRepository.getPastEventsPage(eq(groupId), anyLong(), isNull(), any()))
             .thenReturn(pastEventsResult);
@@ -804,7 +806,7 @@ class GroupServiceImplTest {
         List<HangoutPointer> pastEvents = List.of(
             createHangoutPointer(groupId, "past1", "Past Event 1", java.time.Instant.now().minusSeconds(3000))
         );
-        PaginatedResult<HangoutPointer> pastEventsResult = new PaginatedResult<>(pastEvents, null);
+        PaginatedResult<BaseItem> pastEventsResult = new PaginatedResult<>(pastEvents.stream().map(BaseItem.class::cast).toList(), null);
         
         when(hangoutRepository.getPastEventsPage(eq(groupId), anyLong(), isNull(), isNull()))
             .thenReturn(pastEventsResult);
@@ -831,8 +833,8 @@ class GroupServiceImplTest {
         List<HangoutPointer> futureEvents = List.of(
             createHangoutPointer(groupId, "future1", "Future Event 1", java.time.Instant.now().plusSeconds(1000))
         );
-        PaginatedResult<HangoutPointer> futureEventsResult = new PaginatedResult<>(futureEvents, mockRepositoryToken);
-        PaginatedResult<HangoutPointer> inProgressEventsResult = new PaginatedResult<>(List.of(), null);
+        PaginatedResult<BaseItem> futureEventsResult = new PaginatedResult<>(futureEvents.stream().map(BaseItem.class::cast).toList(), mockRepositoryToken);
+        PaginatedResult<BaseItem> inProgressEventsResult = new PaginatedResult<>(List.of(), null);
         
         when(hangoutRepository.getFutureEventsPage(eq(groupId), anyLong(), isNull(), isNull()))
             .thenReturn(futureEventsResult);
@@ -863,8 +865,8 @@ class GroupServiceImplTest {
         List<HangoutPointer> futureEvents = List.of(
             createHangoutPointer(groupId, "future1", "Future Event 1", java.time.Instant.now().plusSeconds(1000))
         );
-        PaginatedResult<HangoutPointer> futureEventsResult = new PaginatedResult<>(futureEvents, malformedRepositoryToken);
-        PaginatedResult<HangoutPointer> inProgressEventsResult = new PaginatedResult<>(List.of(), null);
+        PaginatedResult<BaseItem> futureEventsResult = new PaginatedResult<>(futureEvents.stream().map(BaseItem.class::cast).toList(), malformedRepositoryToken);
+        PaginatedResult<BaseItem> inProgressEventsResult = new PaginatedResult<>(List.of(), null);
         
         when(hangoutRepository.getFutureEventsPage(eq(groupId), anyLong(), isNull(), isNull()))
             .thenReturn(futureEventsResult);
@@ -946,8 +948,8 @@ class GroupServiceImplTest {
             createHangoutPointer(groupId, "inprogress1", "In Progress Event 1", null)
         );
         
-        PaginatedResult<HangoutPointer> futureEventsResult = new PaginatedResult<>(futureEvents, null);
-        PaginatedResult<HangoutPointer> inProgressEventsResult = new PaginatedResult<>(inProgressEvents, null);
+        PaginatedResult<BaseItem> futureEventsResult = new PaginatedResult<>(futureEvents.stream().map(BaseItem.class::cast).toList(), null);
+        PaginatedResult<BaseItem> inProgressEventsResult = new PaginatedResult<>(inProgressEvents.stream().map(BaseItem.class::cast).toList(), null);
         
         when(hangoutRepository.getFutureEventsPage(eq(groupId), anyLong(), isNull(), isNull()))
             .thenReturn(futureEventsResult);
@@ -968,6 +970,140 @@ class GroupServiceImplTest {
         
         // CompletableFuture.get() waits for both queries
         // (This is implicitly tested by the successful completion and merged results)
+    }
+
+    // ================= Enhanced Group Feed Hydration Tests =================
+    
+    @Test
+    void hydrateFeed_WithMixedItems_ShouldCreateCorrectFeedItems() {
+        // Given: Mix of SeriesPointer and standalone HangoutPointer
+        SeriesPointer seriesPointer = createTestSeriesPointer();
+        HangoutPointer standaloneHangout = createTestHangoutPointer("standalone-1");
+        HangoutPointer seriesPart = createTestHangoutPointer("series-part-1");
+
+        // SeriesPointer contains the series part in its denormalized parts list
+        seriesPointer.setParts(List.of(seriesPart));
+
+        List<BaseItem> baseItems = List.of(seriesPointer, standaloneHangout, seriesPart);
+
+        // When
+        List<FeedItem> result = groupService.hydrateFeed(baseItems);
+
+        // Then
+        assertThat(result).hasSize(2); // Series + standalone hangout
+
+        // Verify series
+        SeriesSummaryDTO series = (SeriesSummaryDTO) result.get(0);
+        assertThat(series.getSeriesId()).isEqualTo(seriesPointer.getSeriesId());
+        assertThat(series.getParts()).hasSize(1);
+        assertThat(series.getParts().get(0).getHangoutId()).isEqualTo("series-part-1");
+
+        // Verify standalone hangout
+        HangoutSummaryDTO hangout = (HangoutSummaryDTO) result.get(1);
+        assertThat(hangout.getHangoutId()).isEqualTo("standalone-1");
+    }
+
+    @Test
+    void hydrateFeed_WithOnlyStandaloneHangouts_ShouldReturnAllAsHangoutDTOs() {
+        // Given: Only standalone hangouts
+        List<BaseItem> baseItems = List.of(
+            createTestHangoutPointer("hangout-1"),
+            createTestHangoutPointer("hangout-2")
+        );
+
+        // When
+        List<FeedItem> result = groupService.hydrateFeed(baseItems);
+
+        // Then
+        assertThat(result).hasSize(2);
+        assertThat(result).allMatch(item -> item instanceof HangoutSummaryDTO);
+    }
+
+    @Test
+    void hydrateFeed_WithOnlySeries_ShouldReturnAllAsSeriesDTOs() {
+        // Given: Only series with their parts
+        SeriesPointer series1 = createTestSeriesPointer("series-1");
+        SeriesPointer series2 = createTestSeriesPointer("series-2");
+
+        List<BaseItem> baseItems = List.of(series1, series2);
+
+        // When
+        List<FeedItem> result = groupService.hydrateFeed(baseItems);
+
+        // Then
+        assertThat(result).hasSize(2);
+        assertThat(result).allMatch(item -> item instanceof SeriesSummaryDTO);
+    }
+
+    @Test
+    void hydrateFeed_WithEmptyList_ShouldReturnEmptyList() {
+        // Given
+        List<BaseItem> baseItems = List.of();
+
+        // When
+        List<FeedItem> result = groupService.hydrateFeed(baseItems);
+
+        // Then
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void hydrateFeed_WithSeriesContainingMultipleParts_ShouldIncludeAllParts() {
+        // Given: Series with multiple parts
+        SeriesPointer seriesPointer = createTestSeriesPointer();
+        List<HangoutPointer> parts = List.of(
+            createTestHangoutPointer("part-1"),
+            createTestHangoutPointer("part-2"),
+            createTestHangoutPointer("part-3")
+        );
+        seriesPointer.setParts(parts);
+
+        List<BaseItem> baseItems = List.of(seriesPointer);
+
+        // When
+        List<FeedItem> result = groupService.hydrateFeed(baseItems);
+
+        // Then
+        assertThat(result).hasSize(1);
+        SeriesSummaryDTO series = (SeriesSummaryDTO) result.get(0);
+        assertThat(series.getParts()).hasSize(3);
+        assertThat(series.getTotalParts()).isEqualTo(3);
+    }
+
+    @Test
+    void createSeriesSummaryDTO_ShouldCopyAllSeriesFields() {
+        // Given
+        SeriesPointer seriesPointer = createTestSeriesPointer();
+        seriesPointer.setSeriesTitle("Movie Night Series");
+        seriesPointer.setSeriesDescription("Weekly movie nights");
+        seriesPointer.setPrimaryEventId("primary-event-1");
+        seriesPointer.setStartTimestamp(1000L);
+        seriesPointer.setEndTimestamp(2000L);
+
+        // When
+        SeriesSummaryDTO result = groupService.createSeriesSummaryDTO(seriesPointer);
+
+        // Then
+        assertThat(result.getSeriesTitle()).isEqualTo("Movie Night Series");
+        assertThat(result.getSeriesDescription()).isEqualTo("Weekly movie nights");
+        assertThat(result.getPrimaryEventId()).isEqualTo("primary-event-1");
+        assertThat(result.getStartTimestamp()).isEqualTo(1000L);
+        assertThat(result.getEndTimestamp()).isEqualTo(2000L);
+        assertThat(result.getType()).isEqualTo("series");
+    }
+
+    @Test
+    void createSeriesSummaryDTO_WithNullParts_ShouldHandleGracefully() {
+        // Given
+        SeriesPointer seriesPointer = createTestSeriesPointer();
+        seriesPointer.setParts(null);
+
+        // When
+        SeriesSummaryDTO result = groupService.createSeriesSummaryDTO(seriesPointer);
+
+        // Then
+        assertThat(result.getParts()).isEmpty();
+        assertThat(result.getTotalParts()).isEqualTo(0);
     }
 
     // Helper methods for test data creation
@@ -1030,5 +1166,35 @@ class GroupServiceImplTest {
         group.setPk("GROUP#" + groupId);
         group.setSk("METADATA");
         return group;
+    }
+    
+    private SeriesPointer createTestSeriesPointer() {
+        return createTestSeriesPointer("test-series-id");
+    }
+
+    private SeriesPointer createTestSeriesPointer(String seriesId) {
+        SeriesPointer pointer = new SeriesPointer();
+        pointer.setGroupId("12345678-1234-1234-1234-123456789012");
+        pointer.setSeriesId(seriesId);
+        pointer.setSeriesTitle("Test Series");
+        pointer.setSeriesDescription("Test Description");
+        pointer.setPrimaryEventId("primary-event");
+        pointer.setStartTimestamp(1000L);
+        pointer.setEndTimestamp(5000L);
+        // Set keys directly for test purposes  
+        pointer.setPk("GROUP#12345678-1234-1234-1234-123456789012");
+        pointer.setSk("SERIES#" + seriesId);
+        pointer.setGsi1pk("GROUP#12345678-1234-1234-1234-123456789012");
+        return pointer;
+    }
+
+    private HangoutPointer createTestHangoutPointer(String hangoutId) {
+        return createHangoutPointerWithTimestamp(hangoutId, null);
+    }
+
+    private HangoutPointer createHangoutPointerWithTimestamp(String hangoutId, Long timestamp) {
+        HangoutPointer pointer = createHangoutPointer("test-group", hangoutId, "Test Hangout", 
+            timestamp != null ? java.time.Instant.ofEpochSecond(timestamp) : null);
+        return pointer;
     }
 }

@@ -5,22 +5,23 @@ import java.util.List;
 /**
  * Data Transfer Object for Group Feed - shows hangouts organized by status.
  * Enhanced to support chronological ordering with pagination tokens.
+ * Now supports both standalone hangouts and multi-part series.
  */
 public class GroupFeedDTO {
     
     private String groupId;
-    private List<HangoutSummaryDTO> withDay;       // Current/future hangouts (chronologically ordered)
+    private List<FeedItem> withDay;                // Current/future hangouts and series (chronologically ordered)
     private List<HangoutSummaryDTO> needsDay;      // Hangouts that need scheduling
     private String nextPageToken;                  // For paginating to future events
     private String previousPageToken;              // For paginating to past events
     
-    public GroupFeedDTO(String groupId, List<HangoutSummaryDTO> withDay, List<HangoutSummaryDTO> needsDay) {
+    public GroupFeedDTO(String groupId, List<FeedItem> withDay, List<HangoutSummaryDTO> needsDay) {
         this.groupId = groupId;
         this.withDay = withDay != null ? withDay : List.of();
         this.needsDay = needsDay != null ? needsDay : List.of();
     }
     
-    public GroupFeedDTO(String groupId, List<HangoutSummaryDTO> withDay, List<HangoutSummaryDTO> needsDay,
+    public GroupFeedDTO(String groupId, List<FeedItem> withDay, List<HangoutSummaryDTO> needsDay,
                        String nextPageToken, String previousPageToken) {
         this.groupId = groupId;
         this.withDay = withDay != null ? withDay : List.of();
@@ -37,11 +38,11 @@ public class GroupFeedDTO {
         this.groupId = groupId;
     }
     
-    public List<HangoutSummaryDTO> getWithDay() {
+    public List<FeedItem> getWithDay() {
         return withDay;
     }
     
-    public void setWithDay(List<HangoutSummaryDTO> withDay) {
+    public void setWithDay(List<FeedItem> withDay) {
         this.withDay = withDay;
     }
     

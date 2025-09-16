@@ -208,6 +208,10 @@ public final class InviterKeyFactory {
         return sortKey.startsWith(HANGOUT_PREFIX + DELIMITER);
     }
     
+    public static boolean isSeriesPointer(String sortKey) {
+        return sortKey != null && sortKey.startsWith(SERIES_PREFIX + DELIMITER);
+    }
+    
     public static boolean isAttributeItem(String sortKey) {
         return sortKey != null && sortKey.startsWith(ATTRIBUTE_PREFIX + DELIMITER);
     }

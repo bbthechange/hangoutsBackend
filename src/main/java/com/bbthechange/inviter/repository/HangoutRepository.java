@@ -121,41 +121,44 @@ public interface HangoutRepository {
     /**
      * Get future events for a group using EntityTimeIndex.
      * Queries events with startTimestamp > nowTimestamp.
+     * Now returns BaseItem to support both HangoutPointer and SeriesPointer.
      * 
      * @param groupId The group ID
      * @param nowTimestamp Current timestamp
      * @param limit Maximum number of events to return (null for no limit)
      * @param startToken Pagination token for continuing from previous query
-     * @return PaginatedResult containing future events
+     * @return PaginatedResult containing future events and series
      */
-    PaginatedResult<HangoutPointer> getFutureEventsPage(String groupId, long nowTimestamp, 
-                                                       Integer limit, String startToken);
+    PaginatedResult<BaseItem> getFutureEventsPage(String groupId, long nowTimestamp, 
+                                                 Integer limit, String startToken);
     
     /**
      * Get in-progress events for a group using EndTimestampIndex.
      * Queries events with endTimestamp > nowTimestamp and applies filter startTimestamp <= nowTimestamp.
+     * Now returns BaseItem to support both HangoutPointer and SeriesPointer.
      * 
      * @param groupId The group ID
      * @param nowTimestamp Current timestamp
      * @param limit Maximum number of events to return (null for no limit)
      * @param startToken Pagination token for continuing from previous query
-     * @return PaginatedResult containing in-progress events
+     * @return PaginatedResult containing in-progress events and series
      */
-    PaginatedResult<HangoutPointer> getInProgressEventsPage(String groupId, long nowTimestamp,
-                                                           Integer limit, String startToken);
+    PaginatedResult<BaseItem> getInProgressEventsPage(String groupId, long nowTimestamp,
+                                                     Integer limit, String startToken);
     
     /**
      * Get past events for a group using EntityTimeIndex in reverse order.
      * Queries events with startTimestamp < nowTimestamp.
+     * Now returns BaseItem to support both HangoutPointer and SeriesPointer.
      * 
      * @param groupId The group ID
      * @param nowTimestamp Current timestamp
      * @param limit Maximum number of events to return (null for no limit)
      * @param endToken Pagination token for continuing backwards from previous query
-     * @return PaginatedResult containing past events
+     * @return PaginatedResult containing past events and series
      */
-    PaginatedResult<HangoutPointer> getPastEventsPage(String groupId, long nowTimestamp,
-                                                     Integer limit, String endToken);
+    PaginatedResult<BaseItem> getPastEventsPage(String groupId, long nowTimestamp,
+                                               Integer limit, String endToken);
     
     // HangoutPointer operations
     

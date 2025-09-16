@@ -20,6 +20,8 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.concurrent.CompletableFuture;
 import java.util.ArrayList;
+import java.util.Set;
+import java.util.HashSet;
 import com.bbthechange.inviter.util.PaginatedResult;
 import com.bbthechange.inviter.util.GroupFeedPaginationToken;
 import com.bbthechange.inviter.util.RepositoryTokenData;
@@ -220,42 +222,53 @@ public class GroupServiceImpl implements GroupService {
     
     /**
      * Get current and future events using parallel queries for optimal performance.
+     * Now includes hydration logic to support both standalone hangouts and multi-part series.
      */
     private GroupFeedDTO getCurrentAndFutureEvents(String groupId, long nowTimestamp, 
                                                   Integer limit, String startingAfter) {
         try {
             // Parallel queries for maximum efficiency
-            CompletableFuture<PaginatedResult<HangoutPointer>> futureEventsFuture = 
+            CompletableFuture<PaginatedResult<BaseItem>> futureEventsFuture = 
                 CompletableFuture.supplyAsync(() -> 
                     hangoutRepository.getFutureEventsPage(groupId, nowTimestamp, limit, startingAfter));
                     
-            CompletableFuture<PaginatedResult<HangoutPointer>> inProgressEventsFuture = 
+            CompletableFuture<PaginatedResult<BaseItem>> inProgressEventsFuture = 
                 CompletableFuture.supplyAsync(() -> 
                     hangoutRepository.getInProgressEventsPage(groupId, nowTimestamp, limit, startingAfter));
             
             // Wait for both queries to complete
-            PaginatedResult<HangoutPointer> futureEvents = futureEventsFuture.get();
-            PaginatedResult<HangoutPointer> inProgressEvents = inProgressEventsFuture.get();
+            PaginatedResult<BaseItem> futureEvents = futureEventsFuture.get();
+            PaginatedResult<BaseItem> inProgressEvents = inProgressEventsFuture.get();
             
             // Merge results
-            List<HangoutPointer> allEvents = new ArrayList<>();
-            allEvents.addAll(futureEvents.getResults());
-            allEvents.addAll(inProgressEvents.getResults());
+            List<BaseItem> allItems = new ArrayList<>();
+            allItems.addAll(futureEvents.getResults());
+            allItems.addAll(inProgressEvents.getResults());
             
-            // Sort chronologically by start timestamp (oldest first)
-            allEvents.sort(Comparator.comparing(HangoutPointer::getStartTimestamp, 
-                Comparator.nullsLast(Comparator.naturalOrder())));
+            // Hydrate the mixed feed into FeedItem objects
+            List<FeedItem> allFeedItems = hydrateFeed(allItems);
             
-            // Convert to DTOs - use withDay for chronological events, needsDay for unscheduled
-            List<HangoutSummaryDTO> withDay = allEvents.stream()
-                .filter(h -> h.getStartTimestamp() != null)
-                .map(HangoutSummaryDTO::new)
-                .collect(Collectors.toList());
-                
-            List<HangoutSummaryDTO> needsDay = allEvents.stream()
-                .filter(h -> h.getStartTimestamp() == null)
-                .map(HangoutSummaryDTO::new)
-                .collect(Collectors.toList());
+            // Split into withDay (scheduled) and needsDay (unscheduled)
+            List<FeedItem> feedItems = new ArrayList<>();
+            List<HangoutSummaryDTO> needsDay = new ArrayList<>();
+            
+            for (FeedItem item : allFeedItems) {
+                if (item instanceof HangoutSummaryDTO hangoutSummary) {
+                    // Check if hangout has a timestamp (is scheduled)
+                    BaseItem baseItem = allItems.stream()
+                        .filter(bi -> bi instanceof HangoutPointer hp && hp.getHangoutId().equals(hangoutSummary.getHangoutId()))
+                        .findFirst()
+                        .orElse(null);
+                    
+                    if (baseItem instanceof HangoutPointer hangoutPointer && hangoutPointer.getStartTimestamp() != null) {
+                        feedItems.add(item); // Has timestamp, goes to withDay
+                    } else {
+                        needsDay.add(hangoutSummary); // No timestamp, goes to needsDay
+                    }
+                } else {
+                    feedItems.add(item); // Non-hangout items go to withDay
+                }
+            }
             
             // Repository is the source of truth for pagination tokens
             String nextPageToken = null;
@@ -265,9 +278,9 @@ public class GroupServiceImpl implements GroupService {
             }
             
             // Always provide a token to access past events when viewing current/future events
-            String previousPageToken = generatePreviousPageToken(allEvents, nowTimestamp);
+            String previousPageToken = generatePreviousPageTokenFromBaseItems(allItems, nowTimestamp);
             
-            return new GroupFeedDTO(groupId, withDay, needsDay, nextPageToken, previousPageToken);
+            return new GroupFeedDTO(groupId, feedItems, needsDay, nextPageToken, previousPageToken);
             
         } catch (Exception e) {
             logger.error("Failed to get current and future events for group {}", groupId, e);
@@ -277,19 +290,18 @@ public class GroupServiceImpl implements GroupService {
     
     /**
      * Get past events for backward pagination.
+     * Now supports both standalone hangouts and multi-part series.
      */
     private GroupFeedDTO getPastEvents(String groupId, long nowTimestamp, Integer limit, String endingBefore) {
         try {
             // Convert our custom pagination token to the format the repository expects
             String repositoryToken = getRepositoryToken(endingBefore, groupId);
             
-            PaginatedResult<HangoutPointer> pastEvents = 
+            PaginatedResult<BaseItem> pastEvents = 
                 hangoutRepository.getPastEventsPage(groupId, nowTimestamp, limit, repositoryToken);
                 
-            // Convert to DTOs
-            List<HangoutSummaryDTO> withDay = pastEvents.getResults().stream()
-                .map(HangoutSummaryDTO::new)
-                .collect(Collectors.toList());
+            // Hydrate the mixed feed into FeedItem objects
+            List<FeedItem> feedItems = hydrateFeed(pastEvents.getResults());
             
             // For past events, needsDay is empty (past events must have timestamps)
             List<HangoutSummaryDTO> needsDay = List.of();
@@ -304,7 +316,7 @@ public class GroupServiceImpl implements GroupService {
                 previousPageToken = getCustomToken(pastEvents.getNextToken(), false);
             }
             
-            return new GroupFeedDTO(groupId, withDay, needsDay, nextPageToken, previousPageToken);
+            return new GroupFeedDTO(groupId, feedItems, needsDay, nextPageToken, previousPageToken);
             
         } catch (Exception e) {
             logger.error("Failed to get past events for group {}", groupId, e);
@@ -394,6 +406,99 @@ public class GroupServiceImpl implements GroupService {
         }
         if (request.isPublic() == null) {
             throw new ValidationException("Public setting is required");
+        }
+    }
+    
+    /**
+     * Hydrate a mixed list of BaseItem objects into structured FeedItem objects.
+     * Implements the two-pass algorithm to transform SeriesPointers and standalone HangoutPointers
+     * into the appropriate DTOs for the feed response.
+     */
+    List<FeedItem> hydrateFeed(List<BaseItem> baseItems) {
+        // First Pass: Identify all hangouts that are part of series
+        Set<String> hangoutIdsInSeries = new HashSet<>();
+        for (BaseItem item : baseItems) {
+            if (item instanceof SeriesPointer) {
+                SeriesPointer seriesPointer = (SeriesPointer) item;
+                // Add all hangout IDs from the series' denormalized parts list
+                if (seriesPointer.getParts() != null) {
+                    for (HangoutPointer part : seriesPointer.getParts()) {
+                        hangoutIdsInSeries.add(part.getHangoutId());
+                    }
+                }
+            }
+        }
+        
+        // Second Pass: Build the final feed list
+        List<FeedItem> feedItems = new ArrayList<>();
+        for (BaseItem item : baseItems) {
+            if (item instanceof SeriesPointer) {
+                // Convert SeriesPointer to SeriesSummaryDTO
+                SeriesPointer seriesPointer = (SeriesPointer) item;
+                SeriesSummaryDTO seriesDTO = createSeriesSummaryDTO(seriesPointer);
+                feedItems.add(seriesDTO);
+                
+            } else if (item instanceof HangoutPointer) {
+                HangoutPointer hangoutPointer = (HangoutPointer) item;
+                
+                // Only include standalone hangouts (not already part of a series)
+                if (!hangoutIdsInSeries.contains(hangoutPointer.getHangoutId())) {
+                    HangoutSummaryDTO hangoutDTO = new HangoutSummaryDTO(hangoutPointer);
+                    feedItems.add(hangoutDTO);
+                }
+                // If it's part of a series, ignore it (already included in SeriesSummaryDTO)
+            }
+        }
+        
+        // The list is already sorted by the database query, so no additional sorting needed
+        return feedItems;
+    }
+    
+    /**
+     * Create a SeriesSummaryDTO from a SeriesPointer with all its denormalized parts.
+     */
+    SeriesSummaryDTO createSeriesSummaryDTO(SeriesPointer seriesPointer) {
+        SeriesSummaryDTO dto = new SeriesSummaryDTO();
+        
+        // Copy series-level information
+        dto.setSeriesId(seriesPointer.getSeriesId());
+        dto.setSeriesTitle(seriesPointer.getSeriesTitle());
+        dto.setSeriesDescription(seriesPointer.getSeriesDescription());
+        dto.setPrimaryEventId(seriesPointer.getPrimaryEventId());
+        dto.setStartTimestamp(seriesPointer.getStartTimestamp());
+        dto.setEndTimestamp(seriesPointer.getEndTimestamp());
+        
+        // Convert denormalized parts to HangoutSummaryDTO objects
+        List<HangoutSummaryDTO> parts = new ArrayList<>();
+        if (seriesPointer.getParts() != null) {
+            for (HangoutPointer part : seriesPointer.getParts()) {
+                HangoutSummaryDTO partDTO = new HangoutSummaryDTO(part);
+                parts.add(partDTO);
+            }
+        }
+        dto.setParts(parts);
+        
+        return dto;
+    }
+    
+    /**
+     * Generate previous page token for backward pagination using BaseItem list.
+     * Updated version of generatePreviousPageToken to work with BaseItem instead of HangoutPointer.
+     */
+    private String generatePreviousPageTokenFromBaseItems(List<BaseItem> items, long nowTimestamp) {
+        // Always provide a token to access past events when viewing current/future events
+        // Use the current timestamp as the boundary for past events
+        GroupFeedPaginationToken token = new GroupFeedPaginationToken(
+            null, // No specific event ID needed for initial past events query
+            nowTimestamp, 
+            false // This is for past events (backward direction)
+        );
+        
+        try {
+            return objectMapper.writeValueAsString(token);
+        } catch (Exception e) {
+            logger.warn("Failed to create previous page token, returning null", e);
+            return null;
         }
     }
 }
