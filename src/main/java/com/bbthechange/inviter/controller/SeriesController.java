@@ -2,6 +2,7 @@ package com.bbthechange.inviter.controller;
 
 import com.bbthechange.inviter.dto.CreateSeriesRequest;
 import com.bbthechange.inviter.dto.EventSeriesDTO;
+import com.bbthechange.inviter.dto.EventSeriesDetailDTO;
 import com.bbthechange.inviter.model.EventSeries;
 import com.bbthechange.inviter.exception.UnauthorizedException;
 import com.bbthechange.inviter.exception.RepositoryException;
@@ -75,6 +76,42 @@ public class SeriesController extends BaseController {
             
         } catch (Exception e) {
             logger.error("Unexpected error when creating series", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+    
+    /**
+     * Get detailed view of a single series including all its hangout details.
+     * 
+     * @param seriesId The ID of the series to retrieve
+     * @return Detailed series information with full hangout details
+     */
+    @GetMapping("/{seriesId}")
+    public ResponseEntity<EventSeriesDetailDTO> getSeriesDetail(@PathVariable String seriesId,
+                                                                HttpServletRequest httpRequest) {
+        try {
+            String requestingUserId = extractUserId(httpRequest);
+            logger.info("Getting detailed view for series {} by user {}", seriesId, requestingUserId);
+            
+            EventSeriesDetailDTO seriesDetail = eventSeriesService.getSeriesDetail(seriesId, requestingUserId);
+            
+            logger.info("Successfully retrieved detailed view for series {}", seriesId);
+            return ResponseEntity.ok(seriesDetail);
+            
+        } catch (ResourceNotFoundException e) {
+            logger.warn("Resource not found when getting series detail: {}", e.getMessage());
+            return ResponseEntity.notFound().build();
+            
+        } catch (UnauthorizedException e) {
+            logger.warn("Unauthorized access when getting series detail: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            
+        } catch (RepositoryException e) {
+            logger.error("Repository error when getting series detail", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            
+        } catch (Exception e) {
+            logger.error("Unexpected error when getting series detail", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }

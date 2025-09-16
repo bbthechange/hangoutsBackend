@@ -1,6 +1,8 @@
 package com.bbthechange.inviter.service.impl;
 
 import com.bbthechange.inviter.dto.CreateHangoutRequest;
+import com.bbthechange.inviter.dto.EventSeriesDetailDTO;
+import com.bbthechange.inviter.dto.HangoutDetailDTO;
 import com.bbthechange.inviter.exception.RepositoryException;
 import com.bbthechange.inviter.exception.ResourceNotFoundException;
 import com.bbthechange.inviter.exception.UnauthorizedException;
@@ -1072,5 +1074,449 @@ class EventSeriesServiceImplTest {
         
         // Verify hangout deletion proceeds normally
         verify(hangoutRepository).deleteHangout(hangoutId);
+    }
+
+    // ============================================================================
+    // GET SERIES DETAIL TESTS - Test Plan 4: Detailed Read View
+    // ============================================================================
+
+    // Success Path Tests
+
+    @Test
+    void getSeriesDetail_WithValidInputs_ReturnsCompleteSeriesDetails() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        String hangout1Id = UUID.randomUUID().toString();
+        String hangout2Id = UUID.randomUUID().toString();
+        
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+        
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setSeriesTitle("Test Series");
+        series.setSeriesDescription("Test Description");
+        series.setPrimaryEventId(hangout1Id);
+        series.setGroupId(UUID.randomUUID().toString());
+        series.setStartTimestamp(1000L);
+        series.setEndTimestamp(2000L);
+        series.setVersion(1L);
+        
+        Hangout hangout1 = HangoutTestBuilder.aHangout()
+            .withId(hangout1Id)
+            .withTitle("First Hangout")
+            .withStartTimestamp(1000L)
+            .withSeriesId(seriesId)
+            .build();
+            
+        Hangout hangout2 = HangoutTestBuilder.aHangout()
+            .withId(hangout2Id)
+            .withTitle("Second Hangout")
+            .withStartTimestamp(1500L)
+            .withSeriesId(seriesId)
+            .build();
+        
+        List<Hangout> hangouts = Arrays.asList(hangout1, hangout2);
+        
+        HangoutDetailDTO hangoutDetail1 = new HangoutDetailDTO(
+            hangout1, Collections.emptyList(), Collections.emptyList(), 
+            Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
+            Collections.emptyList(), Collections.emptyList()
+        );
+        
+        HangoutDetailDTO hangoutDetail2 = new HangoutDetailDTO(
+            hangout2, Collections.emptyList(), Collections.emptyList(), 
+            Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
+            Collections.emptyList(), Collections.emptyList()
+        );
+        
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(hangoutRepository.findHangoutsBySeriesId(seriesId)).thenReturn(hangouts);
+        when(hangoutService.getHangoutDetail(hangout1Id, userId)).thenReturn(hangoutDetail1);
+        when(hangoutService.getHangoutDetail(hangout2Id, userId)).thenReturn(hangoutDetail2);
+        
+        // When
+        EventSeriesDetailDTO result = eventSeriesService.getSeriesDetail(seriesId, userId);
+        
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result.getSeriesId()).isEqualTo(seriesId);
+        assertThat(result.getSeriesTitle()).isEqualTo("Test Series");
+        assertThat(result.getSeriesDescription()).isEqualTo("Test Description");
+        assertThat(result.getPrimaryEventId()).isEqualTo(hangout1Id);
+        assertThat(result.getGroupId()).isEqualTo(series.getGroupId());
+        assertThat(result.getStartTimestamp()).isEqualTo(1000L);
+        assertThat(result.getEndTimestamp()).isEqualTo(2000L);
+        assertThat(result.getVersion()).isEqualTo(1L);
+        
+        assertThat(result.getHangouts()).hasSize(2);
+        assertThat(result.getHangouts().get(0).getHangout().getHangoutId()).isEqualTo(hangout1Id);
+        assertThat(result.getHangouts().get(1).getHangout().getHangoutId()).isEqualTo(hangout2Id);
+        
+        // Verify all dependencies were called correctly
+        verify(userRepository).findById(userId);
+        verify(eventSeriesRepository).findById(seriesId);
+        verify(hangoutRepository).findHangoutsBySeriesId(seriesId);
+        verify(hangoutService).getHangoutDetail(hangout1Id, userId);
+        verify(hangoutService).getHangoutDetail(hangout2Id, userId);
+    }
+
+    @Test
+    void getSeriesDetail_WithMixedTimestamps_SortsCorrectly() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        String hangout1Id = UUID.randomUUID().toString();
+        String hangout2Id = UUID.randomUUID().toString();
+        String hangout3Id = UUID.randomUUID().toString();
+        String hangout4Id = UUID.randomUUID().toString();
+        
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+        
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setSeriesTitle("Test Series");
+        
+        // Create hangouts with mixed timestamps: null, early, late, and null
+        Hangout hangout1 = HangoutTestBuilder.aHangout()
+            .withId(hangout1Id)
+            .withTitle("Null Timestamp 1")
+            .withStartTimestamp(null)
+            .withSeriesId(seriesId)
+            .build();
+            
+        Hangout hangout2 = HangoutTestBuilder.aHangout()
+            .withId(hangout2Id)
+            .withTitle("Early Hangout")
+            .withStartTimestamp(1000L)
+            .withSeriesId(seriesId)
+            .build();
+            
+        Hangout hangout3 = HangoutTestBuilder.aHangout()
+            .withId(hangout3Id)
+            .withTitle("Late Hangout")
+            .withStartTimestamp(2000L)
+            .withSeriesId(seriesId)
+            .build();
+            
+        Hangout hangout4 = HangoutTestBuilder.aHangout()
+            .withId(hangout4Id)
+            .withTitle("Null Timestamp 2")
+            .withStartTimestamp(null)
+            .withSeriesId(seriesId)
+            .build();
+        
+        List<Hangout> hangouts = Arrays.asList(hangout1, hangout2, hangout3, hangout4);
+        
+        HangoutDetailDTO hangoutDetail1 = new HangoutDetailDTO(
+            hangout1, Collections.emptyList(), Collections.emptyList(), 
+            Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
+            Collections.emptyList(), Collections.emptyList()
+        );
+        
+        HangoutDetailDTO hangoutDetail2 = new HangoutDetailDTO(
+            hangout2, Collections.emptyList(), Collections.emptyList(), 
+            Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
+            Collections.emptyList(), Collections.emptyList()
+        );
+        
+        HangoutDetailDTO hangoutDetail3 = new HangoutDetailDTO(
+            hangout3, Collections.emptyList(), Collections.emptyList(), 
+            Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
+            Collections.emptyList(), Collections.emptyList()
+        );
+        
+        HangoutDetailDTO hangoutDetail4 = new HangoutDetailDTO(
+            hangout4, Collections.emptyList(), Collections.emptyList(), 
+            Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
+            Collections.emptyList(), Collections.emptyList()
+        );
+        
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(hangoutRepository.findHangoutsBySeriesId(seriesId)).thenReturn(hangouts);
+        when(hangoutService.getHangoutDetail(hangout1Id, userId)).thenReturn(hangoutDetail1);
+        when(hangoutService.getHangoutDetail(hangout2Id, userId)).thenReturn(hangoutDetail2);
+        when(hangoutService.getHangoutDetail(hangout3Id, userId)).thenReturn(hangoutDetail3);
+        when(hangoutService.getHangoutDetail(hangout4Id, userId)).thenReturn(hangoutDetail4);
+        
+        // When
+        EventSeriesDetailDTO result = eventSeriesService.getSeriesDetail(seriesId, userId);
+        
+        // Then
+        assertThat(result.getHangouts()).hasSize(4);
+        
+        // Verify chronological sorting: timestamped hangouts first (earliest to latest), then null timestamps
+        assertThat(result.getHangouts().get(0).getHangout().getHangoutId()).isEqualTo(hangout2Id); // 1000L
+        assertThat(result.getHangouts().get(1).getHangout().getHangoutId()).isEqualTo(hangout3Id); // 2000L
+        // Null timestamps come last (order preserved for same timestamps)
+        assertThat(result.getHangouts().get(2).getHangout().getStartTimestamp()).isNull();
+        assertThat(result.getHangouts().get(3).getHangout().getStartTimestamp()).isNull();
+    }
+
+    // Authorization and Validation Tests
+
+    @Test
+    void getSeriesDetail_WithNonexistentUser_ThrowsUnauthorizedException() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        
+        when(userRepository.findById(userId)).thenReturn(Optional.empty());
+        
+        // When & Then
+        assertThatThrownBy(() -> eventSeriesService.getSeriesDetail(seriesId, userId))
+            .isInstanceOf(UnauthorizedException.class)
+            .hasMessageContaining("User " + userId + " not found");
+        
+        // Verify no further repository calls were made
+        verify(userRepository).findById(userId);
+        verify(eventSeriesRepository, never()).findById(any());
+        verify(hangoutRepository, never()).findHangoutsBySeriesId(any());
+        verify(hangoutService, never()).getHangoutDetail(any(), any());
+    }
+
+    @Test
+    void getSeriesDetail_WithNonexistentSeries_ThrowsResourceNotFoundException() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+        
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.empty());
+        
+        // When & Then
+        assertThatThrownBy(() -> eventSeriesService.getSeriesDetail(seriesId, userId))
+            .isInstanceOf(ResourceNotFoundException.class)
+            .hasMessageContaining("EventSeries not found: " + seriesId);
+        
+        // Verify user validation occurred first, but no hangout data fetching
+        verify(userRepository).findById(userId);
+        verify(eventSeriesRepository).findById(seriesId);
+        verify(hangoutRepository, never()).findHangoutsBySeriesId(any());
+        verify(hangoutService, never()).getHangoutDetail(any(), any());
+    }
+
+    // Data Integrity Tests
+
+    @Test
+    void getSeriesDetail_WithEmptySeries_ReturnsSeriesWithNoHangouts() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+        
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setSeriesTitle("Empty Series");
+        series.setSeriesDescription("Series with no hangouts");
+        
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(hangoutRepository.findHangoutsBySeriesId(seriesId)).thenReturn(Collections.emptyList());
+        
+        // When
+        EventSeriesDetailDTO result = eventSeriesService.getSeriesDetail(seriesId, userId);
+        
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result.getSeriesId()).isEqualTo(seriesId);
+        assertThat(result.getSeriesTitle()).isEqualTo("Empty Series");
+        assertThat(result.getSeriesDescription()).isEqualTo("Series with no hangouts");
+        assertThat(result.getHangouts()).isNotNull();
+        assertThat(result.getHangouts()).isEmpty();
+        
+        // Verify no hangout service calls were made
+        verify(hangoutService, never()).getHangoutDetail(any(), any());
+    }
+
+    @Test
+    void getSeriesDetail_WithSomeHangoutDetailFailures_ContinuesProcessing() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        String hangout1Id = UUID.randomUUID().toString();
+        String hangout2Id = UUID.randomUUID().toString();
+        String hangout3Id = UUID.randomUUID().toString();
+        
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+        
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setSeriesTitle("Partial Failure Series");
+        
+        Hangout hangout1 = HangoutTestBuilder.aHangout()
+            .withId(hangout1Id)
+            .withTitle("Success Hangout 1")
+            .withStartTimestamp(1000L)
+            .withSeriesId(seriesId)
+            .build();
+            
+        Hangout hangout2 = HangoutTestBuilder.aHangout()
+            .withId(hangout2Id)
+            .withTitle("Failure Hangout")
+            .withStartTimestamp(1500L)
+            .withSeriesId(seriesId)
+            .build();
+            
+        Hangout hangout3 = HangoutTestBuilder.aHangout()
+            .withId(hangout3Id)
+            .withTitle("Success Hangout 2")
+            .withStartTimestamp(2000L)
+            .withSeriesId(seriesId)
+            .build();
+        
+        List<Hangout> hangouts = Arrays.asList(hangout1, hangout2, hangout3);
+        
+        HangoutDetailDTO hangoutDetail1 = new HangoutDetailDTO(
+            hangout1, Collections.emptyList(), Collections.emptyList(), 
+            Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
+            Collections.emptyList(), Collections.emptyList()
+        );
+        
+        HangoutDetailDTO hangoutDetail3 = new HangoutDetailDTO(
+            hangout3, Collections.emptyList(), Collections.emptyList(), 
+            Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
+            Collections.emptyList(), Collections.emptyList()
+        );
+        
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(hangoutRepository.findHangoutsBySeriesId(seriesId)).thenReturn(hangouts);
+        when(hangoutService.getHangoutDetail(hangout1Id, userId)).thenReturn(hangoutDetail1);
+        when(hangoutService.getHangoutDetail(hangout2Id, userId))
+            .thenThrow(new RuntimeException("Failed to get hangout details"));
+        when(hangoutService.getHangoutDetail(hangout3Id, userId)).thenReturn(hangoutDetail3);
+        
+        // When
+        EventSeriesDetailDTO result = eventSeriesService.getSeriesDetail(seriesId, userId);
+        
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result.getSeriesId()).isEqualTo(seriesId);
+        assertThat(result.getSeriesTitle()).isEqualTo("Partial Failure Series");
+        
+        // Only successful hangouts are included
+        assertThat(result.getHangouts()).hasSize(2);
+        assertThat(result.getHangouts().get(0).getHangout().getHangoutId()).isEqualTo(hangout1Id);
+        assertThat(result.getHangouts().get(1).getHangout().getHangoutId()).isEqualTo(hangout3Id);
+        
+        // Verify all hangout service calls were attempted
+        verify(hangoutService).getHangoutDetail(hangout1Id, userId);
+        verify(hangoutService).getHangoutDetail(hangout2Id, userId);
+        verify(hangoutService).getHangoutDetail(hangout3Id, userId);
+    }
+
+    // Integration and Dependency Tests
+
+    @Test
+    void getSeriesDetail_CallsRepositoriesInCorrectOrder_VerifyInteractionSequence() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        String hangoutId = UUID.randomUUID().toString();
+        
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+        
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setSeriesTitle("Order Test Series");
+        
+        Hangout hangout = HangoutTestBuilder.aHangout()
+            .withId(hangoutId)
+            .withTitle("Test Hangout")
+            .withSeriesId(seriesId)
+            .build();
+        
+        List<Hangout> hangouts = Arrays.asList(hangout);
+        
+        HangoutDetailDTO hangoutDetail = new HangoutDetailDTO(
+            hangout, Collections.emptyList(), Collections.emptyList(), 
+            Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
+            Collections.emptyList(), Collections.emptyList()
+        );
+        
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(hangoutRepository.findHangoutsBySeriesId(seriesId)).thenReturn(hangouts);
+        when(hangoutService.getHangoutDetail(hangoutId, userId)).thenReturn(hangoutDetail);
+        
+        // When
+        eventSeriesService.getSeriesDetail(seriesId, userId);
+        
+        // Then - verify order of calls using InOrder
+        var inOrder = inOrder(userRepository, eventSeriesRepository, hangoutRepository, hangoutService);
+        inOrder.verify(userRepository).findById(userId);
+        inOrder.verify(eventSeriesRepository).findById(seriesId);
+        inOrder.verify(hangoutRepository).findHangoutsBySeriesId(seriesId);
+        inOrder.verify(hangoutService).getHangoutDetail(hangoutId, userId);
+    }
+
+    @Test
+    void getSeriesDetail_PassesCorrectParametersToHangoutService_VerifyUserIdPropagation() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        String hangout1Id = UUID.randomUUID().toString();
+        String hangout2Id = UUID.randomUUID().toString();
+        
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+        
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setSeriesTitle("Parameter Test Series");
+        
+        Hangout hangout1 = HangoutTestBuilder.aHangout()
+            .withId(hangout1Id)
+            .withTitle("Hangout 1")
+            .withSeriesId(seriesId)
+            .build();
+            
+        Hangout hangout2 = HangoutTestBuilder.aHangout()
+            .withId(hangout2Id)
+            .withTitle("Hangout 2")
+            .withSeriesId(seriesId)
+            .build();
+        
+        List<Hangout> hangouts = Arrays.asList(hangout1, hangout2);
+        
+        HangoutDetailDTO hangoutDetail1 = new HangoutDetailDTO(
+            hangout1, Collections.emptyList(), Collections.emptyList(), 
+            Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
+            Collections.emptyList(), Collections.emptyList()
+        );
+        
+        HangoutDetailDTO hangoutDetail2 = new HangoutDetailDTO(
+            hangout2, Collections.emptyList(), Collections.emptyList(), 
+            Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
+            Collections.emptyList(), Collections.emptyList()
+        );
+        
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(hangoutRepository.findHangoutsBySeriesId(seriesId)).thenReturn(hangouts);
+        when(hangoutService.getHangoutDetail(hangout1Id, userId)).thenReturn(hangoutDetail1);
+        when(hangoutService.getHangoutDetail(hangout2Id, userId)).thenReturn(hangoutDetail2);
+        
+        // When
+        eventSeriesService.getSeriesDetail(seriesId, userId);
+        
+        // Then - verify each hangout service call receives the original userId
+        verify(hangoutService).getHangoutDetail(hangout1Id, userId);
+        verify(hangoutService).getHangoutDetail(hangout2Id, userId);
+        
+        // Verify no other user IDs were passed
+        verify(hangoutService, times(2)).getHangoutDetail(anyString(), eq(userId));
     }
 }

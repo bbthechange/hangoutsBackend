@@ -6,6 +6,8 @@ import com.bbthechange.inviter.model.HangoutPointer;
 import com.bbthechange.inviter.model.SeriesPointer;
 import com.bbthechange.inviter.service.EventSeriesService;
 import com.bbthechange.inviter.dto.CreateHangoutRequest;
+import com.bbthechange.inviter.dto.EventSeriesDetailDTO;
+import com.bbthechange.inviter.dto.HangoutDetailDTO;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.EventSeriesRepository;
 import com.bbthechange.inviter.repository.SeriesTransactionRepository;
@@ -523,5 +525,63 @@ public class EventSeriesServiceImpl implements EventSeriesService {
             logger.error("Failed to delete standalone hangout {}", hangout.getHangoutId(), e);
             throw new RepositoryException("Failed to delete standalone hangout", e);
         }
+    }
+    
+    @Override
+    public EventSeriesDetailDTO getSeriesDetail(String seriesId, String userId) {
+        logger.info("Getting detailed view for series {} by user {}", seriesId, userId);
+        
+        // 1. Validation and Authorization
+        // Verify user exists
+        if (userRepository.findById(userId).isEmpty()) {
+            throw new UnauthorizedException("User " + userId + " not found");
+        }
+        
+        // Fetch the EventSeries
+        Optional<EventSeries> seriesOpt = eventSeriesRepository.findById(seriesId);
+        if (seriesOpt.isEmpty()) {
+            throw new ResourceNotFoundException("EventSeries not found: " + seriesId);
+        }
+        
+        EventSeries series = seriesOpt.get();
+        
+        // TODO: Implement proper authorization logic based on group membership
+        // For now, we'll allow access if the user exists
+        
+        // 2. Fetch all hangouts in the series
+        List<Hangout> hangouts = hangoutRepository.findHangoutsBySeriesId(seriesId);
+        
+        // 3. Convert hangouts to detailed DTOs
+        List<HangoutDetailDTO> hangoutDetails = new ArrayList<>();
+        for (Hangout hangout : hangouts) {
+            // Get detailed hangout data including polls, cars, etc.
+            try {
+                HangoutDetailDTO detailDTO = hangoutService.getHangoutDetail(hangout.getHangoutId(), userId);
+                hangoutDetails.add(detailDTO);
+            } catch (Exception e) {
+                logger.warn("Failed to get details for hangout {} in series {}: {}", 
+                    hangout.getHangoutId(), seriesId, e.getMessage());
+                // Continue with other hangouts even if one fails
+            }
+        }
+        
+        // 4. Sort hangouts by start timestamp for consistent ordering
+        hangoutDetails.sort((a, b) -> {
+            Long timestampA = a.getHangout() != null ? a.getHangout().getStartTimestamp() : null;
+            Long timestampB = b.getHangout() != null ? b.getHangout().getStartTimestamp() : null;
+            
+            if (timestampA == null && timestampB == null) return 0;
+            if (timestampA == null) return 1;
+            if (timestampB == null) return -1;
+            return timestampA.compareTo(timestampB);
+        });
+        
+        // 5. Create and return the detailed DTO
+        EventSeriesDetailDTO detailDTO = new EventSeriesDetailDTO(series, hangoutDetails);
+        
+        logger.info("Successfully retrieved detailed view for series {} with {} hangouts", 
+            seriesId, hangoutDetails.size());
+        
+        return detailDTO;
     }
 }

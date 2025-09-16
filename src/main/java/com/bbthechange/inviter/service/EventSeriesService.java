@@ -2,6 +2,7 @@ package com.bbthechange.inviter.service;
 
 import com.bbthechange.inviter.model.EventSeries;
 import com.bbthechange.inviter.dto.CreateHangoutRequest;
+import com.bbthechange.inviter.dto.EventSeriesDetailDTO;
 
 /**
  * Service interface for managing multi-part event series.
@@ -81,4 +82,17 @@ public interface EventSeriesService {
      * @throws com.bbthechange.inviter.exception.RepositoryException if transaction fails
      */
     void removeHangoutFromSeries(String hangoutId);
+    
+    /**
+     * Gets detailed view of a single series including all its hangout details.
+     * This method fetches the EventSeries record and all full Hangout objects.
+     *
+     * @param seriesId The ID of the series to retrieve
+     * @param userId The ID of the user requesting the series (for authorization)
+     * @return EventSeriesDetailDTO containing series info and full hangout details
+     * @throws com.bbthechange.inviter.exception.ResourceNotFoundException if series doesn't exist
+     * @throws com.bbthechange.inviter.exception.UnauthorizedException if user lacks permission
+     * @throws com.bbthechange.inviter.exception.RepositoryException if query fails
+     */
+    EventSeriesDetailDTO getSeriesDetail(String seriesId, String userId);
 }
