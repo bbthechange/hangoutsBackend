@@ -170,6 +170,26 @@ public class EventSeriesServiceImpl implements EventSeriesService {
         List<SeriesPointer> seriesPointers = new ArrayList<>();
         for (HangoutPointer existingPointer : existingPointers) {
             SeriesPointer seriesPointer = SeriesPointer.fromEventSeries(newSeries, existingPointer.getGroupId());
+            
+            // Create combined list of all HangoutPointers for this group (existing + new)
+            List<HangoutPointer> allPartsForGroup = new ArrayList<>();
+            
+            // Add existing pointers for this group
+            for (HangoutPointer existing : existingPointers) {
+                if (existing.getGroupId().equals(existingPointer.getGroupId())) {
+                    allPartsForGroup.add(existing);
+                }
+            }
+            
+            // Add new pointers for this group  
+            for (HangoutPointer newPointer : newPointers) {
+                if (newPointer.getGroupId().equals(existingPointer.getGroupId())) {
+                    allPartsForGroup.add(newPointer);
+                }
+            }
+            
+            // Set the parts field on the SeriesPointer
+            seriesPointer.setParts(allPartsForGroup);
             seriesPointers.add(seriesPointer);
         }
         
@@ -273,6 +293,34 @@ public class EventSeriesServiceImpl implements EventSeriesService {
         List<SeriesPointer> updatedSeriesPointers = new ArrayList<>();
         for (String groupId : newHangout.getAssociatedGroups()) {
             SeriesPointer updatedPointer = SeriesPointer.fromEventSeries(series, groupId);
+            
+            // Get all existing hangouts in this series for this group
+            List<HangoutPointer> allPartsForGroup = new ArrayList<>();
+            
+            // Add all existing hangouts in the series for this group
+            for (String hangoutId : series.getHangoutIds()) {
+                if (!hangoutId.equals(newHangoutId)) { // Skip the new one, we'll add it separately
+                    Optional<Hangout> existingHangoutOpt = hangoutRepository.findHangoutById(hangoutId);
+                    if (existingHangoutOpt.isPresent()) {
+                        List<HangoutPointer> existingPointers = hangoutRepository.findPointersForHangout(existingHangoutOpt.get());
+                        for (HangoutPointer existingPointer : existingPointers) {
+                            if (existingPointer.getGroupId().equals(groupId)) {
+                                allPartsForGroup.add(existingPointer);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Add the new hangout pointers for this group
+            for (HangoutPointer newPointer : newPointers) {
+                if (newPointer.getGroupId().equals(groupId)) {
+                    allPartsForGroup.add(newPointer);
+                }
+            }
+            
+            // Set the parts field on the SeriesPointer
+            updatedPointer.setParts(allPartsForGroup);
             updatedSeriesPointers.add(updatedPointer);
         }
         
@@ -498,6 +546,21 @@ public class EventSeriesServiceImpl implements EventSeriesService {
         String primaryGroupId = series.getGroupId();
         if (primaryGroupId != null) {
             SeriesPointer primaryPointer = SeriesPointer.fromEventSeries(series, primaryGroupId);
+            
+            // Populate the parts field with all HangoutPointers for this group
+            List<HangoutPointer> allPartsForGroup = new ArrayList<>();
+            for (String hangoutId : series.getHangoutIds()) {
+                Optional<Hangout> hangoutOpt = hangoutRepository.findHangoutById(hangoutId);
+                if (hangoutOpt.isPresent()) {
+                    List<HangoutPointer> hangoutPointers = hangoutRepository.findPointersForHangout(hangoutOpt.get());
+                    for (HangoutPointer pointer : hangoutPointers) {
+                        if (pointer.getGroupId().equals(primaryGroupId)) {
+                            allPartsForGroup.add(pointer);
+                        }
+                    }
+                }
+            }
+            primaryPointer.setParts(allPartsForGroup);
             updatedPointers.add(primaryPointer);
         }
         
