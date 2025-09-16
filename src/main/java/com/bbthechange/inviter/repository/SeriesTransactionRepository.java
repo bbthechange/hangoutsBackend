@@ -67,4 +67,99 @@ public interface SeriesTransactionRepository {
         List<HangoutPointer> newPointersToCreate,
         List<SeriesPointer> seriesPointersToUpdate
     );
+    
+    /**
+     * Atomically removes a hangout from a series without deleting the hangout.
+     * This transaction ensures all-or-nothing execution of:
+     * 1. Updating the EventSeries to remove the hangout ID from its list
+     * 2. Clearing the seriesId field from the Hangout
+     * 3. Clearing the seriesId field from all HangoutPointers
+     * 4. Updating all SeriesPointer records to reflect the removal
+     *
+     * @param seriesToUpdate The EventSeries with the hangout ID already removed
+     * @param hangoutToUpdate The Hangout with seriesId cleared
+     * @param pointersToUpdate List of HangoutPointers with seriesId cleared
+     * @param seriesPointersToUpdate List of SeriesPointers with the hangout removed
+     * @throws com.bbthechange.inviter.exception.RepositoryException if the transaction fails
+     */
+    void unlinkHangoutFromSeries(
+        EventSeries seriesToUpdate,
+        Hangout hangoutToUpdate,
+        List<HangoutPointer> pointersToUpdate,
+        List<SeriesPointer> seriesPointersToUpdate
+    );
+    
+    /**
+     * Atomically deletes an entire series when the last hangout is removed.
+     * This transaction ensures all-or-nothing execution of:
+     * 1. Deleting the EventSeries record
+     * 2. Clearing the seriesId field from the final Hangout
+     * 3. Clearing the seriesId field from all HangoutPointers
+     * 4. Deleting all SeriesPointer records
+     *
+     * @param seriesToDelete The EventSeries to delete
+     * @param hangoutToUpdate The final Hangout with seriesId to be cleared
+     * @param pointersToUpdate List of HangoutPointers with seriesId to be cleared
+     * @throws com.bbthechange.inviter.exception.RepositoryException if the transaction fails
+     */
+    void deleteEntireSeries(
+        EventSeries seriesToDelete,
+        Hangout hangoutToUpdate,
+        List<HangoutPointer> pointersToUpdate
+    );
+    
+    /**
+     * Atomically removes a hangout from a series and deletes all hangout records.
+     * This transaction ensures all-or-nothing execution of:
+     * 1. Updating the EventSeries to remove the hangout ID from its list
+     * 2. Deleting the Hangout record completely
+     * 3. Deleting all HangoutPointer records
+     * 4. Updating all SeriesPointer records to reflect the removal
+     *
+     * @param seriesToUpdate The EventSeries with the hangout ID already removed
+     * @param hangoutToDelete The Hangout to delete completely
+     * @param pointersToDelete List of HangoutPointers to delete
+     * @param seriesPointersToUpdate List of SeriesPointers with the hangout removed
+     * @throws com.bbthechange.inviter.exception.RepositoryException if the transaction fails
+     */
+    void removeHangoutFromSeries(
+        EventSeries seriesToUpdate,
+        Hangout hangoutToDelete,
+        List<HangoutPointer> pointersToDelete,
+        List<SeriesPointer> seriesPointersToUpdate
+    );
+    
+    /**
+     * Atomically deletes an entire series and its final hangout.
+     * This transaction ensures all-or-nothing execution of:
+     * 1. Deleting the EventSeries record
+     * 2. Deleting the final Hangout record completely
+     * 3. Deleting all HangoutPointer records
+     * 4. Deleting all SeriesPointer records
+     *
+     * @param seriesToDelete The EventSeries to delete
+     * @param hangoutToDelete The final Hangout to delete completely
+     * @param pointersToDelete List of HangoutPointers to delete
+     * @throws com.bbthechange.inviter.exception.RepositoryException if the transaction fails
+     */
+    void deleteSeriesAndFinalHangout(
+        EventSeries seriesToDelete,
+        Hangout hangoutToDelete,
+        List<HangoutPointer> pointersToDelete
+    );
+    
+    /**
+     * Atomically updates a series and its pointers after a hangout modification.
+     * This transaction ensures all-or-nothing execution of:
+     * 1. Updating the EventSeries record (timestamps, version)
+     * 2. Updating all SeriesPointer records with new series data
+     *
+     * @param seriesToUpdate The EventSeries with updated timestamps and version
+     * @param seriesPointersToUpdate List of SeriesPointers to update
+     * @throws com.bbthechange.inviter.exception.RepositoryException if the transaction fails
+     */
+    void updateSeriesAfterHangoutChange(
+        EventSeries seriesToUpdate,
+        List<SeriesPointer> seriesPointersToUpdate
+    );
 }

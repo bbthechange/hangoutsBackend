@@ -45,4 +45,40 @@ public interface EventSeriesService {
         CreateHangoutRequest newMemberRequest, 
         String userId
     );
+    
+    /**
+     * Unlinks a hangout from its series without deleting the hangout.
+     * This operation is atomic - either all changes succeed or none are applied.
+     * If this is the last hangout in the series, the entire series is deleted.
+     *
+     * @param seriesId The ID of the series to remove from
+     * @param hangoutId The ID of the hangout to unlink
+     * @param userId The ID of the user performing the action
+     * @throws com.bbthechange.inviter.exception.ResourceNotFoundException if series or hangout doesn't exist
+     * @throws com.bbthechange.inviter.exception.UnauthorizedException if user lacks permission
+     * @throws com.bbthechange.inviter.exception.RepositoryException if transaction fails
+     */
+    void unlinkHangoutFromSeries(String seriesId, String hangoutId, String userId);
+    
+    /**
+     * Updates a series when one of its hangouts is modified.
+     * This propagates changes to SeriesPointer records to maintain data consistency.
+     * This operation is atomic - either all changes succeed or none are applied.
+     *
+     * @param hangoutId The ID of the hangout that was modified
+     * @throws com.bbthechange.inviter.exception.ResourceNotFoundException if hangout doesn't exist
+     * @throws com.bbthechange.inviter.exception.RepositoryException if transaction fails
+     */
+    void updateSeriesAfterHangoutModification(String hangoutId);
+    
+    /**
+     * Removes a hangout from its series and deletes all related records.
+     * This operation is atomic - either all changes succeed or none are applied.
+     * If this is the last hangout in the series, the entire series is deleted.
+     *
+     * @param hangoutId The ID of the hangout being deleted
+     * @throws com.bbthechange.inviter.exception.ResourceNotFoundException if hangout doesn't exist
+     * @throws com.bbthechange.inviter.exception.RepositoryException if transaction fails
+     */
+    void removeHangoutFromSeries(String hangoutId);
 }

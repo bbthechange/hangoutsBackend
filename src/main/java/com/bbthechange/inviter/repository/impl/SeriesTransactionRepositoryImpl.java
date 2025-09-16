@@ -262,4 +262,432 @@ public class SeriesTransactionRepositoryImpl implements SeriesTransactionReposit
             return null;
         });
     }
+    
+    @Override
+    public void unlinkHangoutFromSeries(
+            EventSeries seriesToUpdate,
+            Hangout hangoutToUpdate,
+            List<HangoutPointer> pointersToUpdate,
+            List<SeriesPointer> seriesPointersToUpdate) {
+        
+        performanceTracker.trackQuery("unlinkHangoutFromSeries", TABLE_NAME, () -> {
+            try {
+                List<TransactWriteItem> transactItems = new ArrayList<>();
+                
+                // 1. Update the EventSeries to remove the hangout ID and increment version
+                TransactWriteItem updateSeriesItem = TransactWriteItem.builder()
+                    .update(Update.builder()
+                        .tableName(TABLE_NAME)
+                        .key(Map.of(
+                            "pk", AttributeValue.builder().s(seriesToUpdate.getPk()).build(),
+                            "sk", AttributeValue.builder().s(seriesToUpdate.getSk()).build()
+                        ))
+                        .updateExpression("SET hangoutIds = :hangoutIds, updatedAt = :updated, version = :version")
+                        .expressionAttributeValues(Map.of(
+                            ":hangoutIds", convertStringListToAttributeValueList(seriesToUpdate.getHangoutIds()),
+                            ":updated", AttributeValue.builder().n(String.valueOf(System.currentTimeMillis())).build(),
+                            ":version", AttributeValue.builder().n(String.valueOf(seriesToUpdate.getVersion())).build()
+                        ))
+                        .build())
+                    .build();
+                transactItems.add(updateSeriesItem);
+                
+                // 2. Clear seriesId from the hangout
+                TransactWriteItem updateHangoutItem = TransactWriteItem.builder()
+                    .update(Update.builder()
+                        .tableName(TABLE_NAME)
+                        .key(Map.of(
+                            "pk", AttributeValue.builder().s(hangoutToUpdate.getPk()).build(),
+                            "sk", AttributeValue.builder().s(hangoutToUpdate.getSk()).build()
+                        ))
+                        .updateExpression("REMOVE seriesId SET updatedAt = :updated")
+                        .expressionAttributeValues(Map.of(
+                            ":updated", AttributeValue.builder().n(String.valueOf(System.currentTimeMillis())).build()
+                        ))
+                        .build())
+                    .build();
+                transactItems.add(updateHangoutItem);
+                
+                // 3. Clear seriesId from all HangoutPointers
+                for (HangoutPointer pointerToUpdate : pointersToUpdate) {
+                    TransactWriteItem updatePointerItem = TransactWriteItem.builder()
+                        .update(Update.builder()
+                            .tableName(TABLE_NAME)
+                            .key(Map.of(
+                                "pk", AttributeValue.builder().s(pointerToUpdate.getPk()).build(),
+                                "sk", AttributeValue.builder().s(pointerToUpdate.getSk()).build()
+                            ))
+                            .updateExpression("REMOVE seriesId SET updatedAt = :updated")
+                            .expressionAttributeValues(Map.of(
+                                ":updated", AttributeValue.builder().n(String.valueOf(System.currentTimeMillis())).build()
+                            ))
+                            .build())
+                        .build();
+                    transactItems.add(updatePointerItem);
+                }
+                
+                // 4. Update all SeriesPointers with the hangout removed
+                for (SeriesPointer seriesPointerToUpdate : seriesPointersToUpdate) {
+                    TransactWriteItem updateSeriesPointerItem = TransactWriteItem.builder()
+                        .put(Put.builder()
+                            .tableName(TABLE_NAME)
+                            .item(seriesPointerSchema.itemToMap(seriesPointerToUpdate, true))
+                            .build())
+                        .build();
+                    transactItems.add(updateSeriesPointerItem);
+                }
+                
+                // Execute the transaction
+                TransactWriteItemsRequest transactRequest = TransactWriteItemsRequest.builder()
+                    .transactItems(transactItems)
+                    .build();
+                
+                dynamoDbClient.transactWriteItems(transactRequest);
+                
+                logger.info("Successfully unlinked hangout {} from series {}", 
+                    hangoutToUpdate.getHangoutId(), seriesToUpdate.getSeriesId());
+                
+            } catch (TransactionCanceledException e) {
+                logger.error("Transaction cancelled while unlinking hangout from series: {}", e.cancellationReasons());
+                throw new RepositoryException("Failed to unlink hangout from series atomically - transaction cancelled", e);
+            } catch (DynamoDbException e) {
+                logger.error("DynamoDB error while unlinking hangout from series", e);
+                throw new RepositoryException("Failed to unlink hangout from series due to DynamoDB error", e);
+            }
+            
+            return null;
+        });
+    }
+    
+    @Override
+    public void deleteEntireSeries(
+            EventSeries seriesToDelete,
+            Hangout hangoutToUpdate,
+            List<HangoutPointer> pointersToUpdate) {
+        
+        performanceTracker.trackQuery("deleteEntireSeries", TABLE_NAME, () -> {
+            try {
+                List<TransactWriteItem> transactItems = new ArrayList<>();
+                
+                // 1. Delete the EventSeries record
+                TransactWriteItem deleteSeriesItem = TransactWriteItem.builder()
+                    .delete(Delete.builder()
+                        .tableName(TABLE_NAME)
+                        .key(Map.of(
+                            "pk", AttributeValue.builder().s(seriesToDelete.getPk()).build(),
+                            "sk", AttributeValue.builder().s(seriesToDelete.getSk()).build()
+                        ))
+                        .build())
+                    .build();
+                transactItems.add(deleteSeriesItem);
+                
+                // 2. Clear seriesId from the hangout
+                TransactWriteItem updateHangoutItem = TransactWriteItem.builder()
+                    .update(Update.builder()
+                        .tableName(TABLE_NAME)
+                        .key(Map.of(
+                            "pk", AttributeValue.builder().s(hangoutToUpdate.getPk()).build(),
+                            "sk", AttributeValue.builder().s(hangoutToUpdate.getSk()).build()
+                        ))
+                        .updateExpression("REMOVE seriesId SET updatedAt = :updated")
+                        .expressionAttributeValues(Map.of(
+                            ":updated", AttributeValue.builder().n(String.valueOf(System.currentTimeMillis())).build()
+                        ))
+                        .build())
+                    .build();
+                transactItems.add(updateHangoutItem);
+                
+                // 3. Clear seriesId from all HangoutPointers
+                for (HangoutPointer pointerToUpdate : pointersToUpdate) {
+                    TransactWriteItem updatePointerItem = TransactWriteItem.builder()
+                        .update(Update.builder()
+                            .tableName(TABLE_NAME)
+                            .key(Map.of(
+                                "pk", AttributeValue.builder().s(pointerToUpdate.getPk()).build(),
+                                "sk", AttributeValue.builder().s(pointerToUpdate.getSk()).build()
+                            ))
+                            .updateExpression("REMOVE seriesId SET updatedAt = :updated")
+                            .expressionAttributeValues(Map.of(
+                                ":updated", AttributeValue.builder().n(String.valueOf(System.currentTimeMillis())).build()
+                            ))
+                            .build())
+                        .build();
+                    transactItems.add(updatePointerItem);
+                }
+                
+                // 4. Delete all SeriesPointers (we need to find and delete them)
+                // Create delete operations for SeriesPointers based on the series groupId
+                String groupPk = InviterKeyFactory.getGroupPk(seriesToDelete.getGroupId());
+                String seriesSk = InviterKeyFactory.getSeriesSk(seriesToDelete.getSeriesId());
+                
+                TransactWriteItem deleteSeriesPointerItem = TransactWriteItem.builder()
+                    .delete(Delete.builder()
+                        .tableName(TABLE_NAME)
+                        .key(Map.of(
+                            "pk", AttributeValue.builder().s(groupPk).build(),
+                            "sk", AttributeValue.builder().s(seriesSk).build()
+                        ))
+                        .build())
+                    .build();
+                transactItems.add(deleteSeriesPointerItem);
+                
+                // Execute the transaction
+                TransactWriteItemsRequest transactRequest = TransactWriteItemsRequest.builder()
+                    .transactItems(transactItems)
+                    .build();
+                
+                dynamoDbClient.transactWriteItems(transactRequest);
+                
+                logger.info("Successfully deleted entire series {} and cleared hangout {}", 
+                    seriesToDelete.getSeriesId(), hangoutToUpdate.getHangoutId());
+                
+            } catch (TransactionCanceledException e) {
+                logger.error("Transaction cancelled while deleting entire series: {}", e.cancellationReasons());
+                throw new RepositoryException("Failed to delete entire series atomically - transaction cancelled", e);
+            } catch (DynamoDbException e) {
+                logger.error("DynamoDB error while deleting entire series", e);
+                throw new RepositoryException("Failed to delete entire series due to DynamoDB error", e);
+            }
+            
+            return null;
+        });
+    }
+    
+    @Override
+    public void removeHangoutFromSeries(
+            EventSeries seriesToUpdate,
+            Hangout hangoutToDelete,
+            List<HangoutPointer> pointersToDelete,
+            List<SeriesPointer> seriesPointersToUpdate) {
+        
+        performanceTracker.trackQuery("removeHangoutFromSeries", TABLE_NAME, () -> {
+            try {
+                List<TransactWriteItem> transactItems = new ArrayList<>();
+                
+                // 1. Update the EventSeries to remove the hangout ID and increment version
+                TransactWriteItem updateSeriesItem = TransactWriteItem.builder()
+                    .update(Update.builder()
+                        .tableName(TABLE_NAME)
+                        .key(Map.of(
+                            "pk", AttributeValue.builder().s(seriesToUpdate.getPk()).build(),
+                            "sk", AttributeValue.builder().s(seriesToUpdate.getSk()).build()
+                        ))
+                        .updateExpression("SET hangoutIds = :hangoutIds, updatedAt = :updated, version = :version")
+                        .expressionAttributeValues(Map.of(
+                            ":hangoutIds", convertStringListToAttributeValueList(seriesToUpdate.getHangoutIds()),
+                            ":updated", AttributeValue.builder().n(String.valueOf(System.currentTimeMillis())).build(),
+                            ":version", AttributeValue.builder().n(String.valueOf(seriesToUpdate.getVersion())).build()
+                        ))
+                        .build())
+                    .build();
+                transactItems.add(updateSeriesItem);
+                
+                // 2. Delete the hangout record
+                TransactWriteItem deleteHangoutItem = TransactWriteItem.builder()
+                    .delete(Delete.builder()
+                        .tableName(TABLE_NAME)
+                        .key(Map.of(
+                            "pk", AttributeValue.builder().s(hangoutToDelete.getPk()).build(),
+                            "sk", AttributeValue.builder().s(hangoutToDelete.getSk()).build()
+                        ))
+                        .build())
+                    .build();
+                transactItems.add(deleteHangoutItem);
+                
+                // 3. Delete all HangoutPointers
+                for (HangoutPointer pointerToDelete : pointersToDelete) {
+                    TransactWriteItem deletePointerItem = TransactWriteItem.builder()
+                        .delete(Delete.builder()
+                            .tableName(TABLE_NAME)
+                            .key(Map.of(
+                                "pk", AttributeValue.builder().s(pointerToDelete.getPk()).build(),
+                                "sk", AttributeValue.builder().s(pointerToDelete.getSk()).build()
+                            ))
+                            .build())
+                        .build();
+                    transactItems.add(deletePointerItem);
+                }
+                
+                // 4. Update all SeriesPointers with the hangout removed
+                for (SeriesPointer seriesPointerToUpdate : seriesPointersToUpdate) {
+                    TransactWriteItem updateSeriesPointerItem = TransactWriteItem.builder()
+                        .put(Put.builder()
+                            .tableName(TABLE_NAME)
+                            .item(seriesPointerSchema.itemToMap(seriesPointerToUpdate, true))
+                            .build())
+                        .build();
+                    transactItems.add(updateSeriesPointerItem);
+                }
+                
+                // Execute the transaction
+                TransactWriteItemsRequest transactRequest = TransactWriteItemsRequest.builder()
+                    .transactItems(transactItems)
+                    .build();
+                
+                dynamoDbClient.transactWriteItems(transactRequest);
+                
+                logger.info("Successfully removed hangout {} from series {}", 
+                    hangoutToDelete.getHangoutId(), seriesToUpdate.getSeriesId());
+                
+            } catch (TransactionCanceledException e) {
+                logger.error("Transaction cancelled while removing hangout from series: {}", e.cancellationReasons());
+                throw new RepositoryException("Failed to remove hangout from series atomically - transaction cancelled", e);
+            } catch (DynamoDbException e) {
+                logger.error("DynamoDB error while removing hangout from series", e);
+                throw new RepositoryException("Failed to remove hangout from series due to DynamoDB error", e);
+            }
+            
+            return null;
+        });
+    }
+    
+    @Override
+    public void deleteSeriesAndFinalHangout(
+            EventSeries seriesToDelete,
+            Hangout hangoutToDelete,
+            List<HangoutPointer> pointersToDelete) {
+        
+        performanceTracker.trackQuery("deleteSeriesAndFinalHangout", TABLE_NAME, () -> {
+            try {
+                List<TransactWriteItem> transactItems = new ArrayList<>();
+                
+                // 1. Delete the EventSeries record
+                TransactWriteItem deleteSeriesItem = TransactWriteItem.builder()
+                    .delete(Delete.builder()
+                        .tableName(TABLE_NAME)
+                        .key(Map.of(
+                            "pk", AttributeValue.builder().s(seriesToDelete.getPk()).build(),
+                            "sk", AttributeValue.builder().s(seriesToDelete.getSk()).build()
+                        ))
+                        .build())
+                    .build();
+                transactItems.add(deleteSeriesItem);
+                
+                // 2. Delete the hangout record
+                TransactWriteItem deleteHangoutItem = TransactWriteItem.builder()
+                    .delete(Delete.builder()
+                        .tableName(TABLE_NAME)
+                        .key(Map.of(
+                            "pk", AttributeValue.builder().s(hangoutToDelete.getPk()).build(),
+                            "sk", AttributeValue.builder().s(hangoutToDelete.getSk()).build()
+                        ))
+                        .build())
+                    .build();
+                transactItems.add(deleteHangoutItem);
+                
+                // 3. Delete all HangoutPointers
+                for (HangoutPointer pointerToDelete : pointersToDelete) {
+                    TransactWriteItem deletePointerItem = TransactWriteItem.builder()
+                        .delete(Delete.builder()
+                            .tableName(TABLE_NAME)
+                            .key(Map.of(
+                                "pk", AttributeValue.builder().s(pointerToDelete.getPk()).build(),
+                                "sk", AttributeValue.builder().s(pointerToDelete.getSk()).build()
+                            ))
+                            .build())
+                        .build();
+                    transactItems.add(deletePointerItem);
+                }
+                
+                // 4. Delete all SeriesPointers
+                String groupPk = InviterKeyFactory.getGroupPk(seriesToDelete.getGroupId());
+                String seriesSk = InviterKeyFactory.getSeriesSk(seriesToDelete.getSeriesId());
+                
+                TransactWriteItem deleteSeriesPointerItem = TransactWriteItem.builder()
+                    .delete(Delete.builder()
+                        .tableName(TABLE_NAME)
+                        .key(Map.of(
+                            "pk", AttributeValue.builder().s(groupPk).build(),
+                            "sk", AttributeValue.builder().s(seriesSk).build()
+                        ))
+                        .build())
+                    .build();
+                transactItems.add(deleteSeriesPointerItem);
+                
+                // Execute the transaction
+                TransactWriteItemsRequest transactRequest = TransactWriteItemsRequest.builder()
+                    .transactItems(transactItems)
+                    .build();
+                
+                dynamoDbClient.transactWriteItems(transactRequest);
+                
+                logger.info("Successfully deleted series {} and final hangout {}", 
+                    seriesToDelete.getSeriesId(), hangoutToDelete.getHangoutId());
+                
+            } catch (TransactionCanceledException e) {
+                logger.error("Transaction cancelled while deleting series and final hangout: {}", e.cancellationReasons());
+                throw new RepositoryException("Failed to delete series and final hangout atomically - transaction cancelled", e);
+            } catch (DynamoDbException e) {
+                logger.error("DynamoDB error while deleting series and final hangout", e);
+                throw new RepositoryException("Failed to delete series and final hangout due to DynamoDB error", e);
+            }
+            
+            return null;
+        });
+    }
+    
+    @Override
+    public void updateSeriesAfterHangoutChange(
+            EventSeries seriesToUpdate,
+            List<SeriesPointer> seriesPointersToUpdate) {
+        
+        performanceTracker.trackQuery("updateSeriesAfterHangoutChange", TABLE_NAME, () -> {
+            try {
+                List<TransactWriteItem> transactItems = new ArrayList<>();
+                
+                // 1. Update the EventSeries record
+                TransactWriteItem updateSeriesItem = TransactWriteItem.builder()
+                    .put(Put.builder()
+                        .tableName(TABLE_NAME)
+                        .item(eventSeriesSchema.itemToMap(seriesToUpdate, true))
+                        .build())
+                    .build();
+                transactItems.add(updateSeriesItem);
+                
+                // 2. Update all SeriesPointers
+                for (SeriesPointer seriesPointerToUpdate : seriesPointersToUpdate) {
+                    TransactWriteItem updateSeriesPointerItem = TransactWriteItem.builder()
+                        .put(Put.builder()
+                            .tableName(TABLE_NAME)
+                            .item(seriesPointerSchema.itemToMap(seriesPointerToUpdate, true))
+                            .build())
+                        .build();
+                    transactItems.add(updateSeriesPointerItem);
+                }
+                
+                // Execute the transaction
+                TransactWriteItemsRequest transactRequest = TransactWriteItemsRequest.builder()
+                    .transactItems(transactItems)
+                    .build();
+                
+                dynamoDbClient.transactWriteItems(transactRequest);
+                
+                logger.info("Successfully updated series {} after hangout modification", 
+                    seriesToUpdate.getSeriesId());
+                
+            } catch (TransactionCanceledException e) {
+                logger.error("Transaction cancelled while updating series: {}", e.cancellationReasons());
+                throw new RepositoryException("Failed to update series atomically - transaction cancelled", e);
+            } catch (DynamoDbException e) {
+                logger.error("DynamoDB error while updating series", e);
+                throw new RepositoryException("Failed to update series due to DynamoDB error", e);
+            }
+            
+            return null;
+        });
+    }
+    
+    // Helper method to convert List<String> to AttributeValue list format
+    private AttributeValue convertStringListToAttributeValueList(List<String> stringList) {
+        if (stringList == null || stringList.isEmpty()) {
+            return AttributeValue.builder().l(new ArrayList<AttributeValue>()).build();
+        }
+        
+        List<AttributeValue> attributeValues = new ArrayList<>();
+        for (String str : stringList) {
+            attributeValues.add(AttributeValue.builder().s(str).build());
+        }
+        
+        return AttributeValue.builder().l(attributeValues).build();
+    }
 }

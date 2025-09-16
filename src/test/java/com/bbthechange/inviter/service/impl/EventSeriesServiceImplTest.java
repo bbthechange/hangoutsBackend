@@ -4,12 +4,14 @@ import com.bbthechange.inviter.dto.CreateHangoutRequest;
 import com.bbthechange.inviter.exception.RepositoryException;
 import com.bbthechange.inviter.exception.ResourceNotFoundException;
 import com.bbthechange.inviter.exception.UnauthorizedException;
+import com.bbthechange.inviter.exception.ValidationException;
 import com.bbthechange.inviter.model.EventSeries;
 import com.bbthechange.inviter.model.Hangout;
 import com.bbthechange.inviter.model.HangoutPointer;
 import com.bbthechange.inviter.model.SeriesPointer;
 import com.bbthechange.inviter.model.User;
 import com.bbthechange.inviter.repository.EventSeriesRepository;
+import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.SeriesTransactionRepository;
 import com.bbthechange.inviter.repository.UserRepository;
@@ -23,6 +25,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -53,6 +56,9 @@ class EventSeriesServiceImplTest {
     
     @Mock
     private HangoutService hangoutService;
+    
+    @Mock
+    private GroupRepository groupRepository;
     
     @InjectMocks
     private EventSeriesServiceImpl eventSeriesService;
@@ -375,5 +381,696 @@ class EventSeriesServiceImplTest {
         
         // Verify no transaction methods are called
         verify(seriesTransactionRepository, never()).addPartToExistingSeries(any(), any(), any(), any());
+    }
+
+    // Tests for unlinkHangoutFromSeries() method
+
+    @Test
+    void unlinkHangoutFromSeries_WithValidData_RemovesHangoutFromSeries() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String hangoutId = UUID.randomUUID().toString();
+        String anotherHangoutId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setHangoutIds(new ArrayList<>(Arrays.asList(hangoutId, anotherHangoutId)));
+        series.setVersion(1L);
+
+        Hangout hangout = HangoutTestBuilder.aHangout()
+            .withId(hangoutId)
+            .withSeriesId(seriesId)
+            .build();
+
+        String group1Id = UUID.randomUUID().toString();
+        String group2Id = UUID.randomUUID().toString();
+        
+        List<HangoutPointer> hangoutPointers = Arrays.asList(
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(group1Id)
+                .forHangout(hangoutId)
+                .withSeriesId(seriesId)
+                .build(),
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(group2Id)
+                .forHangout(hangoutId)
+                .withSeriesId(seriesId)
+                .build()
+        );
+
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(hangoutRepository.findPointersForHangout(hangout)).thenReturn(hangoutPointers);
+
+        // When
+        eventSeriesService.unlinkHangoutFromSeries(seriesId, hangoutId, userId);
+
+        // Then
+        assertThat(series.getHangoutIds()).doesNotContain(hangoutId);
+        assertThat(series.getHangoutIds()).contains(anotherHangoutId);
+        assertThat(hangout.getSeriesId()).isNull();
+        assertThat(series.getVersion()).isEqualTo(2L);
+
+        hangoutPointers.forEach(pointer -> assertThat(pointer.getSeriesId()).isNull());
+
+        verify(seriesTransactionRepository).unlinkHangoutFromSeries(
+            eq(series), eq(hangout), eq(hangoutPointers), any(List.class));
+    }
+
+    @Test
+    void unlinkHangoutFromSeries_WithLastHangout_DeletesEntireSeries() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String hangoutId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setHangoutIds(new ArrayList<>(Arrays.asList(hangoutId)));
+
+        Hangout hangout = HangoutTestBuilder.aHangout()
+            .withId(hangoutId)
+            .withSeriesId(seriesId)
+            .build();
+
+        String groupId = UUID.randomUUID().toString();
+        
+        List<HangoutPointer> hangoutPointers = Arrays.asList(
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(groupId)
+                .forHangout(hangoutId)
+                .withSeriesId(seriesId)
+                .build()
+        );
+
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(hangoutRepository.findPointersForHangout(hangout)).thenReturn(hangoutPointers);
+
+        // When
+        eventSeriesService.unlinkHangoutFromSeries(seriesId, hangoutId, userId);
+
+        // Then
+        verify(seriesTransactionRepository).deleteEntireSeries(series, hangout, hangoutPointers);
+        verify(seriesTransactionRepository, never()).unlinkHangoutFromSeries(any(), any(), any(), any());
+    }
+
+    @Test
+    void unlinkHangoutFromSeries_WithNonExistentSeries_ThrowsResourceNotFoundException() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String hangoutId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.empty());
+
+        // When & Then
+        assertThatThrownBy(() -> eventSeriesService.unlinkHangoutFromSeries(seriesId, hangoutId, userId))
+            .isInstanceOf(ResourceNotFoundException.class)
+            .hasMessageContaining("EventSeries not found: " + seriesId);
+
+        verify(seriesTransactionRepository, never()).deleteEntireSeries(any(), any(), any());
+        verify(seriesTransactionRepository, never()).unlinkHangoutFromSeries(any(), any(), any(), any());
+    }
+
+    @Test
+    void unlinkHangoutFromSeries_WithNonExistentHangout_ThrowsResourceNotFoundException() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String hangoutId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.empty());
+
+        // When & Then
+        assertThatThrownBy(() -> eventSeriesService.unlinkHangoutFromSeries(seriesId, hangoutId, userId))
+            .isInstanceOf(ResourceNotFoundException.class)
+            .hasMessageContaining("Hangout not found: " + hangoutId);
+
+        verify(seriesTransactionRepository, never()).deleteEntireSeries(any(), any(), any());
+        verify(seriesTransactionRepository, never()).unlinkHangoutFromSeries(any(), any(), any(), any());
+    }
+
+    @Test
+    void unlinkHangoutFromSeries_WithHangoutNotInSeries_ThrowsValidationException() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String hangoutId = UUID.randomUUID().toString();
+        String differentSeriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+
+        Hangout hangout = HangoutTestBuilder.aHangout()
+            .withId(hangoutId)
+            .withSeriesId(differentSeriesId)
+            .build();
+
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+
+        // When & Then
+        assertThatThrownBy(() -> eventSeriesService.unlinkHangoutFromSeries(seriesId, hangoutId, userId))
+            .isInstanceOf(ValidationException.class)
+            .hasMessageContaining("Hangout " + hangoutId + " is not part of series " + seriesId);
+
+        verify(seriesTransactionRepository, never()).deleteEntireSeries(any(), any(), any());
+        verify(seriesTransactionRepository, never()).unlinkHangoutFromSeries(any(), any(), any(), any());
+    }
+
+    @Test
+    void unlinkHangoutFromSeries_WithInvalidUser_ThrowsUnauthorizedException() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String hangoutId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+
+        Hangout hangout = HangoutTestBuilder.aHangout()
+            .withId(hangoutId)
+            .withSeriesId(seriesId)
+            .build();
+
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        when(userRepository.findById(userId)).thenReturn(Optional.empty());
+
+        // When & Then
+        assertThatThrownBy(() -> eventSeriesService.unlinkHangoutFromSeries(seriesId, hangoutId, userId))
+            .isInstanceOf(UnauthorizedException.class)
+            .hasMessageContaining("User " + userId + " not found");
+
+        verify(seriesTransactionRepository, never()).deleteEntireSeries(any(), any(), any());
+        verify(seriesTransactionRepository, never()).unlinkHangoutFromSeries(any(), any(), any(), any());
+    }
+
+    // Tests for updateSeriesAfterHangoutModification() method
+
+    @Test
+    void updateSeriesAfterHangoutModification_WithValidHangoutInSeries_UpdatesSeries() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+        String seriesId = UUID.randomUUID().toString();
+
+        Hangout hangout = HangoutTestBuilder.aHangout()
+            .withId(hangoutId)
+            .withSeriesId(seriesId)
+            .build();
+
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setGroupId(UUID.randomUUID().toString());
+        series.setVersion(1L);
+
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+
+        // When
+        eventSeriesService.updateSeriesAfterHangoutModification(hangoutId);
+
+        // Then
+        assertThat(series.getVersion()).isEqualTo(2L);
+        verify(seriesTransactionRepository).updateSeriesAfterHangoutChange(eq(series), any(List.class));
+    }
+
+    @Test
+    void updateSeriesAfterHangoutModification_WithHangoutNotInSeries_SkipsUpdate() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+
+        Hangout hangout = HangoutTestBuilder.aHangout()
+            .withId(hangoutId)
+            .withSeriesId(null)
+            .build();
+
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+
+        // When
+        eventSeriesService.updateSeriesAfterHangoutModification(hangoutId);
+
+        // Then
+        verify(eventSeriesRepository, never()).findById(any());
+        verify(seriesTransactionRepository, never()).updateSeriesAfterHangoutChange(any(), any());
+    }
+
+    @Test
+    void updateSeriesAfterHangoutModification_WithNonExistentHangout_ThrowsResourceNotFoundException() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.empty());
+
+        // When & Then
+        assertThatThrownBy(() -> eventSeriesService.updateSeriesAfterHangoutModification(hangoutId))
+            .isInstanceOf(ResourceNotFoundException.class)
+            .hasMessageContaining("Hangout not found: " + hangoutId);
+
+        verify(seriesTransactionRepository, never()).updateSeriesAfterHangoutChange(any(), any());
+    }
+
+    @Test
+    void updateSeriesAfterHangoutModification_WithOrphanedSeries_SkipsUpdateGracefully() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+        String seriesId = UUID.randomUUID().toString();
+
+        Hangout hangout = HangoutTestBuilder.aHangout()
+            .withId(hangoutId)
+            .withSeriesId(seriesId)
+            .build();
+
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.empty());
+
+        // When
+        eventSeriesService.updateSeriesAfterHangoutModification(hangoutId);
+
+        // Then
+        verify(seriesTransactionRepository, never()).updateSeriesAfterHangoutChange(any(), any());
+    }
+
+    // Tests for removeHangoutFromSeries() method
+
+    @Test
+    void removeHangoutFromSeries_WithHangoutInSeries_RemovesAndDeletesHangout() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+        String seriesId = UUID.randomUUID().toString();
+        String anotherHangoutId = UUID.randomUUID().toString();
+
+        Hangout hangout = HangoutTestBuilder.aHangout()
+            .withId(hangoutId)
+            .withSeriesId(seriesId)
+            .build();
+
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setHangoutIds(new ArrayList<>(Arrays.asList(hangoutId, anotherHangoutId)));
+        series.setVersion(1L);
+
+        String groupId = UUID.randomUUID().toString();
+        
+        List<HangoutPointer> hangoutPointers = Arrays.asList(
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(groupId)
+                .forHangout(hangoutId)
+                .build()
+        );
+
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(hangoutRepository.findPointersForHangout(hangout)).thenReturn(hangoutPointers);
+
+        // When
+        eventSeriesService.removeHangoutFromSeries(hangoutId);
+
+        // Then
+        assertThat(series.getHangoutIds()).doesNotContain(hangoutId);
+        assertThat(series.getHangoutIds()).contains(anotherHangoutId);
+        assertThat(series.getVersion()).isEqualTo(2L);
+
+        verify(seriesTransactionRepository).removeHangoutFromSeries(
+            eq(series), eq(hangout), eq(hangoutPointers), any(List.class));
+        verify(seriesTransactionRepository, never()).deleteSeriesAndFinalHangout(any(), any(), any());
+    }
+
+    @Test
+    void removeHangoutFromSeries_WithLastHangoutInSeries_DeletesSeriesAndHangout() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+        String seriesId = UUID.randomUUID().toString();
+
+        Hangout hangout = HangoutTestBuilder.aHangout()
+            .withId(hangoutId)
+            .withSeriesId(seriesId)
+            .build();
+
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setHangoutIds(new ArrayList<>(Arrays.asList(hangoutId)));
+
+        String groupId = UUID.randomUUID().toString();
+        
+        List<HangoutPointer> hangoutPointers = Arrays.asList(
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(groupId)
+                .forHangout(hangoutId)
+                .build()
+        );
+
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(hangoutRepository.findPointersForHangout(hangout)).thenReturn(hangoutPointers);
+
+        // When
+        eventSeriesService.removeHangoutFromSeries(hangoutId);
+
+        // Then
+        verify(seriesTransactionRepository).deleteSeriesAndFinalHangout(series, hangout, hangoutPointers);
+        verify(seriesTransactionRepository, never()).removeHangoutFromSeries(any(), any(), any(), any());
+    }
+
+    @Test
+    void removeHangoutFromSeries_WithStandaloneHangout_UsesStandardDeletion() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+
+        Hangout hangout = HangoutTestBuilder.aHangout()
+            .withId(hangoutId)
+            .withSeriesId(null)
+            .build();
+
+        String groupId = UUID.randomUUID().toString();
+        
+        List<HangoutPointer> hangoutPointers = Arrays.asList(
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(groupId)
+                .forHangout(hangoutId)
+                .build()
+        );
+
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        when(hangoutRepository.findPointersForHangout(hangout)).thenReturn(hangoutPointers);
+
+        // When
+        eventSeriesService.removeHangoutFromSeries(hangoutId);
+
+        // Then
+        verify(eventSeriesRepository, never()).findById(any());
+        verify(seriesTransactionRepository, never()).removeHangoutFromSeries(any(), any(), any(), any());
+        verify(seriesTransactionRepository, never()).deleteSeriesAndFinalHangout(any(), any(), any());
+        
+        // Verify standard deletion process
+        for (HangoutPointer pointer : hangoutPointers) {
+            verify(groupRepository).deleteHangoutPointer(pointer.getGroupId(), hangoutId);
+        }
+        verify(hangoutRepository).deleteHangout(hangoutId);
+    }
+
+    @Test
+    void removeHangoutFromSeries_WithNonExistentHangout_ThrowsResourceNotFoundException() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.empty());
+
+        // When & Then
+        assertThatThrownBy(() -> eventSeriesService.removeHangoutFromSeries(hangoutId))
+            .isInstanceOf(ResourceNotFoundException.class)
+            .hasMessageContaining("Hangout not found: " + hangoutId);
+
+        verify(seriesTransactionRepository, never()).removeHangoutFromSeries(any(), any(), any(), any());
+        verify(seriesTransactionRepository, never()).deleteSeriesAndFinalHangout(any(), any(), any());
+    }
+
+    // ============================================================================
+    // HELPER METHOD TESTS - Test Plan 4
+    // ============================================================================
+
+    // updateSeriesTimestamps() Tests
+
+    @Test
+    void updateSeriesTimestamps_WithMultipleHangouts_CalculatesCorrectRange() throws Exception {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String hangout1Id = UUID.randomUUID().toString();
+        String hangout2Id = UUID.randomUUID().toString();
+        String hangout3Id = UUID.randomUUID().toString();
+
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setHangoutIds(Arrays.asList(hangout1Id, hangout2Id, hangout3Id));
+        series.setVersion(1L);
+
+        // Create hangouts with different timestamps
+        Hangout hangout1 = HangoutTestBuilder.aHangout()
+            .withId(hangout1Id)
+            .withStartTimestamp(1000L)
+            .withEndTimestamp(2000L)
+            .build();
+        
+        Hangout hangout2 = HangoutTestBuilder.aHangout()
+            .withId(hangout2Id)
+            .withStartTimestamp(500L)  // Earliest start
+            .withEndTimestamp(1500L)
+            .build();
+        
+        Hangout hangout3 = HangoutTestBuilder.aHangout()
+            .withId(hangout3Id)
+            .withStartTimestamp(1200L)
+            .withEndTimestamp(3000L)  // Latest end
+            .build();
+
+        when(hangoutRepository.findHangoutById(hangout1Id)).thenReturn(Optional.of(hangout1));
+        when(hangoutRepository.findHangoutById(hangout2Id)).thenReturn(Optional.of(hangout2));
+        when(hangoutRepository.findHangoutById(hangout3Id)).thenReturn(Optional.of(hangout3));
+
+        // When - use reflection to call private method
+        Method updateTimestampsMethod = EventSeriesServiceImpl.class.getDeclaredMethod("updateSeriesTimestamps", EventSeries.class);
+        updateTimestampsMethod.setAccessible(true);
+        updateTimestampsMethod.invoke(eventSeriesService, series);
+
+        // Then
+        assertThat(series.getStartTimestamp()).isEqualTo(500L);  // Earliest
+        assertThat(series.getEndTimestamp()).isEqualTo(3000L);   // Latest
+        assertThat(series.getVersion()).isEqualTo(2L);           // Incremented
+    }
+
+    @Test
+    void updateSeriesTimestamps_WithSomeNullTimestamps_HandlesGracefully() throws Exception {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String hangout1Id = UUID.randomUUID().toString();
+        String hangout2Id = UUID.randomUUID().toString();
+        String hangout3Id = UUID.randomUUID().toString();
+
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setHangoutIds(Arrays.asList(hangout1Id, hangout2Id, hangout3Id));
+        series.setVersion(1L);
+
+        // Create hangouts with mix of null and valid timestamps
+        Hangout hangout1 = HangoutTestBuilder.aHangout()
+            .withId(hangout1Id)
+            .withStartTimestamp(null)  // Null timestamps
+            .withEndTimestamp(null)
+            .build();
+        
+        Hangout hangout2 = HangoutTestBuilder.aHangout()
+            .withId(hangout2Id)
+            .withStartTimestamp(1000L)
+            .withEndTimestamp(2000L)
+            .build();
+        
+        Hangout hangout3 = HangoutTestBuilder.aHangout()
+            .withId(hangout3Id)
+            .withStartTimestamp(500L)
+            .withEndTimestamp(null)  // Null end timestamp
+            .build();
+
+        when(hangoutRepository.findHangoutById(hangout1Id)).thenReturn(Optional.of(hangout1));
+        when(hangoutRepository.findHangoutById(hangout2Id)).thenReturn(Optional.of(hangout2));
+        when(hangoutRepository.findHangoutById(hangout3Id)).thenReturn(Optional.of(hangout3));
+
+        // When
+        Method updateTimestampsMethod = EventSeriesServiceImpl.class.getDeclaredMethod("updateSeriesTimestamps", EventSeries.class);
+        updateTimestampsMethod.setAccessible(true);
+        updateTimestampsMethod.invoke(eventSeriesService, series);
+
+        // Then - only non-null timestamps are considered
+        assertThat(series.getStartTimestamp()).isEqualTo(500L);   // Min of valid start timestamps
+        assertThat(series.getEndTimestamp()).isEqualTo(2000L);   // Max of valid end timestamps
+        assertThat(series.getVersion()).isEqualTo(2L);
+    }
+
+    @Test
+    void updateSeriesTimestamps_WithAllNullTimestamps_SetsNullTimestamps() throws Exception {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String hangout1Id = UUID.randomUUID().toString();
+        String hangout2Id = UUID.randomUUID().toString();
+
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setHangoutIds(Arrays.asList(hangout1Id, hangout2Id));
+        series.setVersion(1L);
+
+        // Create hangouts with all null timestamps
+        Hangout hangout1 = HangoutTestBuilder.aHangout()
+            .withId(hangout1Id)
+            .withStartTimestamp(null)
+            .withEndTimestamp(null)
+            .build();
+        
+        Hangout hangout2 = HangoutTestBuilder.aHangout()
+            .withId(hangout2Id)
+            .withStartTimestamp(null)
+            .withEndTimestamp(null)
+            .build();
+
+        when(hangoutRepository.findHangoutById(hangout1Id)).thenReturn(Optional.of(hangout1));
+        when(hangoutRepository.findHangoutById(hangout2Id)).thenReturn(Optional.of(hangout2));
+
+        // When
+        Method updateTimestampsMethod = EventSeriesServiceImpl.class.getDeclaredMethod("updateSeriesTimestamps", EventSeries.class);
+        updateTimestampsMethod.setAccessible(true);
+        updateTimestampsMethod.invoke(eventSeriesService, series);
+
+        // Then
+        assertThat(series.getStartTimestamp()).isNull();
+        assertThat(series.getEndTimestamp()).isNull();
+        assertThat(series.getVersion()).isEqualTo(2L);  // Still incremented
+    }
+
+    @Test
+    void updateSeriesTimestamps_WithNonExistentHangouts_SkipsGracefully() throws Exception {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String existingHangoutId = UUID.randomUUID().toString();
+        String nonExistentHangoutId = UUID.randomUUID().toString();
+
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setHangoutIds(Arrays.asList(existingHangoutId, nonExistentHangoutId));
+        series.setVersion(1L);
+
+        // Only one hangout exists
+        Hangout existingHangout = HangoutTestBuilder.aHangout()
+            .withId(existingHangoutId)
+            .withStartTimestamp(1000L)
+            .withEndTimestamp(2000L)
+            .build();
+
+        when(hangoutRepository.findHangoutById(existingHangoutId)).thenReturn(Optional.of(existingHangout));
+        when(hangoutRepository.findHangoutById(nonExistentHangoutId)).thenReturn(Optional.empty());
+
+        // When
+        Method updateTimestampsMethod = EventSeriesServiceImpl.class.getDeclaredMethod("updateSeriesTimestamps", EventSeries.class);
+        updateTimestampsMethod.setAccessible(true);
+        updateTimestampsMethod.invoke(eventSeriesService, series);
+
+        // Then - method completes without exceptions, only existing hangouts affect calculation
+        assertThat(series.getStartTimestamp()).isEqualTo(1000L);
+        assertThat(series.getEndTimestamp()).isEqualTo(2000L);
+        assertThat(series.getVersion()).isEqualTo(2L);
+    }
+
+    // deleteStandaloneHangout() Tests
+
+    @Test
+    void deleteStandaloneHangout_WithValidHangout_DeletesAllRecords() throws Exception {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+        String group1Id = UUID.randomUUID().toString();
+        String group2Id = UUID.randomUUID().toString();
+
+        Hangout hangout = HangoutTestBuilder.aHangout()
+            .withId(hangoutId)
+            .build();
+
+        List<HangoutPointer> pointers = Arrays.asList(
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(group1Id)
+                .forHangout(hangoutId)
+                .build(),
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(group2Id)
+                .forHangout(hangoutId)
+                .build()
+        );
+
+        when(hangoutRepository.findPointersForHangout(hangout)).thenReturn(pointers);
+        doNothing().when(groupRepository).deleteHangoutPointer(anyString(), anyString());
+        doNothing().when(hangoutRepository).deleteHangout(hangoutId);
+
+        // When - use reflection to call private method
+        Method deleteStandaloneMethod = EventSeriesServiceImpl.class.getDeclaredMethod("deleteStandaloneHangout", Hangout.class);
+        deleteStandaloneMethod.setAccessible(true);
+        deleteStandaloneMethod.invoke(eventSeriesService, hangout);
+
+        // Then
+        // Verify all pointers are deleted
+        verify(groupRepository).deleteHangoutPointer(group1Id, hangoutId);
+        verify(groupRepository).deleteHangoutPointer(group2Id, hangoutId);
+        
+        // Verify hangout is deleted after pointers
+        verify(hangoutRepository).deleteHangout(hangoutId);
+    }
+
+    @Test
+    void deleteStandaloneHangout_WithPointerDeletionFailure_ThrowsRepositoryException() throws Exception {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+        String groupId = UUID.randomUUID().toString();
+
+        Hangout hangout = HangoutTestBuilder.aHangout()
+            .withId(hangoutId)
+            .build();
+
+        List<HangoutPointer> pointers = Arrays.asList(
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(groupId)
+                .forHangout(hangoutId)
+                .build()
+        );
+
+        when(hangoutRepository.findPointersForHangout(hangout)).thenReturn(pointers);
+        
+        // Mock pointer deletion to throw exception
+        RuntimeException originalException = new RuntimeException("Pointer deletion failed");
+        doThrow(originalException).when(groupRepository).deleteHangoutPointer(groupId, hangoutId);
+
+        // When & Then
+        Method deleteStandaloneMethod = EventSeriesServiceImpl.class.getDeclaredMethod("deleteStandaloneHangout", Hangout.class);
+        deleteStandaloneMethod.setAccessible(true);
+        
+        assertThatThrownBy(() -> deleteStandaloneMethod.invoke(eventSeriesService, hangout))
+            .hasCauseInstanceOf(RepositoryException.class)
+            .hasRootCauseInstanceOf(RuntimeException.class);
+
+        // Verify hangout deletion was not attempted
+        verify(hangoutRepository, never()).deleteHangout(anyString());
+    }
+
+    @Test
+    void deleteStandaloneHangout_WithNoPointers_DeletesHangoutOnly() throws Exception {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+
+        Hangout hangout = HangoutTestBuilder.aHangout()
+            .withId(hangoutId)
+            .build();
+
+        // Empty pointer list
+        when(hangoutRepository.findPointersForHangout(hangout)).thenReturn(Collections.emptyList());
+        doNothing().when(hangoutRepository).deleteHangout(hangoutId);
+
+        // When
+        Method deleteStandaloneMethod = EventSeriesServiceImpl.class.getDeclaredMethod("deleteStandaloneHangout", Hangout.class);
+        deleteStandaloneMethod.setAccessible(true);
+        deleteStandaloneMethod.invoke(eventSeriesService, hangout);
+
+        // Then
+        // Verify no pointer deletion attempts made
+        verify(groupRepository, never()).deleteHangoutPointer(anyString(), anyString());
+        
+        // Verify hangout deletion proceeds normally
+        verify(hangoutRepository).deleteHangout(hangoutId);
     }
 }

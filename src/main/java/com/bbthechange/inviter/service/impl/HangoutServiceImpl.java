@@ -3,13 +3,16 @@ package com.bbthechange.inviter.service.impl;
 import com.bbthechange.inviter.service.HangoutService;
 import com.bbthechange.inviter.service.FuzzyTimeService;
 import com.bbthechange.inviter.service.UserService;
+import com.bbthechange.inviter.service.EventSeriesService;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.exception.*;
+import com.bbthechange.inviter.exception.RepositoryException;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
@@ -30,14 +33,17 @@ public class HangoutServiceImpl implements HangoutService {
     private final GroupRepository groupRepository;
     private final FuzzyTimeService fuzzyTimeService;
     private final UserService userService;
+    private final EventSeriesService eventSeriesService;
 
     @Autowired
     public HangoutServiceImpl(HangoutRepository hangoutRepository, GroupRepository groupRepository,
-                              FuzzyTimeService fuzzyTimeService, UserService userService) {
+                              FuzzyTimeService fuzzyTimeService, UserService userService,
+                              @Lazy EventSeriesService eventSeriesService) {
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
         this.fuzzyTimeService = fuzzyTimeService;
         this.userService = userService;
+        this.eventSeriesService = eventSeriesService;
     }
     
     @Override
@@ -233,6 +239,17 @@ public class HangoutServiceImpl implements HangoutService {
             updatePointerRecords(hangoutId, hangout.getAssociatedGroups(), pointerUpdates);
         }
         
+        // If this hangout is part of a series, update the series records
+        if (hangout.getSeriesId() != null) {
+            try {
+                eventSeriesService.updateSeriesAfterHangoutModification(hangoutId);
+                logger.info("Updated series {} after hangout {} modification", hangout.getSeriesId(), hangoutId);
+            } catch (Exception e) {
+                logger.warn("Failed to update series after hangout modification: {}", e.getMessage());
+                // Continue execution - the hangout update itself succeeded
+            }
+        }
+        
         logger.info("Updated hangout {} by user {}", hangoutId, requestingUserId);
     }
     
@@ -246,15 +263,28 @@ public class HangoutServiceImpl implements HangoutService {
             throw new UnauthorizedException("Cannot delete hangout");
         }
         
-        // Delete pointer records first
-        if (hangout.getAssociatedGroups() != null) {
-            for (String groupId : hangout.getAssociatedGroups()) {
-                groupRepository.deleteHangoutPointer(groupId, hangoutId);
+        // If this hangout is part of a series, handle series cleanup first
+        if (hangout.getSeriesId() != null) {
+            try {
+                eventSeriesService.removeHangoutFromSeries(hangoutId);
+                logger.info("Removed hangout {} from series {} during deletion", hangoutId, hangout.getSeriesId());
+            } catch (Exception e) {
+                logger.error("Failed to remove hangout from series during deletion: {}", e.getMessage());
+                throw new RepositoryException("Failed to remove hangout from series during deletion", e);
             }
+        } else {
+            // Standard deletion process for non-series hangouts
+            
+            // Delete pointer records first
+            if (hangout.getAssociatedGroups() != null) {
+                for (String groupId : hangout.getAssociatedGroups()) {
+                    groupRepository.deleteHangoutPointer(groupId, hangoutId);
+                }
+            }
+            
+            // Delete canonical record and all associated data (polls, cars, etc.)
+            hangoutRepository.deleteHangout(hangoutId);
         }
-        
-        // Delete canonical record and all associated data (polls, cars, etc.)
-        hangoutRepository.deleteHangout(hangoutId);
         
         logger.info("Deleted hangout {} by user {}", hangoutId, requestingUserId);
     }

@@ -43,11 +43,13 @@ class SeriesControllerTest {
     private EventSeries mockEventSeries;
     private String testUserId;
     private String testHangoutId;
+    private String testSeriesId;
 
     @BeforeEach
     void setUp() {
         testUserId = "12345678-1234-1234-1234-123456789012";
         testHangoutId = "12345678-1234-1234-1234-123456789013";
+        testSeriesId = "12345678-1234-1234-1234-123456789016";
         
         // Set up valid request
         CreateHangoutRequest newMemberRequest = createValidCreateHangoutRequest();
@@ -184,6 +186,93 @@ class SeriesControllerTest {
         // Note: Logging verification would require additional setup with LogCaptor or similar library
         // For now, we verify the successful flow completed
         verify(eventSeriesService).convertToSeriesWithNewMember(testHangoutId, validRequest.getNewMemberRequest(), testUserId);
+    }
+
+    // Tests for unlinkHangoutFromSeries endpoint
+
+    @Test
+    void unlinkHangoutFromSeries_WithValidRequest_ReturnsNoContent() {
+        // Given
+        doNothing().when(eventSeriesService).unlinkHangoutFromSeries(testSeriesId, testHangoutId, testUserId);
+
+        // When
+        ResponseEntity<Void> response = seriesController.unlinkHangoutFromSeries(testSeriesId, testHangoutId, httpRequest);
+
+        // Then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        assertThat(response.getBody()).isNull();
+        
+        // Verify service was called with correct parameters
+        verify(eventSeriesService).unlinkHangoutFromSeries(testSeriesId, testHangoutId, testUserId);
+    }
+
+    @Test
+    void unlinkHangoutFromSeries_WithResourceNotFound_Returns404() {
+        // Given
+        doThrow(new ResourceNotFoundException("Series not found"))
+            .when(eventSeriesService).unlinkHangoutFromSeries(testSeriesId, testHangoutId, testUserId);
+
+        // When
+        ResponseEntity<Void> response = seriesController.unlinkHangoutFromSeries(testSeriesId, testHangoutId, httpRequest);
+
+        // Then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(response.getBody()).isNull();
+    }
+
+    @Test
+    void unlinkHangoutFromSeries_WithUnauthorizedUser_Returns403() {
+        // Given
+        doThrow(new UnauthorizedException("User not authorized"))
+            .when(eventSeriesService).unlinkHangoutFromSeries(testSeriesId, testHangoutId, testUserId);
+
+        // When
+        ResponseEntity<Void> response = seriesController.unlinkHangoutFromSeries(testSeriesId, testHangoutId, httpRequest);
+
+        // Then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(response.getBody()).isNull();
+    }
+
+    @Test
+    void unlinkHangoutFromSeries_WithRepositoryException_Returns500() {
+        // Given
+        doThrow(new RepositoryException("Database error"))
+            .when(eventSeriesService).unlinkHangoutFromSeries(testSeriesId, testHangoutId, testUserId);
+
+        // When
+        ResponseEntity<Void> response = seriesController.unlinkHangoutFromSeries(testSeriesId, testHangoutId, httpRequest);
+
+        // Then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+        assertThat(response.getBody()).isNull();
+    }
+
+    @Test
+    void unlinkHangoutFromSeries_WithUnexpectedException_Returns500() {
+        // Given
+        doThrow(new RuntimeException("Unexpected error"))
+            .when(eventSeriesService).unlinkHangoutFromSeries(testSeriesId, testHangoutId, testUserId);
+
+        // When
+        ResponseEntity<Void> response = seriesController.unlinkHangoutFromSeries(testSeriesId, testHangoutId, httpRequest);
+
+        // Then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+        assertThat(response.getBody()).isNull();
+    }
+
+    @Test
+    void unlinkHangoutFromSeries_ExtractsUserIdCorrectly() {
+        // Given
+        doNothing().when(eventSeriesService).unlinkHangoutFromSeries(testSeriesId, testHangoutId, testUserId);
+
+        // When
+        seriesController.unlinkHangoutFromSeries(testSeriesId, testHangoutId, httpRequest);
+
+        // Then
+        verify(httpRequest).getAttribute("userId");
+        verify(eventSeriesService).unlinkHangoutFromSeries(testSeriesId, testHangoutId, testUserId);
     }
 
     // Helper methods

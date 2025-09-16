@@ -78,4 +78,43 @@ public class SeriesController extends BaseController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
+    
+    /**
+     * Remove a hangout from a series without deleting the hangout.
+     * 
+     * @param seriesId The ID of the series
+     * @param hangoutId The ID of the hangout to unlink
+     * @return Success response with no content
+     */
+    @DeleteMapping("/{seriesId}/hangouts/{hangoutId}")
+    public ResponseEntity<Void> unlinkHangoutFromSeries(@PathVariable String seriesId,
+                                                         @PathVariable String hangoutId,
+                                                         HttpServletRequest httpRequest) {
+        try {
+            String requestingUserId = extractUserId(httpRequest);
+            logger.info("Unlinking hangout {} from series {} by user {}", 
+                       hangoutId, seriesId, requestingUserId);
+            
+            eventSeriesService.unlinkHangoutFromSeries(seriesId, hangoutId, requestingUserId);
+            
+            logger.info("Successfully unlinked hangout {} from series {}", hangoutId, seriesId);
+            return ResponseEntity.noContent().build();
+            
+        } catch (ResourceNotFoundException e) {
+            logger.warn("Resource not found when unlinking hangout: {}", e.getMessage());
+            return ResponseEntity.notFound().build();
+            
+        } catch (UnauthorizedException e) {
+            logger.warn("Unauthorized access when unlinking hangout: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            
+        } catch (RepositoryException e) {
+            logger.error("Repository error when unlinking hangout", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            
+        } catch (Exception e) {
+            logger.error("Unexpected error when unlinking hangout", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
 }

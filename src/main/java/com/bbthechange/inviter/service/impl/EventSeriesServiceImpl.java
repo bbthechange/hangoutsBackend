@@ -10,9 +10,11 @@ import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.EventSeriesRepository;
 import com.bbthechange.inviter.repository.SeriesTransactionRepository;
 import com.bbthechange.inviter.repository.UserRepository;
+import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.exception.ResourceNotFoundException;
 import com.bbthechange.inviter.exception.UnauthorizedException;
 import com.bbthechange.inviter.exception.RepositoryException;
+import com.bbthechange.inviter.exception.ValidationException;
 import com.bbthechange.inviter.service.HangoutService;
 import com.bbthechange.inviter.util.InviterKeyFactory;
 import org.springframework.stereotype.Service;
@@ -39,6 +41,7 @@ public class EventSeriesServiceImpl implements EventSeriesService {
     private final SeriesTransactionRepository seriesTransactionRepository;
     private final UserRepository userRepository;
     private final HangoutService hangoutService;
+    private final GroupRepository groupRepository;
     
     @Autowired
     public EventSeriesServiceImpl(
@@ -46,12 +49,14 @@ public class EventSeriesServiceImpl implements EventSeriesService {
             EventSeriesRepository eventSeriesRepository,
             SeriesTransactionRepository seriesTransactionRepository,
             UserRepository userRepository,
-            HangoutService hangoutService) {
+            HangoutService hangoutService,
+            GroupRepository groupRepository) {
         this.hangoutRepository = hangoutRepository;
         this.eventSeriesRepository = eventSeriesRepository;
         this.seriesTransactionRepository = seriesTransactionRepository;
         this.userRepository = userRepository;
         this.hangoutService = hangoutService;
+        this.groupRepository = groupRepository;
     }
     
     @Override
@@ -286,6 +291,237 @@ public class EventSeriesServiceImpl implements EventSeriesService {
         } catch (Exception e) {
             logger.error("Failed to add hangout to series {}", seriesId, e);
             throw new RepositoryException("Failed to add hangout to series atomically", e);
+        }
+    }
+    
+    @Override
+    public void unlinkHangoutFromSeries(String seriesId, String hangoutId, String userId) {
+        logger.info("Unlinking hangout {} from series {} by user {}", hangoutId, seriesId, userId);
+        
+        // 1. Validation
+        Optional<EventSeries> seriesOpt = eventSeriesRepository.findById(seriesId);
+        if (seriesOpt.isEmpty()) {
+            throw new ResourceNotFoundException("EventSeries not found: " + seriesId);
+        }
+        
+        Optional<Hangout> hangoutOpt = hangoutRepository.findHangoutById(hangoutId);
+        if (hangoutOpt.isEmpty()) {
+            throw new ResourceNotFoundException("Hangout not found: " + hangoutId);
+        }
+        
+        EventSeries series = seriesOpt.get();
+        Hangout hangout = hangoutOpt.get();
+        
+        // Verify hangout is actually part of this series
+        if (!hangout.getSeriesId().equals(seriesId)) {
+            throw new ValidationException("Hangout " + hangoutId + " is not part of series " + seriesId);
+        }
+        
+        // TODO: Implement proper authorization logic
+        if (userRepository.findById(userId).isEmpty()) {
+            throw new UnauthorizedException("User " + userId + " not found");
+        }
+        
+        // 2. Data Preparation
+        // Remove hangout from series
+        series.getHangoutIds().remove(hangoutId);
+        series.incrementVersion();
+        
+        // Clear series ID from hangout
+        hangout.setSeriesId(null);
+        
+        // Update all pointers for this hangout to clear series ID
+        List<HangoutPointer> hangoutPointers = hangoutRepository.findPointersForHangout(hangout);
+        for (HangoutPointer pointer : hangoutPointers) {
+            pointer.setSeriesId(null);
+        }
+        
+        // Check if this was the last hangout in the series
+        boolean isLastHangout = series.getHangoutIds().isEmpty();
+        
+        // 3. Persistence
+        try {
+            if (isLastHangout) {
+                // Delete the entire series since it has no more hangouts
+                seriesTransactionRepository.deleteEntireSeries(series, hangout, hangoutPointers);
+                logger.info("Deleted series {} as hangout {} was the last part", seriesId, hangoutId);
+            } else {
+                // Update series and unlink hangout
+                List<SeriesPointer> updatedSeriesPointers = createUpdatedSeriesPointers(series);
+                seriesTransactionRepository.unlinkHangoutFromSeries(
+                    series, hangout, hangoutPointers, updatedSeriesPointers);
+                logger.info("Successfully unlinked hangout {} from series {}", hangoutId, seriesId);
+            }
+        } catch (Exception e) {
+            logger.error("Failed to unlink hangout {} from series {}", hangoutId, seriesId, e);
+            throw new RepositoryException("Failed to unlink hangout from series atomically", e);
+        }
+    }
+    
+    @Override
+    public void updateSeriesAfterHangoutModification(String hangoutId) {
+        logger.info("Updating series after modification of hangout {}", hangoutId);
+        
+        // 1. Get hangout and its series
+        Optional<Hangout> hangoutOpt = hangoutRepository.findHangoutById(hangoutId);
+        if (hangoutOpt.isEmpty()) {
+            throw new ResourceNotFoundException("Hangout not found: " + hangoutId);
+        }
+        
+        Hangout hangout = hangoutOpt.get();
+        String seriesId = hangout.getSeriesId();
+        
+        if (seriesId == null) {
+            // Hangout is not part of a series, nothing to update
+            logger.debug("Hangout {} is not part of a series, skipping series update", hangoutId);
+            return;
+        }
+        
+        Optional<EventSeries> seriesOpt = eventSeriesRepository.findById(seriesId);
+        if (seriesOpt.isEmpty()) {
+            logger.warn("Series {} not found for hangout {}, skipping series update", seriesId, hangoutId);
+            return;
+        }
+        
+        EventSeries series = seriesOpt.get();
+        
+        // 2. Update series timestamps if needed
+        updateSeriesTimestamps(series);
+        
+        // 3. Update SeriesPointers with new hangout data
+        List<SeriesPointer> updatedSeriesPointers = createUpdatedSeriesPointers(series);
+        
+        // 4. Persistence
+        try {
+            seriesTransactionRepository.updateSeriesAfterHangoutChange(series, updatedSeriesPointers);
+            logger.info("Successfully updated series {} after hangout {} modification", seriesId, hangoutId);
+        } catch (Exception e) {
+            logger.error("Failed to update series {} after hangout {} modification", seriesId, hangoutId, e);
+            throw new RepositoryException("Failed to update series after hangout modification", e);
+        }
+    }
+    
+    @Override
+    public void removeHangoutFromSeries(String hangoutId) {
+        logger.info("Removing hangout {} from its series", hangoutId);
+        
+        // 1. Get hangout and its series
+        Optional<Hangout> hangoutOpt = hangoutRepository.findHangoutById(hangoutId);
+        if (hangoutOpt.isEmpty()) {
+            throw new ResourceNotFoundException("Hangout not found: " + hangoutId);
+        }
+        
+        Hangout hangout = hangoutOpt.get();
+        String seriesId = hangout.getSeriesId();
+        
+        if (seriesId == null) {
+            // Hangout is not part of a series, use standard deletion
+            deleteStandaloneHangout(hangout);
+            return;
+        }
+        
+        Optional<EventSeries> seriesOpt = eventSeriesRepository.findById(seriesId);
+        if (seriesOpt.isEmpty()) {
+            logger.warn("Series {} not found for hangout {}, deleting as standalone", seriesId, hangoutId);
+            deleteStandaloneHangout(hangout);
+            return;
+        }
+        
+        EventSeries series = seriesOpt.get();
+        
+        // 2. Data Preparation
+        // Remove hangout from series
+        series.getHangoutIds().remove(hangoutId);
+        series.incrementVersion();
+        
+        // Get all pointers for this hangout
+        List<HangoutPointer> hangoutPointers = hangoutRepository.findPointersForHangout(hangout);
+        
+        // Check if this was the last hangout in the series
+        boolean isLastHangout = series.getHangoutIds().isEmpty();
+        
+        // 3. Persistence
+        try {
+            if (isLastHangout) {
+                // Delete the entire series and the hangout
+                seriesTransactionRepository.deleteSeriesAndFinalHangout(series, hangout, hangoutPointers);
+                logger.info("Deleted series {} and final hangout {}", seriesId, hangoutId);
+            } else {
+                // Remove hangout and update series
+                List<SeriesPointer> updatedSeriesPointers = createUpdatedSeriesPointers(series);
+                seriesTransactionRepository.removeHangoutFromSeries(
+                    series, hangout, hangoutPointers, updatedSeriesPointers);
+                logger.info("Successfully removed hangout {} from series {}", hangoutId, seriesId);
+            }
+        } catch (Exception e) {
+            logger.error("Failed to remove hangout {} from series {}", hangoutId, seriesId, e);
+            throw new RepositoryException("Failed to remove hangout from series atomically", e);
+        }
+    }
+    
+    // Helper Methods
+    
+    private void updateSeriesTimestamps(EventSeries series) {
+        // Recalculate series start and end timestamps based on all hangouts
+        Long earliestStart = null;
+        Long latestEnd = null;
+        
+        for (String hangoutId : series.getHangoutIds()) {
+            Optional<Hangout> hangoutOpt = hangoutRepository.findHangoutById(hangoutId);
+            if (hangoutOpt.isPresent()) {
+                Hangout hangout = hangoutOpt.get();
+                if (hangout.getStartTimestamp() != null) {
+                    if (earliestStart == null || hangout.getStartTimestamp() < earliestStart) {
+                        earliestStart = hangout.getStartTimestamp();
+                    }
+                }
+                if (hangout.getEndTimestamp() != null) {
+                    if (latestEnd == null || hangout.getEndTimestamp() > latestEnd) {
+                        latestEnd = hangout.getEndTimestamp();
+                    }
+                }
+            }
+        }
+        
+        series.setStartTimestamp(earliestStart);
+        series.setEndTimestamp(latestEnd);
+        series.incrementVersion();
+    }
+    
+    private List<SeriesPointer> createUpdatedSeriesPointers(EventSeries series) {
+        // Create updated SeriesPointers for all groups associated with the series
+        List<SeriesPointer> updatedPointers = new ArrayList<>();
+        
+        // Get the primary group from the series
+        String primaryGroupId = series.getGroupId();
+        if (primaryGroupId != null) {
+            SeriesPointer primaryPointer = SeriesPointer.fromEventSeries(series, primaryGroupId);
+            updatedPointers.add(primaryPointer);
+        }
+        
+        // Also create pointers for any other groups that might be associated
+        // This would need to be expanded based on how groups are managed in series
+        
+        return updatedPointers;
+    }
+    
+    private void deleteStandaloneHangout(Hangout hangout) {
+        // Standard deletion process for hangouts not in a series
+        List<HangoutPointer> pointers = hangoutRepository.findPointersForHangout(hangout);
+        
+        try {
+            // Delete pointers first
+            for (HangoutPointer pointer : pointers) {
+                groupRepository.deleteHangoutPointer(pointer.getGroupId(), hangout.getHangoutId());
+            }
+            
+            // Delete canonical record and all associated data
+            hangoutRepository.deleteHangout(hangout.getHangoutId());
+            
+            logger.info("Deleted standalone hangout {}", hangout.getHangoutId());
+        } catch (Exception e) {
+            logger.error("Failed to delete standalone hangout {}", hangout.getHangoutId(), e);
+            throw new RepositoryException("Failed to delete standalone hangout", e);
         }
     }
 }

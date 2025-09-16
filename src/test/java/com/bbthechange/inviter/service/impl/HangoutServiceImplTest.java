@@ -2,6 +2,7 @@ package com.bbthechange.inviter.service.impl;
 
 import com.bbthechange.inviter.service.FuzzyTimeService;
 import com.bbthechange.inviter.service.UserService;
+import com.bbthechange.inviter.service.EventSeriesService;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.model.*;
@@ -38,6 +39,9 @@ class HangoutServiceImplTest {
     
     @Mock
     private UserService userService;
+    
+    @Mock
+    private EventSeriesService eventSeriesService;
     
     @InjectMocks
     private HangoutServiceImpl hangoutService;
@@ -1220,5 +1224,297 @@ class HangoutServiceImplTest {
         assertThat(result.getNeedsRide().get(0).getNotes()).isEqualTo("Still need a ride");
         
         verify(hangoutRepository).getHangoutDetailData(hangoutId);
+    }
+
+    // ============================================================================
+    // SERIES INTEGRATION TESTS - Test Plan 3
+    // ============================================================================
+
+    // Modified updateHangout() Tests
+
+    @Test
+    void updateHangout_WithHangoutInSeries_TriggersSeriesUpdate() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+        String seriesId = "series-123";
+        
+        UpdateHangoutRequest request = new UpdateHangoutRequest();
+        request.setTitle("Updated Series Hangout");
+        
+        Hangout hangout = createTestHangout(hangoutId);
+        hangout.setSeriesId(seriesId);
+        hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111")));
+        
+        // Mock authorization
+        GroupMembership membership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Test Group");
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(membership));
+        
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(hangout);
+        doNothing().when(groupRepository).updateHangoutPointer(anyString(), anyString(), any());
+        doNothing().when(eventSeriesService).updateSeriesAfterHangoutModification(hangoutId);
+        
+        // When
+        hangoutService.updateHangout(hangoutId, request, userId);
+        
+        // Then
+        // Verify standard hangout update logic executes
+        verify(hangoutRepository).createHangout(argThat(h -> h.getTitle().equals("Updated Series Hangout")));
+        verify(groupRepository).updateHangoutPointer(eq("11111111-1111-1111-1111-111111111111"), eq(hangoutId), any());
+        
+        // Verify series update is triggered
+        verify(eventSeriesService).updateSeriesAfterHangoutModification(hangoutId);
+    }
+
+    @Test
+    void updateHangout_WithStandaloneHangout_SkipsSeriesUpdate() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+        
+        UpdateHangoutRequest request = new UpdateHangoutRequest();
+        request.setTitle("Updated Standalone Hangout");
+        
+        Hangout hangout = createTestHangout(hangoutId);
+        hangout.setSeriesId(null); // Standalone hangout
+        hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111")));
+        
+        // Mock authorization
+        GroupMembership membership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Test Group");
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(membership));
+        
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(hangout);
+        doNothing().when(groupRepository).updateHangoutPointer(anyString(), anyString(), any());
+        
+        // When
+        hangoutService.updateHangout(hangoutId, request, userId);
+        
+        // Then
+        // Verify standard hangout update logic executes
+        verify(hangoutRepository).createHangout(argThat(h -> h.getTitle().equals("Updated Standalone Hangout")));
+        verify(groupRepository).updateHangoutPointer(eq("11111111-1111-1111-1111-111111111111"), eq(hangoutId), any());
+        
+        // Verify series update is NOT called
+        verify(eventSeriesService, never()).updateSeriesAfterHangoutModification(anyString());
+    }
+
+    @Test
+    void updateHangout_WithSeriesUpdateFailure_ContinuesHangoutUpdate() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+        String seriesId = "series-123";
+        
+        UpdateHangoutRequest request = new UpdateHangoutRequest();
+        request.setTitle("Updated Hangout");
+        
+        Hangout hangout = createTestHangout(hangoutId);
+        hangout.setSeriesId(seriesId);
+        hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111")));
+        
+        // Mock authorization
+        GroupMembership membership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Test Group");
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(membership));
+        
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(hangout);
+        doNothing().when(groupRepository).updateHangoutPointer(anyString(), anyString(), any());
+        
+        // Mock series service to throw exception
+        doThrow(new RuntimeException("Series update failed")).when(eventSeriesService).updateSeriesAfterHangoutModification(hangoutId);
+        
+        // When
+        assertThatCode(() -> hangoutService.updateHangout(hangoutId, request, userId))
+            .doesNotThrowAnyException();
+        
+        // Then
+        // Verify hangout update completes successfully
+        verify(hangoutRepository).createHangout(any(Hangout.class));
+        verify(groupRepository).updateHangoutPointer(anyString(), anyString(), any());
+        
+        // Verify series update was attempted
+        verify(eventSeriesService).updateSeriesAfterHangoutModification(hangoutId);
+    }
+
+    @Test
+    void updateHangout_WithTimeInfoChange_UpdatesSeriesTimestamps() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+        String seriesId = "series-123";
+        
+        TimeInfo newTimeInfo = new TimeInfo();
+        newTimeInfo.setPeriodGranularity("morning");
+        newTimeInfo.setPeriodStart("2025-08-06T08:00:00Z");
+        
+        UpdateHangoutRequest request = new UpdateHangoutRequest();
+        request.setTimeInfo(newTimeInfo);
+        
+        Hangout hangout = createTestHangout(hangoutId);
+        hangout.setSeriesId(seriesId);
+        hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111")));
+        
+        // Mock authorization
+        GroupMembership membership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Test Group");
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(membership));
+        
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(hangout);
+        doNothing().when(groupRepository).updateHangoutPointer(anyString(), anyString(), any());
+        doNothing().when(eventSeriesService).updateSeriesAfterHangoutModification(hangoutId);
+        
+        // Mock fuzzy time service
+        FuzzyTimeService.TimeConversionResult timeResult = new FuzzyTimeService.TimeConversionResult(1754603600L, 1754618000L);
+        when(fuzzyTimeService.convert(newTimeInfo)).thenReturn(timeResult);
+        
+        // When
+        hangoutService.updateHangout(hangoutId, request, userId);
+        
+        // Then
+        // Verify hangout timestamps are updated
+        verify(hangoutRepository).createHangout(argThat(h -> 
+            h.getTimeInput().equals(newTimeInfo) &&
+            h.getStartTimestamp().equals(1754603600L) &&
+            h.getEndTimestamp().equals(1754618000L)
+        ));
+        
+        // Verify pointer records are updated
+        verify(groupRepository).updateHangoutPointer(
+            eq("11111111-1111-1111-1111-111111111111"), 
+            eq(hangoutId), 
+            argThat(updates -> 
+                updates.containsKey("timeInput") &&
+                updates.containsKey("startTimestamp") &&
+                updates.containsKey("endTimestamp"))
+        );
+        
+        // Verify series update is triggered
+        verify(eventSeriesService).updateSeriesAfterHangoutModification(hangoutId);
+    }
+
+    // Modified deleteHangout() Tests
+
+    @Test
+    void deleteHangout_WithHangoutInSeries_UsesSeriesDeletion() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+        String seriesId = "series-123";
+        
+        Hangout hangout = createTestHangout(hangoutId);
+        hangout.setSeriesId(seriesId);
+        hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111")));
+        
+        // Mock authorization
+        GroupMembership membership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Test Group");
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(membership));
+        
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        doNothing().when(eventSeriesService).removeHangoutFromSeries(hangoutId);
+        
+        // When
+        hangoutService.deleteHangout(hangoutId, userId);
+        
+        // Then
+        // Verify series removal is called
+        verify(eventSeriesService).removeHangoutFromSeries(hangoutId);
+        
+        // Verify standard deletion logic is NOT executed
+        verify(groupRepository, never()).deleteHangoutPointer(anyString(), anyString());
+        verify(hangoutRepository, never()).deleteHangout(anyString());
+    }
+
+    @Test
+    void deleteHangout_WithStandaloneHangout_UsesStandardDeletion() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+        
+        Hangout hangout = createTestHangout(hangoutId);
+        hangout.setSeriesId(null); // Standalone hangout
+        hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111")));
+        
+        // Mock authorization
+        GroupMembership membership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Test Group");
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(membership));
+        
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        doNothing().when(groupRepository).deleteHangoutPointer(anyString(), anyString());
+        doNothing().when(hangoutRepository).deleteHangout(hangoutId);
+        
+        // When
+        hangoutService.deleteHangout(hangoutId, userId);
+        
+        // Then
+        // Verify standard deletion logic executes (pointers deleted, then hangout)
+        verify(groupRepository).deleteHangoutPointer("11111111-1111-1111-1111-111111111111", hangoutId);
+        verify(hangoutRepository).deleteHangout(hangoutId);
+        
+        // Verify series removal is NOT called
+        verify(eventSeriesService, never()).removeHangoutFromSeries(anyString());
+    }
+
+    @Test
+    void deleteHangout_WithSeriesRemovalFailure_ThrowsRepositoryException() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+        String seriesId = "series-123";
+        
+        Hangout hangout = createTestHangout(hangoutId);
+        hangout.setSeriesId(seriesId);
+        hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111")));
+        
+        // Mock authorization
+        GroupMembership membership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Test Group");
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(membership));
+        
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        
+        // Mock series service to throw exception
+        RuntimeException originalException = new RuntimeException("Series removal failed");
+        doThrow(originalException).when(eventSeriesService).removeHangoutFromSeries(hangoutId);
+        
+        // When & Then
+        assertThatThrownBy(() -> hangoutService.deleteHangout(hangoutId, userId))
+            .isInstanceOf(RepositoryException.class)
+            .hasMessageContaining("Failed to remove hangout from series during deletion")
+            .hasCause(originalException);
+        
+        // Verify series removal was attempted
+        verify(eventSeriesService).removeHangoutFromSeries(hangoutId);
+        
+        // Verify no partial deletion occurs
+        verify(groupRepository, never()).deleteHangoutPointer(anyString(), anyString());
+        verify(hangoutRepository, never()).deleteHangout(anyString());
+    }
+
+    @Test
+    void deleteHangout_MaintainsAuthorizationChecks() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+        String seriesId = "series-123";
+        
+        Hangout hangout = createTestHangout(hangoutId);
+        hangout.setSeriesId(seriesId);
+        hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111")));
+        
+        // Mock authorization failure - user is not in group
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.empty());
+        
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        
+        // When & Then
+        assertThatThrownBy(() -> hangoutService.deleteHangout(hangoutId, userId))
+            .isInstanceOf(UnauthorizedException.class)
+            .hasMessageContaining("Cannot delete hangout");
+        
+        // Verify no deletion operations are attempted
+        verify(eventSeriesService, never()).removeHangoutFromSeries(anyString());
+        verify(groupRepository, never()).deleteHangoutPointer(anyString(), anyString());
+        verify(hangoutRepository, never()).deleteHangout(anyString());
     }
 }
