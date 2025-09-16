@@ -7,6 +7,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * Unit tests for SeriesPointer model class.
@@ -218,6 +219,52 @@ class SeriesPointerTest {
 
         // Then
         assertThat(seriesPointer.getHangoutIds()).isNotNull().isEmpty();
+    }
+
+    @Test
+    void setParts_UpdatesPartsAndTouchesTimestamp() {
+        // Given
+        SeriesPointer seriesPointer = new SeriesPointer();
+        java.time.Instant initialTimestamp = seriesPointer.getUpdatedAt();
+        
+        // Wait a bit to ensure timestamp difference
+        try {
+            Thread.sleep(10);
+        } catch (InterruptedException e) {
+            // Ignore
+        }
+        
+        List<HangoutPointer> newParts = Arrays.asList(
+            createTestHangoutPointer("part-1"),
+            createTestHangoutPointer("part-2")
+        );
+
+        // When
+        seriesPointer.setParts(newParts);
+
+        // Then
+        assertThat(seriesPointer.getParts()).hasSize(2);
+        assertThat(seriesPointer.getParts()).containsExactlyElementsOf(newParts);
+        assertThat(seriesPointer.getUpdatedAt()).isAfter(initialTimestamp);
+    }
+
+    @Test
+    void getEndTimestamp_HasEndTimestampIndexAnnotation() {
+        // Given/When - Use reflection to check annotation
+        java.lang.reflect.Method method;
+        try {
+            method = SeriesPointer.class.getMethod("getEndTimestamp");
+        } catch (NoSuchMethodException e) {
+            fail("getEndTimestamp method not found");
+            return;
+        }
+
+        // Then
+        software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSecondarySortKey annotation = 
+            method.getAnnotation(software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSecondarySortKey.class);
+        
+        assertThat(annotation).isNotNull();
+        assertThat(annotation.indexNames()).containsExactly("EndTimestampIndex");
     }
 
     // Helper methods

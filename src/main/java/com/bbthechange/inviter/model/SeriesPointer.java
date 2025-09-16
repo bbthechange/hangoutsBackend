@@ -140,6 +140,7 @@ public class SeriesPointer extends BaseItem {
         touch(); // Update timestamp
     }
     
+    @DynamoDbSecondarySortKey(indexNames = "EndTimestampIndex")
     public Long getEndTimestamp() {
         return endTimestamp;
     }
