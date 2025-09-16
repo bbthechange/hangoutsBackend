@@ -594,7 +594,7 @@ public class EventSeriesServiceImpl implements EventSeriesService {
     public EventSeriesDetailDTO getSeriesDetail(String seriesId, String userId) {
         logger.info("Getting detailed view for series {} by user {}", seriesId, userId);
         
-        // 1. Validation and Authorization
+        // Validation and Authorization
         // Verify user exists
         if (userRepository.findById(userId).isEmpty()) {
             throw new UnauthorizedException("User " + userId + " not found");
@@ -611,24 +611,21 @@ public class EventSeriesServiceImpl implements EventSeriesService {
         // TODO: Implement proper authorization logic based on group membership
         // For now, we'll allow access if the user exists
         
-        // 2. Fetch all hangouts in the series
-        List<Hangout> hangouts = hangoutRepository.findHangoutsBySeriesId(seriesId);
-        
-        // 3. Convert hangouts to detailed DTOs
+        // Get Hangout details
         List<HangoutDetailDTO> hangoutDetails = new ArrayList<>();
-        for (Hangout hangout : hangouts) {
+        for (String hangoutId : series.getHangoutIds()) {
             // Get detailed hangout data including polls, cars, etc.
             try {
-                HangoutDetailDTO detailDTO = hangoutService.getHangoutDetail(hangout.getHangoutId(), userId);
+                HangoutDetailDTO detailDTO = hangoutService.getHangoutDetail(hangoutId, userId);
                 hangoutDetails.add(detailDTO);
             } catch (Exception e) {
                 logger.warn("Failed to get details for hangout {} in series {}: {}", 
-                    hangout.getHangoutId(), seriesId, e.getMessage());
+                    hangoutId, seriesId, e.getMessage());
                 // Continue with other hangouts even if one fails
             }
         }
         
-        // 4. Sort hangouts by start timestamp for consistent ordering
+        // Sort hangouts by start timestamp for consistent ordering
         hangoutDetails.sort((a, b) -> {
             Long timestampA = a.getHangout() != null ? a.getHangout().getStartTimestamp() : null;
             Long timestampB = b.getHangout() != null ? b.getHangout().getStartTimestamp() : null;
@@ -639,7 +636,7 @@ public class EventSeriesServiceImpl implements EventSeriesService {
             return timestampA.compareTo(timestampB);
         });
         
-        // 5. Create and return the detailed DTO
+        // Create and return the detailed DTO
         EventSeriesDetailDTO detailDTO = new EventSeriesDetailDTO(series, hangoutDetails);
         
         logger.info("Successfully retrieved detailed view for series {} with {} hangouts", 

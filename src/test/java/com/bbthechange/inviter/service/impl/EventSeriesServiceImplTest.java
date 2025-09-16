@@ -1102,6 +1102,7 @@ class EventSeriesServiceImplTest {
         series.setStartTimestamp(1000L);
         series.setEndTimestamp(2000L);
         series.setVersion(1L);
+        series.setHangoutIds(Arrays.asList(hangout1Id, hangout2Id));
         
         Hangout hangout1 = HangoutTestBuilder.aHangout()
             .withId(hangout1Id)
@@ -1133,7 +1134,6 @@ class EventSeriesServiceImplTest {
         
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
         when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
-        when(hangoutRepository.findHangoutsBySeriesId(seriesId)).thenReturn(hangouts);
         when(hangoutService.getHangoutDetail(hangout1Id, userId)).thenReturn(hangoutDetail1);
         when(hangoutService.getHangoutDetail(hangout2Id, userId)).thenReturn(hangoutDetail2);
         
@@ -1158,7 +1158,6 @@ class EventSeriesServiceImplTest {
         // Verify all dependencies were called correctly
         verify(userRepository).findById(userId);
         verify(eventSeriesRepository).findById(seriesId);
-        verify(hangoutRepository).findHangoutsBySeriesId(seriesId);
         verify(hangoutService).getHangoutDetail(hangout1Id, userId);
         verify(hangoutService).getHangoutDetail(hangout2Id, userId);
     }
@@ -1179,6 +1178,7 @@ class EventSeriesServiceImplTest {
         EventSeries series = new EventSeries();
         series.setSeriesId(seriesId);
         series.setSeriesTitle("Test Series");
+        series.setHangoutIds(Arrays.asList(hangout1Id, hangout2Id, hangout3Id, hangout4Id));
         
         // Create hangouts with mixed timestamps: null, early, late, and null
         Hangout hangout1 = HangoutTestBuilder.aHangout()
@@ -1237,7 +1237,6 @@ class EventSeriesServiceImplTest {
         
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
         when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
-        when(hangoutRepository.findHangoutsBySeriesId(seriesId)).thenReturn(hangouts);
         when(hangoutService.getHangoutDetail(hangout1Id, userId)).thenReturn(hangoutDetail1);
         when(hangoutService.getHangoutDetail(hangout2Id, userId)).thenReturn(hangoutDetail2);
         when(hangoutService.getHangoutDetail(hangout3Id, userId)).thenReturn(hangoutDetail3);
@@ -1318,10 +1317,10 @@ class EventSeriesServiceImplTest {
         series.setSeriesId(seriesId);
         series.setSeriesTitle("Empty Series");
         series.setSeriesDescription("Series with no hangouts");
+        series.setHangoutIds(Collections.emptyList());
         
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
         when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
-        when(hangoutRepository.findHangoutsBySeriesId(seriesId)).thenReturn(Collections.emptyList());
         
         // When
         EventSeriesDetailDTO result = eventSeriesService.getSeriesDetail(seriesId, userId);
@@ -1353,6 +1352,7 @@ class EventSeriesServiceImplTest {
         EventSeries series = new EventSeries();
         series.setSeriesId(seriesId);
         series.setSeriesTitle("Partial Failure Series");
+        series.setHangoutIds(Arrays.asList(hangout1Id, hangout2Id, hangout3Id));
         
         Hangout hangout1 = HangoutTestBuilder.aHangout()
             .withId(hangout1Id)
@@ -1391,7 +1391,6 @@ class EventSeriesServiceImplTest {
         
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
         when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
-        when(hangoutRepository.findHangoutsBySeriesId(seriesId)).thenReturn(hangouts);
         when(hangoutService.getHangoutDetail(hangout1Id, userId)).thenReturn(hangoutDetail1);
         when(hangoutService.getHangoutDetail(hangout2Id, userId))
             .thenThrow(new RuntimeException("Failed to get hangout details"));
@@ -1431,14 +1430,13 @@ class EventSeriesServiceImplTest {
         EventSeries series = new EventSeries();
         series.setSeriesId(seriesId);
         series.setSeriesTitle("Order Test Series");
+        series.setHangoutIds(Arrays.asList(hangoutId));
         
         Hangout hangout = HangoutTestBuilder.aHangout()
             .withId(hangoutId)
             .withTitle("Test Hangout")
             .withSeriesId(seriesId)
             .build();
-        
-        List<Hangout> hangouts = Arrays.asList(hangout);
         
         HangoutDetailDTO hangoutDetail = new HangoutDetailDTO(
             hangout, Collections.emptyList(), Collections.emptyList(), 
@@ -1448,17 +1446,15 @@ class EventSeriesServiceImplTest {
         
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
         when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
-        when(hangoutRepository.findHangoutsBySeriesId(seriesId)).thenReturn(hangouts);
         when(hangoutService.getHangoutDetail(hangoutId, userId)).thenReturn(hangoutDetail);
         
         // When
         eventSeriesService.getSeriesDetail(seriesId, userId);
         
-        // Then - verify order of calls using InOrder
-        var inOrder = inOrder(userRepository, eventSeriesRepository, hangoutRepository, hangoutService);
+        // Then - verify order of calls using InOrder (no longer calls hangoutRepository.findHangoutsBySeriesId)
+        var inOrder = inOrder(userRepository, eventSeriesRepository, hangoutService);
         inOrder.verify(userRepository).findById(userId);
         inOrder.verify(eventSeriesRepository).findById(seriesId);
-        inOrder.verify(hangoutRepository).findHangoutsBySeriesId(seriesId);
         inOrder.verify(hangoutService).getHangoutDetail(hangoutId, userId);
     }
 
@@ -1476,6 +1472,7 @@ class EventSeriesServiceImplTest {
         EventSeries series = new EventSeries();
         series.setSeriesId(seriesId);
         series.setSeriesTitle("Parameter Test Series");
+        series.setHangoutIds(Arrays.asList(hangout1Id, hangout2Id));
         
         Hangout hangout1 = HangoutTestBuilder.aHangout()
             .withId(hangout1Id)
@@ -1505,7 +1502,6 @@ class EventSeriesServiceImplTest {
         
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
         when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
-        when(hangoutRepository.findHangoutsBySeriesId(seriesId)).thenReturn(hangouts);
         when(hangoutService.getHangoutDetail(hangout1Id, userId)).thenReturn(hangoutDetail1);
         when(hangoutService.getHangoutDetail(hangout2Id, userId)).thenReturn(hangoutDetail2);
         
