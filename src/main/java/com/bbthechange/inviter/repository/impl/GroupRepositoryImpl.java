@@ -266,6 +266,21 @@ public class GroupRepositoryImpl implements GroupRepository {
     }
     
     @Override
+    public void saveSeriesPointer(SeriesPointer pointer) {
+        performanceTracker.trackQuery("saveSeriesPointer", "InviterTable", () -> {
+            try {
+                inviterTable.putItem(pointer);
+                logger.debug("Saved series pointer {} for group {}", pointer.getSeriesId(), pointer.getGroupId());
+                return null;
+                
+            } catch (DynamoDbException e) {
+                logger.error("Failed to save series pointer {} for group {}", pointer.getSeriesId(), pointer.getGroupId(), e);
+                throw new RepositoryException("Failed to save series pointer", e);
+            }
+        });
+    }
+    
+    @Override
     public void updateHangoutPointer(String groupId, String hangoutId, Map<String, AttributeValue> updates) {
         performanceTracker.trackQuery("updateHangoutPointer", "InviterTable", () -> {
             try {

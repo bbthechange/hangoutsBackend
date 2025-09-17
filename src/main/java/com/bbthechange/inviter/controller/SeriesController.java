@@ -3,10 +3,12 @@ package com.bbthechange.inviter.controller;
 import com.bbthechange.inviter.dto.CreateSeriesRequest;
 import com.bbthechange.inviter.dto.EventSeriesDTO;
 import com.bbthechange.inviter.dto.EventSeriesDetailDTO;
+import com.bbthechange.inviter.dto.UpdateSeriesRequest;
 import com.bbthechange.inviter.model.EventSeries;
 import com.bbthechange.inviter.exception.UnauthorizedException;
 import com.bbthechange.inviter.exception.RepositoryException;
 import com.bbthechange.inviter.exception.ResourceNotFoundException;
+import com.bbthechange.inviter.exception.ValidationException;
 import com.bbthechange.inviter.service.EventSeriesService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -151,6 +153,50 @@ public class SeriesController extends BaseController {
             
         } catch (Exception e) {
             logger.error("Unexpected error when unlinking hangout", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+    
+    /**
+     * Update the properties of an existing event series.
+     * 
+     * @param seriesId The ID of the series to update
+     * @param updateRequest The update request containing new values and current version
+     * @return The updated series information
+     */
+    @PutMapping("/{seriesId}")
+    public ResponseEntity<EventSeriesDTO> updateSeries(@PathVariable String seriesId,
+                                                        @Valid @RequestBody UpdateSeriesRequest updateRequest,
+                                                        HttpServletRequest httpRequest) {
+        try {
+            String requestingUserId = extractUserId(httpRequest);
+            logger.info("Updating series {} by user {}", seriesId, requestingUserId);
+            
+            EventSeries updatedSeries = eventSeriesService.updateSeries(seriesId, updateRequest, requestingUserId);
+            
+            EventSeriesDTO seriesDTO = new EventSeriesDTO(updatedSeries);
+            
+            logger.info("Successfully updated series {}", seriesId);
+            return ResponseEntity.ok(seriesDTO);
+            
+        } catch (ResourceNotFoundException e) {
+            logger.warn("Resource not found when updating series: {}", e.getMessage());
+            return ResponseEntity.notFound().build();
+            
+        } catch (UnauthorizedException e) {
+            logger.warn("Unauthorized access when updating series: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            
+        } catch (ValidationException e) {
+            logger.warn("Validation error when updating series: {}", e.getMessage());
+            return ResponseEntity.badRequest().build();
+            
+        } catch (RepositoryException e) {
+            logger.error("Repository error when updating series", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            
+        } catch (Exception e) {
+            logger.error("Unexpected error when updating series", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }

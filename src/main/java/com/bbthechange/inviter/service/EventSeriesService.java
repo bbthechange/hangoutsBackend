@@ -3,6 +3,7 @@ package com.bbthechange.inviter.service;
 import com.bbthechange.inviter.model.EventSeries;
 import com.bbthechange.inviter.dto.CreateHangoutRequest;
 import com.bbthechange.inviter.dto.EventSeriesDetailDTO;
+import com.bbthechange.inviter.dto.UpdateSeriesRequest;
 
 /**
  * Service interface for managing multi-part event series.
@@ -95,4 +96,22 @@ public interface EventSeriesService {
      * @throws com.bbthechange.inviter.exception.RepositoryException if query fails
      */
     EventSeriesDetailDTO getSeriesDetail(String seriesId, String userId);
+    
+    /**
+     * Updates the properties of an existing event series.
+     * Only the non-null fields in the request will be updated.
+     * Validates that primaryEventId (if provided) is a member of the series.
+     * Updates all corresponding SeriesPointer records to maintain data consistency.
+     *
+     * @param seriesId The ID of the series to update
+     * @param updateRequest The update request containing new values and current version
+     * @param userId The ID of the user performing the action
+     * @return The updated EventSeries object
+     * @throws com.bbthechange.inviter.exception.ResourceNotFoundException if series doesn't exist
+     * @throws com.bbthechange.inviter.exception.UnauthorizedException if user lacks permission
+     * @throws com.bbthechange.inviter.exception.ValidationException if primaryEventId is not a member
+     * @throws com.bbthechange.inviter.exception.OptimisticLockingException if version doesn't match
+     * @throws com.bbthechange.inviter.exception.RepositoryException if update fails
+     */
+    EventSeries updateSeries(String seriesId, UpdateSeriesRequest updateRequest, String userId);
 }

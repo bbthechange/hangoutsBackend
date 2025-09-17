@@ -48,6 +48,9 @@ public interface GroupRepository {
     void updateHangoutPointer(String groupId, String hangoutId, Map<String, AttributeValue> updates);
     void deleteHangoutPointer(String groupId, String hangoutId);
     
+    // Series pointer operations (simple CRUD only - business logic in service layer)
+    void saveSeriesPointer(SeriesPointer pointer);
+    
     /**
      * Get all hangouts for a group for feed display.
      * Returns denormalized hangout data for efficient feed rendering.

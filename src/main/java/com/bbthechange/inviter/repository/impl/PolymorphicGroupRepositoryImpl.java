@@ -5,6 +5,7 @@ import com.bbthechange.inviter.model.BaseItem;
 import com.bbthechange.inviter.model.Group;
 import com.bbthechange.inviter.model.GroupMembership;
 import com.bbthechange.inviter.model.HangoutPointer;
+import com.bbthechange.inviter.model.SeriesPointer;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.util.InviterKeyFactory;
 import com.bbthechange.inviter.util.QueryPerformanceTracker;
@@ -36,6 +37,7 @@ public class PolymorphicGroupRepositoryImpl implements GroupRepository {
     private final TableSchema<Group> groupSchema;
     private final TableSchema<GroupMembership> membershipSchema;
     private final TableSchema<HangoutPointer> hangoutSchema;
+    private final TableSchema<SeriesPointer> seriesSchema;
     private final QueryPerformanceTracker queryTracker;
     
     @Autowired
@@ -45,6 +47,7 @@ public class PolymorphicGroupRepositoryImpl implements GroupRepository {
         this.groupSchema = TableSchema.fromBean(Group.class);
         this.membershipSchema = TableSchema.fromBean(GroupMembership.class);
         this.hangoutSchema = TableSchema.fromBean(HangoutPointer.class);
+        this.seriesSchema = TableSchema.fromBean(SeriesPointer.class);
     }
     
     /**
@@ -397,6 +400,29 @@ public class PolymorphicGroupRepositoryImpl implements GroupRepository {
                 logger.error("Failed to save hangout pointer {} for group {}", 
                     pointer.getHangoutId(), pointer.getGroupId(), e);
                 throw new RepositoryException("Failed to save hangout pointer", e);
+            }
+            return null;
+        });
+    }
+    
+    @Override
+    public void saveSeriesPointer(SeriesPointer pointer) {
+        queryTracker.trackQuery("PutItem", TABLE_NAME, () -> {
+            try {
+                pointer.touch();
+                Map<String, AttributeValue> itemMap = seriesSchema.itemToMap(pointer, true);
+                
+                PutItemRequest request = PutItemRequest.builder()
+                    .tableName(TABLE_NAME)
+                    .item(itemMap)
+                    .build();
+                
+                dynamoDbClient.putItem(request);
+                
+            } catch (DynamoDbException e) {
+                logger.error("Failed to save series pointer {} for group {}", 
+                    pointer.getSeriesId(), pointer.getGroupId(), e);
+                throw new RepositoryException("Failed to save series pointer", e);
             }
             return null;
         });
