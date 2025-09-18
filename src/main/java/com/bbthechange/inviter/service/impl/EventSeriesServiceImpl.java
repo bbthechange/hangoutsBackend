@@ -29,6 +29,7 @@ import org.slf4j.LoggerFactory;
 import java.util.UUID;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Optional;
 
 /**
@@ -136,6 +137,13 @@ public class EventSeriesServiceImpl implements EventSeriesService {
         
         // Add new hangout ID to series
         newSeries.getHangoutIds().add(newHangout.getHangoutId());
+        
+        // Calculate endTimestamp for the series (latest of all start/end timestamps)
+        List<Hangout> allHangouts = Arrays.asList(existingHangout, newHangout);
+        Long latestTimestamp = calculateLatestTimestamp(allHangouts);
+        if (latestTimestamp != null) {
+            newSeries.setEndTimestamp(latestTimestamp);
+        }
         
         // Create new HangoutPointers for each group (one per associated group)
         List<HangoutPointer> newPointers = new ArrayList<>();
@@ -282,6 +290,18 @@ public class EventSeriesServiceImpl implements EventSeriesService {
         // We need to update all SeriesPointers to include the new hangout ID
         // Since SeriesPointers are denormalized, we create updated versions with the new hangout added
         series.getHangoutIds().add(newHangout.getHangoutId()); // Add to series first so SeriesPointer gets updated list
+        
+        // Update series endTimestamp based on all hangouts in the series
+        List<Hangout> allHangouts = new ArrayList<>();
+        for (String hangoutId : series.getHangoutIds()) {
+            hangoutRepository.findHangoutById(hangoutId).ifPresent(allHangouts::add);
+        }
+        allHangouts.add(newHangout);
+        Long latestTimestamp = calculateLatestTimestamp(allHangouts);
+        if (latestTimestamp != null) {
+            series.setEndTimestamp(latestTimestamp);
+        }
+        
         List<SeriesPointer> updatedSeriesPointers = new ArrayList<>();
         for (String groupId : newHangout.getAssociatedGroups()) {
             SeriesPointer updatedPointer = SeriesPointer.fromEventSeries(series, groupId);
@@ -730,5 +750,37 @@ public class EventSeriesServiceImpl implements EventSeriesService {
             logger.error("Failed to update series {}", seriesId, e);
             throw new RepositoryException("Failed to update series", e);
         }
+    }
+    
+    /**
+     * Calculate the latest timestamp from a list of hangouts.
+     * This considers both startTimestamp and endTimestamp.
+     * If a hangout has no endTimestamp, we use its startTimestamp.
+     * 
+     * @param hangouts List of hangouts to check
+     * @return The latest timestamp found, or null if no timestamps exist
+     */
+    private Long calculateLatestTimestamp(List<Hangout> hangouts) {
+        Long latestTimestamp = null;
+        
+        for (Hangout hangout : hangouts) {
+            Long hangoutLatest = null;
+            
+            // Use endTimestamp if available, otherwise use startTimestamp
+            if (hangout.getEndTimestamp() != null) {
+                hangoutLatest = hangout.getEndTimestamp();
+            } else if (hangout.getStartTimestamp() != null) {
+                hangoutLatest = hangout.getStartTimestamp();
+            }
+            
+            // Update latest if this hangout has a later timestamp
+            if (hangoutLatest != null) {
+                if (latestTimestamp == null || hangoutLatest > latestTimestamp) {
+                    latestTimestamp = hangoutLatest;
+                }
+            }
+        }
+        
+        return latestTimestamp;
     }
 }

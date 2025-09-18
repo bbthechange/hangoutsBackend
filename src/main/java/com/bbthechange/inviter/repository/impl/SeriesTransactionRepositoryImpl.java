@@ -218,26 +218,16 @@ public class SeriesTransactionRepositoryImpl implements SeriesTransactionReposit
                     transactItems.add(createNewPointerItem);
                 }
                 
-                // 4. Update ALL existing SeriesPointers to include the new hangout (UPDATE operations)
+                // 4. Replace ALL existing SeriesPointers with updated versions that include the new hangout (PUT operations)
                 for (SeriesPointer seriesPointerToUpdate : seriesPointersToUpdate) {
-                    TransactWriteItem updateSeriesPointerItem = TransactWriteItem.builder()
-                        .update(Update.builder()
+                    // Use PUT to completely replace the SeriesPointer with the updated parts field
+                    TransactWriteItem putSeriesPointerItem = TransactWriteItem.builder()
+                        .put(Put.builder()
                             .tableName(TABLE_NAME)
-                            .key(Map.of(
-                                "pk", AttributeValue.builder().s(seriesPointerToUpdate.getPk()).build(),
-                                "sk", AttributeValue.builder().s(seriesPointerToUpdate.getSk()).build()
-                            ))
-                            .updateExpression("SET hangoutIds = list_append(hangoutIds, :newId), updatedAt = :updated, version = version + :inc")
-                            .expressionAttributeValues(Map.of(
-                                ":newId", AttributeValue.builder().l(
-                                    AttributeValue.builder().s(newHangoutToCreate.getHangoutId()).build()
-                                ).build(),
-                                ":updated", AttributeValue.builder().n(String.valueOf(System.currentTimeMillis())).build(),
-                                ":inc", AttributeValue.builder().n("1").build()
-                            ))
+                            .item(seriesPointerSchema.itemToMap(seriesPointerToUpdate, true))
                             .build())
                         .build();
-                    transactItems.add(updateSeriesPointerItem);
+                    transactItems.add(putSeriesPointerItem);
                 }
                 
                 // Execute the transaction
