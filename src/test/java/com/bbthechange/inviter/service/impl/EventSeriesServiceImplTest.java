@@ -315,13 +315,20 @@ class EventSeriesServiceImplTest {
         User user = new User();
         user.setId(UUID.fromString(userId));
         
-        // Mock the hangout creation in the service implementation directly
-        // instead of through hangoutService since the service creates it manually
+        // Mock the hangout creation through hangoutService
+        Hangout newHangout = new Hangout();
+        newHangout.setHangoutId(UUID.randomUUID().toString());
+        newHangout.setTitle("New Event");
+        newHangout.setAssociatedGroups(Arrays.asList(group1Id, group2Id));
+        // Set timestamp to test timestamp conversion
+        newHangout.setStartTimestamp(System.currentTimeMillis() / 1000);
         
         when(eventSeriesRepository.findById(seriesId))
             .thenReturn(Optional.of(existingSeries));
         when(userRepository.findById(userId))
             .thenReturn(Optional.of(user));
+        when(hangoutService.hangoutFromHangoutRequest(newMemberRequest, userId))
+            .thenReturn(newHangout);
         
         // When
         EventSeries result = eventSeriesService.createHangoutInExistingSeries(

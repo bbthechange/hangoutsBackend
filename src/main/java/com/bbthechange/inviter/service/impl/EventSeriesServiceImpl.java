@@ -19,6 +19,7 @@ import com.bbthechange.inviter.exception.UnauthorizedException;
 import com.bbthechange.inviter.exception.RepositoryException;
 import com.bbthechange.inviter.exception.ValidationException;
 import com.bbthechange.inviter.service.HangoutService;
+import com.bbthechange.inviter.service.FuzzyTimeService;
 import com.bbthechange.inviter.util.InviterKeyFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,6 +46,7 @@ public class EventSeriesServiceImpl implements EventSeriesService {
     private final UserRepository userRepository;
     private final HangoutService hangoutService;
     private final GroupRepository groupRepository;
+    private final FuzzyTimeService fuzzyTimeService;
     
     @Autowired
     public EventSeriesServiceImpl(
@@ -53,13 +55,15 @@ public class EventSeriesServiceImpl implements EventSeriesService {
             SeriesTransactionRepository seriesTransactionRepository,
             UserRepository userRepository,
             HangoutService hangoutService,
-            GroupRepository groupRepository) {
+            GroupRepository groupRepository,
+            FuzzyTimeService fuzzyTimeService) {
         this.hangoutRepository = hangoutRepository;
         this.eventSeriesRepository = eventSeriesRepository;
         this.seriesTransactionRepository = seriesTransactionRepository;
         this.userRepository = userRepository;
         this.hangoutService = hangoutService;
         this.groupRepository = groupRepository;
+        this.fuzzyTimeService = fuzzyTimeService;
     }
     
     @Override
@@ -241,33 +245,20 @@ public class EventSeriesServiceImpl implements EventSeriesService {
         }
         
         // 2. Data Preparation
-        // Create new Hangout
-        String newHangoutId = UUID.randomUUID().toString();
-        Hangout newHangout = new Hangout();
-        newHangout.setHangoutId(newHangoutId);
-        newHangout.setTitle(newMemberRequest.getTitle());
-        newHangout.setDescription(newMemberRequest.getDescription());
-        newHangout.setTimeInput(newMemberRequest.getTimeInfo());
-        newHangout.setLocation(newMemberRequest.getLocation());
-        newHangout.setVisibility(newMemberRequest.getVisibility());
-        newHangout.setMainImagePath(newMemberRequest.getMainImagePath());
-        newHangout.setAssociatedGroups(newMemberRequest.getAssociatedGroups());
-        newHangout.setCarpoolEnabled(newMemberRequest.isCarpoolEnabled());
+        // Create new Hangout using HangoutService (includes timestamp conversion)
+        Hangout newHangout = hangoutService.hangoutFromHangoutRequest(newMemberRequest, userId);
         newHangout.setSeriesId(seriesId);
         
         // Set the proper DynamoDB keys
-        newHangout.setPk(InviterKeyFactory.getEventPk(newHangoutId));
+        newHangout.setPk(InviterKeyFactory.getEventPk(newHangout.getHangoutId()));
         newHangout.setSk(InviterKeyFactory.getMetadataSk());
-        
-        // Timestamps should be set by time processing logic that converts TimeInfo to timestamps
-        // For now, we leave them null - they should be set by a separate time processing service
         
         // Create new HangoutPointers for each group (one per associated group)
         List<HangoutPointer> newPointers = new ArrayList<>();
         for (String groupId : newHangout.getAssociatedGroups()) {
             HangoutPointer newPointer = new HangoutPointer(
                 groupId,
-                newHangoutId,
+                newHangout.getHangoutId(),
                 newHangout.getTitle()
             );
             newPointer.setSeriesId(seriesId);
@@ -290,7 +281,7 @@ public class EventSeriesServiceImpl implements EventSeriesService {
         // Create updated SeriesPointers for all groups
         // We need to update all SeriesPointers to include the new hangout ID
         // Since SeriesPointers are denormalized, we create updated versions with the new hangout added
-        series.getHangoutIds().add(newHangoutId); // Add to series first so SeriesPointer gets updated list
+        series.getHangoutIds().add(newHangout.getHangoutId()); // Add to series first so SeriesPointer gets updated list
         List<SeriesPointer> updatedSeriesPointers = new ArrayList<>();
         for (String groupId : newHangout.getAssociatedGroups()) {
             SeriesPointer updatedPointer = SeriesPointer.fromEventSeries(series, groupId);
@@ -300,7 +291,7 @@ public class EventSeriesServiceImpl implements EventSeriesService {
             
             // Add all existing hangouts in the series for this group
             for (String hangoutId : series.getHangoutIds()) {
-                if (!hangoutId.equals(newHangoutId)) { // Skip the new one, we'll add it separately
+                if (!hangoutId.equals(newHangout.getHangoutId())) { // Skip the new one, we'll add it separately
                     Optional<Hangout> existingHangoutOpt = hangoutRepository.findHangoutById(hangoutId);
                     if (existingHangoutOpt.isPresent()) {
                         List<HangoutPointer> existingPointers = hangoutRepository.findPointersForHangout(existingHangoutOpt.get());
@@ -334,7 +325,7 @@ public class EventSeriesServiceImpl implements EventSeriesService {
                 updatedSeriesPointers
             );
             
-            logger.info("Successfully added hangout {} to series {}", newHangoutId, seriesId);
+            logger.info("Successfully added hangout {} to series {}", newHangout.getHangoutId(), seriesId);
             
             // 4. Return Value
             return series;
