@@ -246,4 +246,41 @@ public class SeriesController extends BaseController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
+    
+    /**
+     * Delete an entire event series and all of its constituent hangouts.
+     * This is a cascading delete operation that removes all associated records atomically.
+     * 
+     * @param seriesId The ID of the series to delete
+     * @return Success response with no content
+     */
+    @DeleteMapping("/{seriesId}")
+    public ResponseEntity<Void> deleteEntireSeries(@PathVariable String seriesId,
+                                                    HttpServletRequest httpRequest) {
+        try {
+            String requestingUserId = extractUserId(httpRequest);
+            logger.info("Deleting entire series {} by user {}", seriesId, requestingUserId);
+            
+            eventSeriesService.deleteEntireSeries(seriesId, requestingUserId);
+            
+            logger.info("Successfully deleted entire series {}", seriesId);
+            return ResponseEntity.noContent().build();
+            
+        } catch (ResourceNotFoundException e) {
+            logger.warn("Resource not found when deleting series: {}", e.getMessage());
+            return ResponseEntity.notFound().build();
+            
+        } catch (UnauthorizedException e) {
+            logger.warn("Unauthorized access when deleting series: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            
+        } catch (RepositoryException e) {
+            logger.error("Repository error when deleting series", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            
+        } catch (Exception e) {
+            logger.error("Unexpected error when deleting series", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
 }

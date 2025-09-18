@@ -1522,4 +1522,412 @@ class EventSeriesServiceImplTest {
         // Verify no other user IDs were passed
         verify(hangoutService, times(2)).getHangoutDetail(anyString(), eq(userId));
     }
+
+    // ============================================================================
+    // DELETE ENTIRE SERIES TESTS - Test Plan 1
+    // ============================================================================
+
+    @Test
+    void deleteEntireSeries_WithValidData_DeletesSeriesWithAllHangouts() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        String hangout1Id = UUID.randomUUID().toString();
+        String hangout2Id = UUID.randomUUID().toString();
+        String hangout3Id = UUID.randomUUID().toString();
+        String groupId = UUID.randomUUID().toString();
+        
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+        
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setGroupId(groupId);
+        series.setHangoutIds(Arrays.asList(hangout1Id, hangout2Id, hangout3Id));
+        
+        Hangout hangout1 = HangoutTestBuilder.aHangout()
+            .withId(hangout1Id)
+            .withSeriesId(seriesId)
+            .build();
+            
+        Hangout hangout2 = HangoutTestBuilder.aHangout()
+            .withId(hangout2Id)
+            .withSeriesId(seriesId)
+            .build();
+            
+        Hangout hangout3 = HangoutTestBuilder.aHangout()
+            .withId(hangout3Id)
+            .withSeriesId(seriesId)
+            .build();
+        
+        List<HangoutPointer> hangout1Pointers = Arrays.asList(
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(groupId)
+                .forHangout(hangout1Id)
+                .withSeriesId(seriesId)
+                .build(),
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(UUID.randomUUID().toString())
+                .forHangout(hangout1Id)
+                .withSeriesId(seriesId)
+                .build()
+        );
+        
+        List<HangoutPointer> hangout2Pointers = Arrays.asList(
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(groupId)
+                .forHangout(hangout2Id)
+                .withSeriesId(seriesId)
+                .build(),
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(UUID.randomUUID().toString())
+                .forHangout(hangout2Id)
+                .withSeriesId(seriesId)
+                .build()
+        );
+        
+        List<HangoutPointer> hangout3Pointers = Arrays.asList(
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(groupId)
+                .forHangout(hangout3Id)
+                .withSeriesId(seriesId)
+                .build()
+        );
+        
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(hangoutRepository.findHangoutById(hangout1Id)).thenReturn(Optional.of(hangout1));
+        when(hangoutRepository.findHangoutById(hangout2Id)).thenReturn(Optional.of(hangout2));
+        when(hangoutRepository.findHangoutById(hangout3Id)).thenReturn(Optional.of(hangout3));
+        when(hangoutRepository.findPointersForHangout(hangout1)).thenReturn(hangout1Pointers);
+        when(hangoutRepository.findPointersForHangout(hangout2)).thenReturn(hangout2Pointers);
+        when(hangoutRepository.findPointersForHangout(hangout3)).thenReturn(hangout3Pointers);
+        
+        // When
+        eventSeriesService.deleteEntireSeries(seriesId, userId);
+        
+        // Then
+        // Verify transaction repository is called with correct parameters
+        ArgumentCaptor<List<Hangout>> hangoutsCaptor = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<HangoutPointer>> pointersCaptor = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<SeriesPointer>> seriesPointersCaptor = ArgumentCaptor.forClass(List.class);
+        
+        verify(seriesTransactionRepository).deleteEntireSeriesWithAllHangouts(
+            eq(series),
+            hangoutsCaptor.capture(),
+            pointersCaptor.capture(),
+            seriesPointersCaptor.capture()
+        );
+        
+        // Verify all hangouts were collected
+        List<Hangout> capturedHangouts = hangoutsCaptor.getValue();
+        assertThat(capturedHangouts).hasSize(3);
+        assertThat(capturedHangouts).extracting(Hangout::getHangoutId)
+            .containsExactlyInAnyOrder(hangout1Id, hangout2Id, hangout3Id);
+        
+        // Verify all pointers were collected
+        List<HangoutPointer> capturedPointers = pointersCaptor.getValue();
+        assertThat(capturedPointers).hasSize(5); // 2 + 2 + 1 pointers
+        
+        // Verify series pointer was created
+        List<SeriesPointer> capturedSeriesPointers = seriesPointersCaptor.getValue();
+        assertThat(capturedSeriesPointers).hasSize(1);
+        assertThat(capturedSeriesPointers.get(0).getSeriesId()).isEqualTo(seriesId);
+        assertThat(capturedSeriesPointers.get(0).getGroupId()).isEqualTo(groupId);
+        
+        // Verify repository method calls
+        verify(userRepository).findById(userId);
+        verify(eventSeriesRepository).findById(seriesId);
+        verify(hangoutRepository).findHangoutById(hangout1Id);
+        verify(hangoutRepository).findHangoutById(hangout2Id);
+        verify(hangoutRepository).findHangoutById(hangout3Id);
+        verify(hangoutRepository).findPointersForHangout(hangout1);
+        verify(hangoutRepository).findPointersForHangout(hangout2);
+        verify(hangoutRepository).findPointersForHangout(hangout3);
+    }
+
+    @Test
+    void deleteEntireSeries_WithUserNotFound_ThrowsUnauthorizedException() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        
+        when(userRepository.findById(userId)).thenReturn(Optional.empty());
+        
+        // When & Then
+        assertThatThrownBy(() -> eventSeriesService.deleteEntireSeries(seriesId, userId))
+            .isInstanceOf(UnauthorizedException.class)
+            .hasMessageContaining("User " + userId + " not found");
+        
+        // Verify no further repository calls were made
+        verify(userRepository).findById(userId);
+        verify(eventSeriesRepository, never()).findById(any());
+        verify(hangoutRepository, never()).findHangoutById(any());
+        verify(seriesTransactionRepository, never()).deleteEntireSeriesWithAllHangouts(any(), any(), any(), any());
+    }
+
+    @Test
+    void deleteEntireSeries_WithSeriesNotFound_ThrowsResourceNotFoundException() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+        
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.empty());
+        
+        // When & Then
+        assertThatThrownBy(() -> eventSeriesService.deleteEntireSeries(seriesId, userId))
+            .isInstanceOf(ResourceNotFoundException.class)
+            .hasMessageContaining("EventSeries not found: " + seriesId);
+        
+        // Verify authorization occurred first, but no hangout operations
+        verify(userRepository).findById(userId);
+        verify(eventSeriesRepository).findById(seriesId);
+        verify(hangoutRepository, never()).findHangoutById(any());
+        verify(seriesTransactionRepository, never()).deleteEntireSeriesWithAllHangouts(any(), any(), any(), any());
+    }
+
+    @Test
+    void deleteEntireSeries_WithEmptySeries_DeletesSeriesOnly() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        String groupId = UUID.randomUUID().toString();
+        
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+        
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setGroupId(groupId);
+        series.setHangoutIds(Collections.emptyList());
+        
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        
+        // When
+        eventSeriesService.deleteEntireSeries(seriesId, userId);
+        
+        // Then
+        ArgumentCaptor<List<Hangout>> hangoutsCaptor = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<HangoutPointer>> pointersCaptor = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<SeriesPointer>> seriesPointersCaptor = ArgumentCaptor.forClass(List.class);
+        
+        verify(seriesTransactionRepository).deleteEntireSeriesWithAllHangouts(
+            eq(series),
+            hangoutsCaptor.capture(),
+            pointersCaptor.capture(),
+            seriesPointersCaptor.capture()
+        );
+        
+        // Verify empty lists passed for hangouts and pointers
+        assertThat(hangoutsCaptor.getValue()).isEmpty();
+        assertThat(pointersCaptor.getValue()).isEmpty();
+        
+        // Verify series pointer still created
+        List<SeriesPointer> capturedSeriesPointers = seriesPointersCaptor.getValue();
+        assertThat(capturedSeriesPointers).hasSize(1);
+        assertThat(capturedSeriesPointers.get(0).getSeriesId()).isEqualTo(seriesId);
+        assertThat(capturedSeriesPointers.get(0).getGroupId()).isEqualTo(groupId);
+        
+        // Verify no hangout lookups were attempted
+        verify(hangoutRepository, never()).findHangoutById(any());
+        verify(hangoutRepository, never()).findPointersForHangout(any());
+    }
+
+    @Test
+    void deleteEntireSeries_WithMissingHangouts_IgnoresMissingAndDeletesFound() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        String hangout1Id = UUID.randomUUID().toString();
+        String hangout2Id = UUID.randomUUID().toString();
+        String hangout3Id = UUID.randomUUID().toString();
+        String groupId = UUID.randomUUID().toString();
+        
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+        
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setGroupId(groupId);
+        series.setHangoutIds(Arrays.asList(hangout1Id, hangout2Id, hangout3Id));
+        
+        // Only hangout1 and hangout3 exist, hangout2 is missing
+        Hangout hangout1 = HangoutTestBuilder.aHangout()
+            .withId(hangout1Id)
+            .withSeriesId(seriesId)
+            .build();
+            
+        Hangout hangout3 = HangoutTestBuilder.aHangout()
+            .withId(hangout3Id)
+            .withSeriesId(seriesId)
+            .build();
+        
+        List<HangoutPointer> hangout1Pointers = Arrays.asList(
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(groupId)
+                .forHangout(hangout1Id)
+                .withSeriesId(seriesId)
+                .build()
+        );
+        
+        List<HangoutPointer> hangout3Pointers = Arrays.asList(
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(groupId)
+                .forHangout(hangout3Id)
+                .withSeriesId(seriesId)
+                .build()
+        );
+        
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(hangoutRepository.findHangoutById(hangout1Id)).thenReturn(Optional.of(hangout1));
+        when(hangoutRepository.findHangoutById(hangout2Id)).thenReturn(Optional.empty()); // Missing hangout
+        when(hangoutRepository.findHangoutById(hangout3Id)).thenReturn(Optional.of(hangout3));
+        when(hangoutRepository.findPointersForHangout(hangout1)).thenReturn(hangout1Pointers);
+        when(hangoutRepository.findPointersForHangout(hangout3)).thenReturn(hangout3Pointers);
+        
+        // When
+        eventSeriesService.deleteEntireSeries(seriesId, userId);
+        
+        // Then
+        ArgumentCaptor<List<Hangout>> hangoutsCaptor = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<HangoutPointer>> pointersCaptor = ArgumentCaptor.forClass(List.class);
+        
+        verify(seriesTransactionRepository).deleteEntireSeriesWithAllHangouts(
+            eq(series),
+            hangoutsCaptor.capture(),
+            pointersCaptor.capture(),
+            any(List.class)
+        );
+        
+        // Verify only found hangouts were collected
+        List<Hangout> capturedHangouts = hangoutsCaptor.getValue();
+        assertThat(capturedHangouts).hasSize(2);
+        assertThat(capturedHangouts).extracting(Hangout::getHangoutId)
+            .containsExactlyInAnyOrder(hangout1Id, hangout3Id);
+        
+        // Verify only found pointers were collected
+        List<HangoutPointer> capturedPointers = pointersCaptor.getValue();
+        assertThat(capturedPointers).hasSize(2);
+        
+        // Verify all hangout lookups were attempted, but missing ones were handled gracefully
+        verify(hangoutRepository).findHangoutById(hangout1Id);
+        verify(hangoutRepository).findHangoutById(hangout2Id);
+        verify(hangoutRepository).findHangoutById(hangout3Id);
+        verify(hangoutRepository).findPointersForHangout(hangout1);
+        verify(hangoutRepository, never()).findPointersForHangout(argThat(h -> hangout2Id.equals(h.getHangoutId())));
+        verify(hangoutRepository).findPointersForHangout(hangout3);
+    }
+
+    @Test
+    void deleteEntireSeries_WithSeriesWithoutGroup_CreatesEmptySeriesPointersList() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        String hangoutId = UUID.randomUUID().toString();
+        
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+        
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setGroupId(null); // No group
+        series.setHangoutIds(Arrays.asList(hangoutId));
+        
+        Hangout hangout = HangoutTestBuilder.aHangout()
+            .withId(hangoutId)
+            .withSeriesId(seriesId)
+            .build();
+        
+        List<HangoutPointer> hangoutPointers = Arrays.asList(
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(UUID.randomUUID().toString())
+                .forHangout(hangoutId)
+                .withSeriesId(seriesId)
+                .build()
+        );
+        
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        when(hangoutRepository.findPointersForHangout(hangout)).thenReturn(hangoutPointers);
+        
+        // When
+        eventSeriesService.deleteEntireSeries(seriesId, userId);
+        
+        // Then
+        ArgumentCaptor<List<SeriesPointer>> seriesPointersCaptor = ArgumentCaptor.forClass(List.class);
+        
+        verify(seriesTransactionRepository).deleteEntireSeriesWithAllHangouts(
+            eq(series),
+            any(List.class),
+            any(List.class),
+            seriesPointersCaptor.capture()
+        );
+        
+        // Verify empty series pointers list when no groupId
+        List<SeriesPointer> capturedSeriesPointers = seriesPointersCaptor.getValue();
+        assertThat(capturedSeriesPointers).isEmpty();
+        
+        // Verify other operations still proceed normally
+        verify(hangoutRepository).findHangoutById(hangoutId);
+        verify(hangoutRepository).findPointersForHangout(hangout);
+    }
+
+    @Test
+    void deleteEntireSeries_WithTransactionFailure_ThrowsRepositoryException() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        String hangoutId = UUID.randomUUID().toString();
+        String groupId = UUID.randomUUID().toString();
+        
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+        
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setGroupId(groupId);
+        series.setHangoutIds(Arrays.asList(hangoutId));
+        
+        Hangout hangout = HangoutTestBuilder.aHangout()
+            .withId(hangoutId)
+            .withSeriesId(seriesId)
+            .build();
+        
+        List<HangoutPointer> hangoutPointers = Arrays.asList(
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(groupId)
+                .forHangout(hangoutId)
+                .withSeriesId(seriesId)
+                .build()
+        );
+        
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        when(hangoutRepository.findPointersForHangout(hangout)).thenReturn(hangoutPointers);
+        
+        RuntimeException originalException = new RuntimeException("Transaction failed");
+        doThrow(originalException).when(seriesTransactionRepository)
+            .deleteEntireSeriesWithAllHangouts(any(), any(), any(), any());
+        
+        // When & Then
+        assertThatThrownBy(() -> eventSeriesService.deleteEntireSeries(seriesId, userId))
+            .isInstanceOf(RepositoryException.class)
+            .hasMessageContaining("Failed to delete entire series atomically")
+            .hasCause(originalException);
+        
+        // Verify data collection occurred before transaction failure
+        verify(userRepository).findById(userId);
+        verify(eventSeriesRepository).findById(seriesId);
+        verify(hangoutRepository).findHangoutById(hangoutId);
+        verify(hangoutRepository).findPointersForHangout(hangout);
+        verify(seriesTransactionRepository).deleteEntireSeriesWithAllHangouts(any(), any(), any(), any());
+    }
 }

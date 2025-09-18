@@ -667,6 +667,94 @@ public class SeriesTransactionRepositoryImpl implements SeriesTransactionReposit
         });
     }
     
+    @Override
+    public void deleteEntireSeriesWithAllHangouts(
+            EventSeries seriesToDelete,
+            List<Hangout> hangsoutsToDelete,
+            List<HangoutPointer> pointersToDelete,
+            List<SeriesPointer> seriesPointersToDelete) {
+        
+        performanceTracker.trackQuery("deleteEntireSeriesWithAllHangouts", TABLE_NAME, () -> {
+            try {
+                List<TransactWriteItem> transactItems = new ArrayList<>();
+                
+                // 1. Delete the EventSeries record
+                TransactWriteItem deleteSeriesItem = TransactWriteItem.builder()
+                    .delete(Delete.builder()
+                        .tableName(TABLE_NAME)
+                        .key(Map.of(
+                            "pk", AttributeValue.builder().s(seriesToDelete.getPk()).build(),
+                            "sk", AttributeValue.builder().s(seriesToDelete.getSk()).build()
+                        ))
+                        .build())
+                    .build();
+                transactItems.add(deleteSeriesItem);
+                
+                // 2. Delete all Hangout records in the series
+                for (Hangout hangoutToDelete : hangsoutsToDelete) {
+                    TransactWriteItem deleteHangoutItem = TransactWriteItem.builder()
+                        .delete(Delete.builder()
+                            .tableName(TABLE_NAME)
+                            .key(Map.of(
+                                "pk", AttributeValue.builder().s(hangoutToDelete.getPk()).build(),
+                                "sk", AttributeValue.builder().s(hangoutToDelete.getSk()).build()
+                            ))
+                            .build())
+                        .build();
+                    transactItems.add(deleteHangoutItem);
+                }
+                
+                // 3. Delete all HangoutPointer records
+                for (HangoutPointer pointerToDelete : pointersToDelete) {
+                    TransactWriteItem deletePointerItem = TransactWriteItem.builder()
+                        .delete(Delete.builder()
+                            .tableName(TABLE_NAME)
+                            .key(Map.of(
+                                "pk", AttributeValue.builder().s(pointerToDelete.getPk()).build(),
+                                "sk", AttributeValue.builder().s(pointerToDelete.getSk()).build()
+                            ))
+                            .build())
+                        .build();
+                    transactItems.add(deletePointerItem);
+                }
+                
+                // 4. Delete all SeriesPointer records
+                for (SeriesPointer seriesPointerToDelete : seriesPointersToDelete) {
+                    TransactWriteItem deleteSeriesPointerItem = TransactWriteItem.builder()
+                        .delete(Delete.builder()
+                            .tableName(TABLE_NAME)
+                            .key(Map.of(
+                                "pk", AttributeValue.builder().s(seriesPointerToDelete.getPk()).build(),
+                                "sk", AttributeValue.builder().s(seriesPointerToDelete.getSk()).build()
+                            ))
+                            .build())
+                        .build();
+                    transactItems.add(deleteSeriesPointerItem);
+                }
+                
+                // Execute the transaction
+                TransactWriteItemsRequest transactRequest = TransactWriteItemsRequest.builder()
+                    .transactItems(transactItems)
+                    .build();
+                
+                dynamoDbClient.transactWriteItems(transactRequest);
+                
+                logger.info("Successfully deleted entire series {} with {} hangouts, {} hangout pointers, and {} series pointers", 
+                    seriesToDelete.getSeriesId(), hangsoutsToDelete.size(), pointersToDelete.size(), seriesPointersToDelete.size());
+                
+            } catch (TransactionCanceledException e) {
+                logger.error("Transaction cancelled while deleting entire series {}: {}", 
+                    seriesToDelete.getSeriesId(), e.cancellationReasons());
+                throw new RepositoryException("Failed to delete entire series atomically - transaction cancelled", e);
+            } catch (DynamoDbException e) {
+                logger.error("DynamoDB error while deleting entire series {}", seriesToDelete.getSeriesId(), e);
+                throw new RepositoryException("Failed to delete entire series due to DynamoDB error", e);
+            }
+            
+            return null;
+        });
+    }
+    
     // Helper method to convert List<String> to AttributeValue list format
     private AttributeValue convertStringListToAttributeValueList(List<String> stringList) {
         if (stringList == null || stringList.isEmpty()) {

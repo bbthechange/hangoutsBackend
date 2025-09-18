@@ -114,4 +114,21 @@ public interface EventSeriesService {
      * @throws com.bbthechange.inviter.exception.RepositoryException if update fails
      */
     EventSeries updateSeries(String seriesId, UpdateSeriesRequest updateRequest, String userId);
+    
+    /**
+     * Deletes an entire event series and all of its constituent hangouts.
+     * This is a cascading delete operation that removes all associated records atomically:
+     * - The EventSeries record
+     * - All Hangout records that are part of the series
+     * - All HangoutPointer records for those hangouts
+     * - All SeriesPointer records for the series
+     * This operation is atomic - either all changes succeed or none are applied.
+     *
+     * @param seriesId The ID of the series to delete
+     * @param userId The ID of the user performing the action
+     * @throws com.bbthechange.inviter.exception.ResourceNotFoundException if series doesn't exist
+     * @throws com.bbthechange.inviter.exception.UnauthorizedException if user lacks permission
+     * @throws com.bbthechange.inviter.exception.RepositoryException if transaction fails
+     */
+    void deleteEntireSeries(String seriesId, String userId);
 }

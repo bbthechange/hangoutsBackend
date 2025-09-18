@@ -752,6 +752,71 @@ public class EventSeriesServiceImpl implements EventSeriesService {
         }
     }
     
+    @Override
+    public void deleteEntireSeries(String seriesId, String userId) {
+        logger.info("Deleting entire series {} by user {}", seriesId, userId);
+        
+        // 1. Validation and Authorization
+        // Verify user exists
+        if (userRepository.findById(userId).isEmpty()) {
+            throw new UnauthorizedException("User " + userId + " not found");
+        }
+        
+        // Fetch the EventSeries
+        Optional<EventSeries> seriesOpt = eventSeriesRepository.findById(seriesId);
+        if (seriesOpt.isEmpty()) {
+            throw new ResourceNotFoundException("EventSeries not found: " + seriesId);
+        }
+        
+        EventSeries series = seriesOpt.get();
+        
+        // TODO: Implement proper authorization logic based on group membership
+        // For now, we'll allow access if the user exists
+        
+        // 2. Data Collection - Gather all records that need to be deleted
+        List<Hangout> hangoutsToDelete = new ArrayList<>();
+        List<HangoutPointer> pointersToDelete = new ArrayList<>();
+        
+        // Collect all hangouts in the series
+        for (String hangoutId : series.getHangoutIds()) {
+            Optional<Hangout> hangoutOpt = hangoutRepository.findHangoutById(hangoutId);
+            if (hangoutOpt.isPresent()) {
+                Hangout hangout = hangoutOpt.get();
+                hangoutsToDelete.add(hangout);
+                
+                // Collect all pointers for this hangout
+                List<HangoutPointer> hangoutPointers = hangoutRepository.findPointersForHangout(hangout);
+                pointersToDelete.addAll(hangoutPointers);
+            }
+        }
+        
+        // Create the single SeriesPointer that needs to be deleted
+        // Since each series only has one group associated, there's only one SeriesPointer
+        List<SeriesPointer> seriesPointersToDelete = new ArrayList<>();
+        String primaryGroupId = series.getGroupId();
+        if (primaryGroupId != null) {
+            SeriesPointer seriesPointer = SeriesPointer.fromEventSeries(series, primaryGroupId);
+            seriesPointersToDelete.add(seriesPointer);
+        }
+        
+        // 3. Persistence - Execute the atomic deletion
+        try {
+            seriesTransactionRepository.deleteEntireSeriesWithAllHangouts(
+                series,
+                hangoutsToDelete,
+                pointersToDelete,
+                seriesPointersToDelete
+            );
+            
+            logger.info("Successfully deleted entire series {} with {} hangouts", 
+                seriesId, hangoutsToDelete.size());
+            
+        } catch (Exception e) {
+            logger.error("Failed to delete entire series {}", seriesId, e);
+            throw new RepositoryException("Failed to delete entire series atomically", e);
+        }
+    }
+    
     /**
      * Calculate the latest timestamp from a list of hangouts.
      * This considers both startTimestamp and endTimestamp.

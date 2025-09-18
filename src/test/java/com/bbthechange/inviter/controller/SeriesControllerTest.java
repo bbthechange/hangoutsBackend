@@ -440,4 +440,93 @@ class SeriesControllerTest {
         
         return new EventSeriesDetailDTO(series, hangoutDetails);
     }
+
+    // ============================================================================
+    // DELETE ENTIRE SERIES TESTS - Test Plan 3
+    // ============================================================================
+
+    @Test
+    void deleteEntireSeries_WithValidData_ReturnsNoContent() {
+        // Given
+        doNothing().when(eventSeriesService).deleteEntireSeries(testSeriesId, testUserId);
+
+        // When
+        ResponseEntity<Void> response = seriesController.deleteEntireSeries(testSeriesId, httpRequest);
+
+        // Then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        assertThat(response.getBody()).isNull();
+        
+        // Verify service was called with correct parameters
+        verify(eventSeriesService).deleteEntireSeries(testSeriesId, testUserId);
+        verify(httpRequest).getAttribute("userId");
+    }
+
+    @Test
+    void deleteEntireSeries_WithResourceNotFound_Returns404() {
+        // Given
+        doThrow(new ResourceNotFoundException("EventSeries not found: " + testSeriesId))
+            .when(eventSeriesService).deleteEntireSeries(testSeriesId, testUserId);
+
+        // When
+        ResponseEntity<Void> response = seriesController.deleteEntireSeries(testSeriesId, httpRequest);
+
+        // Then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(response.getBody()).isNull();
+        
+        // Verify service was called
+        verify(eventSeriesService).deleteEntireSeries(testSeriesId, testUserId);
+    }
+
+    @Test
+    void deleteEntireSeries_WithUnauthorizedAccess_Returns403() {
+        // Given
+        doThrow(new UnauthorizedException("User " + testUserId + " not found"))
+            .when(eventSeriesService).deleteEntireSeries(testSeriesId, testUserId);
+
+        // When
+        ResponseEntity<Void> response = seriesController.deleteEntireSeries(testSeriesId, httpRequest);
+
+        // Then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(response.getBody()).isNull();
+        
+        // Verify service was called
+        verify(eventSeriesService).deleteEntireSeries(testSeriesId, testUserId);
+    }
+
+    @Test
+    void deleteEntireSeries_WithRepositoryError_Returns500() {
+        // Given
+        doThrow(new RepositoryException("Failed to delete entire series atomically"))
+            .when(eventSeriesService).deleteEntireSeries(testSeriesId, testUserId);
+
+        // When
+        ResponseEntity<Void> response = seriesController.deleteEntireSeries(testSeriesId, httpRequest);
+
+        // Then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+        assertThat(response.getBody()).isNull();
+        
+        // Verify service was called
+        verify(eventSeriesService).deleteEntireSeries(testSeriesId, testUserId);
+    }
+
+    @Test
+    void deleteEntireSeries_WithUnexpectedError_Returns500() {
+        // Given
+        doThrow(new RuntimeException("Unexpected system error"))
+            .when(eventSeriesService).deleteEntireSeries(testSeriesId, testUserId);
+
+        // When
+        ResponseEntity<Void> response = seriesController.deleteEntireSeries(testSeriesId, httpRequest);
+
+        // Then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+        assertThat(response.getBody()).isNull();
+        
+        // Verify service was called
+        verify(eventSeriesService).deleteEntireSeries(testSeriesId, testUserId);
+    }
 }

@@ -162,4 +162,25 @@ public interface SeriesTransactionRepository {
         EventSeries seriesToUpdate,
         List<SeriesPointer> seriesPointersToUpdate
     );
+    
+    /**
+     * Atomically deletes an entire event series and all of its constituent hangouts.
+     * This is a cascading delete transaction that ensures all-or-nothing execution of:
+     * 1. Deleting the EventSeries record
+     * 2. Deleting all Hangout records that are part of the series
+     * 3. Deleting all HangoutPointer records for those hangouts
+     * 4. Deleting all SeriesPointer records for the series
+     *
+     * @param seriesToDelete The EventSeries to delete
+     * @param hangsoutsToDelete List of all Hangout records in the series to delete
+     * @param pointersToDelete List of all HangoutPointer records to delete
+     * @param seriesPointersToDelete List of all SeriesPointer records to delete
+     * @throws com.bbthechange.inviter.exception.RepositoryException if the transaction fails
+     */
+    void deleteEntireSeriesWithAllHangouts(
+        EventSeries seriesToDelete,
+        List<Hangout> hangsoutsToDelete,
+        List<HangoutPointer> pointersToDelete,
+        List<SeriesPointer> seriesPointersToDelete
+    );
 }

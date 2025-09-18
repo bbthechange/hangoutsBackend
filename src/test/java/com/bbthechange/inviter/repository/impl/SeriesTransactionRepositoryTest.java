@@ -539,4 +539,149 @@ class SeriesTransactionRepositoryTest {
         assertThat(items.get(1).put().item()).isNotEmpty(); // New hangout creation
         assertThat(items.get(2).put().item()).isNotEmpty(); // New pointer creation
     }
+
+    // Test helper for SeriesPointer creation
+    private SeriesPointer createTestSeriesPointer(String seriesId, String groupId) {
+        SeriesPointer pointer = new SeriesPointer();
+        pointer.setSeriesId(seriesId);
+        pointer.setGroupId(groupId);
+        pointer.setSeriesTitle("Test Series " + seriesId);
+        pointer.setPk("GROUP#" + groupId);
+        pointer.setSk("SERIES#" + seriesId);
+        pointer.setVersion(1L);
+        return pointer;
+    }
+
+    // 8. deleteEntireSeriesWithAllHangouts() Tests
+
+    @Test
+    void deleteEntireSeriesWithAllHangouts_WithValidInputs_ShouldCreateTransactionWithCorrectItems() {
+        // Given
+        EventSeries series = createTestEventSeries();
+        String hangout1Id = UUID.randomUUID().toString();
+        String hangout2Id = UUID.randomUUID().toString();
+        List<Hangout> hangoutsToDelete = Arrays.asList(
+            createTestHangout(hangout1Id),
+            createTestHangout(hangout2Id)
+        );
+        List<HangoutPointer> pointersToDelete = Arrays.asList(
+            createTestPointer(hangout1Id, series.getGroupId()),
+            createTestPointer(hangout1Id, "group-2"),
+            createTestPointer(hangout2Id, series.getGroupId()),
+            createTestPointer(hangout2Id, "group-2")
+        );
+        List<SeriesPointer> seriesPointersToDelete = Arrays.asList(
+            createTestSeriesPointer(series.getSeriesId(), series.getGroupId())
+        );
+
+        // When
+        repository.deleteEntireSeriesWithAllHangouts(series, hangoutsToDelete, pointersToDelete, seriesPointersToDelete);
+
+        // Then
+        ArgumentCaptor<TransactWriteItemsRequest> captor = 
+            ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamoDbClient).transactWriteItems(captor.capture());
+        
+        TransactWriteItemsRequest request = captor.getValue();
+        // Should have: 1 series + 2 hangouts + 4 pointers + 1 series pointer = 8 DELETE operations
+        assertThat(request.transactItems()).hasSize(8);
+        
+        // Verify all operations are DELETE operations
+        List<TransactWriteItem> items = request.transactItems();
+        assertThat(items.get(0).delete()).isNotNull(); // Delete series
+        assertThat(items.get(1).delete()).isNotNull(); // Delete hangout 1
+        assertThat(items.get(2).delete()).isNotNull(); // Delete hangout 2
+        assertThat(items.get(3).delete()).isNotNull(); // Delete pointer 1
+        assertThat(items.get(4).delete()).isNotNull(); // Delete pointer 2
+        assertThat(items.get(5).delete()).isNotNull(); // Delete pointer 3
+        assertThat(items.get(6).delete()).isNotNull(); // Delete pointer 4
+        assertThat(items.get(7).delete()).isNotNull(); // Delete series pointer
+        
+        // Verify performance tracking
+        verify(performanceTracker).trackQuery(eq("deleteEntireSeriesWithAllHangouts"), eq("InviterTable"), any());
+    }
+
+    @Test
+    void deleteEntireSeriesWithAllHangouts_WithEmptyLists_ShouldOnlyDeleteSeries() {
+        // Given
+        EventSeries series = createTestEventSeries();
+        List<Hangout> hangoutsToDelete = Collections.emptyList();
+        List<HangoutPointer> pointersToDelete = Collections.emptyList();
+        List<SeriesPointer> seriesPointersToDelete = Collections.emptyList();
+
+        // When
+        repository.deleteEntireSeriesWithAllHangouts(series, hangoutsToDelete, pointersToDelete, seriesPointersToDelete);
+
+        // Then
+        ArgumentCaptor<TransactWriteItemsRequest> captor = 
+            ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamoDbClient).transactWriteItems(captor.capture());
+        
+        TransactWriteItemsRequest request = captor.getValue();
+        // Should have exactly 1 DELETE operation for the series only
+        assertThat(request.transactItems()).hasSize(1);
+        
+        // Verify it's a DELETE operation for the series
+        TransactWriteItem item = request.transactItems().get(0);
+        assertThat(item.delete()).isNotNull();
+        assertThat(item.delete().key().get("pk").s()).isEqualTo(series.getPk());
+        assertThat(item.delete().key().get("sk").s()).isEqualTo(series.getSk());
+        
+        // Verify performance tracking
+        verify(performanceTracker).trackQuery(eq("deleteEntireSeriesWithAllHangouts"), eq("InviterTable"), any());
+    }
+
+    @Test
+    void deleteEntireSeriesWithAllHangouts_WithTransactionCancellation_ShouldThrowRepositoryException() {
+        // Given
+        EventSeries series = createTestEventSeries();
+        String hangout1Id = UUID.randomUUID().toString();
+        List<Hangout> hangoutsToDelete = Arrays.asList(createTestHangout(hangout1Id));
+        List<HangoutPointer> pointersToDelete = Arrays.asList(
+            createTestPointer(hangout1Id, series.getGroupId())
+        );
+        List<SeriesPointer> seriesPointersToDelete = Arrays.asList(
+            createTestSeriesPointer(series.getSeriesId(), series.getGroupId())
+        );
+        
+        TransactionCanceledException canceledException = TransactionCanceledException.builder()
+            .message("Transaction cancelled")
+            .build();
+        when(dynamoDbClient.transactWriteItems(any(TransactWriteItemsRequest.class)))
+            .thenThrow(canceledException);
+
+        // When & Then
+        assertThatThrownBy(() -> repository.deleteEntireSeriesWithAllHangouts(
+            series, hangoutsToDelete, pointersToDelete, seriesPointersToDelete))
+            .isInstanceOf(RepositoryException.class)
+            .hasMessageContaining("transaction cancelled")
+            .hasCause(canceledException);
+    }
+
+    @Test
+    void deleteEntireSeriesWithAllHangouts_WithDynamoDbError_ShouldThrowRepositoryException() {
+        // Given
+        EventSeries series = createTestEventSeries();
+        String hangout1Id = UUID.randomUUID().toString();
+        List<Hangout> hangoutsToDelete = Arrays.asList(createTestHangout(hangout1Id));
+        List<HangoutPointer> pointersToDelete = Arrays.asList(
+            createTestPointer(hangout1Id, series.getGroupId())
+        );
+        List<SeriesPointer> seriesPointersToDelete = Arrays.asList(
+            createTestSeriesPointer(series.getSeriesId(), series.getGroupId())
+        );
+        
+        DynamoDbException dynamoException = ProvisionedThroughputExceededException.builder()
+            .message("DynamoDB error")
+            .build();
+        when(dynamoDbClient.transactWriteItems(any(TransactWriteItemsRequest.class)))
+            .thenThrow(dynamoException);
+
+        // When & Then
+        assertThatThrownBy(() -> repository.deleteEntireSeriesWithAllHangouts(
+            series, hangoutsToDelete, pointersToDelete, seriesPointersToDelete))
+            .isInstanceOf(RepositoryException.class)
+            .hasMessageContaining("DynamoDB error")
+            .hasCause(dynamoException);
+    }
 }
