@@ -118,7 +118,7 @@ class EventSeriesServiceImplTest {
         // Then
         assertThat(result).isNotNull();
         assertThat(result.getSeriesId()).isNotNull();
-        assertThat(result.getSeriesTitle()).isEqualTo("Movie Night Series");
+        assertThat(result.getSeriesTitle()).isEqualTo("Movie Night");
         assertThat(result.getPrimaryEventId()).isEqualTo(existingHangoutId);
         assertThat(result.getHangoutIds()).hasSize(2);
         assertThat(result.getHangoutIds()).contains(existingHangoutId);

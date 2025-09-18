@@ -98,7 +98,7 @@ public class EventSeriesServiceImpl implements EventSeriesService {
         String seriesId = UUID.randomUUID().toString();
         EventSeries newSeries = new EventSeries();
         newSeries.setSeriesId(seriesId);
-        newSeries.setSeriesTitle(existingHangout.getTitle() + " Series");
+        newSeries.setSeriesTitle(existingHangout.getTitle());
         newSeries.setPrimaryEventId(existingHangoutId);
         newSeries.setHangoutIds(new ArrayList<>());
         newSeries.getHangoutIds().add(existingHangoutId);
