@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.controller;
 
 import com.bbthechange.inviter.dto.CreateSeriesRequest;
+import com.bbthechange.inviter.dto.CreateHangoutRequest;
 import com.bbthechange.inviter.dto.EventSeriesDTO;
 import com.bbthechange.inviter.dto.EventSeriesDetailDTO;
 import com.bbthechange.inviter.dto.UpdateSeriesRequest;
@@ -114,6 +115,51 @@ public class SeriesController extends BaseController {
             
         } catch (Exception e) {
             logger.error("Unexpected error when getting series detail", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+    
+    /**
+     * Add a new hangout to an existing event series.
+     * 
+     * @param seriesId The ID of the series to add to
+     * @param newMemberRequest The details for the new hangout to create
+     * @return The updated series information
+     */
+    @PostMapping("/{seriesId}/hangouts")
+    public ResponseEntity<EventSeriesDTO> addHangoutToSeries(@PathVariable String seriesId,
+                                                              @Valid @RequestBody CreateHangoutRequest newMemberRequest,
+                                                              HttpServletRequest httpRequest) {
+        try {
+            String requestingUserId = extractUserId(httpRequest);
+            logger.info("Adding hangout to series {} by user {}", seriesId, requestingUserId);
+            
+            EventSeries updatedSeries = eventSeriesService.createHangoutInExistingSeries(
+                seriesId, newMemberRequest, requestingUserId);
+            
+            EventSeriesDTO seriesDTO = new EventSeriesDTO(updatedSeries);
+            
+            logger.info("Successfully added hangout to series {}", seriesId);
+            return ResponseEntity.status(HttpStatus.CREATED).body(seriesDTO);
+            
+        } catch (ResourceNotFoundException e) {
+            logger.warn("Resource not found when adding hangout to series: {}", e.getMessage());
+            return ResponseEntity.notFound().build();
+            
+        } catch (UnauthorizedException e) {
+            logger.warn("Unauthorized access when adding hangout to series: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            
+        } catch (ValidationException e) {
+            logger.warn("Validation error when adding hangout to series: {}", e.getMessage());
+            return ResponseEntity.badRequest().build();
+            
+        } catch (RepositoryException e) {
+            logger.error("Repository error when adding hangout to series", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            
+        } catch (Exception e) {
+            logger.error("Unexpected error when adding hangout to series", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
