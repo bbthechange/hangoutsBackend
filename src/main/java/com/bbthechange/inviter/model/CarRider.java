@@ -22,6 +22,7 @@ public class CarRider extends BaseItem {
     // Default constructor for DynamoDB
     public CarRider() {
         super();
+        setItemType(InviterKeyFactory.CAR_RIDER_PREFIX);
     }
 
     /**
@@ -29,6 +30,7 @@ public class CarRider extends BaseItem {
      */
     public CarRider(String eventId, String driverId, String riderId, String riderName) {
         super();
+        setItemType(InviterKeyFactory.CAR_RIDER_PREFIX);
         this.eventId = eventId;
         this.driverId = driverId;
         this.riderId = riderId;

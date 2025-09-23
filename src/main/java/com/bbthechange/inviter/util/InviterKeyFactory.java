@@ -22,6 +22,7 @@ public final class InviterKeyFactory {
     public static final String METADATA_SUFFIX = "METADATA";
     public static final String POLL_PREFIX = "POLL";
     public static final String CAR_PREFIX = "CAR";
+    public static final String CAR_RIDER_PREFIX = "CAR_RIDER";
     public static final String ATTENDANCE_PREFIX = "ATTENDANCE";
     public static final String HANGOUT_PREFIX = "HANGOUT";
     public static final String INVITE_PREFIX = "INVITE";

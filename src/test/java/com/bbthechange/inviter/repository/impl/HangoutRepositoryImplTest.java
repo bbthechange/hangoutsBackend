@@ -16,6 +16,10 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
+import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
+import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
+import software.amazon.awssdk.enhanced.dynamodb.model.PageIterable;
+import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.*;
 
@@ -37,6 +41,9 @@ class HangoutRepositoryImplTest {
 
     @Mock
     private DynamoDbEnhancedClient dynamoDbEnhancedClient;
+
+    @Mock
+    private DynamoDbTable<HangoutAttribute> inviterTable;
 
     @Mock
     private QueryPerformanceTracker performanceTracker;
@@ -63,6 +70,9 @@ class HangoutRepositoryImplTest {
                 throw e;
             }
         });
+
+        // Mock the Enhanced Client to return our mocked table
+        when(dynamoDbEnhancedClient.table(eq("InviterTable"), any(TableSchema.class))).thenReturn(inviterTable);
 
         repository = new HangoutRepositoryImpl(dynamoDbClient, dynamoDbEnhancedClient, performanceTracker, eventRepository);
 
@@ -1301,6 +1311,285 @@ class HangoutRepositoryImplTest {
         item.put("itemType", AttributeValue.builder().s("UNKNOWN_TYPE").build());
         item.put("someField", AttributeValue.builder().s("someValue").build());
         return item;
+    }
+
+    private Map<String, AttributeValue> createAttributeItemMap(String hangoutId, String attributeId, String attributeName, String stringValue) {
+        Map<String, AttributeValue> item = new HashMap<>();
+        item.put("pk", AttributeValue.builder().s(InviterKeyFactory.getEventPk(hangoutId)).build());
+        item.put("sk", AttributeValue.builder().s(InviterKeyFactory.getAttributeSk(attributeId)).build());
+        item.put("itemType", AttributeValue.builder().s("ATTRIBUTE").build());
+        item.put("hangoutId", AttributeValue.builder().s(hangoutId).build());
+        item.put("attributeId", AttributeValue.builder().s(attributeId).build());
+        item.put("attributeName", AttributeValue.builder().s(attributeName).build());
+        if (stringValue != null) {
+            item.put("stringValue", AttributeValue.builder().s(stringValue).build());
+        }
+        return item;
+    }
+
+    // ============================================================================
+    // HANGOUT ATTRIBUTE OPERATIONS TESTS
+    // ============================================================================
+
+    @Test
+    void findAttributeById_WithExistingAttribute_ReturnsOptionalWithAttribute() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+        String attributeId = UUID.randomUUID().toString();
+        
+        HangoutAttribute expectedAttribute = new HangoutAttribute(hangoutId, attributeId, "location", "Test Location");
+        when(inviterTable.getItem(any(java.util.function.Consumer.class))).thenReturn(expectedAttribute);
+
+        // When
+        Optional<HangoutAttribute> result = repository.findAttributeById(hangoutId, attributeId);
+
+        // Then
+        assertThat(result).isPresent();
+        assertThat(result.get().getAttributeId()).isEqualTo(attributeId);
+        assertThat(result.get().getHangoutId()).isEqualTo(hangoutId);
+        assertThat(result.get().getAttributeName()).isEqualTo("location");
+        assertThat(result.get().getStringValue()).isEqualTo("Test Location");
+    }
+
+    @Test
+    void findAttributeById_WithNonExistentAttribute_ReturnsEmptyOptional() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+        String attributeId = UUID.randomUUID().toString();
+        
+        when(inviterTable.getItem(any(java.util.function.Consumer.class))).thenReturn(null);
+
+        // When
+        Optional<HangoutAttribute> result = repository.findAttributeById(hangoutId, attributeId);
+
+        // Then
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void findAttributesByHangoutId_WithMultipleAttributes_ReturnsAllAttributes() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+        String attributeId1 = UUID.randomUUID().toString();
+        String attributeId2 = UUID.randomUUID().toString();
+        
+        List<HangoutAttribute> expectedAttributes = Arrays.asList(
+            new HangoutAttribute(hangoutId, attributeId1, "location", "Test Location"),
+            new HangoutAttribute(hangoutId, attributeId2, "maxParticipants", "50")
+        );
+        
+        PageIterable<HangoutAttribute> mockPages = mock(PageIterable.class);
+        when(mockPages.items()).thenReturn(() -> expectedAttributes.iterator());
+        when(inviterTable.query(any(QueryEnhancedRequest.class))).thenReturn(mockPages);
+
+        // When
+        List<HangoutAttribute> result = repository.findAttributesByHangoutId(hangoutId);
+
+        // Then
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).getAttributeName()).isEqualTo("location");
+        assertThat(result.get(1).getAttributeName()).isEqualTo("maxParticipants");
+    }
+
+    @Test
+    void findAttributesByHangoutId_WithNoAttributes_ReturnsEmptyList() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+        
+        PageIterable<HangoutAttribute> mockPages = mock(PageIterable.class);
+        when(mockPages.items()).thenReturn(Collections::emptyIterator);
+        when(inviterTable.query(any(QueryEnhancedRequest.class))).thenReturn(mockPages);
+
+        // When
+        List<HangoutAttribute> result = repository.findAttributesByHangoutId(hangoutId);
+
+        // Then
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void saveAttribute_WithValidAttribute_SavesSuccessfully() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+        String attributeId = UUID.randomUUID().toString();
+        HangoutAttribute attribute = new HangoutAttribute(hangoutId, attributeId, "location", "Test Location");
+
+        // When
+        HangoutAttribute result = repository.saveAttribute(attribute);
+
+        // Then
+        assertThat(result).isSameAs(attribute);
+        assertThat(result.getUpdatedAt()).isNotNull();
+        verify(inviterTable).putItem(attribute);
+    }
+
+    @Test
+    void saveAttribute_WithInvalidAttribute_ThrowsIllegalArgumentException() {
+        // Given
+        HangoutAttribute invalidAttribute = new HangoutAttribute();
+        invalidAttribute.setAttributeName(null); // Invalid
+
+        // When/Then
+        assertThatThrownBy(() -> repository.saveAttribute(invalidAttribute))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void saveAttribute_WithNullStringValue_SavesSuccessfully() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+        String attributeId = UUID.randomUUID().toString();
+        HangoutAttribute attribute = new HangoutAttribute(hangoutId, attributeId, "notes", null);
+
+        // When
+        HangoutAttribute result = repository.saveAttribute(attribute);
+
+        // Then
+        assertThat(result).isSameAs(attribute);
+        assertThat(result.getStringValue()).isNull();
+        verify(inviterTable).putItem(attribute);
+    }
+
+    @Test
+    void deleteAttribute_WithValidIds_DeletesSuccessfully() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+        String attributeId = UUID.randomUUID().toString();
+
+        // When
+        repository.deleteAttribute(hangoutId, attributeId);
+
+        // Then
+        verify(inviterTable).deleteItem(any(java.util.function.Consumer.class));
+    }
+
+    // ============================================================================
+    // CAR MANAGEMENT OPERATIONS TESTS
+    // ============================================================================
+
+    @Test
+    void saveCar_WithValidCar_SavesSuccessfully() {
+        // Given
+        String eventId = UUID.randomUUID().toString();
+        String driverId = UUID.randomUUID().toString();
+        Car car = new Car();
+        car.setEventId(eventId);
+        car.setDriverId(driverId);
+        car.setAvailableSeats(4);
+        car.setPk(InviterKeyFactory.getEventPk(eventId));
+        car.setSk(InviterKeyFactory.getCarSk(driverId));
+        
+        PutItemResponse response = PutItemResponse.builder().build();
+        when(dynamoDbClient.putItem(any(PutItemRequest.class))).thenReturn(response);
+
+        // When
+        Car result = repository.saveCar(car);
+
+        // Then
+        assertThat(result).isSameAs(car);
+        assertThat(result.getUpdatedAt()).isNotNull();
+        
+        ArgumentCaptor<PutItemRequest> captor = ArgumentCaptor.forClass(PutItemRequest.class);
+        verify(dynamoDbClient).putItem(captor.capture());
+        
+        PutItemRequest request = captor.getValue();
+        assertThat(request.tableName()).isEqualTo("InviterTable");
+        assertThat(request.item()).containsKey("itemType");
+        assertThat(request.item().get("itemType").s()).isEqualTo("CAR");
+    }
+
+    @Test
+    void saveCar_WithDynamoDbException_ThrowsRepositoryException() {
+        // Given
+        Car car = new Car();
+        car.setDriverId("driverId");
+        
+        when(dynamoDbClient.putItem(any(PutItemRequest.class)))
+            .thenThrow(DynamoDbException.builder().message("DynamoDB error").build());
+
+        // When/Then
+        assertThatThrownBy(() -> repository.saveCar(car))
+            .isInstanceOf(RepositoryException.class)
+            .hasMessageContaining("Failed to save car")
+            .hasCauseInstanceOf(DynamoDbException.class);
+    }
+
+    @Test
+    void deleteCar_WithValidIds_DeletesSuccessfully() {
+        // Given
+        String eventId = UUID.randomUUID().toString();
+        String driverId = UUID.randomUUID().toString();
+        
+        DeleteItemResponse response = DeleteItemResponse.builder().build();
+        when(dynamoDbClient.deleteItem(any(DeleteItemRequest.class))).thenReturn(response);
+
+        // When
+        repository.deleteCar(eventId, driverId);
+
+        // Then
+        ArgumentCaptor<DeleteItemRequest> captor = ArgumentCaptor.forClass(DeleteItemRequest.class);
+        verify(dynamoDbClient).deleteItem(captor.capture());
+        
+        DeleteItemRequest request = captor.getValue();
+        assertThat(request.tableName()).isEqualTo("InviterTable");
+        assertThat(request.key().get("pk").s()).isEqualTo("EVENT#" + eventId);
+        assertThat(request.key().get("sk").s()).isEqualTo("CAR#" + driverId);
+    }
+
+    @Test
+    void saveCarRider_WithValidCarRider_SavesSuccessfully() {
+        // Given
+        String eventId = UUID.randomUUID().toString();
+        String driverId = UUID.randomUUID().toString();
+        String riderId = UUID.randomUUID().toString();
+        
+        CarRider carRider = new CarRider();
+        carRider.setEventId(eventId);
+        carRider.setDriverId(driverId);
+        carRider.setRiderId(riderId);
+        carRider.setPk(InviterKeyFactory.getEventPk(eventId));
+        carRider.setSk(InviterKeyFactory.getCarRiderSk(driverId, riderId));
+        
+        PutItemResponse response = PutItemResponse.builder().build();
+        when(dynamoDbClient.putItem(any(PutItemRequest.class))).thenReturn(response);
+
+        // When
+        CarRider result = repository.saveCarRider(carRider);
+
+        // Then
+        assertThat(result).isSameAs(carRider);
+        assertThat(result.getUpdatedAt()).isNotNull();
+        
+        ArgumentCaptor<PutItemRequest> captor = ArgumentCaptor.forClass(PutItemRequest.class);
+        verify(dynamoDbClient).putItem(captor.capture());
+        
+        PutItemRequest request = captor.getValue();
+        assertThat(request.tableName()).isEqualTo("InviterTable");
+        assertThat(request.item()).containsKey("itemType");
+        assertThat(request.item().get("itemType").s()).isEqualTo("CAR_RIDER");
+    }
+
+    @Test
+    void deleteCarRider_WithValidIds_DeletesSuccessfully() {
+        // Given
+        String eventId = UUID.randomUUID().toString();
+        String driverId = UUID.randomUUID().toString();
+        String riderId = UUID.randomUUID().toString();
+        
+        DeleteItemResponse response = DeleteItemResponse.builder().build();
+        when(dynamoDbClient.deleteItem(any(DeleteItemRequest.class))).thenReturn(response);
+
+        // When
+        repository.deleteCarRider(eventId, driverId, riderId);
+
+        // Then
+        ArgumentCaptor<DeleteItemRequest> captor = ArgumentCaptor.forClass(DeleteItemRequest.class);
+        verify(dynamoDbClient).deleteItem(captor.capture());
+        
+        DeleteItemRequest request = captor.getValue();
+        assertThat(request.tableName()).isEqualTo("InviterTable");
+        assertThat(request.key().get("pk").s()).isEqualTo("EVENT#" + eventId);
+        assertThat(request.key().get("sk").s()).isEqualTo("CAR#" + driverId + "#RIDER#" + riderId);
     }
 
     // ============================================================================
