@@ -124,6 +124,19 @@ public class AuthController {
         
         User user = userOpt.get();
         
+        // Check account verification status
+        AccountStatus status = user.getAccountStatus();
+        if (status == null) {
+            status = AccountStatus.ACTIVE; // Backward compatibility
+        }
+        
+        if (status == AccountStatus.UNVERIFIED) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "ACCOUNT_NOT_VERIFIED");
+            error.put("message", "Your account is not verified. Please check your phone for a verification code.");
+            return new ResponseEntity<>(error, HttpStatus.FORBIDDEN);
+        }
+        
         // Generate tokens
         String accessToken = jwtService.generateToken(user.getId().toString());
         String refreshToken = hashingService.generateRefreshToken();

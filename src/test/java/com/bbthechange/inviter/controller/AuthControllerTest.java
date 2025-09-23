@@ -451,6 +451,194 @@ class AuthControllerTest {
             assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
             assertEquals("Invalid credentials", response.getBody().get("error"));
         }
+
+        @Test
+        @DisplayName("Should return FORBIDDEN when user account is unverified")
+        void login_Forbidden_UnverifiedAccount() {
+            // Arrange
+            User unverifiedUser = new User("+1234567890", "unverifieduser", "Unverified User", "hashedpassword");
+            unverifiedUser.setId(testUserId);
+            unverifiedUser.setAccountStatus(AccountStatus.UNVERIFIED);
+            
+            when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.of(unverifiedUser));
+            when(passwordService.matches("password123", "hashedpassword")).thenReturn(true);
+
+            // Act
+            ResponseEntity<Map<String, Object>> response = authController.login(loginRequest, request, mockResponse);
+
+            // Assert
+            assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("ACCOUNT_NOT_VERIFIED", response.getBody().get("error"));
+            assertEquals("Your account is not verified. Please check your phone for a verification code.", response.getBody().get("message"));
+            
+            verify(userRepository).findByPhoneNumber("+1234567890");
+            verify(passwordService).matches("password123", "hashedpassword");
+            verify(jwtService, never()).generateToken(any());
+            verify(hashingService, never()).generateRefreshToken();
+        }
+
+        @Test
+        @DisplayName("Should login successfully with null AccountStatus (backward compatibility)")
+        void login_Success_NullAccountStatusTreatedAsActive() {
+            // Arrange
+            User userWithNullStatus = new User("+1234567890", "testuser", "Test User", "hashedpassword");
+            userWithNullStatus.setId(testUserId);
+            userWithNullStatus.setAccountStatus(null); // null status for backward compatibility
+            
+            when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.of(userWithNullStatus));
+            when(passwordService.matches("password123", "hashedpassword")).thenReturn(true);
+            when(jwtService.generateToken(testUserId.toString())).thenReturn("jwt-token");
+            when(hashingService.generateRefreshToken()).thenReturn("refresh-token");
+            when(hashingService.generateLookupHash("refresh-token")).thenReturn("lookup-hash");
+            when(hashingService.generateSecurityHash("refresh-token")).thenReturn("security-hash");
+            when(request.getHeader("X-Device-ID")).thenReturn("device-123");
+            when(request.getHeader("X-Forwarded-For")).thenReturn(null);
+            when(request.getHeader("X-Client-Type")).thenReturn(null);
+            when(request.getRemoteAddr()).thenReturn("192.168.1.1");
+            
+            ResponseCookie mockCookie = ResponseCookie.from("refresh_token", "refresh-token").build();
+            when(cookieService.createRefreshTokenCookie("refresh-token")).thenReturn(mockCookie);
+
+            // Act
+            ResponseEntity<Map<String, Object>> response = authController.login(loginRequest, request, mockResponse);
+
+            // Assert
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("jwt-token", response.getBody().get("accessToken"));
+            assertEquals(1800, response.getBody().get("expiresIn"));
+            assertEquals("Bearer", response.getBody().get("tokenType"));
+            
+            verify(userRepository).findByPhoneNumber("+1234567890");
+            verify(passwordService).matches("password123", "hashedpassword");
+            verify(jwtService).generateToken(testUserId.toString());
+            verify(hashingService).generateRefreshToken();
+            verify(refreshTokenRepository).save(any(RefreshToken.class));
+        }
+
+        @Test
+        @DisplayName("Should login successfully with explicit ACTIVE AccountStatus")
+        void login_Success_ExplicitActiveAccountStatus() {
+            // Arrange
+            User activeUser = new User("+1234567890", "activeuser", "Active User", "hashedpassword");
+            activeUser.setId(testUserId);
+            activeUser.setAccountStatus(AccountStatus.ACTIVE);
+            
+            when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.of(activeUser));
+            when(passwordService.matches("password123", "hashedpassword")).thenReturn(true);
+            when(jwtService.generateToken(testUserId.toString())).thenReturn("jwt-token");
+            when(hashingService.generateRefreshToken()).thenReturn("refresh-token");
+            when(hashingService.generateLookupHash("refresh-token")).thenReturn("lookup-hash");
+            when(hashingService.generateSecurityHash("refresh-token")).thenReturn("security-hash");
+            when(request.getHeader("X-Device-ID")).thenReturn("device-123");
+            when(request.getHeader("X-Forwarded-For")).thenReturn(null);
+            when(request.getHeader("X-Client-Type")).thenReturn(null);
+            when(request.getRemoteAddr()).thenReturn("192.168.1.1");
+            
+            ResponseCookie mockCookie = ResponseCookie.from("refresh_token", "refresh-token").build();
+            when(cookieService.createRefreshTokenCookie("refresh-token")).thenReturn(mockCookie);
+
+            // Act
+            ResponseEntity<Map<String, Object>> response = authController.login(loginRequest, request, mockResponse);
+
+            // Assert
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("jwt-token", response.getBody().get("accessToken"));
+            assertEquals(1800, response.getBody().get("expiresIn"));
+            assertEquals("Bearer", response.getBody().get("tokenType"));
+            
+            verify(userRepository).findByPhoneNumber("+1234567890");
+            verify(passwordService).matches("password123", "hashedpassword");
+            verify(jwtService).generateToken(testUserId.toString());
+            verify(hashingService).generateRefreshToken();
+            verify(refreshTokenRepository).save(any(RefreshToken.class));
+        }
+
+        @Test
+        @DisplayName("Should return UNAUTHORIZED for invalid credentials even with unverified status")
+        void login_Forbidden_VerificationCheckAfterAuthentication() {
+            // Arrange
+            User unverifiedUserWithWrongPassword = new User("+1234567890", "unverifieduser", "Unverified User", "hashedpassword");
+            unverifiedUserWithWrongPassword.setId(testUserId);
+            unverifiedUserWithWrongPassword.setAccountStatus(AccountStatus.UNVERIFIED);
+            
+            when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.of(unverifiedUserWithWrongPassword));
+            when(passwordService.matches("password123", "hashedpassword")).thenReturn(false); // Wrong password
+
+            // Act
+            ResponseEntity<Map<String, Object>> response = authController.login(loginRequest, request, mockResponse);
+
+            // Assert
+            assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("Invalid credentials", response.getBody().get("error"));
+            
+            verify(userRepository).findByPhoneNumber("+1234567890");
+            verify(passwordService).matches("password123", "hashedpassword");
+            verify(jwtService, never()).generateToken(any());
+            verify(hashingService, never()).generateRefreshToken();
+        }
+
+        @Test
+        @DisplayName("Should not generate tokens for unverified users")
+        void login_Forbidden_NoTokenGenerationForUnverified() {
+            // Arrange
+            User unverifiedUser = new User("+1234567890", "unverifieduser", "Unverified User", "hashedpassword");
+            unverifiedUser.setId(testUserId);
+            unverifiedUser.setAccountStatus(AccountStatus.UNVERIFIED);
+            
+            when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.of(unverifiedUser));
+            when(passwordService.matches("password123", "hashedpassword")).thenReturn(true);
+
+            // Act
+            ResponseEntity<Map<String, Object>> response = authController.login(loginRequest, request, mockResponse);
+
+            // Assert
+            assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("ACCOUNT_NOT_VERIFIED", response.getBody().get("error"));
+            assertEquals("Your account is not verified. Please check your phone for a verification code.", response.getBody().get("message"));
+            
+            verify(userRepository).findByPhoneNumber("+1234567890");
+            verify(passwordService).matches("password123", "hashedpassword");
+            verify(jwtService, never()).generateToken(any());
+            verify(hashingService, never()).generateRefreshToken();
+            verify(refreshTokenRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("Should return correct error response format for unverified users")
+        void login_Forbidden_CorrectErrorResponseFormat() {
+            // Arrange
+            User unverifiedUser = new User("+1234567890", "unverifieduser", "Unverified User", "hashedpassword");
+            unverifiedUser.setId(testUserId);
+            unverifiedUser.setAccountStatus(AccountStatus.UNVERIFIED);
+            
+            when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.of(unverifiedUser));
+            when(passwordService.matches("password123", "hashedpassword")).thenReturn(true);
+
+            // Act
+            ResponseEntity<Map<String, Object>> response = authController.login(loginRequest, request, mockResponse);
+
+            // Assert
+            assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+            assertNotNull(response.getBody());
+            
+            // Verify exact response format
+            Map<String, Object> responseBody = response.getBody();
+            assertEquals(2, responseBody.size()); // Only two fields in response
+            assertEquals("ACCOUNT_NOT_VERIFIED", responseBody.get("error"));
+            assertEquals("Your account is not verified. Please check your phone for a verification code.", responseBody.get("message"));
+            
+            // Verify no tokens or sensitive information
+            assertFalse(responseBody.containsKey("accessToken"));
+            assertFalse(responseBody.containsKey("refreshToken"));
+            assertFalse(responseBody.containsKey("expiresIn"));
+            assertFalse(responseBody.containsKey("tokenType"));
+            assertFalse(responseBody.containsKey("userId"));
+        }
     }
 
     @Nested
