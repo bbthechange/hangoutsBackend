@@ -1,7 +1,10 @@
 package com.bbthechange.inviter.service;
 
 import com.bbthechange.inviter.model.VerificationCode;
+import com.bbthechange.inviter.model.User;
+import com.bbthechange.inviter.model.AccountStatus;
 import com.bbthechange.inviter.repository.VerificationCodeRepository;
+import com.bbthechange.inviter.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -22,16 +25,17 @@ public class AccountService {
 
     private final VerificationCodeRepository verificationCodeRepository;
     private final SmsNotificationService smsNotificationService;
+    private final UserRepository userRepository;
 
     public AccountService(VerificationCodeRepository verificationCodeRepository,
-                         SmsNotificationService smsNotificationService) {
+                         SmsNotificationService smsNotificationService,
+                         UserRepository userRepository) {
         this.verificationCodeRepository = verificationCodeRepository;
         this.smsNotificationService = smsNotificationService;
+        this.userRepository = userRepository;
     }
 
     public void sendVerificationCode(String phoneNumber) {
-        // TODO: Add verification that phone number belongs to existing user with UNVERIFIED status
-        
         String code = generateSixDigitCode();
         String hashedCode = hashCode(code);
         long expiresAt = Instant.now().plusSeconds(CODE_EXPIRY_MINUTES * 60).getEpochSecond();
@@ -86,7 +90,16 @@ public class AccountService {
         verificationCodeRepository.deleteByPhoneNumber(phoneNumber);
         logger.info("Verification code successfully verified for phone number: {}", phoneNumber);
         
-        // TODO: Update user accountStatus to ACTIVE when User model is updated
+        // Update user accountStatus to ACTIVE
+        Optional<User> userOpt = userRepository.findByPhoneNumber(phoneNumber);
+        if (userOpt.isPresent()) {
+            User user = userOpt.get();
+            user.setAccountStatus(AccountStatus.ACTIVE);
+            userRepository.save(user);
+            logger.info("User account status updated to ACTIVE for phone number: {}", phoneNumber);
+        } else {
+            logger.warn("User not found for verified phone number: {}", phoneNumber);
+        }
         
         return VerificationResult.success();
     }

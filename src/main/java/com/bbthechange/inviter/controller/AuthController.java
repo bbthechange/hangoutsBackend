@@ -6,6 +6,7 @@ import com.bbthechange.inviter.dto.VerifyRequest;
 import com.bbthechange.inviter.exception.UnauthorizedException;
 import com.bbthechange.inviter.model.RefreshToken;
 import com.bbthechange.inviter.model.User;
+import com.bbthechange.inviter.model.AccountStatus;
 import com.bbthechange.inviter.repository.RefreshTokenRepository;
 import com.bbthechange.inviter.repository.UserRepository;
 import com.bbthechange.inviter.service.JwtService;
@@ -18,6 +19,8 @@ import com.bbthechange.inviter.service.VerificationResult;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
@@ -33,6 +36,8 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class AuthController {
     
+    private static final Logger logger = LoggerFactory.getLogger(AuthController.class);
+    
     private final JwtService jwtService;
     private final UserRepository userRepository;
     private final PasswordService passwordService;
@@ -44,27 +49,60 @@ public class AuthController {
     
     @PostMapping("/register")
     public ResponseEntity<Map<String, String>> register(@RequestBody User user) {
+        // Check if user already exists
         Optional<User> existingUser = userRepository.findByPhoneNumber(user.getPhoneNumber());
         
-        if (existingUser.isPresent() && existingUser.get().getPassword() != null) {
-            Map<String, String> error = new HashMap<>();
-            error.put("error", "User already exists");
-            return new ResponseEntity<>(error, HttpStatus.CONFLICT);
+        if (existingUser.isPresent()) {
+            User existing = existingUser.get();
+            
+            // If user exists and has a password (full account), check their status
+            if (existing.getPassword() != null) {
+                // Treat null accountStatus as ACTIVE for backward compatibility
+                AccountStatus status = existing.getAccountStatus();
+                if (status == null) {
+                    status = AccountStatus.ACTIVE;
+                }
+                
+                // If they're ACTIVE (verified), return conflict per spec
+                if (status == AccountStatus.ACTIVE) {
+                    Map<String, String> error = new HashMap<>();
+                    error.put("error", "ACCOUNT_ALREADY_EXISTS");
+                    error.put("message", "A user with this phone number is already registered and verified.");
+                    return new ResponseEntity<>(error, HttpStatus.CONFLICT);
+                }
+                // If they're UNVERIFIED but have a password, we can proceed to update and resend code
+            }
+            // If user exists but has no password (created via group invite), we proceed to give them a full account
         }
         
+        // TODO: Add input validation for phone number format and password requirements
+        
+        // Create or update user with UNVERIFIED status
+        User userToSave;
         if (existingUser.isPresent()) {
-            User existingUserEntity = existingUser.get();
-            existingUserEntity.setUsername(user.getUsername());
-            existingUserEntity.setDisplayName(user.getDisplayName());
-            existingUserEntity.setPassword(passwordService.encryptPassword(user.getPassword()));
-            userRepository.save(existingUserEntity);
+            userToSave = existingUser.get();
+            userToSave.setUsername(user.getUsername());
+            userToSave.setDisplayName(user.getDisplayName());
+            userToSave.setPassword(passwordService.encryptPassword(user.getPassword()));
+            userToSave.setAccountStatus(AccountStatus.UNVERIFIED); // Ensure it's UNVERIFIED
         } else {
-            User newUser = new User(user.getPhoneNumber(), user.getUsername(), user.getDisplayName(), passwordService.encryptPassword(user.getPassword()));
-            userRepository.save(newUser);
+            userToSave = new User(user.getPhoneNumber(), user.getUsername(), user.getDisplayName(), 
+                                 passwordService.encryptPassword(user.getPassword()));
+            // Constructor already sets AccountStatus.UNVERIFIED
+        }
+        
+        userRepository.save(userToSave);
+        
+        // Send verification code
+        try {
+            accountService.sendVerificationCode(user.getPhoneNumber());
+        } catch (Exception e) {
+            logger.error("Failed to send verification code for phone number: {}", user.getPhoneNumber(), e);
+            // Note: We don't fail registration if SMS fails, user can use resend-code
         }
         
         Map<String, String> response = new HashMap<>();
-        response.put("message", "User registered successfully");
+        response.put("message", "User registered successfully. Please check your phone for a verification code.");
         return new ResponseEntity<>(response, HttpStatus.CREATED);
     }
     

@@ -4,6 +4,7 @@ import com.bbthechange.inviter.controller.AuthController.LoginRequest;
 import com.bbthechange.inviter.dto.VerifyRequest;
 import com.bbthechange.inviter.model.RefreshToken;
 import com.bbthechange.inviter.model.User;
+import com.bbthechange.inviter.model.AccountStatus;
 import com.bbthechange.inviter.repository.RefreshTokenRepository;
 import com.bbthechange.inviter.repository.UserRepository;
 import com.bbthechange.inviter.service.JwtService;
@@ -104,6 +105,7 @@ class AuthControllerTest {
         
         existingUser = new User("+1234567890", "existinguser", "Existing User", "hashedpassword");
         existingUser.setId(testUserId);
+        existingUser.setAccountStatus(AccountStatus.ACTIVE); // Set as ACTIVE for conflict test
         
         loginRequest = new LoginRequest();
         loginRequest.setPhoneNumber("+1234567890");
@@ -129,49 +131,80 @@ class AuthControllerTest {
             // Assert
             assertEquals(HttpStatus.CREATED, response.getStatusCode());
             assertNotNull(response.getBody());
-            assertEquals("User registered successfully", response.getBody().get("message"));
+            assertEquals("User registered successfully. Please check your phone for a verification code.", response.getBody().get("message"));
             
             verify(userRepository).findByPhoneNumber("+1234567890");
             verify(passwordService).encryptPassword("password123");
             verify(userRepository).save(argThat(user ->
                 "+1234567890".equals(user.getPhoneNumber()) &&
                 "testuser".equals(user.getUsername()) &&
-                "Test User".equals(user.getDisplayName())
+                "Test User".equals(user.getDisplayName()) &&
+                AccountStatus.UNVERIFIED.equals(user.getAccountStatus())
             ));
+            verify(accountService).sendVerificationCode("+1234567890");
         }
 
         @Test
-        @DisplayName("Should update existing user without password")
-        void register_Success_UpdateExistingUser() {
-            // Arrange
+        @DisplayName("Should update existing user without password (group invite case)")
+        void register_Success_UpdateExistingUserWithoutPassword() {
+            // Arrange - User exists but has no password (created via group invite)
             User existingUserWithoutPassword = new User("+1234567890", "olduser", "Old User", null);
             existingUserWithoutPassword.setId(testUserId);
+            existingUserWithoutPassword.setAccountStatus(AccountStatus.UNVERIFIED);
             
             when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.of(existingUserWithoutPassword));
             when(passwordService.encryptPassword("password123")).thenReturn("hashedpassword");
             when(userRepository.save(any(User.class))).thenReturn(existingUserWithoutPassword);
-
 
             // Act
             ResponseEntity<Map<String, String>> response = authController.register(testUser);
 
             // Assert
             assertEquals(HttpStatus.CREATED, response.getStatusCode());
-            assertEquals("User registered successfully", response.getBody().get("message"));
+            assertEquals("User registered successfully. Please check your phone for a verification code.", response.getBody().get("message"));
             
             verify(userRepository).save(argThat(user ->
                 "testuser".equals(user.getUsername()) &&
                 "Test User".equals(user.getDisplayName()) &&
-                "hashedpassword".equals(user.getPassword())
+                "hashedpassword".equals(user.getPassword()) &&
+                AccountStatus.UNVERIFIED.equals(user.getAccountStatus())
             ));
+            verify(accountService).sendVerificationCode("+1234567890");
         }
 
         @Test
-        @DisplayName("Should return CONFLICT when user already exists with password")
-        void register_Conflict_UserAlreadyExists() {
+        @DisplayName("Should update existing UNVERIFIED user with password")
+        void register_Success_UpdateExistingUnverifiedUser() {
             // Arrange
-            when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.of(existingUser));
+            User existingUnverifiedUser = new User("+1234567890", "olduser", "Old User", "oldpassword");
+            existingUnverifiedUser.setId(testUserId);
+            existingUnverifiedUser.setAccountStatus(AccountStatus.UNVERIFIED);
+            
+            when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.of(existingUnverifiedUser));
+            when(passwordService.encryptPassword("password123")).thenReturn("hashedpassword");
+            when(userRepository.save(any(User.class))).thenReturn(existingUnverifiedUser);
 
+            // Act
+            ResponseEntity<Map<String, String>> response = authController.register(testUser);
+
+            // Assert
+            assertEquals(HttpStatus.CREATED, response.getStatusCode());
+            assertEquals("User registered successfully. Please check your phone for a verification code.", response.getBody().get("message"));
+            
+            verify(userRepository).save(argThat(user ->
+                "testuser".equals(user.getUsername()) &&
+                "Test User".equals(user.getDisplayName()) &&
+                "hashedpassword".equals(user.getPassword()) &&
+                AccountStatus.UNVERIFIED.equals(user.getAccountStatus())
+            ));
+            verify(accountService).sendVerificationCode("+1234567890");
+        }
+
+        @Test
+        @DisplayName("Should return CONFLICT when user already exists and is ACTIVE")
+        void register_Conflict_UserAlreadyExistsAndActive() {
+            // Arrange - existingUser is already set as ACTIVE in setUp()
+            when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.of(existingUser));
 
             // Act
             ResponseEntity<Map<String, String>> response = authController.register(testUser);
@@ -179,11 +212,38 @@ class AuthControllerTest {
             // Assert
             assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
             assertNotNull(response.getBody());
-            assertEquals("User already exists", response.getBody().get("error"));
+            assertEquals("ACCOUNT_ALREADY_EXISTS", response.getBody().get("error"));
+            assertEquals("A user with this phone number is already registered and verified.", response.getBody().get("message"));
             
             verify(userRepository).findByPhoneNumber("+1234567890");
             verify(userRepository, never()).save(any());
             verify(passwordService, never()).encryptPassword(any());
+            verify(accountService, never()).sendVerificationCode(any());
+        }
+
+        @Test
+        @DisplayName("Should return CONFLICT when user exists with null status (backward compatibility)")
+        void register_Conflict_UserExistsWithNullStatus() {
+            // Arrange - User with null status treated as ACTIVE for backward compatibility
+            User userWithNullStatus = new User("+1234567890", "existinguser", "Existing User", "hashedpassword");
+            userWithNullStatus.setId(testUserId);
+            userWithNullStatus.setAccountStatus(null); // null status = backward compatibility
+            
+            when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.of(userWithNullStatus));
+
+            // Act
+            ResponseEntity<Map<String, String>> response = authController.register(testUser);
+
+            // Assert
+            assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("ACCOUNT_ALREADY_EXISTS", response.getBody().get("error"));
+            assertEquals("A user with this phone number is already registered and verified.", response.getBody().get("message"));
+            
+            verify(userRepository).findByPhoneNumber("+1234567890");
+            verify(userRepository, never()).save(any());
+            verify(passwordService, never()).encryptPassword(any());
+            verify(accountService, never()).sendVerificationCode(any());
         }
 
         @Test
@@ -202,6 +262,60 @@ class AuthControllerTest {
             // Assert
             assertEquals(HttpStatus.CREATED, response.getStatusCode());
             verify(passwordService).encryptPassword(null);
+        }
+
+        @Test
+        @DisplayName("Should still succeed registration when SMS service fails")
+        void register_Success_WhenSmsServiceFails() {
+            // Arrange
+            when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.empty());
+            when(passwordService.encryptPassword("password123")).thenReturn("hashedpassword");
+            when(userRepository.save(any(User.class))).thenReturn(testUser);
+            doThrow(new RuntimeException("SMS service error")).when(accountService)
+                    .sendVerificationCode("+1234567890");
+
+            // Act
+            ResponseEntity<Map<String, String>> response = authController.register(testUser);
+
+            // Assert
+            assertEquals(HttpStatus.CREATED, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("User registered successfully. Please check your phone for a verification code.", response.getBody().get("message"));
+            
+            verify(userRepository).save(argThat(user ->
+                "+1234567890".equals(user.getPhoneNumber()) &&
+                "testuser".equals(user.getUsername()) &&
+                "Test User".equals(user.getDisplayName()) &&
+                AccountStatus.UNVERIFIED.equals(user.getAccountStatus())
+            ));
+            verify(accountService).sendVerificationCode("+1234567890");
+        }
+
+        @Test
+        @DisplayName("Should call services with correct parameters")
+        void register_Success_CallsServicesWithCorrectParameters() {
+            // Arrange
+            User specificTestUser = new User("+19995550001", "specificuser", "Specific User", "specificpass");
+            when(userRepository.findByPhoneNumber("+19995550001")).thenReturn(Optional.empty());
+            when(passwordService.encryptPassword("specificpass")).thenReturn("hashedspecificpass");
+            when(userRepository.save(any(User.class))).thenReturn(specificTestUser);
+
+            // Act
+            ResponseEntity<Map<String, String>> response = authController.register(specificTestUser);
+
+            // Assert
+            assertEquals(HttpStatus.CREATED, response.getStatusCode());
+            
+            verify(userRepository).findByPhoneNumber("+19995550001");
+            verify(passwordService).encryptPassword("specificpass");
+            verify(userRepository).save(argThat(user ->
+                "+19995550001".equals(user.getPhoneNumber()) &&
+                "specificuser".equals(user.getUsername()) &&
+                "Specific User".equals(user.getDisplayName()) &&
+                "hashedspecificpass".equals(user.getPassword()) &&
+                AccountStatus.UNVERIFIED.equals(user.getAccountStatus())
+            ));
+            verify(accountService).sendVerificationCode("+19995550001");
         }
     }
 

@@ -1,7 +1,10 @@
 package com.bbthechange.inviter.service;
 
+import com.bbthechange.inviter.model.AccountStatus;
+import com.bbthechange.inviter.model.User;
 import com.bbthechange.inviter.model.VerificationCode;
 import com.bbthechange.inviter.repository.VerificationCodeRepository;
+import com.bbthechange.inviter.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -31,11 +34,14 @@ class AccountServiceTest {
     @Mock
     private SmsNotificationService mockSmsNotificationService;
 
+    @Mock
+    private UserRepository mockUserRepository;
+
     private AccountService accountService;
 
     @BeforeEach
     void setUp() {
-        accountService = new AccountService(mockVerificationCodeRepository, mockSmsNotificationService);
+        accountService = new AccountService(mockVerificationCodeRepository, mockSmsNotificationService, mockUserRepository);
     }
 
     @Test
@@ -493,6 +499,111 @@ class AccountServiceTest {
         assertThat(result.isSuccess()).isFalse();
         verify(mockVerificationCodeRepository).deleteByPhoneNumber(phoneNumber);
         verify(mockVerificationCodeRepository, never()).save(any());
+    }
+
+    @Test
+    void verifyCode_WithSuccessfulVerification_UpdatesUserStatusToActive() throws NoSuchAlgorithmException {
+        // Given
+        String phoneNumber = "+15551234567";
+        String submittedCode = "123456";
+        String hashedCode = hashCode(submittedCode);
+        
+        VerificationCode validCode = new VerificationCode();
+        validCode.setPhoneNumber(phoneNumber);
+        validCode.setHashedCode(hashedCode);
+        validCode.setExpiresAt(Instant.now().getEpochSecond() + 900); // 15 minutes from now
+        validCode.setFailedAttempts(0);
+        
+        User user = new User();
+        user.setPhoneNumber(phoneNumber);
+        user.setAccountStatus(AccountStatus.UNVERIFIED);
+        
+        when(mockVerificationCodeRepository.findByPhoneNumber(phoneNumber))
+                .thenReturn(Optional.of(validCode));
+        when(mockUserRepository.findByPhoneNumber(phoneNumber))
+                .thenReturn(Optional.of(user));
+
+        // When
+        VerificationResult result = accountService.verifyCode(phoneNumber, submittedCode);
+
+        // Then
+        assertThat(result.getStatus()).isEqualTo(VerificationResult.Status.SUCCESS);
+        assertThat(result.isSuccess()).isTrue();
+        
+        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
+        verify(mockUserRepository).save(userCaptor.capture());
+        
+        User savedUser = userCaptor.getValue();
+        assertThat(savedUser.getAccountStatus()).isEqualTo(AccountStatus.ACTIVE);
+        assertThat(savedUser.getPhoneNumber()).isEqualTo(phoneNumber);
+        
+        verify(mockUserRepository).findByPhoneNumber(phoneNumber);
+        verify(mockVerificationCodeRepository).deleteByPhoneNumber(phoneNumber);
+    }
+
+    @Test
+    void verifyCode_WithSuccessfulVerification_WhenUserNotFound_StillReturnsSuccess() throws NoSuchAlgorithmException {
+        // Given
+        String phoneNumber = "+15551234567";
+        String submittedCode = "123456";
+        String hashedCode = hashCode(submittedCode);
+        
+        VerificationCode validCode = new VerificationCode();
+        validCode.setPhoneNumber(phoneNumber);
+        validCode.setHashedCode(hashedCode);
+        validCode.setExpiresAt(Instant.now().getEpochSecond() + 900); // 15 minutes from now
+        validCode.setFailedAttempts(0);
+        
+        when(mockVerificationCodeRepository.findByPhoneNumber(phoneNumber))
+                .thenReturn(Optional.of(validCode));
+        when(mockUserRepository.findByPhoneNumber(phoneNumber))
+                .thenReturn(Optional.empty());
+
+        // When
+        VerificationResult result = accountService.verifyCode(phoneNumber, submittedCode);
+
+        // Then
+        assertThat(result.getStatus()).isEqualTo(VerificationResult.Status.SUCCESS);
+        assertThat(result.isSuccess()).isTrue();
+        
+        verify(mockUserRepository).findByPhoneNumber(phoneNumber);
+        verify(mockUserRepository, never()).save(any(User.class));
+        verify(mockVerificationCodeRepository).deleteByPhoneNumber(phoneNumber);
+    }
+
+    @Test
+    void verifyCode_WithSuccessfulVerification_CallsUserRepositoryWithCorrectPhoneNumber() throws NoSuchAlgorithmException {
+        // Given
+        String phoneNumber = "+19995550001";
+        String submittedCode = "123456";
+        String hashedCode = hashCode(submittedCode);
+        
+        VerificationCode validCode = new VerificationCode();
+        validCode.setPhoneNumber(phoneNumber);
+        validCode.setHashedCode(hashedCode);
+        validCode.setExpiresAt(Instant.now().getEpochSecond() + 900); // 15 minutes from now
+        validCode.setFailedAttempts(0);
+        
+        User user = new User();
+        user.setPhoneNumber(phoneNumber);
+        user.setAccountStatus(AccountStatus.UNVERIFIED);
+        
+        when(mockVerificationCodeRepository.findByPhoneNumber(phoneNumber))
+                .thenReturn(Optional.of(validCode));
+        when(mockUserRepository.findByPhoneNumber(phoneNumber))
+                .thenReturn(Optional.of(user));
+
+        // When
+        VerificationResult result = accountService.verifyCode(phoneNumber, submittedCode);
+
+        // Then
+        assertThat(result.getStatus()).isEqualTo(VerificationResult.Status.SUCCESS);
+        
+        ArgumentCaptor<String> phoneCaptor = ArgumentCaptor.forClass(String.class);
+        verify(mockUserRepository).findByPhoneNumber(phoneCaptor.capture());
+        
+        assertThat(phoneCaptor.getValue()).isEqualTo(phoneNumber);
+        verify(mockVerificationCodeRepository).deleteByPhoneNumber(phoneNumber);
     }
 
     private String hashCode(String code) throws NoSuchAlgorithmException {

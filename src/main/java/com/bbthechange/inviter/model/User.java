@@ -17,6 +17,7 @@ public class User {
     private String username;
     private String displayName;
     private String password;
+    private AccountStatus accountStatus;
     
     public User(String phoneNumber, String username, String password) {
         this.id = UUID.randomUUID();
@@ -24,6 +25,7 @@ public class User {
         this.username = username;
         this.displayName = null;
         this.password = password;
+        this.accountStatus = AccountStatus.UNVERIFIED;
     }
     
     public User(String phoneNumber, String username, String displayName, String password) {
@@ -32,6 +34,7 @@ public class User {
         this.username = username;
         this.displayName = displayName;
         this.password = password;
+        this.accountStatus = AccountStatus.UNVERIFIED;
     }
     
     @DynamoDbPartitionKey
