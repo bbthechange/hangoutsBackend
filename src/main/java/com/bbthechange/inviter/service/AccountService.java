@@ -11,6 +11,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.Optional;
 
 @Service
 public class AccountService {
@@ -42,6 +43,52 @@ public class AccountService {
 
         smsNotificationService.sendVerificationCode(phoneNumber, code);
         logger.info("Verification code sent for phone number: {}", phoneNumber);
+    }
+
+    public VerificationResult verifyCode(String phoneNumber, String submittedCode) {
+        Optional<VerificationCode> verificationCodeOpt = verificationCodeRepository.findByPhoneNumber(phoneNumber);
+        
+        // No record found
+        if (verificationCodeOpt.isEmpty()) {
+            logger.info("No verification code found for phone number: {}", phoneNumber);
+            return VerificationResult.codeExpired();
+        }
+        
+        VerificationCode verificationCode = verificationCodeOpt.get();
+        
+        // Check if expired
+        long currentTime = Instant.now().getEpochSecond();
+        if (currentTime > verificationCode.getExpiresAt()) {
+            logger.info("Verification code expired for phone number: {}", phoneNumber);
+            verificationCodeRepository.deleteByPhoneNumber(phoneNumber);
+            return VerificationResult.codeExpired();
+        }
+        
+        // Hash the submitted code and compare
+        String hashedSubmittedCode = hashCode(submittedCode);
+        if (!hashedSubmittedCode.equals(verificationCode.getHashedCode())) {
+            // Increment failed attempts
+            verificationCode.setFailedAttempts(verificationCode.getFailedAttempts() + 1);
+            
+            if (verificationCode.getFailedAttempts() > 10) {
+                logger.info("Too many failed attempts for phone number: {}, deleting verification code", phoneNumber);
+                verificationCodeRepository.deleteByPhoneNumber(phoneNumber);
+                return VerificationResult.codeExpired(); // Per spec: return VERIFICATION_CODE_EXPIRED when too many attempts
+            }
+            
+            verificationCodeRepository.save(verificationCode);
+            logger.info("Invalid verification code for phone number: {}, failed attempts: {}", 
+                       phoneNumber, verificationCode.getFailedAttempts());
+            return VerificationResult.invalidCode();
+        }
+        
+        // Code is valid - delete the verification record
+        verificationCodeRepository.deleteByPhoneNumber(phoneNumber);
+        logger.info("Verification code successfully verified for phone number: {}", phoneNumber);
+        
+        // TODO: Update user accountStatus to ACTIVE when User model is updated
+        
+        return VerificationResult.success();
     }
 
     private String generateSixDigitCode() {

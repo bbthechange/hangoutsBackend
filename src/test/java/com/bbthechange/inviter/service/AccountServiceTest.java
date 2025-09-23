@@ -15,6 +15,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -336,5 +337,176 @@ class AccountServiceTest {
 
         VerificationCode savedCode = verificationCodeCaptor.getValue();
         assertThat(savedCode.getFailedAttempts()).isEqualTo(0);
+    }
+
+    @Test
+    void verifyCode_WithValidCodeAndPhoneNumber_ReturnsSuccess() throws NoSuchAlgorithmException {
+        // Given
+        String phoneNumber = "+15551234567";
+        String submittedCode = "123456";
+        String hashedCode = hashCode(submittedCode);
+        
+        VerificationCode validCode = new VerificationCode();
+        validCode.setPhoneNumber(phoneNumber);
+        validCode.setHashedCode(hashedCode);
+        validCode.setExpiresAt(Instant.now().getEpochSecond() + 900); // 15 minutes from now
+        validCode.setFailedAttempts(0);
+        
+        when(mockVerificationCodeRepository.findByPhoneNumber(phoneNumber))
+                .thenReturn(Optional.of(validCode));
+
+        // When
+        VerificationResult result = accountService.verifyCode(phoneNumber, submittedCode);
+
+        // Then
+        assertThat(result.getStatus()).isEqualTo(VerificationResult.Status.SUCCESS);
+        assertThat(result.isSuccess()).isTrue();
+        verify(mockVerificationCodeRepository).deleteByPhoneNumber(phoneNumber);
+        verify(mockVerificationCodeRepository, never()).save(any());
+    }
+
+    @Test
+    void verifyCode_WithNonExistentPhoneNumber_ReturnsCodeExpired() {
+        // Given
+        String phoneNumber = "+15551234567";
+        String submittedCode = "123456";
+        
+        when(mockVerificationCodeRepository.findByPhoneNumber(phoneNumber))
+                .thenReturn(Optional.empty());
+
+        // When
+        VerificationResult result = accountService.verifyCode(phoneNumber, submittedCode);
+
+        // Then
+        assertThat(result.getStatus()).isEqualTo(VerificationResult.Status.CODE_EXPIRED);
+        assertThat(result.isSuccess()).isFalse();
+        verify(mockVerificationCodeRepository, never()).deleteByPhoneNumber(any());
+        verify(mockVerificationCodeRepository, never()).save(any());
+    }
+
+    @Test
+    void verifyCode_WithExpiredCode_ReturnsCodeExpiredAndDeletesRecord() throws NoSuchAlgorithmException {
+        // Given
+        String phoneNumber = "+15551234567";
+        String submittedCode = "123456";
+        String hashedCode = hashCode(submittedCode);
+        
+        VerificationCode expiredCode = new VerificationCode();
+        expiredCode.setPhoneNumber(phoneNumber);
+        expiredCode.setHashedCode(hashedCode);
+        expiredCode.setExpiresAt(Instant.now().getEpochSecond() - 100); // 100 seconds ago (expired)
+        expiredCode.setFailedAttempts(0);
+        
+        when(mockVerificationCodeRepository.findByPhoneNumber(phoneNumber))
+                .thenReturn(Optional.of(expiredCode));
+
+        // When
+        VerificationResult result = accountService.verifyCode(phoneNumber, submittedCode);
+
+        // Then
+        assertThat(result.getStatus()).isEqualTo(VerificationResult.Status.CODE_EXPIRED);
+        assertThat(result.isSuccess()).isFalse();
+        verify(mockVerificationCodeRepository).deleteByPhoneNumber(phoneNumber);
+        verify(mockVerificationCodeRepository, never()).save(any());
+    }
+
+    @Test
+    void verifyCode_WithIncorrectCode_ReturnsInvalidCodeAndIncrementsAttempts() throws NoSuchAlgorithmException {
+        // Given
+        String phoneNumber = "+15551234567";
+        String submittedCode = "123456";
+        String correctCode = "654321";
+        String correctHashedCode = hashCode(correctCode);
+        
+        VerificationCode validCode = new VerificationCode();
+        validCode.setPhoneNumber(phoneNumber);
+        validCode.setHashedCode(correctHashedCode);
+        validCode.setExpiresAt(Instant.now().getEpochSecond() + 900); // 15 minutes from now
+        validCode.setFailedAttempts(5);
+        
+        when(mockVerificationCodeRepository.findByPhoneNumber(phoneNumber))
+                .thenReturn(Optional.of(validCode));
+
+        // When
+        VerificationResult result = accountService.verifyCode(phoneNumber, submittedCode);
+
+        // Then
+        assertThat(result.getStatus()).isEqualTo(VerificationResult.Status.INVALID_CODE);
+        assertThat(result.isSuccess()).isFalse();
+        
+        ArgumentCaptor<VerificationCode> savedCodeCaptor = ArgumentCaptor.forClass(VerificationCode.class);
+        verify(mockVerificationCodeRepository).save(savedCodeCaptor.capture());
+        
+        VerificationCode savedCode = savedCodeCaptor.getValue();
+        assertThat(savedCode.getFailedAttempts()).isEqualTo(6); // incremented from 5 to 6
+        verify(mockVerificationCodeRepository, never()).deleteByPhoneNumber(any());
+    }
+
+    @Test
+    void verifyCode_WithIncorrectCodeAfterMaxAttempts_ReturnsCodeExpiredAndDeletesRecord() throws NoSuchAlgorithmException {
+        // Given
+        String phoneNumber = "+15551234567";
+        String submittedCode = "123456";
+        String correctCode = "654321";
+        String correctHashedCode = hashCode(correctCode);
+        
+        VerificationCode validCode = new VerificationCode();
+        validCode.setPhoneNumber(phoneNumber);
+        validCode.setHashedCode(correctHashedCode);
+        validCode.setExpiresAt(Instant.now().getEpochSecond() + 900); // 15 minutes from now
+        validCode.setFailedAttempts(10); // At max attempts
+        
+        when(mockVerificationCodeRepository.findByPhoneNumber(phoneNumber))
+                .thenReturn(Optional.of(validCode));
+
+        // When
+        VerificationResult result = accountService.verifyCode(phoneNumber, submittedCode);
+
+        // Then
+        assertThat(result.getStatus()).isEqualTo(VerificationResult.Status.CODE_EXPIRED);
+        assertThat(result.isSuccess()).isFalse();
+        verify(mockVerificationCodeRepository).deleteByPhoneNumber(phoneNumber);
+        verify(mockVerificationCodeRepository, never()).save(any());
+    }
+
+    @Test
+    void verifyCode_WithCorrectCodeButExactlyAtExpirationTime_ReturnsCodeExpired() throws NoSuchAlgorithmException {
+        // Given
+        String phoneNumber = "+15551234567";
+        String submittedCode = "123456";
+        String hashedCode = hashCode(submittedCode);
+        
+        VerificationCode expiredCode = new VerificationCode();
+        expiredCode.setPhoneNumber(phoneNumber);
+        expiredCode.setHashedCode(hashedCode);
+        expiredCode.setExpiresAt(Instant.now().getEpochSecond() - 1); // 1 second ago (expired)
+        expiredCode.setFailedAttempts(0);
+        
+        when(mockVerificationCodeRepository.findByPhoneNumber(phoneNumber))
+                .thenReturn(Optional.of(expiredCode));
+
+        // When
+        VerificationResult result = accountService.verifyCode(phoneNumber, submittedCode);
+
+        // Then
+        assertThat(result.getStatus()).isEqualTo(VerificationResult.Status.CODE_EXPIRED);
+        assertThat(result.isSuccess()).isFalse();
+        verify(mockVerificationCodeRepository).deleteByPhoneNumber(phoneNumber);
+        verify(mockVerificationCodeRepository, never()).save(any());
+    }
+
+    private String hashCode(String code) throws NoSuchAlgorithmException {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        byte[] hash = digest.digest(code.getBytes(StandardCharsets.UTF_8));
+        
+        StringBuilder hexString = new StringBuilder();
+        for (byte b : hash) {
+            String hex = Integer.toHexString(0xff & b);
+            if (hex.length() == 1) {
+                hexString.append('0');
+            }
+            hexString.append(hex);
+        }
+        return hexString.toString();
     }
 }

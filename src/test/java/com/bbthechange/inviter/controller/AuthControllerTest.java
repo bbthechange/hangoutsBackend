@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.controller;
 
 import com.bbthechange.inviter.controller.AuthController.LoginRequest;
+import com.bbthechange.inviter.dto.VerifyRequest;
 import com.bbthechange.inviter.model.RefreshToken;
 import com.bbthechange.inviter.model.User;
 import com.bbthechange.inviter.repository.RefreshTokenRepository;
@@ -11,6 +12,7 @@ import com.bbthechange.inviter.service.RefreshTokenHashingService;
 import com.bbthechange.inviter.service.RefreshTokenCookieService;
 import com.bbthechange.inviter.service.RefreshTokenRotationService;
 import com.bbthechange.inviter.service.AccountService;
+import com.bbthechange.inviter.service.VerificationResult;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.BeforeEach;
@@ -550,6 +552,93 @@ class AuthControllerTest {
 
             // Assert
             verify(accountService, times(1)).sendVerificationCode("+18885554321");
+            verifyNoMoreInteractions(accountService);
+        }
+    }
+
+    @Nested
+    @DisplayName("POST /auth/verify - Verification Tests")
+    class VerificationTests {
+
+        @Test
+        @DisplayName("Should return 200 OK when verification is successful")
+        void verify_WithSuccessfulVerification_Returns200WithSuccessMessage() {
+            // Given
+            VerifyRequest request = new VerifyRequest();
+            request.setPhoneNumber("+15551234567");
+            request.setCode("123456");
+            
+            when(accountService.verifyCode("+15551234567", "123456"))
+                    .thenReturn(VerificationResult.success());
+
+            // When
+            ResponseEntity<Map<String, String>> response = authController.verify(request);
+
+            // Then
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("Account verified successfully", response.getBody().get("message"));
+            verify(accountService).verifyCode("+15551234567", "123456");
+        }
+
+        @Test
+        @DisplayName("Should return 400 Bad Request when verification code is expired")
+        void verify_WithExpiredCode_Returns400WithExpiredError() {
+            // Given
+            VerifyRequest request = new VerifyRequest();
+            request.setPhoneNumber("+15551234567");
+            request.setCode("123456");
+            
+            when(accountService.verifyCode("+15551234567", "123456"))
+                    .thenReturn(VerificationResult.codeExpired());
+
+            // When
+            ResponseEntity<Map<String, String>> response = authController.verify(request);
+
+            // Then
+            assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("VERIFICATION_CODE_EXPIRED", response.getBody().get("error"));
+            assertEquals("The verification code has expired. Please request a new one.", response.getBody().get("message"));
+        }
+
+        @Test
+        @DisplayName("Should return 400 Bad Request when verification code is invalid")
+        void verify_WithInvalidCode_Returns400WithInvalidError() {
+            // Given
+            VerifyRequest request = new VerifyRequest();
+            request.setPhoneNumber("+15551234567");
+            request.setCode("123456");
+            
+            when(accountService.verifyCode("+15551234567", "123456"))
+                    .thenReturn(VerificationResult.invalidCode());
+
+            // When
+            ResponseEntity<Map<String, String>> response = authController.verify(request);
+
+            // Then
+            assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("INVALID_CODE", response.getBody().get("error"));
+            assertEquals("The verification code is incorrect.", response.getBody().get("message"));
+        }
+
+        @Test
+        @DisplayName("Should call AccountService with correct parameters from request")
+        void verify_WithValidRequestFormat_CallsServiceWithCorrectParameters() {
+            // Given
+            VerifyRequest request = new VerifyRequest();
+            request.setPhoneNumber("+19995550001");
+            request.setCode("654321");
+            
+            when(accountService.verifyCode("+19995550001", "654321"))
+                    .thenReturn(VerificationResult.success());
+
+            // When
+            authController.verify(request);
+
+            // Then
+            verify(accountService, times(1)).verifyCode("+19995550001", "654321");
             verifyNoMoreInteractions(accountService);
         }
     }

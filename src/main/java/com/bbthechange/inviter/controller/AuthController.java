@@ -2,6 +2,7 @@ package com.bbthechange.inviter.controller;
 
 import com.bbthechange.inviter.dto.RefreshRequest;
 import com.bbthechange.inviter.dto.RefreshTokenPair;
+import com.bbthechange.inviter.dto.VerifyRequest;
 import com.bbthechange.inviter.exception.UnauthorizedException;
 import com.bbthechange.inviter.model.RefreshToken;
 import com.bbthechange.inviter.model.User;
@@ -13,6 +14,7 @@ import com.bbthechange.inviter.service.RefreshTokenHashingService;
 import com.bbthechange.inviter.service.RefreshTokenCookieService;
 import com.bbthechange.inviter.service.RefreshTokenRotationService;
 import com.bbthechange.inviter.service.AccountService;
+import com.bbthechange.inviter.service.VerificationResult;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -252,6 +254,35 @@ public class AuthController {
             error.put("error", "INTERNAL_ERROR");
             error.put("message", "Failed to send verification code");
             return new ResponseEntity<>(error, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+    
+    @PostMapping("/verify")
+    public ResponseEntity<Map<String, String>> verify(@RequestBody VerifyRequest request) {
+        // TODO: Add rate limiting (429 Too Many Requests)
+        
+        VerificationResult result = accountService.verifyCode(request.getPhoneNumber(), request.getCode());
+        
+        Map<String, String> response = new HashMap<>();
+        
+        if (result.isSuccess()) {
+            response.put("message", "Account verified successfully");
+            return new ResponseEntity<>(response, HttpStatus.OK);
+        } else {
+            switch (result.getStatus()) {
+                case CODE_EXPIRED:
+                    response.put("error", "VERIFICATION_CODE_EXPIRED");
+                    response.put("message", result.getMessage());
+                    return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+                case INVALID_CODE:
+                    response.put("error", "INVALID_CODE");
+                    response.put("message", result.getMessage());
+                    return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+                default:
+                    response.put("error", "INTERNAL_ERROR");
+                    response.put("message", "An unexpected error occurred");
+                    return new ResponseEntity<>(response, HttpStatus.INTERNAL_SERVER_ERROR);
+            }
         }
     }
     
