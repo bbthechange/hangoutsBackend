@@ -44,6 +44,8 @@ dependencies {
 	implementation 'org.jsoup:jsoup:1.17.1'
 	// For security checks (IP address validation against CIDR blocks)
 	implementation 'commons-net:commons-net:3.10.0'
+	// For rate limiting cache
+	implementation 'com.github.ben-manes.caffeine:caffeine:3.1.8'
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'

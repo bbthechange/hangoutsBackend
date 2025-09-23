@@ -6,6 +6,7 @@ import com.bbthechange.inviter.dto.VerifyRequest;
 import com.bbthechange.inviter.exception.UnauthorizedException;
 import com.bbthechange.inviter.exception.AccountNotFoundException;
 import com.bbthechange.inviter.exception.AccountAlreadyVerifiedException;
+import com.bbthechange.inviter.exception.RateLimitExceededException;
 import com.bbthechange.inviter.model.RefreshToken;
 import com.bbthechange.inviter.model.User;
 import com.bbthechange.inviter.model.AccountStatus;
@@ -18,6 +19,7 @@ import com.bbthechange.inviter.service.RefreshTokenCookieService;
 import com.bbthechange.inviter.service.RefreshTokenRotationService;
 import com.bbthechange.inviter.service.AccountService;
 import com.bbthechange.inviter.service.VerificationResult;
+import com.bbthechange.inviter.service.RateLimitingService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -48,6 +50,7 @@ public class AuthController {
     private final RefreshTokenRotationService rotationService;
     private final RefreshTokenRepository refreshTokenRepository;
     private final AccountService accountService;
+    private final RateLimitingService rateLimitingService;
     
     @PostMapping("/register")
     public ResponseEntity<Map<String, String>> register(@RequestBody User user) {
@@ -290,7 +293,13 @@ public class AuthController {
     
     @PostMapping("/resend-code")
     public ResponseEntity<Map<String, String>> resendCode(@RequestBody ResendCodeRequest request) {
-        // TODO: Add rate limiting (429 Too Many Requests)
+        // Check rate limiting first
+        if (!rateLimitingService.isResendCodeAllowed(request.getPhoneNumber())) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", "TOO_MANY_REQUESTS");
+            error.put("message", "You have requested too many codes. Please try again later.");
+            return new ResponseEntity<>(error, HttpStatus.TOO_MANY_REQUESTS);
+        }
         
         try {
             accountService.sendVerificationCodeWithAccountCheck(request.getPhoneNumber());
@@ -322,7 +331,13 @@ public class AuthController {
     
     @PostMapping("/verify")
     public ResponseEntity<Map<String, String>> verify(@RequestBody VerifyRequest request) {
-        // TODO: Add rate limiting (429 Too Many Requests)
+        // Check rate limiting first
+        if (!rateLimitingService.isVerifyAllowed(request.getPhoneNumber())) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", "TOO_MANY_REQUESTS");
+            error.put("message", "You have made too many verification attempts. Please try again later.");
+            return new ResponseEntity<>(error, HttpStatus.TOO_MANY_REQUESTS);
+        }
         
         VerificationResult result = accountService.verifyCode(request.getPhoneNumber(), request.getCode());
         

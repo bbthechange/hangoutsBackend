@@ -14,6 +14,7 @@ import com.bbthechange.inviter.service.RefreshTokenCookieService;
 import com.bbthechange.inviter.service.RefreshTokenRotationService;
 import com.bbthechange.inviter.service.AccountService;
 import com.bbthechange.inviter.service.VerificationResult;
+import com.bbthechange.inviter.service.RateLimitingService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.BeforeEach;
@@ -72,6 +73,9 @@ class AuthControllerTest {
     private AccountService accountService;
 
     @Mock
+    private RateLimitingService rateLimitingService;
+
+    @Mock
     private HttpServletRequest request;
 
     @Mock
@@ -95,7 +99,8 @@ class AuthControllerTest {
             cookieService,
             rotationService,
             refreshTokenRepository,
-            accountService
+            accountService,
+            rateLimitingService
         );
         
         testUserId = UUID.randomUUID();
@@ -110,6 +115,22 @@ class AuthControllerTest {
         loginRequest = new LoginRequest();
         loginRequest.setPhoneNumber("+1234567890");
         loginRequest.setPassword("password123");
+    }
+    
+    // Helper method to allow rate limiting for tests
+    private void allowRateLimiting(String phoneNumber) {
+        when(rateLimitingService.isResendCodeAllowed(phoneNumber)).thenReturn(true);
+        when(rateLimitingService.isVerifyAllowed(phoneNumber)).thenReturn(true);
+    }
+    
+    // Helper method specifically for resend code tests
+    private void allowResendCodeRateLimiting(String phoneNumber) {
+        when(rateLimitingService.isResendCodeAllowed(phoneNumber)).thenReturn(true);
+    }
+    
+    // Helper method specifically for verify tests
+    private void allowVerifyRateLimiting(String phoneNumber) {
+        when(rateLimitingService.isVerifyAllowed(phoneNumber)).thenReturn(true);
     }
 
     @Nested
@@ -702,6 +723,7 @@ class AuthControllerTest {
             // Arrange
             AuthController.ResendCodeRequest request = new AuthController.ResendCodeRequest();
             request.setPhoneNumber("+15551234567");
+            allowResendCodeRateLimiting("+15551234567");
 
             // Act
             ResponseEntity<Map<String, String>> response = authController.resendCode(request);
@@ -718,6 +740,7 @@ class AuthControllerTest {
             // Arrange
             AuthController.ResendCodeRequest request = new AuthController.ResendCodeRequest();
             request.setPhoneNumber("+19995550001");
+            allowResendCodeRateLimiting("+19995550001");
 
             // Act
             authController.resendCode(request);
@@ -732,6 +755,7 @@ class AuthControllerTest {
             // Arrange
             AuthController.ResendCodeRequest request = new AuthController.ResendCodeRequest();
             request.setPhoneNumber("+15551234567");
+            allowResendCodeRateLimiting("+15551234567");
 
             // Act
             ResponseEntity<Map<String, String>> response = authController.resendCode(request);
@@ -749,6 +773,7 @@ class AuthControllerTest {
             // Arrange
             AuthController.ResendCodeRequest request = new AuthController.ResendCodeRequest();
             request.setPhoneNumber(null);
+            allowResendCodeRateLimiting(null);
 
             // Act
             ResponseEntity<Map<String, String>> response = authController.resendCode(request);
@@ -765,6 +790,7 @@ class AuthControllerTest {
             // Arrange
             AuthController.ResendCodeRequest request = new AuthController.ResendCodeRequest();
             request.setPhoneNumber("");
+            allowResendCodeRateLimiting("");
 
             // Act
             ResponseEntity<Map<String, String>> response = authController.resendCode(request);
@@ -780,6 +806,7 @@ class AuthControllerTest {
             // Arrange
             AuthController.ResendCodeRequest request = new AuthController.ResendCodeRequest();
             request.setPhoneNumber("+15551234567");
+            allowResendCodeRateLimiting("+15551234567");
             doThrow(new RuntimeException("SMS service error")).when(accountService)
                 .sendVerificationCodeWithAccountCheck("+15551234567");
 
@@ -799,6 +826,7 @@ class AuthControllerTest {
             // Arrange
             AuthController.ResendCodeRequest request = new AuthController.ResendCodeRequest();
             request.setPhoneNumber("+15551234567");
+            allowResendCodeRateLimiting("+15551234567");
             doThrow(new NullPointerException("Unexpected error")).when(accountService)
                 .sendVerificationCodeWithAccountCheck("+15551234567");
 
@@ -818,6 +846,7 @@ class AuthControllerTest {
             // Arrange
             AuthController.ResendCodeRequest request = new AuthController.ResendCodeRequest();
             request.setPhoneNumber("+15551234567");
+            allowResendCodeRateLimiting("+15551234567");
 
             // Act: No authentication headers or tokens needed
             ResponseEntity<Map<String, String>> response = authController.resendCode(request);
@@ -848,6 +877,7 @@ class AuthControllerTest {
             // Arrange
             AuthController.ResendCodeRequest request = new AuthController.ResendCodeRequest();
             request.setPhoneNumber("+18885554321");
+            allowResendCodeRateLimiting("+18885554321");
 
             // Act
             authController.resendCode(request);
@@ -863,6 +893,7 @@ class AuthControllerTest {
             // Arrange
             AuthController.ResendCodeRequest request = new AuthController.ResendCodeRequest();
             request.setPhoneNumber("+15551234567");
+            allowResendCodeRateLimiting("+15551234567");
             doThrow(new com.bbthechange.inviter.exception.AccountNotFoundException("No account found for this phone number."))
                 .when(accountService).sendVerificationCodeWithAccountCheck("+15551234567");
 
@@ -882,6 +913,7 @@ class AuthControllerTest {
             // Arrange
             AuthController.ResendCodeRequest request = new AuthController.ResendCodeRequest();
             request.setPhoneNumber("+15551234567");
+            allowResendCodeRateLimiting("+15551234567");
             doThrow(new com.bbthechange.inviter.exception.AccountAlreadyVerifiedException("This account has already been verified."))
                 .when(accountService).sendVerificationCodeWithAccountCheck("+15551234567");
 
@@ -907,6 +939,7 @@ class AuthControllerTest {
             VerifyRequest request = new VerifyRequest();
             request.setPhoneNumber("+15551234567");
             request.setCode("123456");
+            allowVerifyRateLimiting("+15551234567");
             
             when(accountService.verifyCode("+15551234567", "123456"))
                     .thenReturn(VerificationResult.success());
@@ -928,6 +961,7 @@ class AuthControllerTest {
             VerifyRequest request = new VerifyRequest();
             request.setPhoneNumber("+15551234567");
             request.setCode("123456");
+            allowVerifyRateLimiting("+15551234567");
             
             when(accountService.verifyCode("+15551234567", "123456"))
                     .thenReturn(VerificationResult.codeExpired());
@@ -949,6 +983,7 @@ class AuthControllerTest {
             VerifyRequest request = new VerifyRequest();
             request.setPhoneNumber("+15551234567");
             request.setCode("123456");
+            allowVerifyRateLimiting("+15551234567");
             
             when(accountService.verifyCode("+15551234567", "123456"))
                     .thenReturn(VerificationResult.invalidCode());
@@ -970,6 +1005,7 @@ class AuthControllerTest {
             VerifyRequest request = new VerifyRequest();
             request.setPhoneNumber("+19995550001");
             request.setCode("654321");
+            allowVerifyRateLimiting("+19995550001");
             
             when(accountService.verifyCode("+19995550001", "654321"))
                     .thenReturn(VerificationResult.success());
@@ -980,6 +1016,179 @@ class AuthControllerTest {
             // Then
             verify(accountService, times(1)).verifyCode("+19995550001", "654321");
             verifyNoMoreInteractions(accountService);
+        }
+    }
+
+    @Nested
+    @DisplayName("POST /auth/resend-code - Rate Limiting Integration Tests")
+    class ResendCodeRateLimitingTests {
+
+        @Test
+        @DisplayName("Should return 429 when rate limit is exceeded")
+        void test_resendCode_RateLimitExceeded_Returns429() {
+            // Arrange
+            AuthController.ResendCodeRequest request = new AuthController.ResendCodeRequest();
+            request.setPhoneNumber("+15551234567");
+            when(rateLimitingService.isResendCodeAllowed("+15551234567")).thenReturn(false);
+
+            // Act
+            ResponseEntity<Map<String, String>> response = authController.resendCode(request);
+
+            // Assert
+            assertEquals(HttpStatus.TOO_MANY_REQUESTS, response.getStatusCode());
+            verify(rateLimitingService).isResendCodeAllowed("+15551234567");
+        }
+
+        @Test
+        @DisplayName("Should return correct error format when rate limited")
+        void test_resendCode_RateLimitExceeded_CorrectErrorFormat() {
+            // Arrange
+            AuthController.ResendCodeRequest request = new AuthController.ResendCodeRequest();
+            request.setPhoneNumber("+15551234567");
+            when(rateLimitingService.isResendCodeAllowed("+15551234567")).thenReturn(false);
+
+            // Act
+            ResponseEntity<Map<String, String>> response = authController.resendCode(request);
+
+            // Assert
+            assertEquals(HttpStatus.TOO_MANY_REQUESTS, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("TOO_MANY_REQUESTS", response.getBody().get("error"));
+            assertEquals("You have requested too many codes. Please try again later.", response.getBody().get("message"));
+            assertEquals(2, response.getBody().size()); // Only error and message fields
+        }
+
+        @Test
+        @DisplayName("Should process normally when rate limit is allowed")
+        void test_resendCode_RateLimitAllowed_ProcessesNormally() {
+            // Arrange
+            AuthController.ResendCodeRequest request = new AuthController.ResendCodeRequest();
+            request.setPhoneNumber("+15551234567");
+            when(rateLimitingService.isResendCodeAllowed("+15551234567")).thenReturn(true);
+
+            // Act
+            ResponseEntity<Map<String, String>> response = authController.resendCode(request);
+
+            // Assert
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            assertEquals("Verification code sent successfully", response.getBody().get("message"));
+            verify(rateLimitingService).isResendCodeAllowed("+15551234567");
+            verify(accountService).sendVerificationCodeWithAccountCheck("+15551234567");
+        }
+
+        @Test
+        @DisplayName("Should check rate limit before calling AccountService")
+        void test_resendCode_ChecksRateLimitBeforeAccountService() {
+            // Arrange
+            AuthController.ResendCodeRequest request = new AuthController.ResendCodeRequest();
+            request.setPhoneNumber("+15551234567");
+            when(rateLimitingService.isResendCodeAllowed("+15551234567")).thenReturn(false);
+
+            // Act
+            authController.resendCode(request);
+
+            // Assert
+            verify(rateLimitingService).isResendCodeAllowed("+15551234567");
+            verify(accountService, never()).sendVerificationCodeWithAccountCheck(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("POST /auth/verify - Rate Limiting Integration Tests")
+    class VerifyRateLimitingTests {
+
+        @Test
+        @DisplayName("Should return 429 when rate limit is exceeded")
+        void test_verify_RateLimitExceeded_Returns429() {
+            // Arrange
+            VerifyRequest request = new VerifyRequest();
+            request.setPhoneNumber("+15551234567");
+            request.setCode("123456");
+            when(rateLimitingService.isVerifyAllowed("+15551234567")).thenReturn(false);
+
+            // Act
+            ResponseEntity<Map<String, String>> response = authController.verify(request);
+
+            // Assert
+            assertEquals(HttpStatus.TOO_MANY_REQUESTS, response.getStatusCode());
+            verify(rateLimitingService).isVerifyAllowed("+15551234567");
+        }
+
+        @Test
+        @DisplayName("Should return correct error format when rate limited")
+        void test_verify_RateLimitExceeded_CorrectErrorFormat() {
+            // Arrange
+            VerifyRequest request = new VerifyRequest();
+            request.setPhoneNumber("+15551234567");
+            request.setCode("123456");
+            when(rateLimitingService.isVerifyAllowed("+15551234567")).thenReturn(false);
+
+            // Act
+            ResponseEntity<Map<String, String>> response = authController.verify(request);
+
+            // Assert
+            assertEquals(HttpStatus.TOO_MANY_REQUESTS, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("TOO_MANY_REQUESTS", response.getBody().get("error"));
+            assertEquals("You have made too many verification attempts. Please try again later.", response.getBody().get("message"));
+            assertEquals(2, response.getBody().size()); // Only error and message fields
+        }
+
+        @Test
+        @DisplayName("Should process normally when rate limit is allowed")
+        void test_verify_RateLimitAllowed_ProcessesNormally() {
+            // Arrange
+            VerifyRequest request = new VerifyRequest();
+            request.setPhoneNumber("+15551234567");
+            request.setCode("123456");
+            when(rateLimitingService.isVerifyAllowed("+15551234567")).thenReturn(true);
+            when(accountService.verifyCode("+15551234567", "123456")).thenReturn(VerificationResult.success());
+
+            // Act
+            ResponseEntity<Map<String, String>> response = authController.verify(request);
+
+            // Assert
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            assertEquals("Account verified successfully", response.getBody().get("message"));
+            verify(rateLimitingService).isVerifyAllowed("+15551234567");
+            verify(accountService).verifyCode("+15551234567", "123456");
+        }
+
+        @Test
+        @DisplayName("Should check rate limit before calling AccountService")
+        void test_verify_ChecksRateLimitBeforeAccountService() {
+            // Arrange
+            VerifyRequest request = new VerifyRequest();
+            request.setPhoneNumber("+15551234567");
+            request.setCode("123456");
+            when(rateLimitingService.isVerifyAllowed("+15551234567")).thenReturn(false);
+
+            // Act
+            authController.verify(request);
+
+            // Assert
+            verify(rateLimitingService).isVerifyAllowed("+15551234567");
+            verify(accountService, never()).verifyCode(any(), any());
+        }
+    }
+
+    @Nested
+    @DisplayName("RateLimitExceededException Tests")
+    class RateLimitExceptionTests {
+
+        @Test
+        @DisplayName("Should preserve message correctly")
+        void test_RateLimitExceededException_MessagePreserved() {
+            // Arrange
+            String expectedMessage = "Rate limit exceeded for test";
+
+            // Act
+            com.bbthechange.inviter.exception.RateLimitExceededException exception = 
+                new com.bbthechange.inviter.exception.RateLimitExceededException(expectedMessage);
+
+            // Assert
+            assertEquals(expectedMessage, exception.getMessage());
+            assertTrue(exception instanceof RuntimeException);
         }
     }
 }
