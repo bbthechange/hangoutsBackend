@@ -5,6 +5,8 @@ import com.bbthechange.inviter.model.User;
 import com.bbthechange.inviter.model.AccountStatus;
 import com.bbthechange.inviter.repository.VerificationCodeRepository;
 import com.bbthechange.inviter.repository.UserRepository;
+import com.bbthechange.inviter.exception.AccountNotFoundException;
+import com.bbthechange.inviter.exception.AccountAlreadyVerifiedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -47,6 +49,29 @@ public class AccountService {
 
         smsNotificationService.sendVerificationCode(phoneNumber, code);
         logger.info("Verification code sent for phone number: {}", phoneNumber);
+    }
+
+    public void sendVerificationCodeWithAccountCheck(String phoneNumber) {
+        // Check if user exists
+        Optional<User> userOpt = userRepository.findByPhoneNumber(phoneNumber);
+        if (userOpt.isEmpty()) {
+            throw new AccountNotFoundException("No account found for this phone number.");
+        }
+
+        User user = userOpt.get();
+        
+        // Check account status (treat null as ACTIVE for backward compatibility)
+        AccountStatus status = user.getAccountStatus();
+        if (status == null) {
+            status = AccountStatus.ACTIVE;
+        }
+        
+        if (status == AccountStatus.ACTIVE) {
+            throw new AccountAlreadyVerifiedException("This account has already been verified.");
+        }
+        
+        // User exists and is UNVERIFIED, proceed with sending code
+        sendVerificationCode(phoneNumber);
     }
 
     public VerificationResult verifyCode(String phoneNumber, String submittedCode) {

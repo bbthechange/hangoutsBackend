@@ -4,6 +4,8 @@ import com.bbthechange.inviter.dto.RefreshRequest;
 import com.bbthechange.inviter.dto.RefreshTokenPair;
 import com.bbthechange.inviter.dto.VerifyRequest;
 import com.bbthechange.inviter.exception.UnauthorizedException;
+import com.bbthechange.inviter.exception.AccountNotFoundException;
+import com.bbthechange.inviter.exception.AccountAlreadyVerifiedException;
 import com.bbthechange.inviter.model.RefreshToken;
 import com.bbthechange.inviter.model.User;
 import com.bbthechange.inviter.model.AccountStatus;
@@ -133,7 +135,7 @@ public class AuthController {
         if (status == AccountStatus.UNVERIFIED) {
             Map<String, Object> error = new HashMap<>();
             error.put("error", "ACCOUNT_NOT_VERIFIED");
-            error.put("message", "Your account is not verified. Please check your phone for a verification code.");
+            error.put("message", "This account is not verified. Please complete the verification process.");
             return new ResponseEntity<>(error, HttpStatus.FORBIDDEN);
         }
         
@@ -288,19 +290,29 @@ public class AuthController {
     
     @PostMapping("/resend-code")
     public ResponseEntity<Map<String, String>> resendCode(@RequestBody ResendCodeRequest request) {
-        // TODO: Add proper error handling per plan document:
-        // - 429 Too Many Requests for rate limiting
-        // - 404 Not Found for account not found
-        // - 409 Conflict for account already verified
+        // TODO: Add rate limiting (429 Too Many Requests)
         
         try {
-            accountService.sendVerificationCode(request.getPhoneNumber());
+            accountService.sendVerificationCodeWithAccountCheck(request.getPhoneNumber());
             
             Map<String, String> response = new HashMap<>();
             response.put("message", "Verification code sent successfully");
             return new ResponseEntity<>(response, HttpStatus.OK);
             
+        } catch (AccountNotFoundException e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", "ACCOUNT_NOT_FOUND");
+            error.put("message", "No account found for this phone number.");
+            return new ResponseEntity<>(error, HttpStatus.NOT_FOUND);
+            
+        } catch (AccountAlreadyVerifiedException e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", "ACCOUNT_ALREADY_VERIFIED");
+            error.put("message", "This account has already been verified.");
+            return new ResponseEntity<>(error, HttpStatus.CONFLICT);
+            
         } catch (Exception e) {
+            logger.error("Failed to send verification code for phone number: {}", request.getPhoneNumber(), e);
             Map<String, String> error = new HashMap<>();
             error.put("error", "INTERNAL_ERROR");
             error.put("message", "Failed to send verification code");

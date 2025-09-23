@@ -470,7 +470,7 @@ class AuthControllerTest {
             assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
             assertNotNull(response.getBody());
             assertEquals("ACCOUNT_NOT_VERIFIED", response.getBody().get("error"));
-            assertEquals("Your account is not verified. Please check your phone for a verification code.", response.getBody().get("message"));
+            assertEquals("This account is not verified. Please complete the verification process.", response.getBody().get("message"));
             
             verify(userRepository).findByPhoneNumber("+1234567890");
             verify(passwordService).matches("password123", "hashedpassword");
@@ -599,7 +599,7 @@ class AuthControllerTest {
             assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
             assertNotNull(response.getBody());
             assertEquals("ACCOUNT_NOT_VERIFIED", response.getBody().get("error"));
-            assertEquals("Your account is not verified. Please check your phone for a verification code.", response.getBody().get("message"));
+            assertEquals("This account is not verified. Please complete the verification process.", response.getBody().get("message"));
             
             verify(userRepository).findByPhoneNumber("+1234567890");
             verify(passwordService).matches("password123", "hashedpassword");
@@ -630,7 +630,7 @@ class AuthControllerTest {
             Map<String, Object> responseBody = response.getBody();
             assertEquals(2, responseBody.size()); // Only two fields in response
             assertEquals("ACCOUNT_NOT_VERIFIED", responseBody.get("error"));
-            assertEquals("Your account is not verified. Please check your phone for a verification code.", responseBody.get("message"));
+            assertEquals("This account is not verified. Please complete the verification process.", responseBody.get("message"));
             
             // Verify no tokens or sensitive information
             assertFalse(responseBody.containsKey("accessToken"));
@@ -697,8 +697,8 @@ class AuthControllerTest {
     class ResendCodeTests {
 
         @Test
-        @DisplayName("Should send verification code successfully")
-        void resendCode_WithValidPhoneNumber_Returns200WithSuccessMessage() {
+        @DisplayName("Should send verification code successfully for unverified user")
+        void resendCode_WithValidUnverifiedUser_Returns200WithSuccessMessage() {
             // Arrange
             AuthController.ResendCodeRequest request = new AuthController.ResendCodeRequest();
             request.setPhoneNumber("+15551234567");
@@ -723,7 +723,7 @@ class AuthControllerTest {
             authController.resendCode(request);
 
             // Assert
-            verify(accountService).sendVerificationCode("+19995550001");
+            verify(accountService).sendVerificationCodeWithAccountCheck("+19995550001");
         }
 
         @Test
@@ -755,7 +755,7 @@ class AuthControllerTest {
 
             // Assert: Current implementation doesn't validate, so it calls service with null
             // Service may handle this gracefully or return error - either way is valid behavior
-            verify(accountService).sendVerificationCode(null);
+            verify(accountService).sendVerificationCodeWithAccountCheck(null);
             // The response will depend on how AccountService handles null phone numbers
         }
 
@@ -770,7 +770,7 @@ class AuthControllerTest {
             ResponseEntity<Map<String, String>> response = authController.resendCode(request);
 
             // Assert: Current implementation passes empty string to service
-            verify(accountService).sendVerificationCode("");
+            verify(accountService).sendVerificationCodeWithAccountCheck("");
             // The response will depend on how AccountService handles empty phone numbers
         }
 
@@ -781,7 +781,7 @@ class AuthControllerTest {
             AuthController.ResendCodeRequest request = new AuthController.ResendCodeRequest();
             request.setPhoneNumber("+15551234567");
             doThrow(new RuntimeException("SMS service error")).when(accountService)
-                .sendVerificationCode("+15551234567");
+                .sendVerificationCodeWithAccountCheck("+15551234567");
 
             // Act
             ResponseEntity<Map<String, String>> response = authController.resendCode(request);
@@ -800,7 +800,7 @@ class AuthControllerTest {
             AuthController.ResendCodeRequest request = new AuthController.ResendCodeRequest();
             request.setPhoneNumber("+15551234567");
             doThrow(new NullPointerException("Unexpected error")).when(accountService)
-                .sendVerificationCode("+15551234567");
+                .sendVerificationCodeWithAccountCheck("+15551234567");
 
             // Act
             ResponseEntity<Map<String, String>> response = authController.resendCode(request);
@@ -853,8 +853,46 @@ class AuthControllerTest {
             authController.resendCode(request);
 
             // Assert
-            verify(accountService, times(1)).sendVerificationCode("+18885554321");
+            verify(accountService, times(1)).sendVerificationCodeWithAccountCheck("+18885554321");
             verifyNoMoreInteractions(accountService);
+        }
+
+        @Test
+        @DisplayName("Should return 404 when account not found")
+        void resendCode_WhenAccountNotFound_Returns404() {
+            // Arrange
+            AuthController.ResendCodeRequest request = new AuthController.ResendCodeRequest();
+            request.setPhoneNumber("+15551234567");
+            doThrow(new com.bbthechange.inviter.exception.AccountNotFoundException("No account found for this phone number."))
+                .when(accountService).sendVerificationCodeWithAccountCheck("+15551234567");
+
+            // Act
+            ResponseEntity<Map<String, String>> response = authController.resendCode(request);
+
+            // Assert
+            assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("ACCOUNT_NOT_FOUND", response.getBody().get("error"));
+            assertEquals("No account found for this phone number.", response.getBody().get("message"));
+        }
+
+        @Test
+        @DisplayName("Should return 409 when account already verified")
+        void resendCode_WhenAccountAlreadyVerified_Returns409() {
+            // Arrange
+            AuthController.ResendCodeRequest request = new AuthController.ResendCodeRequest();
+            request.setPhoneNumber("+15551234567");
+            doThrow(new com.bbthechange.inviter.exception.AccountAlreadyVerifiedException("This account has already been verified."))
+                .when(accountService).sendVerificationCodeWithAccountCheck("+15551234567");
+
+            // Act
+            ResponseEntity<Map<String, String>> response = authController.resendCode(request);
+
+            // Assert
+            assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("ACCOUNT_ALREADY_VERIFIED", response.getBody().get("error"));
+            assertEquals("This account has already been verified.", response.getBody().get("message"));
         }
     }
 
