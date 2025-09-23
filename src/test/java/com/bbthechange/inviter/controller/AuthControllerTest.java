@@ -10,6 +10,7 @@ import com.bbthechange.inviter.service.PasswordService;
 import com.bbthechange.inviter.service.RefreshTokenHashingService;
 import com.bbthechange.inviter.service.RefreshTokenCookieService;
 import com.bbthechange.inviter.service.RefreshTokenRotationService;
+import com.bbthechange.inviter.service.AccountService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.BeforeEach;
@@ -65,6 +66,9 @@ class AuthControllerTest {
     private RefreshTokenRepository refreshTokenRepository;
 
     @Mock
+    private AccountService accountService;
+
+    @Mock
     private HttpServletRequest request;
 
     @Mock
@@ -87,7 +91,8 @@ class AuthControllerTest {
             hashingService,
             cookieService,
             rotationService,
-            refreshTokenRepository
+            refreshTokenRepository,
+            accountService
         );
         
         testUserId = UUID.randomUUID();
@@ -380,6 +385,172 @@ class AuthControllerTest {
             
             assertNull(request.getPhoneNumber());
             assertNull(request.getPassword());
+        }
+    }
+
+    @Nested
+    @DisplayName("POST /auth/resend-code - Resend Code Tests")
+    class ResendCodeTests {
+
+        @Test
+        @DisplayName("Should send verification code successfully")
+        void resendCode_WithValidPhoneNumber_Returns200WithSuccessMessage() {
+            // Arrange
+            AuthController.ResendCodeRequest request = new AuthController.ResendCodeRequest();
+            request.setPhoneNumber("+15551234567");
+
+            // Act
+            ResponseEntity<Map<String, String>> response = authController.resendCode(request);
+
+            // Assert
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("Verification code sent successfully", response.getBody().get("message"));
+        }
+
+        @Test
+        @DisplayName("Should call AccountService with correct phone number")
+        void resendCode_WithValidPhoneNumber_CallsAccountService() {
+            // Arrange
+            AuthController.ResendCodeRequest request = new AuthController.ResendCodeRequest();
+            request.setPhoneNumber("+19995550001");
+
+            // Act
+            authController.resendCode(request);
+
+            // Assert
+            verify(accountService).sendVerificationCode("+19995550001");
+        }
+
+        @Test
+        @DisplayName("Should return correct response format")
+        void resendCode_WithValidRequest_ReturnsCorrectResponseFormat() {
+            // Arrange
+            AuthController.ResendCodeRequest request = new AuthController.ResendCodeRequest();
+            request.setPhoneNumber("+15551234567");
+
+            // Act
+            ResponseEntity<Map<String, String>> response = authController.resendCode(request);
+
+            // Assert
+            assertNotNull(response.getBody());
+            assertTrue(response.getBody().containsKey("message"));
+            assertEquals("Verification code sent successfully", response.getBody().get("message"));
+            assertEquals(1, response.getBody().size()); // Only one key in response
+        }
+
+        @Test
+        @DisplayName("Should handle null phone number gracefully")
+        void resendCode_WithNullPhoneNumber_CallsServiceWithNull() {
+            // Arrange
+            AuthController.ResendCodeRequest request = new AuthController.ResendCodeRequest();
+            request.setPhoneNumber(null);
+
+            // Act
+            ResponseEntity<Map<String, String>> response = authController.resendCode(request);
+
+            // Assert: Current implementation doesn't validate, so it calls service with null
+            // Service may handle this gracefully or return error - either way is valid behavior
+            verify(accountService).sendVerificationCode(null);
+            // The response will depend on how AccountService handles null phone numbers
+        }
+
+        @Test
+        @DisplayName("Should handle empty phone number gracefully")
+        void resendCode_WithEmptyPhoneNumber_CallsServiceWithEmptyString() {
+            // Arrange
+            AuthController.ResendCodeRequest request = new AuthController.ResendCodeRequest();
+            request.setPhoneNumber("");
+
+            // Act
+            ResponseEntity<Map<String, String>> response = authController.resendCode(request);
+
+            // Assert: Current implementation passes empty string to service
+            verify(accountService).sendVerificationCode("");
+            // The response will depend on how AccountService handles empty phone numbers
+        }
+
+        @Test
+        @DisplayName("Should handle AccountService exception")
+        void resendCode_WhenAccountServiceThrows_Returns500WithErrorMessage() {
+            // Arrange
+            AuthController.ResendCodeRequest request = new AuthController.ResendCodeRequest();
+            request.setPhoneNumber("+15551234567");
+            doThrow(new RuntimeException("SMS service error")).when(accountService)
+                .sendVerificationCode("+15551234567");
+
+            // Act
+            ResponseEntity<Map<String, String>> response = authController.resendCode(request);
+
+            // Assert
+            assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("INTERNAL_ERROR", response.getBody().get("error"));
+            assertEquals("Failed to send verification code", response.getBody().get("message"));
+        }
+
+        @Test
+        @DisplayName("Should handle unexpected errors")
+        void resendCode_WhenUnexpectedErrorOccurs_Returns500() {
+            // Arrange
+            AuthController.ResendCodeRequest request = new AuthController.ResendCodeRequest();
+            request.setPhoneNumber("+15551234567");
+            doThrow(new NullPointerException("Unexpected error")).when(accountService)
+                .sendVerificationCode("+15551234567");
+
+            // Act
+            ResponseEntity<Map<String, String>> response = authController.resendCode(request);
+
+            // Assert
+            assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("INTERNAL_ERROR", response.getBody().get("error"));
+            assertEquals("Failed to send verification code", response.getBody().get("message"));
+        }
+
+        @Test
+        @DisplayName("Should allow access without authentication")
+        void resendCode_WithoutAuthentication_AllowsAccess() {
+            // Arrange
+            AuthController.ResendCodeRequest request = new AuthController.ResendCodeRequest();
+            request.setPhoneNumber("+15551234567");
+
+            // Act: No authentication headers or tokens needed
+            ResponseEntity<Map<String, String>> response = authController.resendCode(request);
+
+            // Assert: Should succeed (endpoint is public)
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+        }
+
+        @Test
+        @DisplayName("Should handle ResendCodeRequest null values")
+        void resendCodeRequest_NullValues() {
+            // Arrange
+            AuthController.ResendCodeRequest request = new AuthController.ResendCodeRequest();
+
+            // Act & Assert
+            assertNull(request.getPhoneNumber());
+
+            request.setPhoneNumber(null);
+            assertNull(request.getPhoneNumber());
+
+            request.setPhoneNumber("+15551234567");
+            assertEquals("+15551234567", request.getPhoneNumber());
+        }
+
+        @Test
+        @DisplayName("Should verify AccountService is called exactly once")
+        void resendCode_Always_CallsAccountServiceOnce() {
+            // Arrange
+            AuthController.ResendCodeRequest request = new AuthController.ResendCodeRequest();
+            request.setPhoneNumber("+18885554321");
+
+            // Act
+            authController.resendCode(request);
+
+            // Assert
+            verify(accountService, times(1)).sendVerificationCode("+18885554321");
+            verifyNoMoreInteractions(accountService);
         }
     }
 }

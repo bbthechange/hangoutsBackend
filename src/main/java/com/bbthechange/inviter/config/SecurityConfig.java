@@ -33,7 +33,7 @@ public class SecurityConfig {
                 .authenticationEntryPoint(jwtAuthenticationEntryPoint))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/", "/health").permitAll() // Allow health check endpoints
-                .requestMatchers("/auth/register", "/auth/login", "/auth/refresh", "/auth/logout").permitAll()
+                .requestMatchers("/auth/register", "/auth/login", "/auth/refresh", "/auth/logout", "/auth/resend-code").permitAll()
                 .requestMatchers("/images/predefined").permitAll()
                 .requestMatchers("/hangouts/time-options").permitAll()
                 .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()

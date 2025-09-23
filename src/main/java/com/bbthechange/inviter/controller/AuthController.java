@@ -12,6 +12,7 @@ import com.bbthechange.inviter.service.PasswordService;
 import com.bbthechange.inviter.service.RefreshTokenHashingService;
 import com.bbthechange.inviter.service.RefreshTokenCookieService;
 import com.bbthechange.inviter.service.RefreshTokenRotationService;
+import com.bbthechange.inviter.service.AccountService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -37,6 +38,7 @@ public class AuthController {
     private final RefreshTokenCookieService cookieService;
     private final RefreshTokenRotationService rotationService;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final AccountService accountService;
     
     @PostMapping("/register")
     public ResponseEntity<Map<String, String>> register(@RequestBody User user) {
@@ -231,6 +233,28 @@ public class AuthController {
         return new ResponseEntity<>(Map.of("message", "Successfully logged out from all devices"), HttpStatus.OK);
     }
     
+    @PostMapping("/resend-code")
+    public ResponseEntity<Map<String, String>> resendCode(@RequestBody ResendCodeRequest request) {
+        // TODO: Add proper error handling per plan document:
+        // - 429 Too Many Requests for rate limiting
+        // - 404 Not Found for account not found
+        // - 409 Conflict for account already verified
+        
+        try {
+            accountService.sendVerificationCode(request.getPhoneNumber());
+            
+            Map<String, String> response = new HashMap<>();
+            response.put("message", "Verification code sent successfully");
+            return new ResponseEntity<>(response, HttpStatus.OK);
+            
+        } catch (Exception e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", "INTERNAL_ERROR");
+            error.put("message", "Failed to send verification code");
+            return new ResponseEntity<>(error, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+    
     // Helper methods
     private String extractClientIP(HttpServletRequest request) {
         String xfHeader = request.getHeader("X-Forwarded-For");
@@ -253,5 +277,12 @@ public class AuthController {
         public void setPhoneNumber(String phoneNumber) { this.phoneNumber = phoneNumber; }
         public String getPassword() { return password; }
         public void setPassword(String password) { this.password = password; }
+    }
+    
+    public static class ResendCodeRequest {
+        private String phoneNumber;
+        
+        public String getPhoneNumber() { return phoneNumber; }
+        public void setPhoneNumber(String phoneNumber) { this.phoneNumber = phoneNumber; }
     }
 }

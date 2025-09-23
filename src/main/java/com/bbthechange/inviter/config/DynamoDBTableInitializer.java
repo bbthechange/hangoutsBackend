@@ -6,6 +6,7 @@ import com.bbthechange.inviter.model.Invite;
 import com.bbthechange.inviter.model.User;
 import com.bbthechange.inviter.model.BaseItem;
 import com.bbthechange.inviter.model.RefreshToken;
+import com.bbthechange.inviter.model.VerificationCode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,8 +44,12 @@ public class DynamoDBTableInitializer implements ApplicationRunner {
         // New InviterTable with GSI for hangout features and refresh tokens
         createTableIfNotExists("InviterTable", BaseItem.class);
         
-        // Configure TTL for refresh tokens
+        // Verification codes table with TTL
+        createTableIfNotExists("VerificationCodes", VerificationCode.class);
+        
+        // Configure TTL for refresh tokens and verification codes
         configureTTL("InviterTable", "expiryDate");
+        configureTTL("VerificationCodes", "expiresAt");
     }
     
     private <T> void createTableIfNotExists(String tableName, Class<T> entityClass) {
