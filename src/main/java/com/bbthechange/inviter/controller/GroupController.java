@@ -106,15 +106,28 @@ public class GroupController extends BaseController {
             @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid group ID format") String groupId,
             @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid user ID format") String userId,
             HttpServletRequest httpRequest) {
-        
+
         String removedBy = extractUserId(httpRequest);
-        
+
         groupService.removeMember(groupId, userId, removedBy);
         logger.info("Removed member {} from group {} by {}", userId, groupId, removedBy);
-        
+
         return ResponseEntity.noContent().build();
     }
-    
+
+    @PostMapping("/{groupId}/leave")
+    public ResponseEntity<Void> leaveGroup(
+            @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid group ID format") String groupId,
+            HttpServletRequest httpRequest) {
+
+        String userId = extractUserId(httpRequest);
+
+        groupService.leaveGroup(groupId, userId);
+        logger.info("User {} left group {}", userId, groupId);
+
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/{groupId}/members")
     public ResponseEntity<List<GroupMemberDTO>> getGroupMembers(
             @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid group ID format") String groupId,

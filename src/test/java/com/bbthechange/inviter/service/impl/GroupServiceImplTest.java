@@ -254,6 +254,67 @@ class GroupServiceImplTest {
     }
     
     @Test
+    void leaveGroup_WithMultipleMembers_RemovesUserOnly() {
+        // Given
+        String groupId = "12345678-1234-1234-1234-123456789012";
+        String userId = USER_ID;
+        String otherUserId = "11111111-1111-1111-1111-111111111111";
+
+        GroupMembership userMembership = createTestMembership(groupId, userId, "Test Group", GroupRole.MEMBER);
+        GroupMembership otherMembership = createTestMembership(groupId, otherUserId, "Test Group", GroupRole.MEMBER);
+        List<GroupMembership> allMembers = List.of(userMembership, otherMembership);
+
+        when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.of(userMembership));
+        when(groupRepository.findMembersByGroupId(groupId)).thenReturn(allMembers);
+
+        // When
+        assertThatCode(() -> groupService.leaveGroup(groupId, userId))
+            .doesNotThrowAnyException();
+
+        // Then
+        verify(groupRepository).removeMember(groupId, userId);
+        verify(groupRepository, never()).delete(groupId);
+    }
+
+    @Test
+    void leaveGroup_AsLastMember_DeletesGroup() {
+        // Given
+        String groupId = "12345678-1234-1234-1234-123456789012";
+        String userId = USER_ID;
+
+        GroupMembership userMembership = createTestMembership(groupId, userId, "Test Group", GroupRole.MEMBER);
+        List<GroupMembership> allMembers = List.of(userMembership); // Only one member
+
+        when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.of(userMembership));
+        when(groupRepository.findMembersByGroupId(groupId)).thenReturn(allMembers);
+
+        // When
+        assertThatCode(() -> groupService.leaveGroup(groupId, userId))
+            .doesNotThrowAnyException();
+
+        // Then
+        verify(groupRepository).delete(groupId);
+        verify(groupRepository, never()).removeMember(groupId, userId);
+    }
+
+    @Test
+    void leaveGroup_UserNotInGroup_ThrowsException() {
+        // Given
+        String groupId = "12345678-1234-1234-1234-123456789012";
+        String userId = USER_ID;
+
+        when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.empty());
+
+        // When/Then
+        assertThatThrownBy(() -> groupService.leaveGroup(groupId, userId))
+            .isInstanceOf(ResourceNotFoundException.class)
+            .hasMessageContaining("User not in group");
+
+        verify(groupRepository, never()).removeMember(groupId, userId);
+        verify(groupRepository, never()).delete(groupId);
+    }
+
+    @Test
     void isUserInGroup_UserExists_ReturnsTrue() {
         // Given
         String userId = USER_ID;

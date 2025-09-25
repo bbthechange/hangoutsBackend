@@ -36,7 +36,13 @@ public interface GroupService {
      * Remove a member from a group (admin only, or user can remove themselves).
      */
     void removeMember(String groupId, String userId, String removedBy);
-    
+
+    /**
+     * Leave a group (user removes themselves).
+     * Simplified version of removeMember for self-removal.
+     */
+    void leaveGroup(String groupId, String userId);
+
     /**
      * Get all members of a group (members only).
      */

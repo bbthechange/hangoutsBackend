@@ -145,17 +145,37 @@ public class GroupServiceImpl implements GroupService {
         // Verify membership exists
         GroupMembership membership = groupRepository.findMembership(groupId, userId)
             .orElseThrow(() -> new ResourceNotFoundException("User not in group"));
-        
+
         // Users can remove themselves, or admins can remove others
         if (!userId.equals(removedBy)) {
             groupRepository.findMembership(groupId, removedBy)
                 .orElseThrow(() -> new UnauthorizedException("User not in group"));
         }
-        
+
         groupRepository.removeMember(groupId, userId);
         logger.info("Removed member {} from group {} by {}", userId, groupId, removedBy);
     }
-    
+
+    @Override
+    public void leaveGroup(String groupId, String userId) {
+        // Verify user is a member of the group
+        groupRepository.findMembership(groupId, userId)
+            .orElseThrow(() -> new ResourceNotFoundException("User not in group"));
+
+        // Check if this user is the last member in the group
+        List<GroupMembership> allMembers = groupRepository.findMembersByGroupId(groupId);
+
+        if (allMembers.size() <= 1) {
+            // Last member leaving - delete the entire group to clean up orphaned data
+            groupRepository.delete(groupId);
+            logger.info("User {} left group {} as the last member - group deleted", userId, groupId);
+        } else {
+            // Normal leave - just remove the user
+            groupRepository.removeMember(groupId, userId);
+            logger.info("User {} left group {}", userId, groupId);
+        }
+    }
+
     @Override
     public List<GroupMemberDTO> getGroupMembers(String groupId, String requestingUserId) {
         // Verify user is in group
