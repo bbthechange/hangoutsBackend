@@ -30,6 +30,12 @@ public interface GroupRepository {
     void removeMember(String groupId, String userId);
 
     /**
+     * Update denormalized group name in all membership records for a group.
+     * Called when group name changes to maintain data consistency.
+     */
+    void updateMembershipGroupNames(String groupId, String newGroupName);
+
+    /**
      * Returns group membership if a user is a member of the given group
      */
     Optional<GroupMembership> findMembership(String groupId, String userId);

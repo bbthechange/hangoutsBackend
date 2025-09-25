@@ -572,4 +572,63 @@ public class PolymorphicGroupRepositoryImpl implements GroupRepository {
             return null;
         });
     }
+
+    @Override
+    public void updateMembershipGroupNames(String groupId, String newGroupName) {
+        queryTracker.trackQuery("UpdateMembershipGroupNames", TABLE_NAME, () -> {
+            try {
+                // First, get all membership records for this group
+                List<GroupMembership> memberships = findMembersByGroupId(groupId);
+
+                if (memberships.isEmpty()) {
+                    logger.debug("No memberships to update for group {}", groupId);
+                    return null;
+                }
+
+                // DynamoDB TransactWriteItems supports up to 100 items per transaction
+                // For larger groups, we need to batch the updates
+                int batchSize = 25; // Conservative batch size to stay well under limits
+                String timestamp = Instant.now().toString();
+
+                for (int i = 0; i < memberships.size(); i += batchSize) {
+                    List<GroupMembership> batch = memberships.subList(i,
+                        Math.min(i + batchSize, memberships.size()));
+
+                    // Build transaction items for this batch
+                    List<TransactWriteItem> transactItems = batch.stream()
+                        .map(membership -> TransactWriteItem.builder()
+                            .update(Update.builder()
+                                .tableName(TABLE_NAME)
+                                .key(Map.of(
+                                    "pk", AttributeValue.builder().s(InviterKeyFactory.getGroupPk(groupId)).build(),
+                                    "sk", AttributeValue.builder().s(InviterKeyFactory.getUserSk(membership.getUserId())).build()
+                                ))
+                                .updateExpression("SET groupName = :newName, updatedAt = :timestamp")
+                                .expressionAttributeValues(Map.of(
+                                    ":newName", AttributeValue.builder().s(newGroupName).build(),
+                                    ":timestamp", AttributeValue.builder().s(timestamp).build()
+                                ))
+                                .build())
+                            .build())
+                        .collect(Collectors.toList());
+
+                    // Execute the batch transaction
+                    TransactWriteItemsRequest transactRequest = TransactWriteItemsRequest.builder()
+                        .transactItems(transactItems)
+                        .build();
+
+                    dynamoDbClient.transactWriteItems(transactRequest);
+                    logger.debug("Updated batch of {} memberships for group {}", batch.size(), groupId);
+                }
+
+                logger.info("Updated {} membership records for group {} with new name {} in {} batch(es)",
+                          memberships.size(), groupId, newGroupName, (memberships.size() + batchSize - 1) / batchSize);
+
+            } catch (DynamoDbException e) {
+                logger.error("Failed to update membership group names for group {}", groupId, e);
+                throw new RepositoryException("Failed to update membership group names", e);
+            }
+            return null;
+        });
+    }
 }

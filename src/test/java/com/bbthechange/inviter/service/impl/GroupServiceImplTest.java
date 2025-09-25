@@ -76,15 +76,99 @@ class GroupServiceImplTest {
         // Given
         CreateGroupRequest request = new CreateGroupRequest("Test Group", true);
         String creatorId = "12345678-1234-1234-1234-123456789999"; // Valid UUID format
-        
+
         when(userRepository.findById(UUID.fromString(creatorId))).thenReturn(Optional.empty());
-        
+
         // When/Then
         assertThatThrownBy(() -> groupService.createGroup(request, creatorId))
             .isInstanceOf(UserNotFoundException.class)
             .hasMessageContaining("Creator not found");
-            
+
         verify(groupRepository, never()).createGroupWithFirstMember(any(), any());
+    }
+
+    @Test
+    void updateGroup_WithGroupName_Success() {
+        // Given
+        String groupId = GROUP_ID;
+        String userId = USER_ID;
+        UpdateGroupRequest request = new UpdateGroupRequest("New Group Name", null);
+
+        Group existingGroup = new Group("Old Group Name", true);
+        GroupMembership membership = createTestMembership(groupId, userId, "Old Group Name", GroupRole.MEMBER);
+
+        when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.of(membership));
+        when(groupRepository.findById(groupId)).thenReturn(Optional.of(existingGroup));
+        when(groupRepository.save(any(Group.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        // When
+        GroupDTO result = groupService.updateGroup(groupId, request, userId);
+
+        // Then
+        assertThat(result.getGroupName()).isEqualTo("New Group Name");
+        verify(groupRepository).save(argThat(group ->
+            group.getGroupName().equals("New Group Name") && group.isPublic()
+        ));
+    }
+
+    @Test
+    void updateGroup_WithPublicFlag_Success() {
+        // Given
+        String groupId = GROUP_ID;
+        String userId = USER_ID;
+        UpdateGroupRequest request = new UpdateGroupRequest(null, false);
+
+        Group existingGroup = new Group("Test Group", true);
+        GroupMembership membership = createTestMembership(groupId, userId, "Test Group", GroupRole.MEMBER);
+
+        when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.of(membership));
+        when(groupRepository.findById(groupId)).thenReturn(Optional.of(existingGroup));
+        when(groupRepository.save(any(Group.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        // When
+        GroupDTO result = groupService.updateGroup(groupId, request, userId);
+
+        // Then
+        assertThat(result.isPublic()).isFalse();
+        verify(groupRepository).save(argThat(group ->
+            group.getGroupName().equals("Test Group") && !group.isPublic()
+        ));
+    }
+
+    @Test
+    void updateGroup_UserNotInGroup_ThrowsException() {
+        // Given
+        String groupId = GROUP_ID;
+        String userId = USER_ID;
+        UpdateGroupRequest request = new UpdateGroupRequest("New Name", null);
+
+        when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.empty());
+
+        // When/Then
+        assertThatThrownBy(() -> groupService.updateGroup(groupId, request, userId))
+            .isInstanceOf(UnauthorizedException.class)
+            .hasMessageContaining("User not in group");
+
+        verify(groupRepository, never()).save(any(Group.class));
+    }
+
+    @Test
+    void updateGroup_GroupNotFound_ThrowsException() {
+        // Given
+        String groupId = GROUP_ID;
+        String userId = USER_ID;
+        UpdateGroupRequest request = new UpdateGroupRequest("New Name", null);
+
+        GroupMembership membership = createTestMembership(groupId, userId, "Test Group", GroupRole.MEMBER);
+        when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.of(membership));
+        when(groupRepository.findById(groupId)).thenReturn(Optional.empty());
+
+        // When/Then
+        assertThatThrownBy(() -> groupService.updateGroup(groupId, request, userId))
+            .isInstanceOf(ResourceNotFoundException.class)
+            .hasMessageContaining("Group not found");
+
+        verify(groupRepository, never()).save(any(Group.class));
     }
     
     @Test

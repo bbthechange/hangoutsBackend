@@ -78,13 +78,31 @@ public class GroupController extends BaseController {
     public ResponseEntity<Void> deleteGroup(
             @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid group ID format") String groupId,
             HttpServletRequest httpRequest) {
-        
+
         String userId = extractUserId(httpRequest);
-        
+
         groupService.deleteGroup(groupId, userId);
         logger.info("Deleted group {} by user {}", groupId, userId);
-        
+
         return ResponseEntity.noContent().build();
+    }
+
+    @PatchMapping("/{groupId}")
+    public ResponseEntity<GroupDTO> updateGroup(
+            @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid group ID format") String groupId,
+            @Valid @RequestBody UpdateGroupRequest request,
+            HttpServletRequest httpRequest) {
+
+        String userId = extractUserId(httpRequest);
+
+        if (!request.hasUpdates()) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        GroupDTO updatedGroup = groupService.updateGroup(groupId, request, userId);
+        logger.info("Updated group {} by user {}", groupId, userId);
+
+        return ResponseEntity.ok(updatedGroup);
     }
     
     @PostMapping("/{groupId}/members")

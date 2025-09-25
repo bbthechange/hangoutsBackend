@@ -82,14 +82,65 @@ public class GroupServiceImpl implements GroupService {
         // Get group metadata
         Group group = groupRepository.findById(groupId)
             .orElseThrow(() -> new ResourceNotFoundException("Group not found: " + groupId));
-        
+
         // Get user's membership in this group
         GroupMembership membership = groupRepository.findMembership(groupId, requestingUserId)
             .orElseThrow(() -> new UnauthorizedException("User not in group"));
-        
+
         return new GroupDTO(group, membership);
     }
-    
+
+    @Override
+    public GroupDTO updateGroup(String groupId, UpdateGroupRequest request, String requestingUserId) {
+        // Verify user is a member of the group
+        GroupMembership membership = groupRepository.findMembership(groupId, requestingUserId)
+            .orElseThrow(() -> new UnauthorizedException("User not in group"));
+
+        // Get existing group
+        Group group = groupRepository.findById(groupId)
+            .orElseThrow(() -> new ResourceNotFoundException("Group not found: " + groupId));
+
+        // Track if name changed for denormalization update
+        boolean nameChanged = false;
+        String newGroupName = null;
+
+        // Update only provided fields
+        boolean updated = false;
+        if (request.getGroupName() != null) {
+            String oldName = group.getGroupName();
+            newGroupName = request.getGroupName();
+            group.setGroupName(newGroupName);
+            nameChanged = !oldName.equals(newGroupName);
+            updated = true;
+        }
+        if (request.isPublic() != null) {
+            group.setPublic(request.isPublic());
+            updated = true;
+        }
+
+        if (!updated) {
+            throw new ValidationException("No valid fields provided for update");
+        }
+
+        // Save updated group
+        Group savedGroup = groupRepository.save(group);
+
+        // Update denormalized group names in membership records if name changed
+        if (nameChanged) {
+            groupRepository.updateMembershipGroupNames(groupId, newGroupName);
+            logger.info("Updated group {} name to '{}' and synchronized membership records", groupId, newGroupName);
+        } else {
+            logger.info("Updated group {} by user {}", groupId, requestingUserId);
+        }
+
+        // Update the membership object we're returning to reflect the new name
+        if (nameChanged) {
+            membership.setGroupName(newGroupName);
+        }
+
+        return new GroupDTO(savedGroup, membership);
+    }
+
     @Override
     public void deleteGroup(String groupId, String requestingUserId) {
         // Verify group exists and user is admin

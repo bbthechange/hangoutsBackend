@@ -148,6 +148,12 @@ public class GroupRepositoryImpl implements GroupRepository {
     }
     
     @Override
+    public void updateMembershipGroupNames(String groupId, String newGroupName) {
+        // Deprecated implementation - not used
+        throw new UnsupportedOperationException("Use PolymorphicGroupRepositoryImpl instead");
+    }
+
+    @Override
     public void removeMember(String groupId, String userId) {
         performanceTracker.trackQuery("removeGroupMember", "InviterTable", () -> {
             try {

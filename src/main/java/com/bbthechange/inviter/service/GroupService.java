@@ -20,7 +20,13 @@ public interface GroupService {
      * Includes the user's role in the group.
      */
     GroupDTO getGroup(String groupId, String requestingUserId);
-    
+
+    /**
+     * Update group attributes (member only).
+     * Only provided fields in the request will be updated.
+     */
+    GroupDTO updateGroup(String groupId, UpdateGroupRequest request, String requestingUserId);
+
     /**
      * Delete a group (admin only).
      * Also removes all memberships and hangout pointers.
