@@ -15,7 +15,7 @@
 ./gradlew bootRun              # Start API (port 8080)
 ./gradlew test                # Run tests (MANDATORY after changes)
 
-# Build and deploy  
+# Build and deploy  (usually managed by github actions)
 ./gradlew clean build         # Clean build
 eb deploy                     # Deploy to production
 
@@ -244,6 +244,7 @@ Health: http://localhost:8080/health
 
 ### Deployment Process
 
+Normally use github actions.  If we need to manually deploy:
 **⚠️ CRITICAL: Always verify artifact freshness to prevent stale deployments**
 
 ```bash
