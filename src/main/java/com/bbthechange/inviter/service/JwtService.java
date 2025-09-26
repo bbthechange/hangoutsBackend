@@ -16,7 +16,7 @@ import java.util.Date;
 @Service
 public class JwtService {
     
-    @Value("${jwt.secret:mySecretKeyForJWTTokenGenerationThatIsLongEnough123456789}")
+    @Value("${jwt.secret}")
     private String secretKey; // Environment variable, not hardcoded
     
     private static final long ACCESS_TOKEN_EXPIRATION = 1800000; // 30 minutes

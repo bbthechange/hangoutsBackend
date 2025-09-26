@@ -340,12 +340,6 @@ curl -X POST http://localhost:8080/auth/login \
 
 ## Manual Operations
 
-### Emergency Data Access
-If you need to bypass normal authorization:
-1. Temporarily modify controller validation for specific operations
-2. Use any valid JWT token for authentication  
-3. Restore authorization immediately after operation
-
 ### Getting JWT for Manual Testing
 ```bash
 # Login
