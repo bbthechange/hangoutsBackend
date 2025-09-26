@@ -1,1 +1,1 @@
-web: java -Djwt.secret=${jwt.secret} -jar build/libs/application.jar --server.port=5000
+web: java -jar application.jar --server.port=5000
