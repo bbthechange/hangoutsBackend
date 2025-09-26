@@ -37,7 +37,7 @@ public class JwtService {
     public void init() {
         // Ensure secret key has proper entropy
         if (secretKey.length() < 32) {
-            throw new IllegalArgumentException("JWT secret key must be at least 32 characters");
+            throw new IllegalArgumentException("JWT secret key must be at least 32 characters (was " + secretKey.length() + ")");
         }
         this.key = Keys.hmacShaKeyFor(secretKey.getBytes(StandardCharsets.UTF_8));
     }
