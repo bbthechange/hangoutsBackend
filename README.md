@@ -1,8 +1,6 @@
-# Inviter API Backend
+# Hangouts API Backend
 
-[![Java CI with Gradle](https://github.com/your-username/your-repo/actions/workflows/backend-ci-cd.yml/badge.svg)](https://github.com/your-username/your-repo/actions/workflows/backend-ci-cd.yml)
-
-This repository contains the backend API for **Inviter**, a social platform designed to make organizing events and hangouts with friends seamless and fun. The API is built with a focus on modern, scalable, and maintainable practices.
+This repository contains the backend API for **Hangouts**, a social platform designed to make organizing events and hangouts with friends seamless and fun. The API is built with a focus on modern, scalable, and maintainable practices.
 
 ## Core Features
 
