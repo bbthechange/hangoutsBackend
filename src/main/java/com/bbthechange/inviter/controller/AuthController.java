@@ -170,7 +170,7 @@ public class AuthController {
         
         Map<String, Object> responseBody = new HashMap<>();
         responseBody.put("accessToken", accessToken);
-        responseBody.put("expiresIn", 1800); // 30 minutes
+        responseBody.put("expiresIn", jwtService.getAccessTokenExpirationSeconds());
         responseBody.put("tokenType", "Bearer");
         
         if (isMobile) {
@@ -217,7 +217,7 @@ public class AuthController {
             // Prepare response
             Map<String, Object> responseBody = new HashMap<>();
             responseBody.put("accessToken", newTokens.getAccessToken());
-            responseBody.put("expiresIn", 1800);
+            responseBody.put("expiresIn", jwtService.getAccessTokenExpirationSeconds());
             responseBody.put("tokenType", "Bearer");
             
             if (isMobile) {

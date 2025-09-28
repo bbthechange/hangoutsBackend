@@ -64,6 +64,10 @@ public class JwtService {
         }
     }
     
+    public long getAccessTokenExpirationSeconds() {
+        return ACCESS_TOKEN_EXPIRATION / 1000;
+    }
+
     private Claims extractClaims(String token) {
         return Jwts.parser()
                 .verifyWith(key)
