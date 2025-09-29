@@ -88,7 +88,10 @@ class AuthControllerTest {
     private LoginRequest loginRequest;
     private UUID testUserId;
 
-    @BeforeEach
+    // Configuring getAccessTokenExpirationSeconds
+
+
+@BeforeEach
     void setUp() {
         // Manually create AuthController with mocked dependencies
         authController = new AuthController(
@@ -356,7 +359,8 @@ class AuthControllerTest {
             when(hashingService.generateSecurityHash("refresh-token")).thenReturn("security-hash");
             when(request.getHeader("X-Device-ID")).thenReturn("device-123");
             when(request.getHeader("X-Forwarded-For")).thenReturn(null);  // No X-Forwarded-For header
-            when(request.getHeader("X-Client-Type")).thenReturn(null);     // Web client (not mobile)
+            when(request.getHeader("X-Client-Type")).thenReturn(null);
+            when(jwtService.getAccessTokenExpirationSeconds()).thenReturn(1800);     // Web client (not mobile)
             when(request.getRemoteAddr()).thenReturn("192.168.1.1");
             
             // Mock cookie service for web client
@@ -516,6 +520,7 @@ class AuthControllerTest {
             when(request.getHeader("X-Device-ID")).thenReturn("device-123");
             when(request.getHeader("X-Forwarded-For")).thenReturn(null);
             when(request.getHeader("X-Client-Type")).thenReturn(null);
+            when(jwtService.getAccessTokenExpirationSeconds()).thenReturn(1800);
             when(request.getRemoteAddr()).thenReturn("192.168.1.1");
             
             ResponseCookie mockCookie = ResponseCookie.from("refresh_token", "refresh-token").build();
@@ -555,6 +560,7 @@ class AuthControllerTest {
             when(request.getHeader("X-Device-ID")).thenReturn("device-123");
             when(request.getHeader("X-Forwarded-For")).thenReturn(null);
             when(request.getHeader("X-Client-Type")).thenReturn(null);
+            when(jwtService.getAccessTokenExpirationSeconds()).thenReturn(1800);
             when(request.getRemoteAddr()).thenReturn("192.168.1.1");
             
             ResponseCookie mockCookie = ResponseCookie.from("refresh_token", "refresh-token").build();
