@@ -4,6 +4,7 @@ import com.bbthechange.inviter.service.HangoutService;
 import com.bbthechange.inviter.service.FuzzyTimeService;
 import com.bbthechange.inviter.service.UserService;
 import com.bbthechange.inviter.service.EventSeriesService;
+import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.model.*;
@@ -34,16 +35,19 @@ public class HangoutServiceImpl implements HangoutService {
     private final FuzzyTimeService fuzzyTimeService;
     private final UserService userService;
     private final EventSeriesService eventSeriesService;
+    private final NotificationService notificationService;
 
     @Autowired
     public HangoutServiceImpl(HangoutRepository hangoutRepository, GroupRepository groupRepository,
                               FuzzyTimeService fuzzyTimeService, UserService userService,
-                              @Lazy EventSeriesService eventSeriesService) {
+                              @Lazy EventSeriesService eventSeriesService,
+                              NotificationService notificationService) {
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
         this.fuzzyTimeService = fuzzyTimeService;
         this.userService = userService;
         this.eventSeriesService = eventSeriesService;
+        this.notificationService = notificationService;
     }
     
     @Override
@@ -89,8 +93,13 @@ public class HangoutServiceImpl implements HangoutService {
         
         // Save everything in a single transaction
         hangout = hangoutRepository.createHangoutWithAttributes(hangout, pointers, attributes);
-        
+
         logger.info("Created hangout {} with {} attributes by user {}", hangout.getHangoutId(), attributes.size(), requestingUserId);
+
+        // Send push notifications to group members
+        String creatorName = getCreatorDisplayName(requestingUserId);
+        notificationService.notifyNewHangout(hangout, requestingUserId, creatorName);
+
         return hangout;
     }
 
@@ -913,5 +922,21 @@ public class HangoutServiceImpl implements HangoutService {
                 return new PollWithOptionsDTO(poll, optionDTOs, totalVotes);
             })
             .collect(Collectors.toList());
+    }
+
+    /**
+     * Get display name for creator user with fallback to "Unknown".
+     */
+    private String getCreatorDisplayName(String userId) {
+        try {
+            Optional<User> userOpt = userService.getUserById(UUID.fromString(userId));
+            if (userOpt.isPresent()) {
+                User user = userOpt.get();
+                return user.getDisplayName() != null ? user.getDisplayName() : user.getUsername();
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to get display name for user {}: {}", userId, e.getMessage());
+        }
+        return "Unknown";
     }
 }

@@ -68,7 +68,7 @@ public class PushNotificationService {
             logger.info("APNs not configured - skipping push notification for event update '{}'", eventTitle);
             return;
         }
-        
+
         try {
             SimpleApnsPayloadBuilder payloadBuilder = new SimpleApnsPayloadBuilder();
             payloadBuilder.setAlertTitle("Event Update");
@@ -87,7 +87,7 @@ public class PushNotificationService {
             if (response.isAccepted()) {
                 logger.info("Event update notification sent successfully to device: {}", deviceToken.substring(0, 8) + "...");
             } else {
-                logger.error("Event update notification failed for device: {}. Reason: {}", 
+                logger.error("Event update notification failed for device: {}. Reason: {}",
                     deviceToken.substring(0, 8) + "...", response.getRejectionReason());
             }
 
@@ -96,6 +96,49 @@ public class PushNotificationService {
             Thread.currentThread().interrupt();
         } catch (Exception e) {
             logger.error("Unexpected error sending event update notification", e);
+        }
+    }
+
+    public void sendNewHangoutNotification(String deviceToken, String hangoutId, String groupId,
+                                          String hangoutTitle, String groupName, String creatorName) {
+        if (apnsClient == null) {
+            logger.info("APNs not configured - skipping push notification for new hangout '{}'", hangoutTitle);
+            return;
+        }
+
+        try {
+            SimpleApnsPayloadBuilder payloadBuilder = new SimpleApnsPayloadBuilder();
+            payloadBuilder.setAlertTitle("New Hangout");
+
+            String alertBody = creatorName != null && !creatorName.trim().isEmpty() && !"Unknown".equals(creatorName)
+                ? String.format("%s created '%s' in %s", creatorName, hangoutTitle, groupName)
+                : String.format("New hangout '%s' in %s", hangoutTitle, groupName);
+            payloadBuilder.setAlertBody(alertBody);
+            payloadBuilder.setBadgeNumber(1);
+            payloadBuilder.setSound("default");
+            payloadBuilder.addCustomProperty("type", "new_hangout");
+            payloadBuilder.addCustomProperty("hangoutId", hangoutId);
+            payloadBuilder.addCustomProperty("groupId", groupId);
+
+            String payload = payloadBuilder.build();
+            String token = TokenUtil.sanitizeTokenString(deviceToken);
+
+            SimpleApnsPushNotification pushNotification = new SimpleApnsPushNotification(token, bundleId, payload);
+
+            PushNotificationResponse<SimpleApnsPushNotification> response = apnsClient.sendNotification(pushNotification).get();
+
+            if (response.isAccepted()) {
+                logger.info("New hangout notification sent successfully to device: {}", deviceToken.substring(0, 8) + "...");
+            } else {
+                logger.error("New hangout notification failed for device: {}. Reason: {}",
+                    deviceToken.substring(0, 8) + "...", response.getRejectionReason());
+            }
+
+        } catch (ExecutionException | InterruptedException e) {
+            logger.error("Error sending new hangout notification to device: {}", deviceToken.substring(0, 8) + "...", e);
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            logger.error("Unexpected error sending new hangout notification", e);
         }
     }
 }

@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.service.impl;
 
 import com.bbthechange.inviter.service.FuzzyTimeService;
+import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.UserService;
 import com.bbthechange.inviter.service.EventSeriesService;
 import com.bbthechange.inviter.repository.HangoutRepository;
@@ -42,6 +43,9 @@ class HangoutServiceImplTest {
     
     @Mock
     private EventSeriesService eventSeriesService;
+
+    @Mock
+    private NotificationService notificationService;
     
     @InjectMocks
     private HangoutServiceImpl hangoutService;
