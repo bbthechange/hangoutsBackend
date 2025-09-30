@@ -14,6 +14,7 @@ public class SeriesSummaryDTO implements FeedItem {
     private String primaryEventId;
     private Long startTimestamp; // Earliest event in the series
     private Long endTimestamp;   // Latest event in the series
+    private String mainImagePath; // Denormalized image path from EventSeries/SeriesPointer
     private List<HangoutSummaryDTO> parts; // Individual events in the series
     private int totalParts;
     private String type = "series"; // Type discriminator for client-side handling
@@ -64,11 +65,19 @@ public class SeriesSummaryDTO implements FeedItem {
     public Long getEndTimestamp() {
         return endTimestamp;
     }
-    
+
     public void setEndTimestamp(Long endTimestamp) {
         this.endTimestamp = endTimestamp;
     }
-    
+
+    public String getMainImagePath() {
+        return mainImagePath;
+    }
+
+    public void setMainImagePath(String mainImagePath) {
+        this.mainImagePath = mainImagePath;
+    }
+
     public List<HangoutSummaryDTO> getParts() {
         return parts;
     }

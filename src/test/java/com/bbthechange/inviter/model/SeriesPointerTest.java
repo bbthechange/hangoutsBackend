@@ -260,11 +260,53 @@ class SeriesPointerTest {
         }
 
         // Then
-        software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSecondarySortKey annotation = 
+        software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSecondarySortKey annotation =
             method.getAnnotation(software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSecondarySortKey.class);
-        
+
         assertThat(annotation).isNotNull();
         assertThat(annotation.indexNames()).containsExactly("EndTimestampIndex");
+    }
+
+    @Test
+    void fromEventSeries_CopiesMainImagePathFromSeries() {
+        // Given
+        EventSeries series = createTestEventSeries();
+        series.setMainImagePath("/path/to/image.jpg");
+
+        // When
+        SeriesPointer pointer = SeriesPointer.fromEventSeries(series, "12345678-1234-1234-1234-123456789012");
+
+        // Then
+        assertThat(pointer.getMainImagePath()).isEqualTo("/path/to/image.jpg");
+    }
+
+    @Test
+    void fromEventSeries_HandlesNullMainImagePath() {
+        // Given
+        EventSeries series = createTestEventSeries();
+        series.setMainImagePath(null);
+
+        // When
+        SeriesPointer pointer = SeriesPointer.fromEventSeries(series, "12345678-1234-1234-1234-123456789012");
+
+        // Then
+        assertThat(pointer.getMainImagePath()).isNull();
+    }
+
+    @Test
+    void syncWithEventSeries_UpdatesMainImagePath() {
+        // Given
+        SeriesPointer pointer = new SeriesPointer();
+        pointer.setMainImagePath("/old.jpg");
+
+        EventSeries series = createTestEventSeries();
+        series.setMainImagePath("/new.jpg");
+
+        // When
+        pointer.syncWithEventSeries(series);
+
+        // Then
+        assertThat(pointer.getMainImagePath()).isEqualTo("/new.jpg");
     }
 
     // Helper methods

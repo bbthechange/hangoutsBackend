@@ -105,6 +105,7 @@ public class EventSeriesServiceImpl implements EventSeriesService {
         newSeries.setSeriesId(seriesId);
         newSeries.setSeriesTitle(existingHangout.getTitle());
         newSeries.setPrimaryEventId(existingHangoutId);
+        newSeries.setMainImagePath(existingHangout.getMainImagePath()); // Copy image from primary hangout
         newSeries.setHangoutIds(new ArrayList<>());
         newSeries.getHangoutIds().add(existingHangoutId);
         
@@ -155,6 +156,7 @@ public class EventSeriesServiceImpl implements EventSeriesService {
             );
             newPointer.setSeriesId(seriesId);
             newPointer.setTimeInput(newHangout.getTimeInput());
+            newPointer.setMainImagePath(newHangout.getMainImagePath()); // Denormalize image path
             // Copy timestamps from hangout if available
             if (newHangout.getStartTimestamp() != null) {
                 newPointer.setStartTimestamp(newHangout.getStartTimestamp());
@@ -271,6 +273,7 @@ public class EventSeriesServiceImpl implements EventSeriesService {
             );
             newPointer.setSeriesId(seriesId);
             newPointer.setTimeInput(newHangout.getTimeInput());
+            newPointer.setMainImagePath(newHangout.getMainImagePath()); // Denormalize image path
             // Copy timestamps from hangout if available
             if (newHangout.getStartTimestamp() != null) {
                 newPointer.setStartTimestamp(newHangout.getStartTimestamp());

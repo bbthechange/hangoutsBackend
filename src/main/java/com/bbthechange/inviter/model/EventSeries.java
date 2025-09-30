@@ -24,6 +24,7 @@ public class EventSeries extends BaseItem {
     private String seriesDescription;
     private String primaryEventId;      // The main hangout in the series
     private String groupId;             // The group this series belongs to
+    private String mainImagePath;       // Image for the series
     private Long startTimestamp;        // Timestamp of the first event in the series (for GSI)
     private Long endTimestamp;          // Timestamp of the last event in the series
     private List<String> hangoutIds;   // List of hangout IDs that are part of this series
@@ -101,7 +102,16 @@ public class EventSeries extends BaseItem {
         this.groupId = groupId;
         touch(); // Update timestamp
     }
-    
+
+    public String getMainImagePath() {
+        return mainImagePath;
+    }
+
+    public void setMainImagePath(String mainImagePath) {
+        this.mainImagePath = mainImagePath;
+        touch(); // Update timestamp
+    }
+
     /**
      * GSI sort key for EntityTimeIndex - timestamp of the first event in the series.
      */

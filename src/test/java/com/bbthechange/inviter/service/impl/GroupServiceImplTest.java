@@ -1338,8 +1338,106 @@ class GroupServiceImplTest {
     }
 
     private HangoutPointer createHangoutPointerWithTimestamp(String hangoutId, Long timestamp) {
-        HangoutPointer pointer = createHangoutPointer("test-group", hangoutId, "Test Hangout", 
+        HangoutPointer pointer = createHangoutPointer("test-group", hangoutId, "Test Hangout",
             timestamp != null ? java.time.Instant.ofEpochSecond(timestamp) : null);
         return pointer;
+    }
+
+    @Test
+    void createGroup_DenormalizesImagePathsToInitialMembership() {
+        // Given
+        String creatorId = "87654321-4321-4321-4321-210987654321";
+        CreateGroupRequest request = new CreateGroupRequest("Test Group", true);
+        request.setMainImagePath("/group-main.jpg");
+        request.setBackgroundImagePath("/group-bg.jpg");
+
+        User creator = new User();
+        creator.setId(UUID.fromString(creatorId));
+        when(userRepository.findById(UUID.fromString(creatorId))).thenReturn(Optional.of(creator));
+        doNothing().when(groupRepository).createGroupWithFirstMember(any(Group.class), any(GroupMembership.class));
+
+        // When
+        groupService.createGroup(request, creatorId);
+
+        // Then - Capture GroupMembership passed to repository
+        org.mockito.ArgumentCaptor<GroupMembership> membershipCaptor =
+            org.mockito.ArgumentCaptor.forClass(GroupMembership.class);
+        verify(groupRepository).createGroupWithFirstMember(any(Group.class), membershipCaptor.capture());
+
+        GroupMembership membership = membershipCaptor.getValue();
+        assertThat(membership.getGroupMainImagePath()).isEqualTo("/group-main.jpg");
+        assertThat(membership.getGroupBackgroundImagePath()).isEqualTo("/group-bg.jpg");
+    }
+
+    @Test
+    void updateGroup_CallsRepositoryToUpdateMembershipsWhenImagePathsChange() {
+        // Given
+        String userId = "87654321-4321-4321-4321-210987654321";
+        Group existingGroup = createTestGroup("Test Group", true, GROUP_ID);
+        existingGroup.setMainImagePath("/old.jpg");
+
+        GroupMembership membership = createTestMembership(GROUP_ID, userId, "Test Group", GroupRole.ADMIN);
+        when(groupRepository.findMembership(GROUP_ID, userId)).thenReturn(Optional.of(membership));
+        when(groupRepository.findById(GROUP_ID)).thenReturn(Optional.of(existingGroup));
+        when(groupRepository.save(any(Group.class))).thenReturn(existingGroup);
+        doNothing().when(groupRepository).updateMembershipGroupImagePaths(eq(GROUP_ID), eq("/new.jpg"), isNull());
+
+        UpdateGroupRequest request = new UpdateGroupRequest();
+        request.setMainImagePath("/new.jpg");
+
+        // When
+        groupService.updateGroup(GROUP_ID, request, userId);
+
+        // Then
+        verify(groupRepository).updateMembershipGroupImagePaths(eq(GROUP_ID), eq("/new.jpg"), isNull());
+    }
+
+    @Test
+    void updateGroup_DoesNotCallRepositoryWhenImagePathsUnchanged() {
+        // Given
+        String userId = "87654321-4321-4321-4321-210987654321";
+        Group existingGroup = createTestGroup("Test Group", true, GROUP_ID);
+
+        GroupMembership membership = createTestMembership(GROUP_ID, userId, "Test Group", GroupRole.ADMIN);
+        when(groupRepository.findMembership(GROUP_ID, userId)).thenReturn(Optional.of(membership));
+        when(groupRepository.findById(GROUP_ID)).thenReturn(Optional.of(existingGroup));
+        when(groupRepository.save(any(Group.class))).thenReturn(existingGroup);
+
+        UpdateGroupRequest request = new UpdateGroupRequest();
+        request.setGroupName("New Group Name"); // Only change name, not images
+
+        // When
+        groupService.updateGroup(GROUP_ID, request, userId);
+
+        // Then
+        verify(groupRepository, never()).updateMembershipGroupImagePaths(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void addMember_DenormalizesCurrentGroupImagePathsToNewMembership() {
+        // Given
+        String newUserId = "11111111-1111-1111-1111-111111111111";
+        String addedBy = "87654321-4321-4321-4321-210987654321";
+
+        Group group = createTestGroup("Test Group", true, GROUP_ID);
+        group.setMainImagePath("/group-image.jpg");
+        group.setBackgroundImagePath("/group-bg.jpg");
+
+        lenient().when(groupRepository.findById(GROUP_ID)).thenReturn(Optional.of(group));
+        lenient().when(groupRepository.isUserMemberOfGroup(GROUP_ID, addedBy)).thenReturn(true);
+        lenient().when(groupRepository.isUserMemberOfGroup(GROUP_ID, newUserId)).thenReturn(false);
+        lenient().when(userRepository.findById(UUID.fromString(newUserId))).thenReturn(Optional.of(new User()));
+
+        // When
+        groupService.addMember(GROUP_ID, newUserId, null, addedBy);
+
+        // Then - Capture GroupMembership passed to repository
+        org.mockito.ArgumentCaptor<GroupMembership> membershipCaptor =
+            org.mockito.ArgumentCaptor.forClass(GroupMembership.class);
+        verify(groupRepository).addMember(membershipCaptor.capture());
+
+        GroupMembership membership = membershipCaptor.getValue();
+        assertThat(membership.getGroupMainImagePath()).isEqualTo("/group-image.jpg");
+        assertThat(membership.getGroupBackgroundImagePath()).isEqualTo("/group-bg.jpg");
     }
 }

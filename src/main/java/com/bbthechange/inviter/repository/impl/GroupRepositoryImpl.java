@@ -154,6 +154,18 @@ public class GroupRepositoryImpl implements GroupRepository {
     }
 
     @Override
+    public void updateMembershipGroupImagePaths(String groupId, String mainImagePath, String backgroundImagePath) {
+        // Deprecated implementation - not used
+        throw new UnsupportedOperationException("Use PolymorphicGroupRepositoryImpl instead");
+    }
+
+    @Override
+    public void updateMembershipUserImagePath(String userId, String mainImagePath) {
+        // Deprecated implementation - not used
+        throw new UnsupportedOperationException("Use PolymorphicGroupRepositoryImpl instead");
+    }
+
+    @Override
     public void removeMember(String groupId, String userId) {
         performanceTracker.trackQuery("removeGroupMember", "InviterTable", () -> {
             try {

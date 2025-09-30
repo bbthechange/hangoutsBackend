@@ -57,18 +57,28 @@ public class GroupServiceImpl implements GroupService {
         // Input validation
         validateCreateGroupRequest(request);
         
-        // Verify creator exists
-        userRepository.findById(UUID.fromString(creatorId))
+        // Verify creator exists and get user info for denormalization
+        User creator = userRepository.findById(UUID.fromString(creatorId))
             .orElseThrow(() -> new UserNotFoundException("Creator not found: " + creatorId));
-        
+
         // Create both records for atomic operation
         Group group = new Group(request.getGroupName(), request.isPublic());
+        group.setMainImagePath(request.getMainImagePath());
+        group.setBackgroundImagePath(request.getBackgroundImagePath());
+
         GroupMembership membership = new GroupMembership(
-            group.getGroupId(), 
-            creatorId, 
+            group.getGroupId(),
+            creatorId,
             group.getGroupName() // Denormalize for GSI efficiency
         );
         membership.setRole(GroupRole.ADMIN); // Creator is admin
+
+        // Denormalize group image paths to membership
+        membership.setGroupMainImagePath(group.getMainImagePath());
+        membership.setGroupBackgroundImagePath(group.getBackgroundImagePath());
+
+        // Denormalize user image path to membership
+        membership.setUserMainImagePath(creator.getMainImagePath());
         
         // Atomic creation using TransactWriteItems pattern
         groupRepository.createGroupWithFirstMember(group, membership);
@@ -103,6 +113,7 @@ public class GroupServiceImpl implements GroupService {
         // Track if name changed for denormalization update
         boolean nameChanged = false;
         String newGroupName = null;
+        boolean imagePathsChanged = false;
 
         // Update only provided fields
         boolean updated = false;
@@ -115,6 +126,16 @@ public class GroupServiceImpl implements GroupService {
         }
         if (request.isPublic() != null) {
             group.setPublic(request.isPublic());
+            updated = true;
+        }
+        if (request.getMainImagePath() != null) {
+            group.setMainImagePath(request.getMainImagePath());
+            imagePathsChanged = true;
+            updated = true;
+        }
+        if (request.getBackgroundImagePath() != null) {
+            group.setBackgroundImagePath(request.getBackgroundImagePath());
+            imagePathsChanged = true;
             updated = true;
         }
 
@@ -133,9 +154,19 @@ public class GroupServiceImpl implements GroupService {
             logger.info("Updated group {} by user {}", groupId, requestingUserId);
         }
 
-        // Update the membership object we're returning to reflect the new name
+        // Update denormalized group image paths in membership records if changed
+        if (imagePathsChanged) {
+            groupRepository.updateMembershipGroupImagePaths(groupId, savedGroup.getMainImagePath(), savedGroup.getBackgroundImagePath());
+            logger.info("Updated group {} image paths and synchronized membership records", groupId);
+        }
+
+        // Update the membership object we're returning to reflect the new values
         if (nameChanged) {
             membership.setGroupName(newGroupName);
+        }
+        if (imagePathsChanged) {
+            membership.setGroupMainImagePath(savedGroup.getMainImagePath());
+            membership.setGroupBackgroundImagePath(savedGroup.getBackgroundImagePath());
         }
 
         return new GroupDTO(savedGroup, membership);
@@ -171,22 +202,36 @@ public class GroupServiceImpl implements GroupService {
             throw new IllegalArgumentException("You must provide exactly one of: userId or phoneNumber");
         }
 
+        User userToAdd;
+        final String finalUserId;
         if (phoneNumber != null) {
-            userId = inviteService.findOrCreateUserByPhoneNumber(phoneNumber).getId().toString();
-        } else if (userRepository.findById(UUID.fromString(userId)).isEmpty()) {
-            throw new UserNotFoundException("Cannot add user to group, user not found: " + userId);
+            userToAdd = inviteService.findOrCreateUserByPhoneNumber(phoneNumber);
+            finalUserId = userToAdd.getId().toString();
+        } else {
+            final String userIdForLambda = userId;
+            userToAdd = userRepository.findById(UUID.fromString(userId))
+                .orElseThrow(() -> new UserNotFoundException("Cannot add user to group, user not found: " + userIdForLambda));
+            finalUserId = userId;
         }
+        userId = finalUserId;
 
 
         // Check if user is already a member
         if (groupRepository.isUserMemberOfGroup(groupId, userId)) {
             throw new ValidationException("User is already a member of this group");
         }
-        
+
         // Create membership record
         GroupMembership membership = new GroupMembership(groupId, userId, group.getGroupName());
         membership.setRole(GroupRole.MEMBER); // Default role
-        
+
+        // Denormalize group image paths to membership
+        membership.setGroupMainImagePath(group.getMainImagePath());
+        membership.setGroupBackgroundImagePath(group.getBackgroundImagePath());
+
+        // Denormalize user image path to membership
+        membership.setUserMainImagePath(userToAdd.getMainImagePath());
+
         groupRepository.addMember(membership);
         logger.info("Added member {} to group {} by {}", userId, groupId, addedBy);
     }
@@ -261,7 +306,10 @@ public class GroupServiceImpl implements GroupService {
                 membership.getGroupId(),
                 membership.getGroupName(), // Already available - no lookup needed!
                 membership.getRole(),
-                membership.getCreatedAt()
+                membership.getCreatedAt(),
+                membership.getGroupMainImagePath(),
+                membership.getGroupBackgroundImagePath(),
+                membership.getUserMainImagePath()
             ))
             .collect(Collectors.toList());
     }
@@ -530,7 +578,7 @@ public class GroupServiceImpl implements GroupService {
      */
     SeriesSummaryDTO createSeriesSummaryDTO(SeriesPointer seriesPointer) {
         SeriesSummaryDTO dto = new SeriesSummaryDTO();
-        
+
         // Copy series-level information
         dto.setSeriesId(seriesPointer.getSeriesId());
         dto.setSeriesTitle(seriesPointer.getSeriesTitle());
@@ -538,6 +586,7 @@ public class GroupServiceImpl implements GroupService {
         dto.setPrimaryEventId(seriesPointer.getPrimaryEventId());
         dto.setStartTimestamp(seriesPointer.getStartTimestamp());
         dto.setEndTimestamp(seriesPointer.getEndTimestamp());
+        dto.setMainImagePath(seriesPointer.getMainImagePath());
         
         // Convert denormalized parts to HangoutSummaryDTO objects
         List<HangoutSummaryDTO> parts = new ArrayList<>();

@@ -17,6 +17,8 @@ public class Group extends BaseItem {
     private String groupId;
     private String groupName;
     private boolean isPublic;
+    private String mainImagePath;
+    private String backgroundImagePath;
     
     // Default constructor for DynamoDB
     public Group() {
@@ -62,6 +64,24 @@ public class Group extends BaseItem {
     
     public void setPublic(boolean isPublic) {
         this.isPublic = isPublic;
+        touch(); // Update timestamp
+    }
+
+    public String getMainImagePath() {
+        return mainImagePath;
+    }
+
+    public void setMainImagePath(String mainImagePath) {
+        this.mainImagePath = mainImagePath;
+        touch(); // Update timestamp
+    }
+
+    public String getBackgroundImagePath() {
+        return backgroundImagePath;
+    }
+
+    public void setBackgroundImagePath(String backgroundImagePath) {
+        this.backgroundImagePath = backgroundImagePath;
         touch(); // Update timestamp
     }
 }

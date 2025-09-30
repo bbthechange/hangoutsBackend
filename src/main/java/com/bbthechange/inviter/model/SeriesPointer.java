@@ -28,6 +28,7 @@ public class SeriesPointer extends BaseItem {
     private String seriesDescription;
     private String primaryEventId;      // The main hangout in the series
     private String groupId;             // The specific group this pointer belongs to
+    private String mainImagePath;       // Denormalized image path from EventSeries
     private Long startTimestamp;        // Timestamp of the first event in the series (for GSI)
     private Long endTimestamp;          // Timestamp of the last event in the series
     private List<String> hangoutIds;   // List of hangout IDs that are part of this series
@@ -70,15 +71,16 @@ public class SeriesPointer extends BaseItem {
      */
     public static SeriesPointer fromEventSeries(EventSeries series, String groupId) {
         SeriesPointer pointer = new SeriesPointer(groupId, series.getSeriesId(), series.getSeriesTitle());
-        
+
         // Copy all EventSeries fields
         pointer.setSeriesDescription(series.getSeriesDescription());
         pointer.setPrimaryEventId(series.getPrimaryEventId());
+        pointer.setMainImagePath(series.getMainImagePath());
         pointer.setStartTimestamp(series.getStartTimestamp());
         pointer.setEndTimestamp(series.getEndTimestamp());
         pointer.setHangoutIds(series.getHangoutIds() != null ? new ArrayList<>(series.getHangoutIds()) : new ArrayList<>());
         pointer.setVersion(series.getVersion());
-        
+
         return pointer;
     }
     
@@ -125,7 +127,16 @@ public class SeriesPointer extends BaseItem {
         this.groupId = groupId;
         touch(); // Update timestamp
     }
-    
+
+    public String getMainImagePath() {
+        return mainImagePath;
+    }
+
+    public void setMainImagePath(String mainImagePath) {
+        this.mainImagePath = mainImagePath;
+        touch(); // Update timestamp
+    }
+
     /**
      * GSI sort key for EntityTimeIndex - timestamp of the first event in the series.
      * This allows series to be sorted by time alongside hangouts in group feeds.
@@ -199,6 +210,7 @@ public class SeriesPointer extends BaseItem {
         setSeriesTitle(series.getSeriesTitle());
         setSeriesDescription(series.getSeriesDescription());
         setPrimaryEventId(series.getPrimaryEventId());
+        setMainImagePath(series.getMainImagePath());
         setStartTimestamp(series.getStartTimestamp());
         setEndTimestamp(series.getEndTimestamp());
         setHangoutIds(series.getHangoutIds() != null ? new ArrayList<>(series.getHangoutIds()) : new ArrayList<>());

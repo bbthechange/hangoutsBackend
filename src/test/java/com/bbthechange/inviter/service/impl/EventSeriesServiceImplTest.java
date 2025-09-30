@@ -1930,4 +1930,108 @@ class EventSeriesServiceImplTest {
         verify(hangoutRepository).findPointersForHangout(hangout);
         verify(seriesTransactionRepository).deleteEntireSeriesWithAllHangouts(any(), any(), any(), any());
     }
+
+    @Test
+    void convertToSeriesWithNewMember_CopiesMainImagePathFromExistingHangout() {
+        // Given
+        String existingHangoutId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        String groupId = UUID.randomUUID().toString();
+
+        Hangout existingHangout = HangoutTestBuilder.aHangout()
+            .withId(existingHangoutId)
+            .withTitle("Series Event")
+            .withMainImagePath("/series-image.jpg")
+            .build();
+
+        HangoutPointer existingPointer = HangoutPointerTestBuilder.aPointer()
+            .forGroup(groupId)
+            .forHangout(existingHangoutId)
+            .build();
+
+        CreateHangoutRequest newMemberRequest = new CreateHangoutRequest();
+        newMemberRequest.setTitle("New Member Hangout");
+        newMemberRequest.setAssociatedGroups(List.of(groupId));
+
+        Hangout newHangout = HangoutTestBuilder.aHangout()
+            .withTitle("New Member Hangout")
+            .build();
+        newHangout.setAssociatedGroups(List.of(groupId));
+
+        when(hangoutRepository.findHangoutById(existingHangoutId)).thenReturn(Optional.of(existingHangout));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(new User()));
+        when(hangoutRepository.findPointersForHangout(existingHangout)).thenReturn(List.of(existingPointer));
+        when(hangoutService.hangoutFromHangoutRequest(any(), eq(userId))).thenReturn(newHangout);
+        doNothing().when(seriesTransactionRepository).createSeriesWithNewPart(any(), any(), any(), any(), any(), any());
+
+        // When
+        EventSeries result = eventSeriesService.convertToSeriesWithNewMember(existingHangoutId, newMemberRequest, userId);
+
+        // Then
+        assertThat(result.getMainImagePath()).isEqualTo("/series-image.jpg");
+
+        // Verify seriesTransactionRepository was called
+        ArgumentCaptor<EventSeries> seriesCaptor = ArgumentCaptor.forClass(EventSeries.class);
+        verify(seriesTransactionRepository).createSeriesWithNewPart(
+            seriesCaptor.capture(),
+            any(), any(), any(), any(), any()
+        );
+
+        assertThat(seriesCaptor.getValue().getMainImagePath()).isEqualTo("/series-image.jpg");
+    }
+
+    @Test
+    void convertToSeriesWithNewMember_DenormalizesImagePathToNewHangoutPointers() {
+        // Given
+        String existingHangoutId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        String group1Id = UUID.randomUUID().toString();
+        String group2Id = UUID.randomUUID().toString();
+
+        Hangout existingHangout = HangoutTestBuilder.aHangout()
+            .withId(existingHangoutId)
+            .withTitle("Series Event")
+            .build();
+
+        HangoutPointer existingPointer = HangoutPointerTestBuilder.aPointer()
+            .forGroup(group1Id)
+            .forHangout(existingHangoutId)
+            .build();
+
+        CreateHangoutRequest newMemberRequest = new CreateHangoutRequest();
+        newMemberRequest.setTitle("New Member Hangout");
+        newMemberRequest.setMainImagePath("/new-part-image.jpg");
+        newMemberRequest.setAssociatedGroups(List.of(group1Id, group2Id));
+
+        Hangout newHangout = HangoutTestBuilder.aHangout()
+            .withTitle("New Member Hangout")
+            .withMainImagePath("/new-part-image.jpg")
+            .build();
+        newHangout.setAssociatedGroups(List.of(group1Id, group2Id));
+
+        when(hangoutRepository.findHangoutById(existingHangoutId)).thenReturn(Optional.of(existingHangout));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(new User()));
+        when(hangoutRepository.findPointersForHangout(existingHangout)).thenReturn(List.of(existingPointer));
+        when(hangoutService.hangoutFromHangoutRequest(any(), eq(userId))).thenReturn(newHangout);
+        doNothing().when(seriesTransactionRepository).createSeriesWithNewPart(any(), any(), any(), any(), any(), any());
+
+        // When
+        eventSeriesService.convertToSeriesWithNewMember(existingHangoutId, newMemberRequest, userId);
+
+        // Then - Capture new HangoutPointers passed to repository
+        ArgumentCaptor<List<HangoutPointer>> newPointersCaptor = ArgumentCaptor.forClass(List.class);
+        verify(seriesTransactionRepository).createSeriesWithNewPart(
+            any(),
+            any(),
+            any(),
+            any(),
+            newPointersCaptor.capture(),
+            any()
+        );
+
+        List<HangoutPointer> newPointers = newPointersCaptor.getValue();
+        assertThat(newPointers).hasSize(2); // One for each group
+        assertThat(newPointers.get(0).getMainImagePath()).isEqualTo("/new-part-image.jpg");
+        assertThat(newPointers.get(1).getMainImagePath()).isEqualTo("/new-part-image.jpg");
+    }
 }

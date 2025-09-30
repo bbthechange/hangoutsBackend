@@ -61,13 +61,14 @@ public class ProfileController {
         }
         
         UUID userId = UUID.fromString(userIdStr);
-        
+
         try {
-            User updatedUser = userService.updateDisplayName(userId, request.getDisplayName());
-            
+            User updatedUser = userService.updateProfile(userId, request);
+
             Map<String, Object> response = new HashMap<>();
             response.put("message", "Profile updated successfully");
             response.put("displayName", updatedUser.getDisplayName());
+            response.put("mainImagePath", updatedUser.getMainImagePath());
             
             return new ResponseEntity<>(response, HttpStatus.OK);
         } catch (IllegalArgumentException e) {

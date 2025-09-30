@@ -4,11 +4,15 @@ import com.bbthechange.inviter.model.Device;
 import com.bbthechange.inviter.model.Event;
 import com.bbthechange.inviter.model.Invite;
 import com.bbthechange.inviter.model.User;
+import com.bbthechange.inviter.dto.UpdateProfileRequest;
 import com.bbthechange.inviter.repository.EventRepository;
 import com.bbthechange.inviter.repository.InviteRepository;
 import com.bbthechange.inviter.repository.UserRepository;
+import com.bbthechange.inviter.repository.GroupRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -17,28 +21,70 @@ import java.util.UUID;
 
 @Service
 public class UserService {
-    
+
+    private static final Logger logger = LoggerFactory.getLogger(UserService.class);
+
     @Autowired
     private UserRepository userRepository;
-    
+
     @Autowired
     private PasswordService passwordService;
-    
+
     @Autowired
     private InviteRepository inviteRepository;
-    
+
     @Autowired
     private EventRepository eventRepository;
-    
+
     @Autowired
     private DeviceService deviceService;
+
+    @Autowired
+    private GroupRepository groupRepository;
     
+    public User updateProfile(UUID userId, UpdateProfileRequest request) {
+        Optional<User> userOpt = userRepository.findById(userId);
+        if (userOpt.isEmpty()) {
+            throw new IllegalArgumentException("User not found");
+        }
+
+        User user = userOpt.get();
+        boolean updated = false;
+        boolean mainImagePathChanged = false;
+
+        if (request.getDisplayName() != null) {
+            user.setDisplayName(request.getDisplayName());
+            updated = true;
+        }
+
+        if (request.getMainImagePath() != null && !request.getMainImagePath().equals(user.getMainImagePath())) {
+            user.setMainImagePath(request.getMainImagePath());
+            mainImagePathChanged = true;
+            updated = true;
+        }
+
+        if (!updated) {
+            return user; // No changes needed
+        }
+
+        User savedUser = userRepository.save(user);
+
+        // Update denormalized user image path in all membership records if changed
+        if (mainImagePathChanged) {
+            groupRepository.updateMembershipUserImagePath(userId.toString(), savedUser.getMainImagePath());
+            logger.info("Updated user {} mainImagePath and synchronized membership records", userId);
+        }
+
+        return savedUser;
+    }
+
+    @Deprecated
     public User updateDisplayName(UUID userId, String displayName) {
         Optional<User> userOpt = userRepository.findById(userId);
         if (userOpt.isEmpty()) {
             throw new IllegalArgumentException("User not found");
         }
-        
+
         User user = userOpt.get();
         user.setDisplayName(displayName);
         return userRepository.save(user);

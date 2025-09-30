@@ -52,6 +52,9 @@ class UserServiceTest {
     @Mock
     private DeviceService deviceService;
 
+    @Mock
+    private com.bbthechange.inviter.repository.GroupRepository groupRepository;
+
     @InjectMocks
     private UserService userService;
 
@@ -481,6 +484,101 @@ class UserServiceTest {
             verify(eventRepository).deleteById(eventId3);
             verify(inviteRepository).delete(guestInvite); // Only remaining invite
             verify(userRepository).delete(testUser);
+        }
+    }
+
+    @Nested
+    @DisplayName("updateProfile - Profile Update with Image Path Tests")
+    class UpdateProfileWithImageTests {
+
+        @Test
+        @DisplayName("Should call repository to update memberships when mainImagePath changes")
+        void updateProfile_CallsRepositoryToUpdateMembershipsWhenMainImagePathChanges() {
+            // Arrange
+            User user = new User("+1234567890", "testuser", "Test User", "password");
+            user.setId(testUserId);
+            user.setMainImagePath("/old-avatar.jpg");
+
+            com.bbthechange.inviter.dto.UpdateProfileRequest request = new com.bbthechange.inviter.dto.UpdateProfileRequest();
+            request.setMainImagePath("/new-avatar.jpg");
+
+            when(userRepository.findById(testUserId)).thenReturn(Optional.of(user));
+            when(userRepository.save(any(User.class))).thenReturn(user);
+            doNothing().when(groupRepository).updateMembershipUserImagePath(anyString(), anyString());
+
+            // Act
+            userService.updateProfile(testUserId, request);
+
+            // Assert
+            verify(groupRepository).updateMembershipUserImagePath(eq(testUserId.toString()), eq("/new-avatar.jpg"));
+        }
+
+        @Test
+        @DisplayName("Should not call repository when mainImagePath unchanged")
+        void updateProfile_DoesNotCallRepositoryWhenMainImagePathUnchanged() {
+            // Arrange
+            User user = new User("+1234567890", "testuser", "Test User", "password");
+            user.setId(testUserId);
+            user.setMainImagePath("/same.jpg");
+
+            com.bbthechange.inviter.dto.UpdateProfileRequest request = new com.bbthechange.inviter.dto.UpdateProfileRequest();
+            request.setMainImagePath("/same.jpg");
+
+            when(userRepository.findById(testUserId)).thenReturn(Optional.of(user));
+
+            // Act
+            userService.updateProfile(testUserId, request);
+
+            // Assert
+            verify(groupRepository, never()).updateMembershipUserImagePath(anyString(), anyString());
+            verify(userRepository, never()).save(any(User.class)); // No changes, so no save
+        }
+
+        @Test
+        @DisplayName("Should handle both displayName and imagePath changes")
+        void updateProfile_HandlesBothDisplayNameAndImagePathChanges() {
+            // Arrange
+            User user = new User("+1234567890", "testuser", "Old Name", "password");
+            user.setId(testUserId);
+            user.setMainImagePath("/old.jpg");
+
+            com.bbthechange.inviter.dto.UpdateProfileRequest request = new com.bbthechange.inviter.dto.UpdateProfileRequest();
+            request.setDisplayName("New Name");
+            request.setMainImagePath("/new.jpg");
+
+            when(userRepository.findById(testUserId)).thenReturn(Optional.of(user));
+            when(userRepository.save(any(User.class))).thenReturn(user);
+            doNothing().when(groupRepository).updateMembershipUserImagePath(anyString(), anyString());
+
+            // Act
+            User result = userService.updateProfile(testUserId, request);
+
+            // Assert
+            assertEquals("New Name", result.getDisplayName());
+            assertEquals("/new.jpg", result.getMainImagePath());
+            verify(userRepository).save(any(User.class));
+            verify(groupRepository).updateMembershipUserImagePath(eq(testUserId.toString()), eq("/new.jpg"));
+        }
+
+        @Test
+        @DisplayName("Should handle null mainImagePath (no change requested)")
+        void updateProfile_HandlesNullMainImagePath() {
+            // Arrange
+            User user = new User("+1234567890", "testuser", "Test User", "password");
+            user.setId(testUserId);
+            user.setMainImagePath("/old.jpg");
+
+            com.bbthechange.inviter.dto.UpdateProfileRequest request = new com.bbthechange.inviter.dto.UpdateProfileRequest();
+            request.setMainImagePath(null); // null means no change requested
+
+            when(userRepository.findById(testUserId)).thenReturn(Optional.of(user));
+
+            // Act
+            userService.updateProfile(testUserId, request);
+
+            // Assert
+            verify(groupRepository, never()).updateMembershipUserImagePath(anyString(), anyString());
+            verify(userRepository, never()).save(any(User.class)); // No changes
         }
     }
 

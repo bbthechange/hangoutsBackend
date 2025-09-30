@@ -18,8 +18,8 @@ Event Series are multi-part events, where a single conceptual event (the series)
 | `EventSeriesServiceImpl.java` | Implements the complex business logic for series operations, orchestrating transactions across multiple record types. |
 | `EventSeriesRepositoryImpl.java` | Handles direct DynamoDB interactions for `EventSeries` canonical records. |
 | `SeriesTransactionRepository.java` | A specialized repository responsible for executing large, atomic `TransactWriteItems` operations that span series, hangouts, and pointers. |
-| `EventSeries.java` | The `@DynamoDbBean` for the canonical series record. |
-| `SeriesPointer.java` | The `@DynamoDbBean` for the denormalized series pointer record. Contains a list of `HangoutPointer` objects. |
+| `EventSeries.java` | The `@DynamoDbBean` for the canonical series record. Contains mainImagePath typically copied from the primary hangout. |
+| `SeriesPointer.java` | The `@DynamoDbBean` for the denormalized series pointer record. Contains a list of `HangoutPointer` objects and mainImagePath denormalized from EventSeries. |
 | `CreateSeriesRequest.java` | DTO for creating a new series from an existing hangout. |
 | `EventSeriesDetailDTO.java` | DTO that aggregates a series and the full `HangoutDetailDTO` for each of its parts. |
 
@@ -36,9 +36,9 @@ This is the primary method for creating a series.
 3.  **Service:** `EventSeriesServiceImpl.convertToSeriesWithNewMember()`:
     *   Takes an `existingHangoutId` and a `CreateHangoutRequest` for a new, second part of the series.
     *   **In-Memory Preparation:** It constructs all the necessary records before writing to the database:
-        1.  A new `EventSeries` canonical record.
+        1.  A new `EventSeries` canonical record with mainImagePath copied from the primary hangout.
         2.  A new `Hangout` canonical record for the second part.
-        3.  New `HangoutPointer` records for the new hangout.
+        3.  New `HangoutPointer` records for the new hangout with denormalized data (title, timeInfo, mainImagePath, location, timestamps).
         4.  A new `SeriesPointer` record for the group feed.
     *   **Updates Existing Records:** It modifies the existing `Hangout` and its `HangoutPointer`s to link them to the new `seriesId`.
 4.  **Repository:** `SeriesTransactionRepository.createSeriesWithNewPart()`:

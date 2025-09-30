@@ -406,4 +406,229 @@ class PolymorphicGroupRepositoryImplUnitTest {
             "seriesTitle", AttributeValue.builder().s("Test Series").build()
         );
     }
+
+    // ============================================================================
+    // IMAGE PATH DENORMALIZATION TESTS
+    // ============================================================================
+
+    @Test
+    void updateMembershipGroupImagePaths_UpdatesAllMembershipsForGroup() {
+        // Given
+        String userId1 = UUID.randomUUID().toString();
+        String userId2 = UUID.randomUUID().toString();
+        String userId3 = UUID.randomUUID().toString();
+
+        // Mock findMembersByGroupId to return 3 memberships
+        List<GroupMembership> memberships = Arrays.asList(
+            createTestMembership(groupId, userId1),
+            createTestMembership(groupId, userId2),
+            createTestMembership(groupId, userId3)
+        );
+
+        QueryResponse queryResponse = QueryResponse.builder()
+            .items(Arrays.asList(
+                createGroupMembershipItemMap(userId1),
+                createGroupMembershipItemMap(userId2),
+                createGroupMembershipItemMap(userId3)
+            ))
+            .build();
+        when(dynamoDbClient.query(any(QueryRequest.class))).thenReturn(queryResponse);
+
+        // Mock transactWriteItems to succeed
+        TransactWriteItemsResponse transactResponse = TransactWriteItemsResponse.builder().build();
+        when(dynamoDbClient.transactWriteItems(any(TransactWriteItemsRequest.class))).thenReturn(transactResponse);
+
+        // When
+        repository.updateMembershipGroupImagePaths(groupId, "/group-main.jpg", "/group-bg.jpg");
+
+        // Then
+        ArgumentCaptor<TransactWriteItemsRequest> captor = ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamoDbClient).transactWriteItems(captor.capture());
+
+        TransactWriteItemsRequest request = captor.getValue();
+        assertThat(request.transactItems()).hasSize(3);
+
+        // Verify all 3 membership updates have correct structure
+        for (int i = 0; i < 3; i++) {
+            TransactWriteItem item = request.transactItems().get(i);
+            assertThat(item.update()).isNotNull();
+            assertThat(item.update().tableName()).isEqualTo("InviterTable");
+            assertThat(item.update().updateExpression())
+                .isEqualTo("SET groupMainImagePath = :mainImagePath, groupBackgroundImagePath = :backgroundImagePath, updatedAt = :timestamp");
+            assertThat(item.update().expressionAttributeValues().get(":mainImagePath").s()).isEqualTo("/group-main.jpg");
+            assertThat(item.update().expressionAttributeValues().get(":backgroundImagePath").s()).isEqualTo("/group-bg.jpg");
+            assertThat(item.update().expressionAttributeValues()).containsKey(":timestamp");
+        }
+    }
+
+    @Test
+    void updateMembershipGroupImagePaths_HandlesNullImagePaths() {
+        // Given
+        String userId1 = UUID.randomUUID().toString();
+
+        QueryResponse queryResponse = QueryResponse.builder()
+            .items(Arrays.asList(createGroupMembershipItemMap(userId1)))
+            .build();
+        when(dynamoDbClient.query(any(QueryRequest.class))).thenReturn(queryResponse);
+
+        TransactWriteItemsResponse transactResponse = TransactWriteItemsResponse.builder().build();
+        when(dynamoDbClient.transactWriteItems(any(TransactWriteItemsRequest.class))).thenReturn(transactResponse);
+
+        // When
+        repository.updateMembershipGroupImagePaths(groupId, null, null);
+
+        // Then
+        ArgumentCaptor<TransactWriteItemsRequest> captor = ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamoDbClient).transactWriteItems(captor.capture());
+
+        TransactWriteItemsRequest request = captor.getValue();
+        assertThat(request.transactItems()).hasSize(1);
+
+        TransactWriteItem item = request.transactItems().get(0);
+        // Verify null values are converted to empty strings for DynamoDB
+        assertThat(item.update().expressionAttributeValues().get(":mainImagePath").s()).isEqualTo("");
+        assertThat(item.update().expressionAttributeValues().get(":backgroundImagePath").s()).isEqualTo("");
+    }
+
+    @Test
+    void updateMembershipGroupImagePaths_BatchesLargeGroups() {
+        // Given - 60 memberships should be split into 3 batches (25, 25, 10)
+        List<Map<String, AttributeValue>> membershipItems = new ArrayList<>();
+        for (int i = 0; i < 60; i++) {
+            String memberId = UUID.randomUUID().toString();
+            membershipItems.add(createGroupMembershipItemMap(memberId));
+        }
+
+        QueryResponse queryResponse = QueryResponse.builder()
+            .items(membershipItems)
+            .build();
+        when(dynamoDbClient.query(any(QueryRequest.class))).thenReturn(queryResponse);
+
+        TransactWriteItemsResponse transactResponse = TransactWriteItemsResponse.builder().build();
+        when(dynamoDbClient.transactWriteItems(any(TransactWriteItemsRequest.class))).thenReturn(transactResponse);
+
+        // When
+        repository.updateMembershipGroupImagePaths(groupId, "/group-main.jpg", "/group-bg.jpg");
+
+        // Then
+        ArgumentCaptor<TransactWriteItemsRequest> captor = ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamoDbClient, times(3)).transactWriteItems(captor.capture());
+
+        List<TransactWriteItemsRequest> requests = captor.getAllValues();
+        assertThat(requests).hasSize(3);
+
+        // Verify batch sizes: 25, 25, 10
+        assertThat(requests.get(0).transactItems()).hasSize(25);
+        assertThat(requests.get(1).transactItems()).hasSize(25);
+        assertThat(requests.get(2).transactItems()).hasSize(10);
+    }
+
+    @Test
+    void updateMembershipGroupImagePaths_ReturnsEarlyWhenNoMemberships() {
+        // Given - no memberships
+        QueryResponse queryResponse = QueryResponse.builder()
+            .items(new ArrayList<>())
+            .build();
+        when(dynamoDbClient.query(any(QueryRequest.class))).thenReturn(queryResponse);
+
+        // When
+        repository.updateMembershipGroupImagePaths(groupId, "/group-main.jpg", "/group-bg.jpg");
+
+        // Then - should not call transactWriteItems at all
+        verify(dynamoDbClient, never()).transactWriteItems(any(TransactWriteItemsRequest.class));
+    }
+
+    @Test
+    void updateMembershipUserImagePath_UpdatesAllMembershipsForUser() {
+        // Given
+        String groupId1 = UUID.randomUUID().toString();
+        String groupId2 = UUID.randomUUID().toString();
+
+        // Mock findGroupsByUserId to return 2 memberships (user is in 2 groups)
+        List<Map<String, AttributeValue>> membershipItems = Arrays.asList(
+            createGroupMembershipItemForGroup(groupId1, userId),
+            createGroupMembershipItemForGroup(groupId2, userId)
+        );
+
+        QueryResponse queryResponse = QueryResponse.builder()
+            .items(membershipItems)
+            .build();
+        when(dynamoDbClient.query(any(QueryRequest.class))).thenReturn(queryResponse);
+
+        TransactWriteItemsResponse transactResponse = TransactWriteItemsResponse.builder().build();
+        when(dynamoDbClient.transactWriteItems(any(TransactWriteItemsRequest.class))).thenReturn(transactResponse);
+
+        // When
+        repository.updateMembershipUserImagePath(userId, "/user-avatar.jpg");
+
+        // Then
+        ArgumentCaptor<TransactWriteItemsRequest> captor = ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamoDbClient).transactWriteItems(captor.capture());
+
+        TransactWriteItemsRequest request = captor.getValue();
+        assertThat(request.transactItems()).hasSize(2);
+
+        // Verify both membership updates have correct structure
+        for (int i = 0; i < 2; i++) {
+            TransactWriteItem item = request.transactItems().get(i);
+            assertThat(item.update()).isNotNull();
+            assertThat(item.update().tableName()).isEqualTo("InviterTable");
+            assertThat(item.update().updateExpression())
+                .isEqualTo("SET userMainImagePath = :mainImagePath, updatedAt = :timestamp");
+            assertThat(item.update().expressionAttributeValues().get(":mainImagePath").s()).isEqualTo("/user-avatar.jpg");
+            assertThat(item.update().expressionAttributeValues()).containsKey(":timestamp");
+        }
+    }
+
+    @Test
+    void updateMembershipUserImagePath_BatchesUsersInManyGroups() {
+        // Given - 40 memberships should be split into 2 batches (25, 15)
+        List<Map<String, AttributeValue>> membershipItems = new ArrayList<>();
+        for (int i = 0; i < 40; i++) {
+            String groupIdForMembership = UUID.randomUUID().toString();
+            membershipItems.add(createGroupMembershipItemForGroup(groupIdForMembership, userId));
+        }
+
+        QueryResponse queryResponse = QueryResponse.builder()
+            .items(membershipItems)
+            .build();
+        when(dynamoDbClient.query(any(QueryRequest.class))).thenReturn(queryResponse);
+
+        TransactWriteItemsResponse transactResponse = TransactWriteItemsResponse.builder().build();
+        when(dynamoDbClient.transactWriteItems(any(TransactWriteItemsRequest.class))).thenReturn(transactResponse);
+
+        // When
+        repository.updateMembershipUserImagePath(userId, "/user-avatar.jpg");
+
+        // Then
+        ArgumentCaptor<TransactWriteItemsRequest> captor = ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamoDbClient, times(2)).transactWriteItems(captor.capture());
+
+        List<TransactWriteItemsRequest> requests = captor.getAllValues();
+        assertThat(requests).hasSize(2);
+
+        // Verify batch sizes: 25, 15
+        assertThat(requests.get(0).transactItems()).hasSize(25);
+        assertThat(requests.get(1).transactItems()).hasSize(15);
+    }
+
+    // Helper method for creating test membership
+    private GroupMembership createTestMembership(String groupId, String userId) {
+        GroupMembership membership = new GroupMembership(groupId, userId, "Test Group");
+        membership.setPk(InviterKeyFactory.getGroupPk(groupId));
+        membership.setSk(InviterKeyFactory.getUserSk(userId));
+        return membership;
+    }
+
+    // Helper method for creating membership item with specific groupId
+    private Map<String, AttributeValue> createGroupMembershipItemForGroup(String groupIdParam, String userIdParam) {
+        return Map.of(
+            "pk", AttributeValue.builder().s(InviterKeyFactory.getGroupPk(groupIdParam)).build(),
+            "sk", AttributeValue.builder().s(InviterKeyFactory.getUserSk(userIdParam)).build(),
+            "itemType", AttributeValue.builder().s("GROUP_MEMBERSHIP").build(),
+            "groupId", AttributeValue.builder().s(groupIdParam).build(),
+            "userId", AttributeValue.builder().s(userIdParam).build(),
+            "groupName", AttributeValue.builder().s("Test Group").build()
+        );
+    }
 }

@@ -19,8 +19,8 @@ Groups are collections of users that form the social fabric of the application. 
 | `GroupFeedServiceImpl.java` | Implements the logic for fetching and constructing the chronological group feed. |
 | `GroupRepositoryImpl.java` | Handles all DynamoDB interactions for groups. **Note: This is deprecated in favor of `PolymorphicGroupRepositoryImpl`** |
 | `PolymorphicGroupRepositoryImpl.java` | The active repository implementation that should be used for new development. |
-| `Group.java` | The `@DynamoDbBean` for the canonical group record. |
-| `GroupMembership.java` | The `@DynamoDbBean` for the membership link between a user and a group. |
+| `Group.java` | The `@DynamoDbBean` for the canonical group record. Contains mainImagePath and backgroundImagePath. |
+| `GroupMembership.java` | The `@DynamoDbBean` for the membership link between a user and a group. Contains denormalized groupName, groupMainImagePath, groupBackgroundImagePath, and userMainImagePath for efficient display. |
 | `CreateGroupRequest.java` | DTO for creating a new group. |
 | `GroupFeedDTO.java` | DTO that represents the complex, chronologically sorted feed for a group. |
 
@@ -33,7 +33,7 @@ Groups are collections of users that form the social fabric of the application. 
 3.  **Service:** `GroupServiceImpl.createGroup()`:
     *   Creates a `Group` (canonical) entity and a `GroupMembership` entity for the creator.
     *   The creator is automatically assigned the `ADMIN` role.
-    *   **CRITICAL:** The `GroupMembership` record is populated with the `groupName` (denormalized) and the GSI keys (`gsi1pk`, `gsi1sk`) required for the `UserGroupIndex`.
+    *   **CRITICAL:** The `GroupMembership` record is populated with the `groupName` (denormalized), the group's image paths (groupMainImagePath, groupBackgroundImagePath), and the GSI keys (`gsi1pk`, `gsi1sk`) required for the `UserGroupIndex`.
 4.  **Repository:** `groupRepository.createGroupWithFirstMember()`:
     *   Executes a `TransactWriteItems` operation to save the `Group` and `GroupMembership` records atomically.
 
@@ -56,12 +56,27 @@ Groups are collections of users that form the social fabric of the application. 
     *   For each hangout in the page, it queries for "actionable items" like open polls or undecided attributes.
     *   It continues this process until it has collected enough feed items to satisfy the request limit.
 
+### Update Group
+
+1.  **Endpoint:** `PATCH /groups/{groupId}`
+2.  **Service:** `GroupServiceImpl.updateGroup()`:
+    *   Updates the canonical `Group` record with new values (name, visibility, image paths)
+    *   If `groupName` changed: calls `groupRepository.updateMembershipGroupNames()` to propagate to all memberships
+    *   If image paths changed: calls `groupRepository.updateMembershipGroupImagePaths()` to propagate to all memberships
+
+### Update Group Images
+
+When a group's mainImagePath or backgroundImagePath changes:
+1. The canonical `Group` record is updated first
+2. `GroupRepository.updateMembershipGroupImagePaths()` is called
+3. All `GroupMembership` records for that group are updated in batches (25 at a time) to maintain denormalized consistency
+
 ### Add/Remove Member
 
 1.  **Endpoint:** `POST /groups/{groupId}/members` or `DELETE /groups/{groupId}/members/{userId}`
 2.  **Service:** `GroupServiceImpl.addMember()` / `removeMember()`
 3.  **Repository:** `groupRepository.addMember()` / `removeMember()`:
-    *   `addMember`: Creates a new `GroupMembership` item with the correct PK/SK and GSI keys.
+    *   `addMember`: Creates a new `GroupMembership` item with the correct PK/SK, GSI keys, and denormalized group data (groupName, groupMainImagePath, groupBackgroundImagePath).
     *   `removeMember`: Deletes the `GroupMembership` item.
 
 ## 4. Identified Tech Debt & Risks

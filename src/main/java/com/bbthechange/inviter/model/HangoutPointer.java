@@ -26,6 +26,7 @@ public class HangoutPointer extends BaseItem {
     private Instant hangoutTime;    // When the hangout is scheduled
     private String locationName;    // Denormalized location info
     private int participantCount;   // Cached count for display
+    private String mainImagePath;   // Denormalized image path from Hangout
     private TimeInfo timeInfo;    // Denormalized for efficient reads
     private Long startTimestamp;    // GSI sort key for EntityTimeIndex
     private Long endTimestamp;      // Denormalized for completeness
@@ -113,7 +114,16 @@ public class HangoutPointer extends BaseItem {
         this.participantCount = participantCount;
         touch(); // Update timestamp
     }
-    
+
+    public String getMainImagePath() {
+        return mainImagePath;
+    }
+
+    public void setMainImagePath(String mainImagePath) {
+        this.mainImagePath = mainImagePath;
+        touch(); // Update timestamp
+    }
+
     @DynamoDbAttribute("timeInput")
     public TimeInfo getTimeInput() {
         return timeInfo;

@@ -17,6 +17,9 @@ public class GroupMembership extends BaseItem {
     private String userId;
     private String groupName;  // Denormalized for GSI query efficiency
     private String role;       // GroupRole.ADMIN or GroupRole.MEMBER
+    private String groupMainImagePath;       // Denormalized from Group
+    private String groupBackgroundImagePath; // Denormalized from Group
+    private String userMainImagePath;        // Denormalized from User
     
     // Default constructor for DynamoDB
     public GroupMembership() {
@@ -83,5 +86,32 @@ public class GroupMembership extends BaseItem {
      */
     public boolean isAdmin() {
         return GroupRole.ADMIN.equals(role);
+    }
+
+    public String getGroupMainImagePath() {
+        return groupMainImagePath;
+    }
+
+    public void setGroupMainImagePath(String groupMainImagePath) {
+        this.groupMainImagePath = groupMainImagePath;
+        touch(); // Update timestamp
+    }
+
+    public String getGroupBackgroundImagePath() {
+        return groupBackgroundImagePath;
+    }
+
+    public void setGroupBackgroundImagePath(String groupBackgroundImagePath) {
+        this.groupBackgroundImagePath = groupBackgroundImagePath;
+        touch(); // Update timestamp
+    }
+
+    public String getUserMainImagePath() {
+        return userMainImagePath;
+    }
+
+    public void setUserMainImagePath(String userMainImagePath) {
+        this.userMainImagePath = userMainImagePath;
+        touch(); // Update timestamp
     }
 }

@@ -13,10 +13,10 @@ All endpoints require a valid JWT access token for authentication.
 | File | Purpose |
 | :--- | :--- |
 | `ProfileController.java` | Exposes REST endpoints under the `/profile` route for managing the current user's account. |
-| `UserService.java` | The service layer that contains the business logic for updating display names, changing passwords, and deleting users. |
+| `UserService.java` | The service layer that contains the business logic for updating display names, mainImagePath, changing passwords, and deleting users. |
 | `UserRepository.java` | The repository responsible for all database interactions with the `Users` table. |
-| `User.java` | The `@DynamoDbBean` for a user record. The profile is a view over this model. |
-| `UpdateProfileRequest.java` | DTO for updating a user's display name. |
+| `User.java` | The `@DynamoDbBean` for a user record. The profile is a view over this model. Contains mainImagePath for user avatars. |
+| `UpdateProfileRequest.java` | DTO for updating a user's display name and mainImagePath. |
 | `ChangePasswordRequest.java` | DTO for the password change flow, requiring the current and new password. |
 
 ## 3. Core Flows
@@ -33,7 +33,11 @@ All endpoints require a valid JWT access token for authentication.
 
 1.  **Endpoint:** `PUT /profile`
 2.  **Controller:** `ProfileController.updateProfile()` receives an `UpdateProfileRequest`.
-3.  **Service:** It calls `UserService.updateDisplayName()`, which finds the user, updates the `displayName` field, and saves the `User` object back to the database.
+3.  **Service:** It calls `UserService.updateProfile()`, which:
+    *   Updates the `displayName` field if provided
+    *   Updates the `mainImagePath` field if provided and changed
+    *   Saves the `User` object back to the database
+4.  **Denormalization:** If mainImagePath changed, the service calls `GroupRepository.updateMembershipUserImagePath()` to propagate the new image path to all `GroupMembership` records where this user is a member.
 
 ### Change Password
 

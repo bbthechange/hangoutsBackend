@@ -151,9 +151,9 @@ class ProfileControllerTest {
             // Arrange
             User updatedUser = new User(testUser.getPhoneNumber(), testUser.getUsername(), "Updated User", testUser.getPassword());
             updatedUser.setId(testUserId);
-            
+
             when(httpServletRequest.getAttribute("userId")).thenReturn(testUserId.toString());
-            when(userService.updateDisplayName(testUserId, "Updated User")).thenReturn(updatedUser);
+            when(userService.updateProfile(eq(testUserId), any(UpdateProfileRequest.class))).thenReturn(updatedUser);
 
             // Act
             ResponseEntity<Map<String, Object>> response = profileController.updateProfile(updateProfileRequest, httpServletRequest);
@@ -163,8 +163,8 @@ class ProfileControllerTest {
             assertNotNull(response.getBody());
             assertEquals("Profile updated successfully", response.getBody().get("message"));
             assertEquals("Updated User", response.getBody().get("displayName"));
-            
-            verify(userService).updateDisplayName(testUserId, "Updated User");
+
+            verify(userService).updateProfile(eq(testUserId), any(UpdateProfileRequest.class));
         }
 
         @Test
@@ -172,7 +172,7 @@ class ProfileControllerTest {
         void updateProfile_NotFound() {
             // Arrange
             when(httpServletRequest.getAttribute("userId")).thenReturn(testUserId.toString());
-            when(userService.updateDisplayName(testUserId, "Updated User"))
+            when(userService.updateProfile(eq(testUserId), any(UpdateProfileRequest.class)))
                 .thenThrow(new IllegalArgumentException("User not found"));
 
             // Act
@@ -205,9 +205,9 @@ class ProfileControllerTest {
             updateProfileRequest.setDisplayName("");
             User updatedUser = new User(testUser.getPhoneNumber(), testUser.getUsername(), "", testUser.getPassword());
             updatedUser.setId(testUserId);
-            
+
             when(httpServletRequest.getAttribute("userId")).thenReturn(testUserId.toString());
-            when(userService.updateDisplayName(testUserId, "")).thenReturn(updatedUser);
+            when(userService.updateProfile(eq(testUserId), any(UpdateProfileRequest.class))).thenReturn(updatedUser);
 
             // Act
             ResponseEntity<Map<String, Object>> response = profileController.updateProfile(updateProfileRequest, httpServletRequest);
@@ -215,7 +215,7 @@ class ProfileControllerTest {
             // Assert
             assertEquals(HttpStatus.OK, response.getStatusCode());
             assertEquals("", response.getBody().get("displayName"));
-            verify(userService).updateDisplayName(testUserId, "");
+            verify(userService).updateProfile(eq(testUserId), any(UpdateProfileRequest.class));
         }
     }
 

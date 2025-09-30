@@ -631,4 +631,121 @@ public class PolymorphicGroupRepositoryImpl implements GroupRepository {
             return null;
         });
     }
+
+    @Override
+    public void updateMembershipGroupImagePaths(String groupId, String mainImagePath, String backgroundImagePath) {
+        queryTracker.trackQuery("UpdateMembershipGroupImagePaths", TABLE_NAME, () -> {
+            try {
+                // First, get all membership records for this group
+                List<GroupMembership> memberships = findMembersByGroupId(groupId);
+                if (memberships.isEmpty()) {
+                    logger.debug("No memberships to update for group {}", groupId);
+                    return null;
+                }
+
+                // DynamoDB TransactWriteItems supports up to 100 items per transaction
+                // For larger groups, we need to batch the updates
+                int batchSize = 25; // Conservative batch size to stay well under limits
+                String timestamp = Instant.now().toString();
+
+                for (int i = 0; i < memberships.size(); i += batchSize) {
+                    List<GroupMembership> batch = memberships.subList(i,
+                        Math.min(i + batchSize, memberships.size()));
+
+                    // Build transaction items for this batch
+                    List<TransactWriteItem> transactItems = batch.stream()
+                        .map(membership -> TransactWriteItem.builder()
+                            .update(Update.builder()
+                                .tableName(TABLE_NAME)
+                                .key(Map.of(
+                                    "pk", AttributeValue.builder().s(InviterKeyFactory.getGroupPk(groupId)).build(),
+                                    "sk", AttributeValue.builder().s(InviterKeyFactory.getUserSk(membership.getUserId())).build()
+                                ))
+                                .updateExpression("SET groupMainImagePath = :mainImagePath, groupBackgroundImagePath = :backgroundImagePath, updatedAt = :timestamp")
+                                .expressionAttributeValues(Map.of(
+                                    ":mainImagePath", AttributeValue.builder().s(mainImagePath != null ? mainImagePath : "").build(),
+                                    ":backgroundImagePath", AttributeValue.builder().s(backgroundImagePath != null ? backgroundImagePath : "").build(),
+                                    ":timestamp", AttributeValue.builder().s(timestamp).build()
+                                ))
+                                .build())
+                            .build())
+                        .collect(Collectors.toList());
+
+                    // Execute the batch transaction
+                    TransactWriteItemsRequest transactRequest = TransactWriteItemsRequest.builder()
+                        .transactItems(transactItems)
+                        .build();
+
+                    dynamoDbClient.transactWriteItems(transactRequest);
+                    logger.debug("Updated batch of {} memberships for group {}", batch.size(), groupId);
+                }
+
+                logger.info("Updated {} membership records for group {} with new image paths in {} batch(es)",
+                          memberships.size(), groupId, (memberships.size() + batchSize - 1) / batchSize);
+
+            } catch (DynamoDbException e) {
+                logger.error("Failed to update membership group image paths for group {}", groupId, e);
+                throw new RepositoryException("Failed to update membership group image paths", e);
+            }
+            return null;
+        });
+    }
+
+    @Override
+    public void updateMembershipUserImagePath(String userId, String mainImagePath) {
+        queryTracker.trackQuery("UpdateMembershipUserImagePath", TABLE_NAME, () -> {
+            try {
+                // First, get all membership records for this user
+                List<GroupMembership> memberships = findGroupsByUserId(userId);
+                if (memberships.isEmpty()) {
+                    logger.debug("No memberships to update for user {}", userId);
+                    return null;
+                }
+
+                // DynamoDB TransactWriteItems supports up to 100 items per transaction
+                // For larger member sets, we need to batch the updates
+                int batchSize = 25; // Conservative batch size to stay well under limits
+                String timestamp = Instant.now().toString();
+
+                for (int i = 0; i < memberships.size(); i += batchSize) {
+                    List<GroupMembership> batch = memberships.subList(i,
+                        Math.min(i + batchSize, memberships.size()));
+
+                    // Build transaction items for this batch
+                    List<TransactWriteItem> transactItems = batch.stream()
+                        .map(membership -> TransactWriteItem.builder()
+                            .update(Update.builder()
+                                .tableName(TABLE_NAME)
+                                .key(Map.of(
+                                    "pk", AttributeValue.builder().s(InviterKeyFactory.getGroupPk(membership.getGroupId())).build(),
+                                    "sk", AttributeValue.builder().s(InviterKeyFactory.getUserSk(userId)).build()
+                                ))
+                                .updateExpression("SET userMainImagePath = :mainImagePath, updatedAt = :timestamp")
+                                .expressionAttributeValues(Map.of(
+                                    ":mainImagePath", AttributeValue.builder().s(mainImagePath != null ? mainImagePath : "").build(),
+                                    ":timestamp", AttributeValue.builder().s(timestamp).build()
+                                ))
+                                .build())
+                            .build())
+                        .collect(Collectors.toList());
+
+                    // Execute the batch transaction
+                    TransactWriteItemsRequest transactRequest = TransactWriteItemsRequest.builder()
+                        .transactItems(transactItems)
+                        .build();
+
+                    dynamoDbClient.transactWriteItems(transactRequest);
+                    logger.debug("Updated batch of {} memberships for user {}", batch.size(), userId);
+                }
+
+                logger.info("Updated {} membership records for user {} with new image path in {} batch(es)",
+                          memberships.size(), userId, (memberships.size() + batchSize - 1) / batchSize);
+
+            } catch (DynamoDbException e) {
+                logger.error("Failed to update membership user image path for user {}", userId, e);
+                throw new RepositoryException("Failed to update membership user image path", e);
+            }
+            return null;
+        });
+    }
 }

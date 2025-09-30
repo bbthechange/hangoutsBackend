@@ -17,6 +17,7 @@ public class User {
     private String username;
     private String displayName;
     private String password;
+    private String mainImagePath;
     private AccountStatus accountStatus;
     
     public User(String phoneNumber, String username, String password) {

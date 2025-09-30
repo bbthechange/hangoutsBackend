@@ -62,12 +62,15 @@ public class HangoutServiceImpl implements HangoutService {
                 pointer.setStatus("ACTIVE");
                 pointer.setLocationName(getLocationName(hangout.getLocation()));
                 pointer.setParticipantCount(0);
-                
+
                 // *** CRITICAL: Denormalize ALL time information ***
                 pointer.setTimeInput(hangout.getTimeInput());           // For API response
                 pointer.setGsi1pk("GROUP#" + groupId);                  // GSI primary key
                 pointer.setStartTimestamp(hangout.getStartTimestamp()); // GSI sort key
                 pointer.setEndTimestamp(hangout.getEndTimestamp());     // For completeness
+
+                // Denormalize image path
+                pointer.setMainImagePath(hangout.getMainImagePath());
 
                 pointers.add(pointer);
             }
@@ -233,11 +236,13 @@ public class HangoutServiceImpl implements HangoutService {
         if (request.getVisibility() != null) {
             hangout.setVisibility(request.getVisibility());
         }
-        
-        if (request.getMainImagePath() != null) {
+
+        if (request.getMainImagePath() != null && !request.getMainImagePath().equals(hangout.getMainImagePath())) {
             hangout.setMainImagePath(request.getMainImagePath());
+            pointerUpdates.put("mainImagePath", request.getMainImagePath());
+            needsPointerUpdate = true;
         }
-        
+
         hangout.setCarpoolEnabled(request.isCarpoolEnabled());
         
         // Save canonical record

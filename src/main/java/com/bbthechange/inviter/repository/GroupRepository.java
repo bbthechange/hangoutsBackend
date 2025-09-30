@@ -36,6 +36,18 @@ public interface GroupRepository {
     void updateMembershipGroupNames(String groupId, String newGroupName);
 
     /**
+     * Update denormalized group image paths in all membership records for a group.
+     * Called when group images change to maintain data consistency.
+     */
+    void updateMembershipGroupImagePaths(String groupId, String mainImagePath, String backgroundImagePath);
+
+    /**
+     * Update denormalized user image path in all membership records for a user.
+     * Called when user mainImagePath changes to maintain data consistency.
+     */
+    void updateMembershipUserImagePath(String userId, String mainImagePath);
+
+    /**
      * Returns group membership if a user is a member of the given group
      */
     Optional<GroupMembership> findMembership(String groupId, String userId);

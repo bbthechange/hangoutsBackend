@@ -13,6 +13,10 @@ public class UpdateGroupRequest {
 
     private Boolean isPublic;
 
+    private String mainImagePath;
+
+    private String backgroundImagePath;
+
     public UpdateGroupRequest() {}
 
     public UpdateGroupRequest(String groupName, Boolean isPublic) {
@@ -37,10 +41,26 @@ public class UpdateGroupRequest {
         this.isPublic = isPublic;
     }
 
+    public String getMainImagePath() {
+        return mainImagePath;
+    }
+
+    public void setMainImagePath(String mainImagePath) {
+        this.mainImagePath = mainImagePath;
+    }
+
+    public String getBackgroundImagePath() {
+        return backgroundImagePath;
+    }
+
+    public void setBackgroundImagePath(String backgroundImagePath) {
+        this.backgroundImagePath = backgroundImagePath;
+    }
+
     /**
      * Check if any field is provided for update
      */
     public boolean hasUpdates() {
-        return groupName != null || isPublic != null;
+        return groupName != null || isPublic != null || mainImagePath != null || backgroundImagePath != null;
     }
 }
