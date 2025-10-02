@@ -86,7 +86,21 @@ public abstract class BaseController {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
             .body(new ErrorResponse("EVENT_NOT_FOUND", e.getMessage()));
     }
-    
+
+    @ExceptionHandler(PlaceNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handlePlaceNotFound(PlaceNotFoundException e) {
+        logger.debug("Place not found: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+            .body(new ErrorResponse("PLACE_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidPlaceOwnerException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidPlaceOwner(InvalidPlaceOwnerException e) {
+        logger.warn("Invalid place owner: {}", e.getMessage());
+        return ResponseEntity.badRequest()
+            .body(new ErrorResponse("INVALID_PLACE_OWNER", e.getMessage()));
+    }
+
     @ExceptionHandler(TransactionFailedException.class)
     public ResponseEntity<ErrorResponse> handleTransactionFailed(TransactionFailedException e) {
         logger.error("Transaction failed: {}", e.getMessage(), e);

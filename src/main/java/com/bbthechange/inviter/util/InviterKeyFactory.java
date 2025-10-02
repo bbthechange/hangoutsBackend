@@ -33,6 +33,16 @@ public final class InviterKeyFactory {
     public static final String ATTRIBUTE_PREFIX = "ATTRIBUTE";
     public static final String IDEALIST_PREFIX = "IDEALIST";
     public static final String IDEA_PREFIX = "IDEA";
+    public static final String PLACE_PREFIX = "PLACE";
+    public static final String PRIMARY_PLACE = "PRIMARY_PLACE";
+
+    // Status constants
+    public static final String STATUS_ACTIVE = "ACTIVE";
+    public static final String STATUS_ARCHIVED = "ARCHIVED";
+
+    // Owner type constants
+    public static final String OWNER_TYPE_USER = "USER";
+    public static final String OWNER_TYPE_GROUP = "GROUP";
     
     // Private constructor to prevent instantiation
     private InviterKeyFactory() {
@@ -250,11 +260,21 @@ public final class InviterKeyFactory {
     
     // Helper methods for type-safe filtering
     public static boolean isIdeaList(String sortKey) {
-        return sortKey != null && sortKey.startsWith(IDEALIST_PREFIX + DELIMITER) && 
+        return sortKey != null && sortKey.startsWith(IDEALIST_PREFIX + DELIMITER) &&
                !sortKey.contains(DELIMITER + IDEA_PREFIX + DELIMITER);
     }
-    
+
     public static boolean isIdeaListMember(String sortKey) {
         return sortKey != null && sortKey.contains(DELIMITER + IDEA_PREFIX + DELIMITER);
+    }
+
+    // Place Keys
+    public static String getPlaceSk(String placeId) {
+        validateId(placeId, "Place");
+        return PLACE_PREFIX + DELIMITER + placeId;
+    }
+
+    public static boolean isPlace(String sortKey) {
+        return sortKey != null && sortKey.startsWith(PLACE_PREFIX + DELIMITER);
     }
 }
