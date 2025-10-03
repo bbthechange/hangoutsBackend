@@ -80,7 +80,8 @@ public class PolymorphicGroupRepositoryImpl implements GroupRepository {
             case "HANGOUT_POINTER":
                 return hangoutSchema.mapToItem(itemMap);
             default:
-                throw new IllegalArgumentException("Unknown item type: " + itemType);
+                logger.warn("Unknown item type encountered: {}. Skipping deserialization.", itemType);
+                return null;
         }
     }
     
