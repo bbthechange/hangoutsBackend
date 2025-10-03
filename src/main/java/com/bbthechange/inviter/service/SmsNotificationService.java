@@ -24,6 +24,9 @@ public class SmsNotificationService {
     private final SnsClient snsClient;
     private final List<String> allowlist;
 
+    @Value("${app.bypass-phone-verification:false}")
+    private boolean bypassPhoneVerification;
+
     public SmsNotificationService(SnsClient snsClient, 
                                  @Value("${inviter.sms.allowlist:}") String allowlistString) {
         this.snsClient = snsClient;
@@ -38,7 +41,7 @@ public class SmsNotificationService {
     }
 
     public void sendVerificationCode(String phoneNumber, String code) {
-        if (isInAllowlist(phoneNumber)) {
+        if (bypassPhoneVerification || isInAllowlist(phoneNumber)) {
             sendTestVerificationCode(phoneNumber, code);
         } else {
             sendRealVerificationCode(phoneNumber, code);

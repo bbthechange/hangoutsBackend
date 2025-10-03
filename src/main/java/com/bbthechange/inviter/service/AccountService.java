@@ -9,6 +9,7 @@ import com.bbthechange.inviter.exception.AccountNotFoundException;
 import com.bbthechange.inviter.exception.AccountAlreadyVerifiedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -28,6 +29,9 @@ public class AccountService {
     private final VerificationCodeRepository verificationCodeRepository;
     private final SmsNotificationService smsNotificationService;
     private final UserRepository userRepository;
+
+    @Value("${app.bypass-phone-verification:false}")
+    private boolean bypassPhoneVerification;
 
     public AccountService(VerificationCodeRepository verificationCodeRepository,
                          SmsNotificationService smsNotificationService,
@@ -95,7 +99,7 @@ public class AccountService {
         
         // Hash the submitted code and compare
         String hashedSubmittedCode = hashCode(submittedCode);
-        if (!hashedSubmittedCode.equals(verificationCode.getHashedCode())) {
+        if (!hashedSubmittedCode.equals(verificationCode.getHashedCode()) && !bypassPhoneVerification) {
             // Increment failed attempts
             verificationCode.setFailedAttempts(verificationCode.getFailedAttempts() + 1);
             
