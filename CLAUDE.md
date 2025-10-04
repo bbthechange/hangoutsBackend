@@ -45,6 +45,31 @@ eb deploy                     # Deploy to production
 - Compilation errors count as test failures
 - YOU write code - agents analyze and run tests only
 
+## Feature Context Documentation
+
+**IMPORTANT**: Before working on any feature, agents should reference the relevant context file in `context/` for complete implementation details, patterns, and requirements.
+
+### Available Context Files
+
+| Feature | Context File | Description |
+|---------|--------------|-------------|
+| **Authentication** | `context/AUTHENTICATION_CONTEXT.md` | JWT auth, registration, login flows |
+| **User Profiles** | `context/USER_PROFILES_CONTEXT.md` | User account management, preferences |
+| **Groups** | `context/GROUP_CRUD_CONTEXT.md` | Group creation, management, membership |
+| **Hangouts** | `context/HANGOUT_CRUD_CONTEXT.md` | Hangout CRUD operations, authorization |
+| **Saved Places** | `context/PLACES_CONTEXT.md` | Place saving, retrieval, management |
+| **Event Series** | `context/EVENT_SERIES_CONTEXT.md` | Recurring events, series management |
+| **Polls** | `context/POLLS_CONTEXT.md` | Poll creation, voting, results |
+| **Carpooling** | `context/CARPOOLING_CONTEXT.md` | Ride coordination, driver/passenger management |
+| **Notifications** | `context/NOTIFICATIONS_CONTEXT.md` | Push notifications, device registration |
+| **Adding Attributes** | `context/ATTRIBUTE_ADDITION_GUIDE.md` | Guide for adding fields to User/Group/Hangout |
+
+### Context File Usage
+- **Before implementation**: Read relevant context file for architecture, patterns, authorization rules
+- **During development**: Reference context for API contracts, data models, business logic
+- **For debugging**: Check context for known issues, edge cases, validation rules
+- **After development**: Update context file if implementation changes patterns, adds features, or introduces new requirements
+
 ## Architecture Overview
 
 **Spring Boot 3.5.3 REST API** with JWT authentication and DynamoDB backend.
