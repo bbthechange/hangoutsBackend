@@ -60,7 +60,7 @@ public class HangoutServiceImpl implements HangoutService {
             for (String groupId : request.getAssociatedGroups()) {
                 HangoutPointer pointer = new HangoutPointer(groupId, hangout.getHangoutId(), hangout.getTitle());
                 pointer.setStatus("ACTIVE");
-                pointer.setLocationName(getLocationName(hangout.getLocation()));
+                pointer.setLocation(hangout.getLocation());
                 pointer.setParticipantCount(0);
 
                 // *** CRITICAL: Denormalize ALL time information ***
@@ -226,11 +226,8 @@ public class HangoutServiceImpl implements HangoutService {
 
         if (request.getLocation() != null) {
             hangout.setLocation(request.getLocation());
-            String locationName = getLocationName(request.getLocation());
-            if (locationName != null) {
-                pointerUpdates.put("locationName", locationName);
-                needsPointerUpdate = true;
-            }
+            pointerUpdates.put("location", request.getLocation());
+            needsPointerUpdate = true;
         }
         
         if (request.getVisibility() != null) {
@@ -390,7 +387,7 @@ public class HangoutServiceImpl implements HangoutService {
     }
     
     @Override
-    public void updateEventLocation(String eventId, String newLocationName, String requestingUserId) {
+    public void updateEventLocation(String eventId, Address newLocation, String requestingUserId) {
         // Authorization check first
         HangoutDetailData data = hangoutRepository.getHangoutDetailData(eventId);
         if (!canUserEditHangout(requestingUserId, data.getHangout())) {
@@ -399,20 +396,16 @@ public class HangoutServiceImpl implements HangoutService {
         
         // Step 1: Update canonical record
         Hangout hangout = data.getHangout();
-        // TODO: Properly implement Address update logic based on Address structure
-        if (hangout.getLocation() != null) {
-            // This would need to be adapted based on the actual Address structure
-            // hangout.getLocation().setName(newLocationName);
-        }
+        hangout.setLocation(newLocation);
         hangoutRepository.save(hangout);
-        
+
         // Step 2: Update pointer records with location
         List<String> associatedGroups = hangout.getAssociatedGroups();
         if (associatedGroups != null && !associatedGroups.isEmpty()) {
-            updatePointerRecords(eventId, associatedGroups, Map.of("locationName", newLocationName));
+            updatePointerRecords(eventId, associatedGroups, Map.of("location", newLocation));
         }
-        
-        logger.info("Updated location for event {} to '{}' by user {}", eventId, newLocationName, requestingUserId);
+
+        logger.info("Updated location for event {} by user {}", eventId, requestingUserId);
     }
     
     @Override
@@ -447,7 +440,7 @@ public class HangoutServiceImpl implements HangoutService {
         for (String groupId : groupIds) {
             HangoutPointer pointer = new HangoutPointer(groupId, eventId, hangout.getTitle());
             pointer.setStatus("ACTIVE"); // Default status
-            pointer.setLocationName(getLocationName(hangout.getLocation()));
+            pointer.setLocation(hangout.getLocation());
             // TODO this looks wrong
             pointer.setParticipantCount(0); // Will be updated as people respond
 
@@ -542,38 +535,6 @@ public class HangoutServiceImpl implements HangoutService {
         }
     }
     
-    private String getLocationName(Event event) {
-        return getLocationName(event.getLocation());
-    }
-    
-    private String getLocationName(Address location) {
-        if (location == null) {
-            return null;
-        }
-        
-        // Create a readable location name from Address components
-        StringBuilder locationName = new StringBuilder();
-        
-        if (location.getStreetAddress() != null && !location.getStreetAddress().trim().isEmpty()) {
-            locationName.append(location.getStreetAddress());
-        }
-        
-        if (location.getCity() != null && !location.getCity().trim().isEmpty()) {
-            if (locationName.length() > 0) {
-                locationName.append(", ");
-            }
-            locationName.append(location.getCity());
-        }
-        
-        if (location.getState() != null && !location.getState().trim().isEmpty()) {
-            if (locationName.length() > 0) {
-                locationName.append(", ");
-            }
-            locationName.append(location.getState());
-        }
-        
-        return locationName.length() > 0 ? locationName.toString() : null;
-    }
     
     @Override
     public boolean canUserViewHangout(String userId, Hangout hangout) {

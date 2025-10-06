@@ -99,7 +99,7 @@ public interface HangoutService {
     /**
      * Update event location with pointer coordination.
      */
-    void updateEventLocation(String eventId, String newLocationName, String requestingUserId);
+    void updateEventLocation(String eventId, Address newLocation, String requestingUserId);
     
     /**
      * Associate event with groups (creates hangout pointers).

@@ -660,7 +660,9 @@ class HangoutServiceImplTest {
         pointer.setHangoutId(hangoutId);
         pointer.setTitle("Test Hangout " + hangoutId);
         pointer.setStatus("ACTIVE");
-        pointer.setLocationName("Test Location");
+        Address testLocation = new Address();
+        testLocation.setName("Test Location");
+        pointer.setLocation(testLocation);
         pointer.setParticipantCount(5);
         
         // Set keys manually for test
@@ -731,7 +733,9 @@ class HangoutServiceImplTest {
         
         HangoutPointer pointer = new HangoutPointer(groupId, hangoutId, title);
         pointer.setStatus("ACTIVE");
-        pointer.setLocationName("Test Location");
+        Address testLocation = new Address();
+        testLocation.setName("Test Location");
+        pointer.setLocation(testLocation);
         pointer.setParticipantCount(5);
         pointer.setTimeInput(timeInfo);
         
@@ -742,7 +746,7 @@ class HangoutServiceImplTest {
         assertThat(summary.getHangoutId()).isEqualTo(hangoutId);
         assertThat(summary.getTitle()).isEqualTo(title);
         assertThat(summary.getStatus()).isEqualTo("ACTIVE");
-        assertThat(summary.getLocationName()).isEqualTo("Test Location");
+        assertThat(summary.getLocation().getName()).isEqualTo("Test Location");
         assertThat(summary.getParticipantCount()).isEqualTo(5);
         
         // Verify timeInfo is properly set from pointer's timeInput

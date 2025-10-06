@@ -13,7 +13,7 @@ public class HangoutSummaryDTO implements FeedItem {
     private String title;
     private String status;
     private TimeInfo timeInfo; // Fuzzy time information for display
-    private String locationName;
+    private Address location;
     private int participantCount;
     private String mainImagePath; // Denormalized image path from HangoutPointer
     private String type = "hangout"; // Type discriminator for client-side handling
@@ -23,7 +23,7 @@ public class HangoutSummaryDTO implements FeedItem {
         this.title = pointer.getTitle();
         this.status = pointer.getStatus();
         this.timeInfo = pointer.getTimeInput(); // Set timeInfo from pointer's timeInput
-        this.locationName = pointer.getLocationName();
+        this.location = pointer.getLocation();
         this.participantCount = pointer.getParticipantCount();
         this.mainImagePath = pointer.getMainImagePath(); // Get denormalized image path
     }
@@ -60,12 +60,12 @@ public class HangoutSummaryDTO implements FeedItem {
         this.timeInfo = timeInfo;
     }
     
-    public String getLocationName() {
-        return locationName;
+    public Address getLocation() {
+        return location;
     }
-    
-    public void setLocationName(String locationName) {
-        this.locationName = locationName;
+
+    public void setLocation(Address location) {
+        this.location = location;
     }
     
     public int getParticipantCount() {

@@ -5,6 +5,7 @@ import com.bbthechange.inviter.exception.RepositoryException;
 import com.bbthechange.inviter.model.Group;
 import com.bbthechange.inviter.model.GroupMembership;
 import com.bbthechange.inviter.model.HangoutPointer;
+import com.bbthechange.inviter.dto.Address;
 import com.bbthechange.inviter.util.QueryPerformanceTracker;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -90,7 +91,9 @@ class PolymorphicGroupRepositoryImplTest {
         String groupId = UUID.randomUUID().toString();
         String hangoutId = UUID.randomUUID().toString();
         HangoutPointer pointer = new HangoutPointer(groupId, hangoutId, "Test Hangout");
-        pointer.setLocationName("Test Location");
+        Address testLocation = new Address();
+        testLocation.setName("Test Location");
+        pointer.setLocation(testLocation);
         pointer.setHangoutTime(Instant.now().plusSeconds(3600));
         pointer.setParticipantCount(5);
         
@@ -104,7 +107,7 @@ class PolymorphicGroupRepositoryImplTest {
         assertThat(foundPointer.getGroupId()).isEqualTo(groupId);
         assertThat(foundPointer.getHangoutId()).isEqualTo(hangoutId);
         assertThat(foundPointer.getTitle()).isEqualTo("Test Hangout");
-        assertThat(foundPointer.getLocationName()).isEqualTo("Test Location");
+        assertThat(foundPointer.getLocation().getName()).isEqualTo("Test Location");
         assertThat(foundPointer.getItemType()).isEqualTo("HANGOUT_POINTER");
     }
     

@@ -2,6 +2,7 @@ package com.bbthechange.inviter.testutil;
 
 import com.bbthechange.inviter.model.HangoutPointer;
 import com.bbthechange.inviter.dto.TimeInfo;
+import com.bbthechange.inviter.dto.Address;
 import com.bbthechange.inviter.util.InviterKeyFactory;
 
 import java.time.Instant;
@@ -13,7 +14,7 @@ public class HangoutPointerTestBuilder {
     private String title;
     private String status;
     private Instant hangoutTime;
-    private String locationName;
+    private Address location;
     private int participantCount;
     private TimeInfo timeInput;
     private Long startTimestamp;
@@ -27,7 +28,8 @@ public class HangoutPointerTestBuilder {
         this.title = "Test Hangout";
         this.status = "ACTIVE";
         this.hangoutTime = Instant.now();
-        this.locationName = "Test Location";
+        this.location = new Address();
+        this.location.setName("Test Location");
         this.participantCount = 1;
         this.timeInput = new TimeInfo();
     }
@@ -62,7 +64,8 @@ public class HangoutPointerTestBuilder {
     }
     
     public HangoutPointerTestBuilder withLocationName(String locationName) {
-        this.locationName = locationName;
+        this.location = new Address();
+        this.location.setName(locationName);
         return this;
     }
     
@@ -95,7 +98,7 @@ public class HangoutPointerTestBuilder {
         HangoutPointer pointer = new HangoutPointer(groupId, hangoutId, title);
         pointer.setStatus(status);
         pointer.setHangoutTime(hangoutTime);
-        pointer.setLocationName(locationName);
+        pointer.setLocation(location);
         pointer.setParticipantCount(participantCount);
         pointer.setTimeInput(timeInput);
         pointer.setStartTimestamp(startTimestamp);

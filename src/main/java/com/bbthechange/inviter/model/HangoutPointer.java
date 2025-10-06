@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.model;
 
 import com.bbthechange.inviter.dto.TimeInfo;
+import com.bbthechange.inviter.dto.Address;
 import com.bbthechange.inviter.util.InviterKeyFactory;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbAttribute;
@@ -24,7 +25,7 @@ public class HangoutPointer extends BaseItem {
     private String title;
     private String status;          // Status from the main Event record
     private Instant hangoutTime;    // When the hangout is scheduled
-    private String locationName;    // Denormalized location info
+    private Address location;       // Denormalized location info
     private int participantCount;   // Cached count for display
     private String mainImagePath;   // Denormalized image path from Hangout
     private TimeInfo timeInfo;    // Denormalized for efficient reads
@@ -97,14 +98,15 @@ public class HangoutPointer extends BaseItem {
         touch(); // Update timestamp
     }
     
-    public String getLocationName() {
-        return locationName;
+    public Address getLocation() {
+        return location;
     }
-    
-    public void setLocationName(String locationName) {
-        this.locationName = locationName;
+
+    public void setLocation(Address location) {
+        this.location = location;
         touch(); // Update timestamp
     }
+
     
     public int getParticipantCount() {
         return participantCount;

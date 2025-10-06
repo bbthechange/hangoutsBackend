@@ -163,7 +163,7 @@ public class EventSeriesServiceImpl implements EventSeriesService {
                 newPointer.setEndTimestamp(newHangout.getEndTimestamp());
             }
             if (newHangout.getLocation() != null) {
-                newPointer.setLocationName(newHangout.getLocation().getName());
+                newPointer.setLocation(newHangout.getLocation());
             }
             
             // Set GSI1PK for the pointer (required for EntityTimeIndex)
@@ -280,7 +280,7 @@ public class EventSeriesServiceImpl implements EventSeriesService {
                 newPointer.setEndTimestamp(newHangout.getEndTimestamp());
             }
             if (newHangout.getLocation() != null) {
-                newPointer.setLocationName(newHangout.getLocation().getName());
+                newPointer.setLocation(newHangout.getLocation());
             }
             
             // Set GSI1PK for the pointer (required for EntityTimeIndex)
