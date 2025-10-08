@@ -14,6 +14,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.MediaType;
+import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -52,6 +53,7 @@ class IdeaListControllerTest {
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(ideaListController)
                 .setControllerAdvice(ideaListController) // Include BaseController exception handling
+                .setMessageConverters(new MappingJackson2HttpMessageConverter())
                 .build();
         objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());

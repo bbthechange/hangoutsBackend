@@ -16,6 +16,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.MediaType;
+import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -71,7 +72,9 @@ class PlaceControllerTest {
                 return testUserId;
             }
         };
-        mockMvc = MockMvcBuilders.standaloneSetup(placeController).build();
+        mockMvc = MockMvcBuilders.standaloneSetup(placeController)
+                .setMessageConverters(new MappingJackson2HttpMessageConverter())
+                .build();
     }
 
     @Nested
