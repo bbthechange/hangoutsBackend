@@ -63,6 +63,7 @@ eb deploy                     # Deploy to production
 | **Carpooling** | `context/CARPOOLING_CONTEXT.md` | Ride coordination, driver/passenger management |
 | **Notifications** | `context/NOTIFICATIONS_CONTEXT.md` | Push notifications, device registration |
 | **Adding Attributes** | `context/ATTRIBUTE_ADDITION_GUIDE.md` | Guide for adding fields to User/Group/Hangout |
+| **Unit tests** | `context/UNIT_TESTING_PATTERNS.md` | Guide for unit tests |
 
 ### Context File Usage
 - **Before implementation**: Read relevant context file for architecture, patterns, authorization rules
