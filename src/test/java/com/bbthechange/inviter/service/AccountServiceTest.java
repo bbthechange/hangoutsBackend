@@ -35,9 +35,236 @@ class AccountServiceTest {
     }
 
     // ========================================================================
-    // NOTE: Old tests for code generation, hashing, and verification have been moved to AwsSmsValidationServiceTest
-    // TODO: Implement new delegation tests as specified in TEST_PLAN_ACCOUNT_SERVICE_REFACTOR.md
+    // Section 1: sendVerificationCode() Tests
     // ========================================================================
+
+    @Test
+    void sendVerificationCode_DelegatesToSmsValidationService() {
+        // Given
+        String phoneNumber = "+19995550001";
+
+        // When
+        accountService.sendVerificationCode(phoneNumber);
+
+        // Then
+        verify(mockSmsValidationService).sendVerificationCode(phoneNumber);
+    }
+
+    @Test
+    void sendVerificationCode_PropagatesExceptionsFromSmsValidationService() {
+        // Given
+        String phoneNumber = "+19995550001";
+        RuntimeException smsError = new RuntimeException("SMS error");
+        doThrow(smsError).when(mockSmsValidationService).sendVerificationCode(phoneNumber);
+
+        // When & Then
+        assertThatThrownBy(() -> accountService.sendVerificationCode(phoneNumber))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("SMS error");
+    }
+
+    // ========================================================================
+    // Section 2: verifyCode() Tests
+    // ========================================================================
+
+    @Test
+    void verifyCode_SuccessfulVerification_UpdatesUserStatusToActive() {
+        // Given
+        String phoneNumber = "+19995550001";
+        String submittedCode = "123456";
+        User unverifiedUser = new User();
+        unverifiedUser.setPhoneNumber(phoneNumber);
+        unverifiedUser.setAccountStatus(AccountStatus.UNVERIFIED);
+
+        when(mockSmsValidationService.verifyCode(phoneNumber, submittedCode))
+                .thenReturn(VerificationResult.success());
+        when(mockUserRepository.findByPhoneNumber(phoneNumber))
+                .thenReturn(Optional.of(unverifiedUser));
+
+        // When
+        VerificationResult result = accountService.verifyCode(phoneNumber, submittedCode);
+
+        // Then
+        assertThat(result.getStatus()).isEqualTo(VerificationResult.Status.SUCCESS);
+        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
+        verify(mockUserRepository).save(userCaptor.capture());
+        assertThat(userCaptor.getValue().getAccountStatus()).isEqualTo(AccountStatus.ACTIVE);
+    }
+
+    @Test
+    void verifyCode_FailedVerification_DoesNotUpdateUserStatus() {
+        // Given
+        String phoneNumber = "+19995550001";
+        String submittedCode = "999999";
+
+        when(mockSmsValidationService.verifyCode(phoneNumber, submittedCode))
+                .thenReturn(VerificationResult.invalidCode());
+
+        // When
+        VerificationResult result = accountService.verifyCode(phoneNumber, submittedCode);
+
+        // Then
+        assertThat(result.getStatus()).isEqualTo(VerificationResult.Status.INVALID_CODE);
+        verify(mockUserRepository, never()).save(any());
+    }
+
+    @Test
+    void verifyCode_ExpiredCode_DoesNotUpdateUserStatus() {
+        // Given
+        String phoneNumber = "+19995550001";
+        String submittedCode = "123456";
+
+        when(mockSmsValidationService.verifyCode(phoneNumber, submittedCode))
+                .thenReturn(VerificationResult.codeExpired());
+
+        // When
+        VerificationResult result = accountService.verifyCode(phoneNumber, submittedCode);
+
+        // Then
+        assertThat(result.getStatus()).isEqualTo(VerificationResult.Status.CODE_EXPIRED);
+        verify(mockUserRepository, never()).save(any());
+    }
+
+    @Test
+    void verifyCode_SuccessfulVerificationWithNoUserFound_StillReturnsSuccess() {
+        // Given
+        String phoneNumber = "+19995550001";
+        String submittedCode = "123456";
+
+        when(mockSmsValidationService.verifyCode(phoneNumber, submittedCode))
+                .thenReturn(VerificationResult.success());
+        when(mockUserRepository.findByPhoneNumber(phoneNumber))
+                .thenReturn(Optional.empty());
+
+        // When
+        VerificationResult result = accountService.verifyCode(phoneNumber, submittedCode);
+
+        // Then
+        assertThat(result.getStatus()).isEqualTo(VerificationResult.Status.SUCCESS);
+        verify(mockUserRepository, never()).save(any());
+    }
+
+    @Test
+    void verifyCode_DelegatesPhoneNumberCorrectly() {
+        // Given
+        String phoneNumber = "+19995550001";
+        String submittedCode = "123456";
+
+        when(mockSmsValidationService.verifyCode(phoneNumber, submittedCode))
+                .thenReturn(VerificationResult.success());
+        when(mockUserRepository.findByPhoneNumber(phoneNumber))
+                .thenReturn(Optional.empty());
+
+        // When
+        accountService.verifyCode(phoneNumber, submittedCode);
+
+        // Then
+        ArgumentCaptor<String> phoneCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> codeCaptor = ArgumentCaptor.forClass(String.class);
+        verify(mockSmsValidationService).verifyCode(phoneCaptor.capture(), codeCaptor.capture());
+        assertThat(phoneCaptor.getValue()).isEqualTo(phoneNumber);
+        assertThat(codeCaptor.getValue()).isEqualTo(submittedCode);
+    }
+
+    @Test
+    void verifyCode_ReturnsVerificationResultFromDelegate_Success() {
+        // Given
+        String phoneNumber = "+19995550001";
+        String submittedCode = "123456";
+        VerificationResult expectedResult = VerificationResult.success();
+
+        when(mockSmsValidationService.verifyCode(phoneNumber, submittedCode))
+                .thenReturn(expectedResult);
+        when(mockUserRepository.findByPhoneNumber(phoneNumber))
+                .thenReturn(Optional.empty());
+
+        // When
+        VerificationResult result = accountService.verifyCode(phoneNumber, submittedCode);
+
+        // Then
+        assertThat(result.getStatus()).isEqualTo(VerificationResult.Status.SUCCESS);
+    }
+
+    @Test
+    void verifyCode_ReturnsVerificationResultFromDelegate_InvalidCode() {
+        // Given
+        String phoneNumber = "+19995550001";
+        String submittedCode = "999999";
+        VerificationResult expectedResult = VerificationResult.invalidCode();
+
+        when(mockSmsValidationService.verifyCode(phoneNumber, submittedCode))
+                .thenReturn(expectedResult);
+
+        // When
+        VerificationResult result = accountService.verifyCode(phoneNumber, submittedCode);
+
+        // Then
+        assertThat(result.getStatus()).isEqualTo(VerificationResult.Status.INVALID_CODE);
+    }
+
+    @Test
+    void verifyCode_ReturnsVerificationResultFromDelegate_CodeExpired() {
+        // Given
+        String phoneNumber = "+19995550001";
+        String submittedCode = "123456";
+        VerificationResult expectedResult = VerificationResult.codeExpired();
+
+        when(mockSmsValidationService.verifyCode(phoneNumber, submittedCode))
+                .thenReturn(expectedResult);
+
+        // When
+        VerificationResult result = accountService.verifyCode(phoneNumber, submittedCode);
+
+        // Then
+        assertThat(result.getStatus()).isEqualTo(VerificationResult.Status.CODE_EXPIRED);
+    }
+
+    @Test
+    void verifyCode_UserRepositoryLookup_UsesCorrectPhoneNumber() {
+        // Given
+        String phoneNumber = "+19995550001";
+        String submittedCode = "123456";
+
+        when(mockSmsValidationService.verifyCode(phoneNumber, submittedCode))
+                .thenReturn(VerificationResult.success());
+        when(mockUserRepository.findByPhoneNumber(phoneNumber))
+                .thenReturn(Optional.empty());
+
+        // When
+        accountService.verifyCode(phoneNumber, submittedCode);
+
+        // Then
+        ArgumentCaptor<String> phoneCaptor = ArgumentCaptor.forClass(String.class);
+        verify(mockUserRepository).findByPhoneNumber(phoneCaptor.capture());
+        assertThat(phoneCaptor.getValue()).isEqualTo(phoneNumber);
+    }
+
+    @Test
+    void verifyCode_UserSave_CalledAfterStatusUpdate() {
+        // Given
+        String phoneNumber = "+19995550001";
+        String submittedCode = "123456";
+        User unverifiedUser = new User();
+        unverifiedUser.setPhoneNumber(phoneNumber);
+        unverifiedUser.setAccountStatus(AccountStatus.UNVERIFIED);
+
+        when(mockSmsValidationService.verifyCode(phoneNumber, submittedCode))
+                .thenReturn(VerificationResult.success());
+        when(mockUserRepository.findByPhoneNumber(phoneNumber))
+                .thenReturn(Optional.of(unverifiedUser));
+
+        // When
+        accountService.verifyCode(phoneNumber, submittedCode);
+
+        // Then
+        verify(mockUserRepository).findByPhoneNumber(phoneNumber);
+        verify(mockUserRepository).save(any(User.class));
+
+        // Verify order: find called before save
+        org.mockito.InOrder inOrder = org.mockito.Mockito.inOrder(mockUserRepository);
+        inOrder.verify(mockUserRepository).findByPhoneNumber(phoneNumber);
+        inOrder.verify(mockUserRepository).save(any(User.class));
+    }
 
     // =======================================================================
     // sendVerificationCodeWithAccountCheck Tests
