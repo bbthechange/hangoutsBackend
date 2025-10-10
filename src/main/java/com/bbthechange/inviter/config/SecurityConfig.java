@@ -36,6 +36,7 @@ public class SecurityConfig {
                 .requestMatchers("/auth/register", "/auth/login", "/auth/refresh", "/auth/logout", "/auth/resend-code", "/auth/verify").permitAll()
                 .requestMatchers("/images/predefined").permitAll()
                 .requestMatchers("/hangouts/time-options").permitAll()
+                .requestMatchers("/hiking/**").permitAll() // Allow public hiking trail search
                 .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
                 .anyRequest().authenticated()
             )
