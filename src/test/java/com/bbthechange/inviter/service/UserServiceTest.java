@@ -488,6 +488,53 @@ class UserServiceTest {
     }
 
     @Nested
+    @DisplayName("User Creation - New Field Tests")
+    class UserCreationTests {
+
+        @Test
+        @DisplayName("Should set creationDate when user is created")
+        void userCreation_SetsCreationDate() {
+            // Arrange & Act
+            User newUser = new User("+1234567890", "newuser", "New User", "password");
+
+            // Assert
+            assertNotNull(newUser.getCreationDate(), "creationDate should be set automatically");
+        }
+
+        @Test
+        @DisplayName("Should set isTestAccount to false by default when user is created")
+        void userCreation_SetsIsTestAccountToFalse() {
+            // Arrange & Act
+            User newUser = new User("+1234567890", "newuser", "New User", "password");
+
+            // Assert
+            assertNotNull(newUser.getIsTestAccount(), "isTestAccount should be set");
+            assertFalse(newUser.getIsTestAccount(), "isTestAccount should default to false");
+        }
+
+        @Test
+        @DisplayName("Should set creationDate when user is created with 3-arg constructor")
+        void userCreation_SetsCreationDateThreeArgConstructor() {
+            // Arrange & Act
+            User newUser = new User("+1234567890", "newuser", "password");
+
+            // Assert
+            assertNotNull(newUser.getCreationDate(), "creationDate should be set automatically");
+        }
+
+        @Test
+        @DisplayName("Should set isTestAccount to false by default with 3-arg constructor")
+        void userCreation_SetsIsTestAccountToFalseThreeArgConstructor() {
+            // Arrange & Act
+            User newUser = new User("+1234567890", "newuser", "password");
+
+            // Assert
+            assertNotNull(newUser.getIsTestAccount(), "isTestAccount should be set");
+            assertFalse(newUser.getIsTestAccount(), "isTestAccount should default to false");
+        }
+    }
+
+    @Nested
     @DisplayName("updateProfile - Profile Update with Image Path Tests")
     class UpdateProfileWithImageTests {
 

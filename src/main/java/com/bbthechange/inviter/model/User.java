@@ -1,10 +1,12 @@
 package com.bbthechange.inviter.model;
 
+import com.bbthechange.inviter.util.InstantAsLongAttributeConverter;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.*;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @Data
@@ -19,6 +21,8 @@ public class User {
     private String password;
     private String mainImagePath;
     private AccountStatus accountStatus;
+    private Instant creationDate;
+    private Boolean isTestAccount;
     
     public User(String phoneNumber, String username, String password) {
         this.id = UUID.randomUUID();
@@ -27,6 +31,8 @@ public class User {
         this.displayName = null;
         this.password = password;
         this.accountStatus = AccountStatus.UNVERIFIED;
+        this.creationDate = Instant.now();
+        this.isTestAccount = false;
     }
     
     public User(String phoneNumber, String username, String displayName, String password) {
@@ -36,6 +42,8 @@ public class User {
         this.displayName = displayName;
         this.password = password;
         this.accountStatus = AccountStatus.UNVERIFIED;
+        this.creationDate = Instant.now();
+        this.isTestAccount = false;
     }
     
     @DynamoDbPartitionKey
@@ -46,5 +54,10 @@ public class User {
     @DynamoDbSecondaryPartitionKey(indexNames = "PhoneNumberIndex")
     public String getPhoneNumber() {
         return phoneNumber;
+    }
+
+    @DynamoDbConvertedBy(InstantAsLongAttributeConverter.class)
+    public Instant getCreationDate() {
+        return creationDate;
     }
 }
