@@ -22,6 +22,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.ArrayList;
 import java.util.Set;
 import java.util.HashSet;
+import java.util.Map;
 import com.bbthechange.inviter.util.PaginatedResult;
 import com.bbthechange.inviter.util.GroupFeedPaginationToken;
 import com.bbthechange.inviter.util.RepositoryTokenData;
@@ -370,16 +371,19 @@ public class GroupServiceImpl implements GroupService {
             // Split into withDay (scheduled) and needsDay (unscheduled)
             List<FeedItem> feedItems = new ArrayList<>();
             List<HangoutSummaryDTO> needsDay = new ArrayList<>();
-            
+
+            // Build a map once for O(1) lookups instead of O(n) searches
+            Map<String, HangoutPointer> hangoutMap = allItems.stream()
+                .filter(bi -> bi instanceof HangoutPointer)
+                .map(bi -> (HangoutPointer) bi)
+                .collect(Collectors.toMap(HangoutPointer::getHangoutId, hp -> hp));
+
             for (FeedItem item : allFeedItems) {
                 if (item instanceof HangoutSummaryDTO hangoutSummary) {
-                    // Check if hangout has a timestamp (is scheduled)
-                    BaseItem baseItem = allItems.stream()
-                        .filter(bi -> bi instanceof HangoutPointer hp && hp.getHangoutId().equals(hangoutSummary.getHangoutId()))
-                        .findFirst()
-                        .orElse(null);
-                    
-                    if (baseItem instanceof HangoutPointer hangoutPointer && hangoutPointer.getStartTimestamp() != null) {
+                    // O(1) lookup instead of O(n) stream filter
+                    HangoutPointer hangoutPointer = hangoutMap.get(hangoutSummary.getHangoutId());
+
+                    if (hangoutPointer != null && hangoutPointer.getStartTimestamp() != null) {
                         feedItems.add(item); // Has timestamp, goes to withDay
                     } else {
                         needsDay.add(hangoutSummary); // No timestamp, goes to needsDay
