@@ -1,5 +1,6 @@
 package com.bbthechange.inviter.config;
 
+import com.amazonaws.xray.interceptors.TracingInterceptor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -14,18 +15,21 @@ import java.net.URI;
 
 @Configuration
 public class DynamoDBConfig {
-    
+
     @Value("${aws.region:us-east-1}")
     private String region;
-    
+
     @Value("${aws.dynamodb.endpoint:}")
     private String endpoint;
-    
+
+    @Value("${xray.enabled:false}")
+    private boolean xrayEnabled;
+
     @Bean
     public DynamoDbClient dynamoDbClient() {
         var builder = DynamoDbClient.builder()
                 .region(Region.of(region));
-                
+
         if (!endpoint.isEmpty()) {
             // For DynamoDB Local, use dummy credentials
             builder.endpointOverride(URI.create(endpoint))
@@ -36,7 +40,12 @@ public class DynamoDBConfig {
             // For real AWS, use default credentials
             builder.credentialsProvider(DefaultCredentialsProvider.create());
         }
-        
+
+        // Add X-Ray tracing if enabled
+        if (xrayEnabled) {
+            builder.overrideConfiguration(c -> c.addExecutionInterceptor(new TracingInterceptor()));
+        }
+
         return builder.build();
     }
     
