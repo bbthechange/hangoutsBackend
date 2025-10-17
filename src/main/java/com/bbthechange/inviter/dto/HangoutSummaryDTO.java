@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.dto;
 
 import com.bbthechange.inviter.model.*;
+import com.bbthechange.inviter.util.HangoutDataTransformer;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -8,7 +9,7 @@ import java.util.List;
 /**
  * Data Transfer Object for Hangout summary information in group feeds.
  * Represents a standalone hangout event in the feed.
- * Contains all denormalized data from HangoutPointer for single-query feed loading.
+ * Contains transformed, nested data from HangoutPointer for easy client consumption.
  */
 // TODO @Data?
 public class HangoutSummaryDTO implements FeedItem {
@@ -30,20 +31,23 @@ public class HangoutSummaryDTO implements FeedItem {
     private Long endTimestamp;
     private String seriesId;
 
-    // Complete poll data (denormalized for single-query feed loading)
-    private List<Poll> polls;
-    private List<PollOption> pollOptions;
-    private List<Vote> votes;
+    // Transformed poll data (nested with vote counts and user voting status)
+    private List<PollWithOptionsDTO> polls;
 
-    // Complete carpool data (denormalized for single-query feed loading)
-    private List<Car> cars;
-    private List<CarRider> carRiders;
-    private List<NeedsRide> needsRide;
+    // Transformed carpool data (nested with riders)
+    private List<CarWithRidersDTO> cars;
+    private List<NeedsRideDTO> needsRide;
 
-    // Complete attribute data (denormalized for single-query feed loading)
+    // Attribute data (kept as-is, simple structure)
     private List<HangoutAttribute> attributes;
 
-    public HangoutSummaryDTO(HangoutPointer pointer) {
+    /**
+     * Create HangoutSummaryDTO from HangoutPointer with transformed nested data.
+     *
+     * @param pointer The hangout pointer with denormalized data
+     * @param requestingUserId User ID for calculating poll voting status
+     */
+    public HangoutSummaryDTO(HangoutPointer pointer, String requestingUserId) {
         // Basic fields
         this.hangoutId = pointer.getHangoutId();
         this.title = pointer.getTitle();
@@ -61,17 +65,25 @@ public class HangoutSummaryDTO implements FeedItem {
         this.endTimestamp = pointer.getEndTimestamp();
         this.seriesId = pointer.getSeriesId();
 
-        // Complete poll data (defensive copies to prevent null issues)
-        this.polls = pointer.getPolls() != null ? new ArrayList<>(pointer.getPolls()) : new ArrayList<>();
-        this.pollOptions = pointer.getPollOptions() != null ? new ArrayList<>(pointer.getPollOptions()) : new ArrayList<>();
-        this.votes = pointer.getVotes() != null ? new ArrayList<>(pointer.getVotes()) : new ArrayList<>();
+        // Transform poll data into nested structure with vote counts
+        this.polls = HangoutDataTransformer.transformPollData(
+                pointer.getPolls(),
+                pointer.getPollOptions(),
+                pointer.getVotes(),
+                requestingUserId
+        );
 
-        // Complete carpool data
-        this.cars = pointer.getCars() != null ? new ArrayList<>(pointer.getCars()) : new ArrayList<>();
-        this.carRiders = pointer.getCarRiders() != null ? new ArrayList<>(pointer.getCarRiders()) : new ArrayList<>();
-        this.needsRide = pointer.getNeedsRide() != null ? new ArrayList<>(pointer.getNeedsRide()) : new ArrayList<>();
+        // Transform carpool data into nested structure
+        this.cars = HangoutDataTransformer.transformCarpoolData(
+                pointer.getCars(),
+                pointer.getCarRiders()
+        );
 
-        // Complete attribute data
+        this.needsRide = HangoutDataTransformer.transformNeedsRideData(
+                pointer.getNeedsRide()
+        );
+
+        // Attributes are already simple, keep as-is
         this.attributes = pointer.getAttributes() != null ? new ArrayList<>(pointer.getAttributes()) : new ArrayList<>();
     }
     
@@ -189,55 +201,31 @@ public class HangoutSummaryDTO implements FeedItem {
         this.seriesId = seriesId;
     }
 
-    // Poll data getters/setters
+    // Poll data getters/setters (now nested DTOs)
 
-    public List<Poll> getPolls() {
+    public List<PollWithOptionsDTO> getPolls() {
         return polls != null ? polls : new ArrayList<>();
     }
 
-    public void setPolls(List<Poll> polls) {
+    public void setPolls(List<PollWithOptionsDTO> polls) {
         this.polls = polls;
     }
 
-    public List<PollOption> getPollOptions() {
-        return pollOptions != null ? pollOptions : new ArrayList<>();
-    }
+    // Carpool data getters/setters (now nested DTOs)
 
-    public void setPollOptions(List<PollOption> pollOptions) {
-        this.pollOptions = pollOptions;
-    }
-
-    public List<Vote> getVotes() {
-        return votes != null ? votes : new ArrayList<>();
-    }
-
-    public void setVotes(List<Vote> votes) {
-        this.votes = votes;
-    }
-
-    // Carpool data getters/setters
-
-    public List<Car> getCars() {
+    public List<CarWithRidersDTO> getCars() {
         return cars != null ? cars : new ArrayList<>();
     }
 
-    public void setCars(List<Car> cars) {
+    public void setCars(List<CarWithRidersDTO> cars) {
         this.cars = cars;
     }
 
-    public List<CarRider> getCarRiders() {
-        return carRiders != null ? carRiders : new ArrayList<>();
-    }
-
-    public void setCarRiders(List<CarRider> carRiders) {
-        this.carRiders = carRiders;
-    }
-
-    public List<NeedsRide> getNeedsRide() {
+    public List<NeedsRideDTO> getNeedsRide() {
         return needsRide != null ? needsRide : new ArrayList<>();
     }
 
-    public void setNeedsRide(List<NeedsRide> needsRide) {
+    public void setNeedsRide(List<NeedsRideDTO> needsRide) {
         this.needsRide = needsRide;
     }
 

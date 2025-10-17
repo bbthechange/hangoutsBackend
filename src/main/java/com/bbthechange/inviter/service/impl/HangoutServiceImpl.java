@@ -319,20 +319,20 @@ public class HangoutServiceImpl implements HangoutService {
     @Override
     public List<HangoutSummaryDTO> getHangoutsForUser(String userId) {
         logger.info("Fetching hangouts for user {}", userId);
-        
+
         // Step 1: Get user's group IDs
         List<GroupMembership> userGroups = groupRepository.findGroupsByUserId(userId);
         List<String> groupIds = userGroups.stream()
             .map(GroupMembership::getGroupId)
             .collect(Collectors.toList());
-        
+
         // Step 2: Construct GSI query partition keys
         List<String> partitionKeys = new ArrayList<>();
         partitionKeys.add("USER#" + userId); // Direct user invites
         for (String groupId : groupIds) {
             partitionKeys.add("GROUP#" + groupId); // Group hangouts
         }
-        
+
         // Step 3: Execute parallel GSI queries
         List<BaseItem> allHangoutPointers = new ArrayList<>();
         for (String partitionKey : partitionKeys) {
@@ -343,19 +343,19 @@ public class HangoutServiceImpl implements HangoutService {
                 logger.warn("Failed to query hangouts for partition key {}: {}", partitionKey, e.getMessage());
             }
         }
-        
+
         // Step 4: Filter for HangoutPointer items and convert to DTOs
         List<HangoutSummaryDTO> hangoutSummaries = allHangoutPointers.stream()
             .filter(item -> item instanceof HangoutPointer)
             .map(item -> (HangoutPointer) item)
-            .map(this::convertToSummaryDTO)
+            .map(pointer -> convertToSummaryDTO(pointer, userId))
             .sorted((a, b) -> {
                 // Sort by hangoutId as a proxy for chronological order
                 // In practice, GSI already returns items sorted by timestamp
                 return a.getHangoutId().compareTo(b.getHangoutId());
             })
             .collect(Collectors.toList());
-        
+
         logger.info("Found {} hangouts for user {}", hangoutSummaries.size(), userId);
         return hangoutSummaries;
     }
@@ -622,15 +622,15 @@ public class HangoutServiceImpl implements HangoutService {
         return false;
     }
     
-    private HangoutSummaryDTO convertToSummaryDTO(HangoutPointer pointer) {
-        HangoutSummaryDTO summary = new HangoutSummaryDTO(pointer);
-        
+    private HangoutSummaryDTO convertToSummaryDTO(HangoutPointer pointer, String requestingUserId) {
+        HangoutSummaryDTO summary = new HangoutSummaryDTO(pointer, requestingUserId);
+
         // *** NO DATABASE CALL - Use denormalized timeInput ***
         if (pointer.getTimeInput() != null) {
             TimeInfo timeInfo = formatTimeInfoForResponse(pointer.getTimeInput());
             summary.setTimeInfo(timeInfo);
         }
-        
+
         return summary;
     }
 
@@ -907,47 +907,12 @@ public class HangoutServiceImpl implements HangoutService {
      * already retrieved from the single table query.
      */
     private List<PollWithOptionsDTO> transformPollData(HangoutDetailData hangoutDetail, String requestingUserId) {
-        List<Poll> polls = hangoutDetail.getPolls();
-        List<PollOption> allOptions = hangoutDetail.getPollOptions();
-        List<Vote> allVotes = hangoutDetail.getVotes();
-        
-        // Group options and votes by poll ID
-        Map<String, List<PollOption>> optionsByPoll = allOptions.stream()
-            .collect(Collectors.groupingBy(PollOption::getPollId));
-            
-        Map<String, List<Vote>> votesByPoll = allVotes.stream()
-            .collect(Collectors.groupingBy(Vote::getPollId));
-        
-        // Build hierarchical DTOs with runtime vote counting
-        return polls.stream()
-            .map(poll -> {
-                List<PollOption> options = optionsByPoll.getOrDefault(poll.getPollId(), List.of());
-                List<Vote> pollVotes = votesByPoll.getOrDefault(poll.getPollId(), List.of());
-                
-                // Calculate vote counts by option at runtime
-                Map<String, Long> voteCountsByOption = pollVotes.stream()
-                    .collect(Collectors.groupingBy(Vote::getOptionId, Collectors.counting()));
-                
-                List<PollOptionDTO> optionDTOs = options.stream()
-                    .map(option -> {
-                        // Runtime calculation - no denormalized count field needed
-                        int voteCount = voteCountsByOption.getOrDefault(option.getOptionId(), 0L).intValue();
-                        
-                        boolean userVoted = pollVotes.stream()
-                            .anyMatch(vote -> vote.getOptionId().equals(option.getOptionId()) 
-                                           && vote.getUserId().equals(requestingUserId));
-                        
-                        return new PollOptionDTO(option.getOptionId(), option.getText(), 
-                                               voteCount, userVoted);
-                    })
-                    .collect(Collectors.toList());
-                
-                // Total votes = sum of all votes for this poll
-                int totalVotes = pollVotes.size();
-                
-                return new PollWithOptionsDTO(poll, optionDTOs, totalVotes);
-            })
-            .collect(Collectors.toList());
+        return com.bbthechange.inviter.util.HangoutDataTransformer.transformPollData(
+                hangoutDetail.getPolls(),
+                hangoutDetail.getPollOptions(),
+                hangoutDetail.getVotes(),
+                requestingUserId
+        );
     }
 
     /**
@@ -964,5 +929,63 @@ public class HangoutServiceImpl implements HangoutService {
             logger.warn("Failed to get display name for user {}: {}", userId, e.getMessage());
         }
         return "Unknown";
+    }
+
+    @Override
+    public void resyncHangoutPointers(String hangoutId) {
+        logger.info("Manually resyncing all pointer data for hangout {}", hangoutId);
+
+        // Get hangout to find associated groups
+        Optional<Hangout> hangoutOpt = hangoutRepository.findHangoutById(hangoutId);
+        if (hangoutOpt.isEmpty()) {
+            logger.warn("Cannot resync pointers for non-existent hangout: {}", hangoutId);
+            return;
+        }
+
+        Hangout hangout = hangoutOpt.get();
+        List<String> associatedGroups = hangout.getAssociatedGroups();
+
+        if (associatedGroups == null || associatedGroups.isEmpty()) {
+            logger.warn("No associated groups for hangout {}, skipping pointer resync", hangoutId);
+            return;
+        }
+
+        // Get all denormalized data from canonical records
+        HangoutDetailData detailData = hangoutRepository.getHangoutDetailData(hangoutId);
+        List<HangoutAttribute> attributes = hangoutRepository.findAttributesByHangoutId(hangoutId);
+
+        // Update each group's pointer with ALL denormalized data
+        for (String groupId : associatedGroups) {
+            pointerUpdateService.updatePointerWithRetry(groupId, hangoutId, pointer -> {
+                // Update basic fields
+                pointer.setTitle(hangout.getTitle());
+                pointer.setDescription(hangout.getDescription());
+                pointer.setLocation(hangout.getLocation());
+                pointer.setVisibility(hangout.getVisibility());
+                pointer.setMainImagePath(hangout.getMainImagePath());
+                pointer.setCarpoolEnabled(hangout.isCarpoolEnabled());
+
+                // Update time fields
+                pointer.setTimeInput(hangout.getTimeInput());
+                pointer.setStartTimestamp(hangout.getStartTimestamp());
+                pointer.setEndTimestamp(hangout.getEndTimestamp());
+                pointer.setSeriesId(hangout.getSeriesId());
+
+                // Update poll data
+                pointer.setPolls(new ArrayList<>(detailData.getPolls()));
+                pointer.setPollOptions(new ArrayList<>(detailData.getPollOptions()));
+                pointer.setVotes(new ArrayList<>(detailData.getVotes()));
+
+                // Update carpool data
+                pointer.setCars(new ArrayList<>(detailData.getCars()));
+                pointer.setCarRiders(new ArrayList<>(detailData.getCarRiders()));
+                pointer.setNeedsRide(new ArrayList<>(detailData.getNeedsRide()));
+
+                // Update attributes
+                pointer.setAttributes(new ArrayList<>(attributes));
+            }, "complete resync");
+        }
+
+        logger.info("Successfully resynced {} pointer(s) for hangout {}", associatedGroups.size(), hangoutId);
     }
 }

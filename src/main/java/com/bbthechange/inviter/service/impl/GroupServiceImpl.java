@@ -333,19 +333,19 @@ public class GroupServiceImpl implements GroupService {
         // Determine query type based on pagination parameters
         if (endingBefore != null) {
             // Backward pagination - get past events
-            return getPastEvents(groupId, nowTimestamp, limit, endingBefore);
+            return getPastEvents(groupId, nowTimestamp, limit, endingBefore, requestingUserId);
         } else {
             // Default or forward pagination - get current/future events
-            return getCurrentAndFutureEvents(groupId, nowTimestamp, limit, startingAfter);
+            return getCurrentAndFutureEvents(groupId, nowTimestamp, limit, startingAfter, requestingUserId);
         }
     }
-    
+
     /**
      * Get current and future events using parallel queries for optimal performance.
      * Now includes hydration logic to support both standalone hangouts and multi-part series.
      */
-    private GroupFeedDTO getCurrentAndFutureEvents(String groupId, long nowTimestamp, 
-                                                  Integer limit, String startingAfter) {
+    private GroupFeedDTO getCurrentAndFutureEvents(String groupId, long nowTimestamp,
+                                                  Integer limit, String startingAfter, String requestingUserId) {
         try {
             // Parallel queries for maximum efficiency
             CompletableFuture<PaginatedResult<BaseItem>> futureEventsFuture = 
@@ -364,9 +364,9 @@ public class GroupServiceImpl implements GroupService {
             List<BaseItem> allItems = new ArrayList<>();
             allItems.addAll(futureEvents.getResults());
             allItems.addAll(inProgressEvents.getResults());
-            
+
             // Hydrate the mixed feed into FeedItem objects
-            List<FeedItem> allFeedItems = hydrateFeed(allItems);
+            List<FeedItem> allFeedItems = hydrateFeed(allItems, requestingUserId);
             
             // Split into withDay (scheduled) and needsDay (unscheduled)
             List<FeedItem> feedItems = new ArrayList<>();
@@ -415,16 +415,16 @@ public class GroupServiceImpl implements GroupService {
      * Get past events for backward pagination.
      * Now supports both standalone hangouts and multi-part series.
      */
-    private GroupFeedDTO getPastEvents(String groupId, long nowTimestamp, Integer limit, String endingBefore) {
+    private GroupFeedDTO getPastEvents(String groupId, long nowTimestamp, Integer limit, String endingBefore, String requestingUserId) {
         try {
             // Convert our custom pagination token to the format the repository expects
             String repositoryToken = getRepositoryToken(endingBefore, groupId);
-            
-            PaginatedResult<BaseItem> pastEvents = 
+
+            PaginatedResult<BaseItem> pastEvents =
                 hangoutRepository.getPastEventsPage(groupId, nowTimestamp, limit, repositoryToken);
-                
+
             // Hydrate the mixed feed into FeedItem objects
-            List<FeedItem> feedItems = hydrateFeed(pastEvents.getResults());
+            List<FeedItem> feedItems = hydrateFeed(pastEvents.getResults(), requestingUserId);
             
             // For past events, needsDay is empty (past events must have timestamps)
             List<HangoutSummaryDTO> needsDay = List.of();
@@ -536,8 +536,12 @@ public class GroupServiceImpl implements GroupService {
      * Hydrate a mixed list of BaseItem objects into structured FeedItem objects.
      * Implements the two-pass algorithm to transform SeriesPointers and standalone HangoutPointers
      * into the appropriate DTOs for the feed response.
+     *
+     * @param baseItems List of base items from repository
+     * @param requestingUserId User ID for calculating poll voting status
+     * @return List of transformed feed items
      */
-    List<FeedItem> hydrateFeed(List<BaseItem> baseItems) {
+    List<FeedItem> hydrateFeed(List<BaseItem> baseItems, String requestingUserId) {
         // First Pass: Identify all hangouts that are part of series
         Set<String> hangoutIdsInSeries = new HashSet<>();
         for (BaseItem item : baseItems) {
@@ -558,15 +562,15 @@ public class GroupServiceImpl implements GroupService {
             if (item instanceof SeriesPointer) {
                 // Convert SeriesPointer to SeriesSummaryDTO
                 SeriesPointer seriesPointer = (SeriesPointer) item;
-                SeriesSummaryDTO seriesDTO = createSeriesSummaryDTO(seriesPointer);
+                SeriesSummaryDTO seriesDTO = createSeriesSummaryDTO(seriesPointer, requestingUserId);
                 feedItems.add(seriesDTO);
-                
+
             } else if (item instanceof HangoutPointer) {
                 HangoutPointer hangoutPointer = (HangoutPointer) item;
-                
+
                 // Only include standalone hangouts (not already part of a series)
                 if (!hangoutIdsInSeries.contains(hangoutPointer.getHangoutId())) {
-                    HangoutSummaryDTO hangoutDTO = new HangoutSummaryDTO(hangoutPointer);
+                    HangoutSummaryDTO hangoutDTO = new HangoutSummaryDTO(hangoutPointer, requestingUserId);
                     feedItems.add(hangoutDTO);
                 }
                 // If it's part of a series, ignore it (already included in SeriesSummaryDTO)
@@ -579,8 +583,12 @@ public class GroupServiceImpl implements GroupService {
     
     /**
      * Create a SeriesSummaryDTO from a SeriesPointer with all its denormalized parts.
+     *
+     * @param seriesPointer The series pointer with denormalized hangout parts
+     * @param requestingUserId User ID for calculating poll voting status in parts
+     * @return SeriesSummaryDTO with transformed parts
      */
-    SeriesSummaryDTO createSeriesSummaryDTO(SeriesPointer seriesPointer) {
+    SeriesSummaryDTO createSeriesSummaryDTO(SeriesPointer seriesPointer, String requestingUserId) {
         SeriesSummaryDTO dto = new SeriesSummaryDTO();
 
         // Copy series-level information
@@ -591,17 +599,17 @@ public class GroupServiceImpl implements GroupService {
         dto.setStartTimestamp(seriesPointer.getStartTimestamp());
         dto.setEndTimestamp(seriesPointer.getEndTimestamp());
         dto.setMainImagePath(seriesPointer.getMainImagePath());
-        
-        // Convert denormalized parts to HangoutSummaryDTO objects
+
+        // Convert denormalized parts to HangoutSummaryDTO objects with transformed data
         List<HangoutSummaryDTO> parts = new ArrayList<>();
         if (seriesPointer.getParts() != null) {
             for (HangoutPointer part : seriesPointer.getParts()) {
-                HangoutSummaryDTO partDTO = new HangoutSummaryDTO(part);
+                HangoutSummaryDTO partDTO = new HangoutSummaryDTO(part, requestingUserId);
                 parts.add(partDTO);
             }
         }
         dto.setParts(parts);
-        
+
         return dto;
     }
     

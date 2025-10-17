@@ -731,10 +731,11 @@ class HangoutServiceImplTest {
         pointer.setLocation(testLocation);
         pointer.setParticipantCount(5);
         pointer.setTimeInput(timeInfo);
-        
+
         // When
-        HangoutSummaryDTO summary = new HangoutSummaryDTO(pointer);
-        
+        String testUserId = "user-123";
+        HangoutSummaryDTO summary = new HangoutSummaryDTO(pointer, testUserId);
+
         // Then
         assertThat(summary.getHangoutId()).isEqualTo(hangoutId);
         assertThat(summary.getTitle()).isEqualTo(title);

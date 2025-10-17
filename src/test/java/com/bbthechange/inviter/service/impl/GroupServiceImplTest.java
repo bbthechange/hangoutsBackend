@@ -1132,7 +1132,7 @@ class GroupServiceImplTest {
         List<BaseItem> baseItems = List.of(seriesPointer, standaloneHangout, seriesPart);
 
         // When
-        List<FeedItem> result = groupService.hydrateFeed(baseItems);
+        List<FeedItem> result = groupService.hydrateFeed(baseItems, USER_ID);
 
         // Then
         assertThat(result).hasSize(2); // Series + standalone hangout
@@ -1157,7 +1157,7 @@ class GroupServiceImplTest {
         );
 
         // When
-        List<FeedItem> result = groupService.hydrateFeed(baseItems);
+        List<FeedItem> result = groupService.hydrateFeed(baseItems, USER_ID);
 
         // Then
         assertThat(result).hasSize(2);
@@ -1173,7 +1173,7 @@ class GroupServiceImplTest {
         List<BaseItem> baseItems = List.of(series1, series2);
 
         // When
-        List<FeedItem> result = groupService.hydrateFeed(baseItems);
+        List<FeedItem> result = groupService.hydrateFeed(baseItems, USER_ID);
 
         // Then
         assertThat(result).hasSize(2);
@@ -1186,7 +1186,7 @@ class GroupServiceImplTest {
         List<BaseItem> baseItems = List.of();
 
         // When
-        List<FeedItem> result = groupService.hydrateFeed(baseItems);
+        List<FeedItem> result = groupService.hydrateFeed(baseItems, USER_ID);
 
         // Then
         assertThat(result).isEmpty();
@@ -1206,7 +1206,7 @@ class GroupServiceImplTest {
         List<BaseItem> baseItems = List.of(seriesPointer);
 
         // When
-        List<FeedItem> result = groupService.hydrateFeed(baseItems);
+        List<FeedItem> result = groupService.hydrateFeed(baseItems, USER_ID);
 
         // Then
         assertThat(result).hasSize(1);
@@ -1226,7 +1226,7 @@ class GroupServiceImplTest {
         seriesPointer.setEndTimestamp(2000L);
 
         // When
-        SeriesSummaryDTO result = groupService.createSeriesSummaryDTO(seriesPointer);
+        SeriesSummaryDTO result = groupService.createSeriesSummaryDTO(seriesPointer, USER_ID);
 
         // Then
         assertThat(result.getSeriesTitle()).isEqualTo("Movie Night Series");
@@ -1244,7 +1244,7 @@ class GroupServiceImplTest {
         seriesPointer.setParts(null);
 
         // When
-        SeriesSummaryDTO result = groupService.createSeriesSummaryDTO(seriesPointer);
+        SeriesSummaryDTO result = groupService.createSeriesSummaryDTO(seriesPointer, USER_ID);
 
         // Then
         assertThat(result.getParts()).isEmpty();

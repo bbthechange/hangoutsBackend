@@ -110,5 +110,12 @@ public interface HangoutService {
      * Remove event association from groups (removes hangout pointers).
      */
     void disassociateEventFromGroups(String eventId, java.util.List<String> groupIds, String requestingUserId);
-    
+
+    /**
+     * Manually resync all denormalized data for a hangout's pointer records.
+     * This method updates all pointer records with the latest poll, carpool, and attribute data.
+     * Useful for fixing stale pointers or after migrations.
+     */
+    void resyncHangoutPointers(String hangoutId);
+
 }

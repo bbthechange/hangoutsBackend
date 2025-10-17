@@ -165,12 +165,26 @@ public class HangoutController extends BaseController {
             @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid event ID format") String eventId,
             @Valid @RequestBody AssociateGroupsRequest request,
             HttpServletRequest httpRequest) {
-        
+
         String userId = extractUserId(httpRequest);
-        
+
         hangoutService.disassociateEventFromGroups(eventId, request.getGroupIds(), userId);
         logger.info("Disassociated event {} from {} groups by user {}", eventId, request.getGroupIds().size(), userId);
-        
+
+        return ResponseEntity.ok().build();
+    }
+
+    /**
+     * Admin/utility endpoint to manually resync all denormalized data for a hangout's pointers.
+     * Useful for fixing stale pointers or after migrations.
+     */
+    @PostMapping("/hangouts/{hangoutId}/resync-pointers")
+    public ResponseEntity<Void> resyncPointers(
+            @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid hangout ID format") String hangoutId) {
+
+        hangoutService.resyncHangoutPointers(hangoutId);
+        logger.info("Manually resynced pointers for hangout {}", hangoutId);
+
         return ResponseEntity.ok().build();
     }
 }
