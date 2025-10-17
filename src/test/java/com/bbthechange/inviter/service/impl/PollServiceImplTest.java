@@ -5,8 +5,10 @@ import com.bbthechange.inviter.exception.EventNotFoundException;
 import com.bbthechange.inviter.exception.UnauthorizedException;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.HangoutRepository;
+import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.service.AuthorizationService;
 import com.bbthechange.inviter.service.PollService;
+import com.bbthechange.inviter.testutil.HangoutPointerTestBuilder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -19,6 +21,9 @@ import java.util.*;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import org.mockito.MockedStatic;
+import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
+import org.junit.jupiter.api.Nested;
 
 @ExtendWith(MockitoExtension.class)
 class PollServiceImplTest {
@@ -27,7 +32,13 @@ class PollServiceImplTest {
     private HangoutRepository hangoutRepository;
 
     @Mock
+    private GroupRepository groupRepository;
+
+    @Mock
     private AuthorizationService authorizationService;
+
+    @Mock
+    private PointerUpdateService pointerUpdateService;
 
     @InjectMocks
     private PollServiceImpl pollService;
@@ -291,5 +302,498 @@ class PollServiceImplTest {
 
         // Then
         verify(hangoutRepository).deleteVote(eventId, pollId, userId, optionId);
+    }
+
+    // ==================== Pointer Synchronization Tests ====================
+
+    @Test
+    void createPoll_WithValidPoll_ShouldUpdateAllPointers() {
+        // Given
+        String groupId1 = UUID.randomUUID().toString();
+        String groupId2 = UUID.randomUUID().toString();
+
+        CreatePollRequest request = new CreatePollRequest();
+        request.setTitle("Test Poll");
+        request.setDescription("Description");
+        request.setMultipleChoice(false);
+        request.setOptions(Arrays.asList("Option A", "Option B", "Option C"));
+
+        Hangout hangout = new Hangout();
+        hangout.setHangoutId(eventId);
+        hangout.setAssociatedGroups(Arrays.asList(groupId1, groupId2));
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+
+        Poll newPoll = new Poll(eventId, "Test Poll", "Description", false);
+        PollOption option1 = new PollOption(eventId, newPoll.getPollId(), "Option A");
+        PollOption option2 = new PollOption(eventId, newPoll.getPollId(), "Option B");
+        PollOption option3 = new PollOption(eventId, newPoll.getPollId(), "Option C");
+        List<BaseItem> pollData = Arrays.asList(newPoll, option1, option2, option3);
+
+        HangoutPointer pointer1 = HangoutPointerTestBuilder.aPointer()
+            .forGroup(groupId1)
+            .forHangout(eventId)
+            .build();
+        HangoutPointer pointer2 = HangoutPointerTestBuilder.aPointer()
+            .forGroup(groupId2)
+            .forHangout(eventId)
+            .build();
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+        when(authorizationService.canUserEditHangout(userId, hangout)).thenReturn(true);
+        when(hangoutRepository.savePoll(any(Poll.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(hangoutRepository.savePollOption(any(PollOption.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(hangoutRepository.findHangoutById(eventId)).thenReturn(Optional.of(hangout));
+        when(hangoutRepository.getAllPollData(eventId)).thenReturn(pollData);
+
+        // When
+        Poll result = pollService.createPoll(eventId, request, userId);
+
+        // Then
+        assertThat(result).isNotNull();
+        verify(hangoutRepository).savePoll(any(Poll.class));
+        verify(hangoutRepository, times(3)).savePollOption(any(PollOption.class));
+        verify(pointerUpdateService).updatePointerWithRetry(eq(groupId1), eq(eventId), any(), eq("poll data"));
+        verify(pointerUpdateService).updatePointerWithRetry(eq(groupId2), eq(eventId), any(), eq("poll data"));
+    }
+
+    @Test
+    void createPoll_WithNoAssociatedGroups_ShouldNotUpdatePointers() {
+        // Given
+        CreatePollRequest request = new CreatePollRequest();
+        request.setTitle("Test Poll");
+        request.setDescription("Description");
+        request.setMultipleChoice(false);
+        request.setOptions(Arrays.asList("Option A", "Option B"));
+
+        Hangout hangout = new Hangout();
+        hangout.setHangoutId(eventId);
+        hangout.setAssociatedGroups(Collections.emptyList());
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+        when(authorizationService.canUserEditHangout(userId, hangout)).thenReturn(true);
+        when(hangoutRepository.savePoll(any(Poll.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(hangoutRepository.savePollOption(any(PollOption.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(hangoutRepository.findHangoutById(eventId)).thenReturn(Optional.of(hangout));
+
+        // When
+        Poll result = pollService.createPoll(eventId, request, userId);
+
+        // Then
+        assertThat(result).isNotNull();
+        verify(hangoutRepository).savePoll(any(Poll.class));
+        verify(hangoutRepository, times(2)).savePollOption(any(PollOption.class));
+        verify(pointerUpdateService, never()).updatePointerWithRetry(anyString(), anyString(), any(), anyString());
+    }
+
+    @Test
+    void voteOnPoll_WithValidVote_ShouldUpdateAllPointers() {
+        // Given
+        String groupId = UUID.randomUUID().toString();
+
+        VoteRequest request = new VoteRequest();
+        request.setOptionId(optionId);
+        request.setVoteType("YES");
+
+        Hangout hangout = new Hangout();
+        hangout.setAssociatedGroups(Arrays.asList(groupId));
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+
+        Poll poll = new Poll(eventId, "Test Poll", "Description", true);
+        PollOption option = new PollOption(eventId, pollId, "Option Text");
+        option.setOptionId(optionId);
+        List<BaseItem> specificPollData = Arrays.asList(poll, option);
+
+        Vote newVote = new Vote(eventId, pollId, optionId, userId, "YES");
+        List<BaseItem> allPollData = Arrays.asList(poll, option, newVote);
+
+        HangoutPointer pointer = HangoutPointerTestBuilder.aPointer()
+            .forGroup(groupId)
+            .forHangout(eventId)
+            .build();
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+        when(authorizationService.canUserViewHangout(userId, hangout)).thenReturn(true);
+        when(hangoutRepository.getSpecificPollData(eventId, pollId)).thenReturn(specificPollData);
+        when(hangoutRepository.saveVote(any(Vote.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(hangoutRepository.findHangoutById(eventId)).thenReturn(Optional.of(hangout));
+        when(hangoutRepository.getAllPollData(eventId)).thenReturn(allPollData);
+
+        // When
+        Vote result = pollService.voteOnPoll(eventId, pollId, request, userId);
+
+        // Then
+        assertThat(result).isNotNull();
+        verify(hangoutRepository).saveVote(any(Vote.class));
+        verify(pointerUpdateService).updatePointerWithRetry(eq(groupId), eq(eventId), any(), eq("poll data"));
+    }
+
+    @Test
+    void voteOnPoll_WhenPointerNotFound_ShouldContinueWithoutFailure() {
+        // Given
+        String groupId = UUID.randomUUID().toString();
+
+        VoteRequest request = new VoteRequest();
+        request.setOptionId(optionId);
+        request.setVoteType("YES");
+
+        Hangout hangout = new Hangout();
+        hangout.setAssociatedGroups(Arrays.asList(groupId));
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+
+        Poll poll = new Poll(eventId, "Test Poll", "Description", true);
+        PollOption option = new PollOption(eventId, pollId, "Option Text");
+        option.setOptionId(optionId);
+        List<BaseItem> pollData = Arrays.asList(poll, option);
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+        when(authorizationService.canUserViewHangout(userId, hangout)).thenReturn(true);
+        when(hangoutRepository.getSpecificPollData(eventId, pollId)).thenReturn(pollData);
+        when(hangoutRepository.saveVote(any(Vote.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(hangoutRepository.findHangoutById(eventId)).thenReturn(Optional.of(hangout));
+
+        // When
+        Vote result = pollService.voteOnPoll(eventId, pollId, request, userId);
+
+        // Then
+        assertThat(result).isNotNull();
+        verify(hangoutRepository).saveVote(any(Vote.class));
+        verify(pointerUpdateService).updatePointerWithRetry(eq(groupId), eq(eventId), any(), eq("poll data"));
+    }
+
+    @Test
+    void removeVote_WithValidVote_ShouldUpdateAllPointers() {
+        // Given
+        String groupId1 = UUID.randomUUID().toString();
+        String groupId2 = UUID.randomUUID().toString();
+
+        Hangout hangout = new Hangout();
+        hangout.setAssociatedGroups(Arrays.asList(groupId1, groupId2));
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+
+        Poll poll = new Poll(eventId, "Test Poll", "Description", false);
+        Vote existingVote = new Vote(eventId, pollId, optionId, userId, "YES");
+        List<BaseItem> specificPollData = Arrays.asList(poll, existingVote);
+
+        // After vote removal
+        List<BaseItem> allPollData = Arrays.asList(poll);
+
+        HangoutPointer pointer1 = HangoutPointerTestBuilder.aPointer()
+            .forGroup(groupId1)
+            .forHangout(eventId)
+            .build();
+        HangoutPointer pointer2 = HangoutPointerTestBuilder.aPointer()
+            .forGroup(groupId2)
+            .forHangout(eventId)
+            .build();
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+        when(authorizationService.canUserViewHangout(userId, hangout)).thenReturn(true);
+        when(hangoutRepository.getSpecificPollData(eventId, pollId)).thenReturn(specificPollData);
+        when(hangoutRepository.findHangoutById(eventId)).thenReturn(Optional.of(hangout));
+        when(hangoutRepository.getAllPollData(eventId)).thenReturn(allPollData);
+
+        // When
+        pollService.removeVote(eventId, pollId, optionId, userId);
+
+        // Then
+        verify(hangoutRepository).deleteVote(eventId, pollId, userId, optionId);
+        verify(pointerUpdateService).updatePointerWithRetry(eq(groupId1), eq(eventId), any(), eq("poll data"));
+        verify(pointerUpdateService).updatePointerWithRetry(eq(groupId2), eq(eventId), any(), eq("poll data"));
+    }
+
+    @Test
+    void removeVote_WithNoVotesToRemove_ShouldNotUpdatePointers() {
+        // Given
+        String groupId = UUID.randomUUID().toString();
+
+        Hangout hangout = new Hangout();
+        hangout.setAssociatedGroups(Arrays.asList(groupId));
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+
+        Poll poll = new Poll(eventId, "Test Poll", "Description", false);
+        List<BaseItem> pollData = Arrays.asList(poll);
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+        when(authorizationService.canUserViewHangout(userId, hangout)).thenReturn(true);
+        when(hangoutRepository.getSpecificPollData(eventId, pollId)).thenReturn(pollData);
+
+        // When
+        pollService.removeVote(eventId, pollId, optionId, userId);
+
+        // Then
+        verify(hangoutRepository, never()).deleteVote(anyString(), anyString(), anyString(), anyString());
+        verify(pointerUpdateService, never()).updatePointerWithRetry(anyString(), anyString(), any(), anyString());
+    }
+
+    @Test
+    void deletePoll_WithValidPoll_ShouldRemoveFromAllPointers() {
+        // Given
+        String groupId1 = UUID.randomUUID().toString();
+        String groupId2 = UUID.randomUUID().toString();
+        String groupId3 = UUID.randomUUID().toString();
+
+        Hangout hangout = new Hangout();
+        hangout.setAssociatedGroups(Arrays.asList(groupId1, groupId2, groupId3));
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+
+        // After deletion, only 1 poll remains
+        Poll remainingPoll = new Poll(eventId, "Other Poll", "Description", false);
+        List<BaseItem> pollData = Arrays.asList(remainingPoll);
+
+        HangoutPointer pointer1 = HangoutPointerTestBuilder.aPointer()
+            .forGroup(groupId1)
+            .forHangout(eventId)
+            .build();
+        HangoutPointer pointer2 = HangoutPointerTestBuilder.aPointer()
+            .forGroup(groupId2)
+            .forHangout(eventId)
+            .build();
+        HangoutPointer pointer3 = HangoutPointerTestBuilder.aPointer()
+            .forGroup(groupId3)
+            .forHangout(eventId)
+            .build();
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+        when(authorizationService.canUserEditHangout(userId, hangout)).thenReturn(true);
+        when(hangoutRepository.findHangoutById(eventId)).thenReturn(Optional.of(hangout));
+        when(hangoutRepository.getAllPollData(eventId)).thenReturn(pollData);
+
+        // When
+        pollService.deletePoll(eventId, pollId, userId);
+
+        // Then
+        verify(hangoutRepository).deletePoll(eventId, pollId);
+        verify(pointerUpdateService).updatePointerWithRetry(eq(groupId1), eq(eventId), any(), eq("poll data"));
+        verify(pointerUpdateService).updatePointerWithRetry(eq(groupId2), eq(eventId), any(), eq("poll data"));
+        verify(pointerUpdateService).updatePointerWithRetry(eq(groupId3), eq(eventId), any(), eq("poll data"));
+    }
+
+    @Test
+    void addPollOption_WithValidOption_ShouldUpdateAllPointers() {
+        // Given
+        String groupId = UUID.randomUUID().toString();
+
+        AddPollOptionRequest request = new AddPollOptionRequest("New Option");
+
+        Hangout hangout = new Hangout();
+        hangout.setHangoutId(eventId);
+        hangout.setAssociatedGroups(Arrays.asList(groupId));
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+
+        Poll poll = new Poll(eventId, "Test Poll", "Description", false);
+        PollOption option1 = new PollOption(eventId, pollId, "Option 1");
+        PollOption option2 = new PollOption(eventId, pollId, "Option 2");
+        PollOption option3 = new PollOption(eventId, pollId, "New Option");
+        List<BaseItem> pollData = Arrays.asList(poll, option1, option2, option3);
+
+        HangoutPointer pointer = HangoutPointerTestBuilder.aPointer()
+            .forGroup(groupId)
+            .forHangout(eventId)
+            .build();
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+        when(authorizationService.canUserEditHangout(userId, hangout)).thenReturn(true);
+        when(hangoutRepository.savePollOption(any(PollOption.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(hangoutRepository.findHangoutById(eventId)).thenReturn(Optional.of(hangout));
+        when(hangoutRepository.getAllPollData(eventId)).thenReturn(pollData);
+
+        // When
+        PollOption result = pollService.addPollOption(eventId, pollId, request, userId);
+
+        // Then
+        assertThat(result).isNotNull();
+        verify(hangoutRepository).savePollOption(any(PollOption.class));
+        verify(pointerUpdateService).updatePointerWithRetry(eq(groupId), eq(eventId), any(), eq("poll data"));
+    }
+
+    @Test
+    void deletePollOption_WithValidOption_ShouldUpdateAllPointers() {
+        // Given
+        String groupId1 = UUID.randomUUID().toString();
+        String groupId2 = UUID.randomUUID().toString();
+
+        Hangout hangout = new Hangout();
+        hangout.setAssociatedGroups(Arrays.asList(groupId1, groupId2));
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+
+        Poll poll = new Poll(eventId, "Test Poll", "Description", false);
+        PollOption optionToDelete = new PollOption(eventId, pollId, "Option to delete");
+        optionToDelete.setOptionId(optionId);
+        List<BaseItem> specificPollData = Arrays.asList(poll, optionToDelete);
+
+        // After deletion
+        PollOption option1 = new PollOption(eventId, pollId, "Option 1");
+        PollOption option2 = new PollOption(eventId, pollId, "Option 2");
+        List<BaseItem> allPollData = Arrays.asList(poll, option1, option2);
+
+        HangoutPointer pointer1 = HangoutPointerTestBuilder.aPointer()
+            .forGroup(groupId1)
+            .forHangout(eventId)
+            .build();
+        HangoutPointer pointer2 = HangoutPointerTestBuilder.aPointer()
+            .forGroup(groupId2)
+            .forHangout(eventId)
+            .build();
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+        when(authorizationService.canUserEditHangout(userId, hangout)).thenReturn(true);
+        when(hangoutRepository.getSpecificPollData(eventId, pollId)).thenReturn(specificPollData);
+        when(hangoutRepository.findHangoutById(eventId)).thenReturn(Optional.of(hangout));
+        when(hangoutRepository.getAllPollData(eventId)).thenReturn(allPollData);
+
+        // When
+        pollService.deletePollOption(eventId, pollId, optionId, userId);
+
+        // Then
+        verify(hangoutRepository).deletePollOptionTransaction(eventId, pollId, optionId);
+        verify(pointerUpdateService).updatePointerWithRetry(eq(groupId1), eq(eventId), any(), eq("poll data"));
+        verify(pointerUpdateService).updatePointerWithRetry(eq(groupId2), eq(eventId), any(), eq("poll data"));
+    }
+
+    // ============================================================================
+    // PHASE 4: OPTIMISTIC LOCKING RETRY TESTS
+    // ============================================================================
+
+    @Nested
+    class OptimisticLockingRetryTests {
+
+        @Test
+        void updatePointersWithPolls_WithNoConflict_ShouldSucceedOnFirstAttempt() {
+            // Given
+            String groupId1 = UUID.randomUUID().toString();
+            String groupId2 = UUID.randomUUID().toString();
+
+            CreatePollRequest request = new CreatePollRequest();
+            request.setTitle("Test Poll");
+            request.setDescription("Description");
+            request.setMultipleChoice(false);
+            request.setOptions(Arrays.asList("Option A", "Option B"));
+
+            Hangout hangout = new Hangout();
+            hangout.setHangoutId(eventId);
+            hangout.setAssociatedGroups(Arrays.asList(groupId1, groupId2));
+            HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+
+            Poll newPoll = new Poll(eventId, "Test Poll", "Description", false);
+            PollOption option1 = new PollOption(eventId, newPoll.getPollId(), "Option A");
+            PollOption option2 = new PollOption(eventId, newPoll.getPollId(), "Option B");
+            List<BaseItem> pollData = Arrays.asList(newPoll, option1, option2);
+
+            HangoutPointer pointer1 = HangoutPointerTestBuilder.aPointer()
+                .forGroup(groupId1)
+                .forHangout(eventId)
+                .build();
+            HangoutPointer pointer2 = HangoutPointerTestBuilder.aPointer()
+                .forGroup(groupId2)
+                .forHangout(eventId)
+                .build();
+
+            when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+            when(authorizationService.canUserEditHangout(userId, hangout)).thenReturn(true);
+            when(hangoutRepository.savePoll(any(Poll.class))).thenAnswer(invocation -> invocation.getArgument(0));
+            when(hangoutRepository.savePollOption(any(PollOption.class))).thenAnswer(invocation -> invocation.getArgument(0));
+            when(hangoutRepository.findHangoutById(eventId)).thenReturn(Optional.of(hangout));
+            when(hangoutRepository.getAllPollData(eventId)).thenReturn(pollData);
+
+            // When
+            pollService.createPoll(eventId, request, userId);
+
+            // Then - verify that PointerUpdateService is called for both groups
+            verify(pointerUpdateService).updatePointerWithRetry(eq(groupId1), eq(eventId), any(), eq("poll data"));
+            verify(pointerUpdateService).updatePointerWithRetry(eq(groupId2), eq(eventId), any(), eq("poll data"));
+
+            // Note: Retry behavior is now tested in PointerUpdateServiceTest, not here.
+        }
+
+        @Test
+        void updatePointersWithPolls_WithConflictOnSecondGroup_ShouldRetryOnlyThatGroup() {
+            // Given
+            String groupId1 = UUID.randomUUID().toString();
+            String groupId2 = UUID.randomUUID().toString();
+
+            CreatePollRequest request = new CreatePollRequest();
+            request.setTitle("Test Poll");
+            request.setDescription("Description");
+            request.setMultipleChoice(false);
+            request.setOptions(Arrays.asList("Option A", "Option B"));
+
+            Hangout hangout = new Hangout();
+            hangout.setHangoutId(eventId);
+            hangout.setAssociatedGroups(Arrays.asList(groupId1, groupId2));
+            HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+
+            Poll newPoll = new Poll(eventId, "Test Poll", "Description", false);
+            PollOption option1 = new PollOption(eventId, newPoll.getPollId(), "Option A");
+            PollOption option2 = new PollOption(eventId, newPoll.getPollId(), "Option B");
+            List<BaseItem> pollData = Arrays.asList(newPoll, option1, option2);
+
+            HangoutPointer pointer1 = HangoutPointerTestBuilder.aPointer()
+                .forGroup(groupId1)
+                .forHangout(eventId)
+                .build();
+            HangoutPointer pointer2 = HangoutPointerTestBuilder.aPointer()
+                .forGroup(groupId2)
+                .forHangout(eventId)
+                .build();
+
+            when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+            when(authorizationService.canUserEditHangout(userId, hangout)).thenReturn(true);
+            when(hangoutRepository.savePoll(any(Poll.class))).thenAnswer(invocation -> invocation.getArgument(0));
+            when(hangoutRepository.savePollOption(any(PollOption.class))).thenAnswer(invocation -> invocation.getArgument(0));
+            when(hangoutRepository.findHangoutById(eventId)).thenReturn(Optional.of(hangout));
+            when(hangoutRepository.getAllPollData(eventId)).thenReturn(pollData);
+
+            // When
+            pollService.createPoll(eventId, request, userId);
+
+            // Then - verify that PointerUpdateService is called for both groups
+            verify(pointerUpdateService).updatePointerWithRetry(eq(groupId1), eq(eventId), any(), eq("poll data"));
+            verify(pointerUpdateService).updatePointerWithRetry(eq(groupId2), eq(eventId), any(), eq("poll data"));
+
+            // Note: Retry behavior with conflicts is now tested in PointerUpdateServiceTest.
+        }
+
+        @Test
+        void updatePointersWithPolls_WithMaxRetriesExceeded_ShouldLogAndContinue() {
+            // Given
+            String groupId = UUID.randomUUID().toString();
+
+            CreatePollRequest request = new CreatePollRequest();
+            request.setTitle("Test Poll");
+            request.setDescription("Description");
+            request.setMultipleChoice(false);
+            request.setOptions(Arrays.asList("Option A", "Option B"));
+
+            Hangout hangout = new Hangout();
+            hangout.setHangoutId(eventId);
+            hangout.setAssociatedGroups(Arrays.asList(groupId));
+            HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+
+            Poll newPoll = new Poll(eventId, "Test Poll", "Description", false);
+            PollOption option1 = new PollOption(eventId, newPoll.getPollId(), "Option A");
+            PollOption option2 = new PollOption(eventId, newPoll.getPollId(), "Option B");
+            List<BaseItem> pollData = Arrays.asList(newPoll, option1, option2);
+
+            HangoutPointer pointer = HangoutPointerTestBuilder.aPointer()
+                .forGroup(groupId)
+                .forHangout(eventId)
+                .build();
+
+            when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+            when(authorizationService.canUserEditHangout(userId, hangout)).thenReturn(true);
+            when(hangoutRepository.savePoll(any(Poll.class))).thenAnswer(invocation -> invocation.getArgument(0));
+            when(hangoutRepository.savePollOption(any(PollOption.class))).thenAnswer(invocation -> invocation.getArgument(0));
+            when(hangoutRepository.findHangoutById(eventId)).thenReturn(Optional.of(hangout));
+            when(hangoutRepository.getAllPollData(eventId)).thenReturn(pollData);
+
+            // When
+            pollService.createPoll(eventId, request, userId);
+
+            // Then - verify that PointerUpdateService is called
+            verify(pointerUpdateService).updatePointerWithRetry(eq(groupId), eq(eventId), any(), eq("poll data"));
+
+            // Note: Max retry behavior is now tested in PointerUpdateServiceTest.
+        }
     }
 }

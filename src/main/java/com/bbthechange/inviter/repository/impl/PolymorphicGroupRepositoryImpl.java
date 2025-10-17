@@ -405,7 +405,37 @@ public class PolymorphicGroupRepositoryImpl implements GroupRepository {
             return null;
         });
     }
-    
+
+    @Override
+    public Optional<HangoutPointer> findHangoutPointer(String groupId, String hangoutId) {
+        return queryTracker.trackQuery("GetItem", TABLE_NAME, () -> {
+            try {
+                GetItemRequest request = GetItemRequest.builder()
+                    .tableName(TABLE_NAME)
+                    .key(Map.of(
+                        "pk", AttributeValue.builder().s(InviterKeyFactory.getGroupPk(groupId)).build(),
+                        "sk", AttributeValue.builder().s(InviterKeyFactory.getHangoutSk(hangoutId)).build()
+                    ))
+                    .build();
+
+                GetItemResponse response = dynamoDbClient.getItem(request);
+                if (!response.hasItem()) {
+                    return Optional.empty();
+                }
+
+                BaseItem item = deserializeItem(response.item());
+                if (item instanceof HangoutPointer) {
+                    return Optional.of((HangoutPointer) item);
+                }
+                return Optional.empty();
+
+            } catch (DynamoDbException e) {
+                logger.error("Failed to find hangout pointer {} for group {}", hangoutId, groupId, e);
+                throw new RepositoryException("Failed to retrieve hangout pointer", e);
+            }
+        });
+    }
+
     @Override
     public void saveSeriesPointer(SeriesPointer pointer) {
         queryTracker.trackQuery("PutItem", TABLE_NAME, () -> {

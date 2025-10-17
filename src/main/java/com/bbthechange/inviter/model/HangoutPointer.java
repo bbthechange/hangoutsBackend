@@ -7,8 +7,11 @@ import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbAttribute;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSecondaryPartitionKey;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSecondarySortKey;
+import software.amazon.awssdk.enhanced.dynamodb.extensions.annotations.DynamoDbVersionAttribute;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Hangout pointer entity for the InviterTable.
@@ -20,6 +23,9 @@ import java.time.Instant;
 @DynamoDbBean
 public class HangoutPointer extends BaseItem {
     
+    // Optimistic locking - CRITICAL for preventing race conditions in concurrent updates
+    private Long version;
+
     private String groupId;
     private String hangoutId;
     private String title;
@@ -32,11 +38,30 @@ public class HangoutPointer extends BaseItem {
     private Long startTimestamp;    // GSI sort key for EntityTimeIndex
     private Long endTimestamp;      // Denormalized for completeness
     private String seriesId;        // Denormalized series ID for feed grouping
+
+    // Basic hangout fields (denormalized from canonical Hangout)
+    private String description;
+    private EventVisibility visibility;
+    private boolean carpoolEnabled;
+
+    // Complete poll data (denormalized for single-query feed loading)
+    private List<Poll> polls;
+    private List<PollOption> pollOptions;
+    private List<Vote> votes;
+
+    // Complete carpool data (denormalized for single-query feed loading)
+    private List<Car> cars;
+    private List<CarRider> carRiders;
+    private List<NeedsRide> needsRide;
+
+    // Complete attribute data (denormalized for single-query feed loading)
+    private List<HangoutAttribute> attributes;
     
     // Default constructor for DynamoDB
     public HangoutPointer() {
         super();
         setItemType("HANGOUT_POINTER");
+        initializeCollections();
     }
 
     /**
@@ -49,10 +74,26 @@ public class HangoutPointer extends BaseItem {
         this.hangoutId = hangoutId;
         this.title = title;
         this.participantCount = 0; // Will be updated as people respond
-        
+
         // Set keys using InviterKeyFactory
         setPk(InviterKeyFactory.getGroupPk(groupId));
         setSk(InviterKeyFactory.getHangoutSk(hangoutId));
+
+        initializeCollections();
+    }
+
+    /**
+     * Initialize all collection fields to empty lists.
+     * Prevents NullPointerExceptions when accessing denormalized data.
+     */
+    private void initializeCollections() {
+        this.polls = new ArrayList<>();
+        this.pollOptions = new ArrayList<>();
+        this.votes = new ArrayList<>();
+        this.cars = new ArrayList<>();
+        this.carRiders = new ArrayList<>();
+        this.needsRide = new ArrayList<>();
+        this.attributes = new ArrayList<>();
     }
     
     public String getGroupId() {
@@ -166,9 +207,128 @@ public class HangoutPointer extends BaseItem {
     public String getSeriesId() {
         return seriesId;
     }
-    
+
     public void setSeriesId(String seriesId) {
         this.seriesId = seriesId;
+        touch();
+    }
+
+    // ============================================================================
+    // OPTIMISTIC LOCKING
+    // ============================================================================
+
+    @DynamoDbVersionAttribute
+    public Long getVersion() {
+        return version;
+    }
+
+    public void setVersion(Long version) {
+        this.version = version;
+    }
+
+    // ============================================================================
+    // BASIC HANGOUT FIELDS (Denormalized from canonical Hangout)
+    // ============================================================================
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+        touch();
+    }
+
+    public EventVisibility getVisibility() {
+        return visibility;
+    }
+
+    public void setVisibility(EventVisibility visibility) {
+        this.visibility = visibility;
+        touch();
+    }
+
+    public boolean isCarpoolEnabled() {
+        return carpoolEnabled;
+    }
+
+    public void setCarpoolEnabled(boolean carpoolEnabled) {
+        this.carpoolEnabled = carpoolEnabled;
+        touch();
+    }
+
+    // ============================================================================
+    // COMPLETE POLL DATA (Denormalized for single-query feed loading)
+    // ============================================================================
+
+    public List<Poll> getPolls() {
+        return polls != null ? polls : new ArrayList<>();
+    }
+
+    public void setPolls(List<Poll> polls) {
+        this.polls = polls != null ? polls : new ArrayList<>();
+        touch();
+    }
+
+    public List<PollOption> getPollOptions() {
+        return pollOptions != null ? pollOptions : new ArrayList<>();
+    }
+
+    public void setPollOptions(List<PollOption> pollOptions) {
+        this.pollOptions = pollOptions != null ? pollOptions : new ArrayList<>();
+        touch();
+    }
+
+    public List<Vote> getVotes() {
+        return votes != null ? votes : new ArrayList<>();
+    }
+
+    public void setVotes(List<Vote> votes) {
+        this.votes = votes != null ? votes : new ArrayList<>();
+        touch();
+    }
+
+    // ============================================================================
+    // COMPLETE CARPOOL DATA (Denormalized for single-query feed loading)
+    // ============================================================================
+
+    public List<Car> getCars() {
+        return cars != null ? cars : new ArrayList<>();
+    }
+
+    public void setCars(List<Car> cars) {
+        this.cars = cars != null ? cars : new ArrayList<>();
+        touch();
+    }
+
+    public List<CarRider> getCarRiders() {
+        return carRiders != null ? carRiders : new ArrayList<>();
+    }
+
+    public void setCarRiders(List<CarRider> carRiders) {
+        this.carRiders = carRiders != null ? carRiders : new ArrayList<>();
+        touch();
+    }
+
+    public List<NeedsRide> getNeedsRide() {
+        return needsRide != null ? needsRide : new ArrayList<>();
+    }
+
+    public void setNeedsRide(List<NeedsRide> needsRide) {
+        this.needsRide = needsRide != null ? needsRide : new ArrayList<>();
+        touch();
+    }
+
+    // ============================================================================
+    // COMPLETE ATTRIBUTE DATA (Denormalized for single-query feed loading)
+    // ============================================================================
+
+    public List<HangoutAttribute> getAttributes() {
+        return attributes != null ? attributes : new ArrayList<>();
+    }
+
+    public void setAttributes(List<HangoutAttribute> attributes) {
+        this.attributes = attributes != null ? attributes : new ArrayList<>();
         touch();
     }
 }

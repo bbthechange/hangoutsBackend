@@ -363,4 +363,54 @@ class PolymorphicGroupRepositoryImplTest {
         assertThatCode(() -> repository.atomicallyUpdateParticipantCount(groupId, hangoutId, 1))
             .doesNotThrowAnyException();
     }
+
+    // ============================================================================
+    // TEST PLAN PHASE 3: POINTER UPDATE TESTS - findHangoutPointer
+    // ============================================================================
+
+    @Test
+    void findHangoutPointer_WithExistingPointer_ShouldDeserializeCorrectly() {
+        // Given
+        String groupId = UUID.randomUUID().toString();
+        String hangoutId = UUID.randomUUID().toString();
+
+        HangoutPointer originalPointer = new HangoutPointer(groupId, hangoutId, "Test Hangout");
+        Address testLocation = new Address();
+        testLocation.setName("Test Location");
+        originalPointer.setLocation(testLocation);
+        originalPointer.setHangoutTime(Instant.now().plusSeconds(3600));
+        originalPointer.setParticipantCount(5);
+        originalPointer.setStatus("ACTIVE");
+
+        // Save the pointer
+        repository.saveHangoutPointer(originalPointer);
+
+        // When
+        Optional<HangoutPointer> result = repository.findHangoutPointer(groupId, hangoutId);
+
+        // Then
+        assertThat(result).isPresent();
+        HangoutPointer foundPointer = result.get();
+        assertThat(foundPointer.getGroupId()).isEqualTo(groupId);
+        assertThat(foundPointer.getHangoutId()).isEqualTo(hangoutId);
+        assertThat(foundPointer.getTitle()).isEqualTo("Test Hangout");
+        assertThat(foundPointer.getLocation().getName()).isEqualTo("Test Location");
+        assertThat(foundPointer.getParticipantCount()).isEqualTo(5);
+        assertThat(foundPointer.getStatus()).isEqualTo("ACTIVE");
+        assertThat(foundPointer.getItemType()).isEqualTo("HANGOUT_POINTER");
+    }
+
+    @Test
+    void findHangoutPointer_WithNonExistentPointer_ShouldReturnEmpty() {
+        // Given
+        String groupId = UUID.randomUUID().toString();
+        String hangoutId = UUID.randomUUID().toString();
+        // No pointer exists for this group/hangout combination
+
+        // When
+        Optional<HangoutPointer> result = repository.findHangoutPointer(groupId, hangoutId);
+
+        // Then
+        assertThat(result).isEmpty();
+    }
 }

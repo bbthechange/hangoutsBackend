@@ -6,15 +6,19 @@ import com.bbthechange.inviter.service.AuthorizationService;
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.HangoutRepository;
+import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.exception.*;
 import com.bbthechange.inviter.util.InviterKeyFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -23,16 +27,22 @@ import java.util.stream.Collectors;
  */
 @Service
 public class PollServiceImpl implements PollService {
-    
+
     private static final Logger logger = LoggerFactory.getLogger(PollServiceImpl.class);
-    
+
     private final HangoutRepository hangoutRepository;
+    private final GroupRepository groupRepository;
     private final AuthorizationService authorizationService;
-    
+    private final PointerUpdateService pointerUpdateService;
+
     @Autowired
-    public PollServiceImpl(HangoutRepository hangoutRepository, AuthorizationService authorizationService) {
+    public PollServiceImpl(HangoutRepository hangoutRepository, GroupRepository groupRepository,
+                          AuthorizationService authorizationService,
+                          PointerUpdateService pointerUpdateService) {
         this.hangoutRepository = hangoutRepository;
+        this.groupRepository = groupRepository;
         this.authorizationService = authorizationService;
+        this.pointerUpdateService = pointerUpdateService;
     }
     
     @Override
@@ -59,9 +69,12 @@ public class PollServiceImpl implements PollService {
             PollOption option = new PollOption(eventId, poll.getPollId(), optionText);
             hangoutRepository.savePollOption(option);
         }
-        
+
+        // Update pointer records with new poll data
+        updatePointersWithPolls(eventId);
+
         logger.info("Successfully created poll {} for event {} with {} options", savedPoll.getPollId(), eventId, request.getOptions().size());
-        
+
         return savedPoll;
     }
     
@@ -164,7 +177,12 @@ public class PollServiceImpl implements PollService {
         
         // Create the vote
         Vote newVote = new Vote(eventId, pollId, optionId, userId, request.getVoteType());
-        return hangoutRepository.saveVote(newVote);
+        Vote savedVote = hangoutRepository.saveVote(newVote);
+
+        // Update pointer records with new vote data
+        updatePointersWithPolls(eventId);
+
+        return savedVote;
     }
     
     @Override
@@ -206,7 +224,10 @@ public class PollServiceImpl implements PollService {
                 hangoutRepository.deleteVote(eventId, pollId, userId, vote.getOptionId());
             }
         }
-        
+
+        // Update pointer records with updated vote data
+        updatePointersWithPolls(eventId);
+
         logger.info("Successfully removed vote(s) for user {} from poll {}", userId, pollId);
     }
     
@@ -226,6 +247,10 @@ public class PollServiceImpl implements PollService {
         }
         
         hangoutRepository.deletePoll(eventId, pollId);
+
+        // Update pointer records with updated poll data (poll now removed)
+        updatePointersWithPolls(eventId);
+
         logger.info("Successfully deleted poll {} from event {}", pollId, eventId);
     }
     
@@ -247,7 +272,10 @@ public class PollServiceImpl implements PollService {
         // Create and save the new poll option
         PollOption option = new PollOption(eventId, pollId, request.getText());
         PollOption savedOption = hangoutRepository.savePollOption(option);
-        
+
+        // Update pointer records with new option data
+        updatePointersWithPolls(eventId);
+
         logger.info("Successfully added option {} to poll {}", option.getOptionId(), pollId);
         return savedOption;
     }
@@ -287,10 +315,68 @@ public class PollServiceImpl implements PollService {
         
         // Use transaction to delete option and all its votes
         hangoutRepository.deletePollOptionTransaction(eventId, pollId, optionId);
-        
+
+        // Update pointer records with updated option data (option now removed)
+        updatePointersWithPolls(eventId);
+
         logger.info("Successfully deleted option {} and its votes from poll {}", optionId, pollId);
     }
-    
+
+    // ============================================================================
+    // POINTER SYNCHRONIZATION
+    // ============================================================================
+
+    /**
+     * Update all pointer records with the current poll data from the canonical hangout.
+     * This method should be called after any poll/option/vote create/update/delete operation.
+     *
+     * Uses optimistic locking with retry to handle concurrent pointer updates.
+     */
+    private void updatePointersWithPolls(String hangoutId) {
+        // Get hangout to find associated groups
+        Optional<Hangout> hangoutOpt = hangoutRepository.findHangoutById(hangoutId);
+        if (hangoutOpt.isEmpty()) {
+            logger.warn("Cannot update pointers for non-existent hangout: {}", hangoutId);
+            return;
+        }
+
+        Hangout hangout = hangoutOpt.get();
+        List<String> associatedGroups = hangout.getAssociatedGroups();
+
+        if (associatedGroups == null || associatedGroups.isEmpty()) {
+            logger.debug("No associated groups for hangout {}, skipping pointer update", hangoutId);
+            return;
+        }
+
+        // Get current poll data from canonical record (polls, options, votes)
+        List<BaseItem> allPollData = hangoutRepository.getAllPollData(hangoutId);
+
+        // Separate into typed lists
+        List<Poll> polls = allPollData.stream()
+            .filter(item -> InviterKeyFactory.isPollItem(item.getSk()))
+            .map(item -> (Poll) item)
+            .collect(Collectors.toList());
+
+        List<PollOption> pollOptions = allPollData.stream()
+            .filter(item -> InviterKeyFactory.isPollOption(item.getSk()))
+            .map(item -> (PollOption) item)
+            .collect(Collectors.toList());
+
+        List<Vote> votes = allPollData.stream()
+            .filter(item -> InviterKeyFactory.isVoteItem(item.getSk()))
+            .map(item -> (Vote) item)
+            .collect(Collectors.toList());
+
+        // Update each group's pointer with optimistic locking retry
+        for (String groupId : associatedGroups) {
+            pointerUpdateService.updatePointerWithRetry(groupId, hangoutId, pointer -> {
+                pointer.setPolls(new ArrayList<>(polls));
+                pointer.setPollOptions(new ArrayList<>(pollOptions));
+                pointer.setVotes(new ArrayList<>(votes));
+            }, "poll data");
+        }
+    }
+
     // ============================================================================
     // DATA TRANSFORMATION METHODS (Runtime Vote Count Calculation)
     // ============================================================================

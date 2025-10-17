@@ -6,13 +6,17 @@ import com.bbthechange.inviter.service.UserService;
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.HangoutRepository;
+import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.exception.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -20,18 +24,24 @@ import java.util.UUID;
  */
 @Service
 public class CarpoolServiceImpl implements CarpoolService {
-    
+
     private static final Logger logger = LoggerFactory.getLogger(CarpoolServiceImpl.class);
-    
+
     private final HangoutRepository hangoutRepository;
+    private final GroupRepository groupRepository;
     private final HangoutService hangoutService;
     private final UserService userService;
-    
+    private final PointerUpdateService pointerUpdateService;
+
     @Autowired
-    public CarpoolServiceImpl(HangoutRepository hangoutRepository, HangoutService hangoutService, UserService userService) {
+    public CarpoolServiceImpl(HangoutRepository hangoutRepository, GroupRepository groupRepository,
+                             HangoutService hangoutService, UserService userService,
+                             PointerUpdateService pointerUpdateService) {
         this.hangoutRepository = hangoutRepository;
+        this.groupRepository = groupRepository;
         this.hangoutService = hangoutService;
         this.userService = userService;
+        this.pointerUpdateService = pointerUpdateService;
     }
     
     @Override
@@ -57,10 +67,14 @@ public class CarpoolServiceImpl implements CarpoolService {
         // Create car offer
         Car car = new Car(eventId, userId, driverName, request.getTotalCapacity());
         car.setNotes(request.getNotes());
-        
+
         Car savedCar = hangoutRepository.saveCar(car);
+
+        // Update pointer records with new car data
+        updatePointersWithCarpoolData(eventId);
+
         logger.info("Successfully created car offer {} for event {}", savedCar.getDriverId(), eventId);
-        
+
         return savedCar;
     }
     
@@ -183,7 +197,10 @@ public class CarpoolServiceImpl implements CarpoolService {
             // which is the most important state. A dangling request is a minor issue.
             logger.warn("Failed to auto-delete 'needs ride' request for user {}.", userId, e);
         }
-        
+
+        // Update pointer records with new rider data
+        updatePointersWithCarpoolData(eventId);
+
         logger.info("Successfully reserved seat for user {} with driver {} in event {}", userId, driverId, eventId);
         return savedRider;
     }
@@ -220,11 +237,14 @@ public class CarpoolServiceImpl implements CarpoolService {
         
         // Remove CarRider record
         hangoutRepository.deleteCarRider(eventId, driverId, userId);
-        
+
         // Update car available seats (increase by 1)
         car.setAvailableSeats(car.getAvailableSeats() + 1);
         hangoutRepository.saveCar(car);
-        
+
+        // Update pointer records with updated rider data
+        updatePointersWithCarpoolData(eventId);
+
         logger.info("Successfully released seat for user {} from driver {} in event {}", userId, driverId, eventId);
     }
     
@@ -271,8 +291,13 @@ public class CarpoolServiceImpl implements CarpoolService {
         if (request.getNotes() != null) {
             car.setNotes(request.getNotes());
         }
-        
-        return hangoutRepository.saveCar(car);
+
+        Car savedCar = hangoutRepository.saveCar(car);
+
+        // Update pointer records with updated car data
+        updatePointersWithCarpoolData(eventId);
+
+        return savedCar;
     }
     
     @Override
@@ -306,8 +331,11 @@ public class CarpoolServiceImpl implements CarpoolService {
         
         // Remove car offer
         hangoutRepository.deleteCar(eventId, driverId);
-        
-        logger.info("Successfully canceled car offer for driver {} in event {} (removed {} riders)", 
+
+        // Update pointer records with updated car data (car now removed)
+        updatePointersWithCarpoolData(eventId);
+
+        logger.info("Successfully canceled car offer for driver {} in event {} (removed {} riders)",
                    driverId, eventId, ridersToRemove.size());
     }
 
@@ -358,7 +386,10 @@ public class CarpoolServiceImpl implements CarpoolService {
         // Create or update the needs ride request
         NeedsRide needsRide = new NeedsRide(eventId, userId, request.getNotes());
         NeedsRide savedNeedsRide = hangoutRepository.saveNeedsRide(needsRide);
-        
+
+        // Update pointer records with new ride request data
+        updatePointersWithCarpoolData(eventId);
+
         logger.info("Successfully created/updated ride request for user {} in event {}", userId, eventId);
         return savedNeedsRide;
     }
@@ -380,7 +411,52 @@ public class CarpoolServiceImpl implements CarpoolService {
 
         // Delete the needs ride request (idempotent operation)
         hangoutRepository.deleteNeedsRide(eventId, userId);
-        
+
+        // Update pointer records with updated ride request data
+        updatePointersWithCarpoolData(eventId);
+
         logger.info("Successfully deleted ride request for user {} in event {}", userId, eventId);
+    }
+
+    // ============================================================================
+    // POINTER SYNCHRONIZATION
+    // ============================================================================
+
+    /**
+     * Update all pointer records with the current carpool data from the canonical hangout.
+     * This method should be called after any car/rider/needsRide create/update/delete operation.
+     *
+     * Uses optimistic locking with retry to handle concurrent pointer updates.
+     */
+    private void updatePointersWithCarpoolData(String hangoutId) {
+        // Get hangout to find associated groups
+        Optional<Hangout> hangoutOpt = hangoutRepository.findHangoutById(hangoutId);
+        if (hangoutOpt.isEmpty()) {
+            logger.warn("Cannot update pointers for non-existent hangout: {}", hangoutId);
+            return;
+        }
+
+        Hangout hangout = hangoutOpt.get();
+        List<String> associatedGroups = hangout.getAssociatedGroups();
+
+        if (associatedGroups == null || associatedGroups.isEmpty()) {
+            logger.debug("No associated groups for hangout {}, skipping pointer update", hangoutId);
+            return;
+        }
+
+        // Get current carpool data from canonical record
+        HangoutDetailData hangoutData = hangoutRepository.getHangoutDetailData(hangoutId);
+        List<Car> cars = hangoutData.getCars();
+        List<CarRider> carRiders = hangoutData.getCarRiders();
+        List<NeedsRide> needsRide = hangoutData.getNeedsRide();
+
+        // Update each group's pointer with optimistic locking retry
+        for (String groupId : associatedGroups) {
+            pointerUpdateService.updatePointerWithRetry(groupId, hangoutId, pointer -> {
+                pointer.setCars(new ArrayList<>(cars));
+                pointer.setCarRiders(new ArrayList<>(carRiders));
+                pointer.setNeedsRide(new ArrayList<>(needsRide));
+            }, "carpool data");
+        }
     }
 }

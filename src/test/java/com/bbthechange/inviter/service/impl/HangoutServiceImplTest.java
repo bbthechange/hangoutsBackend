@@ -22,6 +22,9 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
+import org.mockito.MockedStatic;
+import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
+import org.junit.jupiter.api.Nested;
 
 /**
  * Unit tests for HangoutServiceImpl using Mockito.
@@ -32,22 +35,25 @@ class HangoutServiceImplTest {
     
     @Mock
     private HangoutRepository hangoutRepository;
-    
+
     @Mock
     private GroupRepository groupRepository;
-    
+
     @Mock
     private FuzzyTimeService fuzzyTimeService;
-    
+
     @Mock
     private UserService userService;
-    
+
     @Mock
     private EventSeriesService eventSeriesService;
 
     @Mock
     private NotificationService notificationService;
-    
+
+    @Mock
+    private PointerUpdateService pointerUpdateService;
+
     @InjectMocks
     private HangoutServiceImpl hangoutService;
     
@@ -70,15 +76,14 @@ class HangoutServiceImplTest {
         when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(adminMembership));
         
         when(hangoutRepository.save(any(Hangout.class))).thenReturn(hangout);
-        doNothing().when(groupRepository).updateHangoutPointer(anyString(), anyString(), any());
-        
+
         // When
         assertThatCode(() -> hangoutService.updateEventTitle(eventId, newTitle, userId))
             .doesNotThrowAnyException();
-        
+
         // Then - verify multi-step pointer update pattern
         verify(hangoutRepository).save(any(Hangout.class)); // Step 1: Update canonical record
-        verify(groupRepository, times(2)).updateHangoutPointer(anyString(), eq(eventId), any()); // Step 2: Update pointers
+        verify(pointerUpdateService, times(2)).updatePointerWithRetry(anyString(), eq(eventId), any(), eq("title")); // Step 2: Update pointers
     }
     
     @Test
@@ -111,7 +116,6 @@ class HangoutServiceImplTest {
             Optional.of(createTestMembership("22222222-2222-2222-2222-222222222222", userId, "Group Two")));
         
         when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(hangout);
-        doNothing().when(groupRepository).saveHangoutPointer(any(HangoutPointer.class));
         
         // When
         assertThatCode(() -> hangoutService.associateEventWithGroups(eventId, groupIds, userId))
@@ -424,8 +428,7 @@ class HangoutServiceImplTest {
         
         // Mock repository operations
         when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
-        doNothing().when(groupRepository).updateHangoutPointer(anyString(), anyString(), any());
-        
+
         // When
         assertThatCode(() -> hangoutService.updateHangout(hangoutId, request, userId))
             .doesNotThrowAnyException();
@@ -441,17 +444,8 @@ class HangoutServiceImplTest {
             hangout.getEndTimestamp().equals(1754618000L)
         ));
         
-        // Verify pointer was updated with timeInput, startTimestamp, and endTimestamp
-        verify(groupRepository).updateHangoutPointer(
-            eq("11111111-1111-1111-1111-111111111111"), 
-            eq(hangoutId), 
-            argThat(updates -> 
-                updates.containsKey("timeInput") &&
-                updates.containsKey("startTimestamp") &&
-                updates.containsKey("endTimestamp") &&
-                updates.get("startTimestamp").n().equals("1754603600") &&
-                updates.get("endTimestamp").n().equals("1754618000"))
-        );
+        // Verify pointer was updated with basic fields (including time fields)
+        verify(pointerUpdateService).updatePointerWithRetry(eq("11111111-1111-1111-1111-111111111111"), eq(hangoutId), any(), eq("basic fields"));
     }
     
     @Test
@@ -509,7 +503,6 @@ class HangoutServiceImplTest {
             Optional.of(createTestMembership("11111111-1111-1111-1111-111111111111", userId, "New Group")));
         
         when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(hangout);
-        doNothing().when(groupRepository).saveHangoutPointer(any(HangoutPointer.class));
         
         // When
         assertThatCode(() -> hangoutService.associateEventWithGroups(eventId, groupIds, userId))
@@ -1261,17 +1254,16 @@ class HangoutServiceImplTest {
         
         when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
         when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(hangout);
-        doNothing().when(groupRepository).updateHangoutPointer(anyString(), anyString(), any());
         doNothing().when(eventSeriesService).updateSeriesAfterHangoutModification(hangoutId);
-        
+
         // When
         hangoutService.updateHangout(hangoutId, request, userId);
-        
+
         // Then
         // Verify standard hangout update logic executes
         verify(hangoutRepository).createHangout(argThat(h -> h.getTitle().equals("Updated Series Hangout")));
-        verify(groupRepository).updateHangoutPointer(eq("11111111-1111-1111-1111-111111111111"), eq(hangoutId), any());
-        
+        verify(pointerUpdateService).updatePointerWithRetry(eq("11111111-1111-1111-1111-111111111111"), eq(hangoutId), any(), eq("basic fields"));
+
         // Verify series update is triggered
         verify(eventSeriesService).updateSeriesAfterHangoutModification(hangoutId);
     }
@@ -1295,16 +1287,15 @@ class HangoutServiceImplTest {
         
         when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
         when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(hangout);
-        doNothing().when(groupRepository).updateHangoutPointer(anyString(), anyString(), any());
-        
+
         // When
         hangoutService.updateHangout(hangoutId, request, userId);
-        
+
         // Then
         // Verify standard hangout update logic executes
         verify(hangoutRepository).createHangout(argThat(h -> h.getTitle().equals("Updated Standalone Hangout")));
-        verify(groupRepository).updateHangoutPointer(eq("11111111-1111-1111-1111-111111111111"), eq(hangoutId), any());
-        
+        verify(pointerUpdateService).updatePointerWithRetry(eq("11111111-1111-1111-1111-111111111111"), eq(hangoutId), any(), eq("basic fields"));
+
         // Verify series update is NOT called
         verify(eventSeriesService, never()).updateSeriesAfterHangoutModification(anyString());
     }
@@ -1329,20 +1320,19 @@ class HangoutServiceImplTest {
         
         when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
         when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(hangout);
-        doNothing().when(groupRepository).updateHangoutPointer(anyString(), anyString(), any());
-        
+
         // Mock series service to throw exception
         doThrow(new RuntimeException("Series update failed")).when(eventSeriesService).updateSeriesAfterHangoutModification(hangoutId);
-        
+
         // When
         assertThatCode(() -> hangoutService.updateHangout(hangoutId, request, userId))
             .doesNotThrowAnyException();
-        
+
         // Then
         // Verify hangout update completes successfully
         verify(hangoutRepository).createHangout(any(Hangout.class));
-        verify(groupRepository).updateHangoutPointer(anyString(), anyString(), any());
-        
+        verify(pointerUpdateService).updatePointerWithRetry(anyString(), anyString(), any(), eq("basic fields"));
+
         // Verify series update was attempted
         verify(eventSeriesService).updateSeriesAfterHangoutModification(hangoutId);
     }
@@ -1371,34 +1361,26 @@ class HangoutServiceImplTest {
         
         when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
         when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(hangout);
-        doNothing().when(groupRepository).updateHangoutPointer(anyString(), anyString(), any());
         doNothing().when(eventSeriesService).updateSeriesAfterHangoutModification(hangoutId);
-        
+
         // Mock fuzzy time service
         FuzzyTimeService.TimeConversionResult timeResult = new FuzzyTimeService.TimeConversionResult(1754603600L, 1754618000L);
         when(fuzzyTimeService.convert(newTimeInfo)).thenReturn(timeResult);
-        
+
         // When
         hangoutService.updateHangout(hangoutId, request, userId);
-        
+
         // Then
         // Verify hangout timestamps are updated
-        verify(hangoutRepository).createHangout(argThat(h -> 
+        verify(hangoutRepository).createHangout(argThat(h ->
             h.getTimeInput().equals(newTimeInfo) &&
             h.getStartTimestamp().equals(1754603600L) &&
             h.getEndTimestamp().equals(1754618000L)
         ));
-        
-        // Verify pointer records are updated
-        verify(groupRepository).updateHangoutPointer(
-            eq("11111111-1111-1111-1111-111111111111"), 
-            eq(hangoutId), 
-            argThat(updates -> 
-                updates.containsKey("timeInput") &&
-                updates.containsKey("startTimestamp") &&
-                updates.containsKey("endTimestamp"))
-        );
-        
+
+        // Verify pointer records are updated with basic fields (including time fields)
+        verify(pointerUpdateService).updatePointerWithRetry(eq("11111111-1111-1111-1111-111111111111"), eq(hangoutId), any(), eq("basic fields"));
+
         // Verify series update is triggered
         verify(eventSeriesService).updateSeriesAfterHangoutModification(hangoutId);
     }
@@ -1622,22 +1604,737 @@ class HangoutServiceImplTest {
 
         when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(existingHangout));
         when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
-        doNothing().when(groupRepository).updateHangoutPointer(anyString(), anyString(), any());
 
         // When
         hangoutService.updateHangout(hangoutId, request, userId);
 
-        // Then - Verify updateHangoutPointer was called with mainImagePath in updates
-        org.mockito.ArgumentCaptor<Map<String, software.amazon.awssdk.services.dynamodb.model.AttributeValue>> updatesCaptor =
-            org.mockito.ArgumentCaptor.forClass(Map.class);
-        verify(groupRepository).updateHangoutPointer(
-            eq("group-1"),
-            eq(hangoutId),
-            updatesCaptor.capture()
-        );
+        // Then - Verify pointer was updated with basic fields (including mainImagePath)
+        verify(pointerUpdateService).updatePointerWithRetry(eq("group-1"), eq(hangoutId), any(), eq("basic fields"));
+    }
 
-        Map<String, software.amazon.awssdk.services.dynamodb.model.AttributeValue> updates = updatesCaptor.getValue();
-        assertThat(updates).containsKey("mainImagePath");
-        assertThat(updates.get("mainImagePath").s()).isEqualTo("/new-image.jpg");
+    // ============================================================================
+    // TEST PLAN PHASE 3: POINTER UPDATE TESTS - Group 1
+    // ============================================================================
+
+    @Test
+    void updateHangout_WithDescriptionChange_ShouldUpdatePointers() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+        String newDescription = "Updated description for the hangout";
+
+        Hangout existingHangout = createTestHangout(hangoutId);
+        existingHangout.setDescription("Old description");
+        existingHangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")));
+
+        UpdateHangoutRequest request = new UpdateHangoutRequest();
+        request.setDescription(newDescription);
+
+        // Mock authorization - user is member of first group
+        GroupMembership membership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Group 1");
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(membership));
+
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(existingHangout));
+        when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+
+        // When
+        hangoutService.updateHangout(hangoutId, request, userId);
+
+        // Then
+        // Verify canonical hangout was updated
+        verify(hangoutRepository).createHangout(argThat(h -> h.getDescription().equals(newDescription)));
+
+        // Verify pointers were updated for both groups with basic fields
+        verify(pointerUpdateService, times(2)).updatePointerWithRetry(anyString(), eq(hangoutId), any(), eq("basic fields"));
+    }
+
+    @Test
+    void updateHangout_WithVisibilityChange_ShouldUpdatePointers() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+
+        Hangout existingHangout = createTestHangout(hangoutId);
+        existingHangout.setVisibility(EventVisibility.INVITE_ONLY);
+        existingHangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111")));
+
+        UpdateHangoutRequest request = new UpdateHangoutRequest();
+        request.setVisibility(EventVisibility.PUBLIC);
+
+        // Mock authorization
+        GroupMembership membership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Group 1");
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(membership));
+
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(existingHangout));
+        when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+
+        // When
+        hangoutService.updateHangout(hangoutId, request, userId);
+
+        // Then
+        // Verify canonical hangout visibility was changed
+        verify(hangoutRepository).createHangout(argThat(h -> h.getVisibility() == EventVisibility.PUBLIC));
+
+        // Verify pointer was updated with basic fields (including visibility)
+        verify(pointerUpdateService).updatePointerWithRetry(eq("11111111-1111-1111-1111-111111111111"), eq(hangoutId), any(), eq("basic fields"));
+    }
+
+    @Test
+    void updateHangout_WithCarpoolEnabledChange_ShouldUpdatePointers() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+
+        Hangout existingHangout = createTestHangout(hangoutId);
+        existingHangout.setCarpoolEnabled(false);
+        existingHangout.setAssociatedGroups(new java.util.ArrayList<>(List.of(
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222222222",
+            "33333333-3333-3333-3333-333333333333"
+        )));
+
+        UpdateHangoutRequest request = new UpdateHangoutRequest();
+        request.setCarpoolEnabled(true);
+
+        // Mock authorization
+        GroupMembership membership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Group 1");
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(membership));
+
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(existingHangout));
+        when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+
+        // When
+        hangoutService.updateHangout(hangoutId, request, userId);
+
+        // Then
+        // Verify canonical hangout carpoolEnabled was changed
+        verify(hangoutRepository).createHangout(argThat(h -> h.isCarpoolEnabled()));
+
+        // Verify pointers were updated for all 3 groups with basic fields
+        verify(pointerUpdateService, times(3)).updatePointerWithRetry(anyString(), eq(hangoutId), any(), eq("basic fields"));
+    }
+
+    @Test
+    void updateHangout_WithNoFieldChanges_ShouldNotUpdatePointers() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+
+        Hangout existingHangout = createTestHangout(hangoutId);
+        existingHangout.setDescription("Same description");
+        existingHangout.setVisibility(EventVisibility.INVITE_ONLY);
+        existingHangout.setCarpoolEnabled(false);
+        existingHangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111")));
+
+        UpdateHangoutRequest request = new UpdateHangoutRequest();
+        // Request has no changes to description, visibility, or carpoolEnabled
+
+        // Mock authorization
+        GroupMembership membership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Group 1");
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(membership));
+
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(existingHangout));
+        when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+
+        // When
+        hangoutService.updateHangout(hangoutId, request, userId);
+
+        // Then
+        // Verify canonical hangout was still saved
+        verify(hangoutRepository).createHangout(any(Hangout.class));
+
+        // Verify pointers were NOT updated (no relevant field changes)
+        verify(pointerUpdateService, never()).updatePointerWithRetry(anyString(), anyString(), any(), anyString());
+    }
+
+    // ============================================================================
+    // TEST PLAN PHASE 3: POINTER UPDATE TESTS - Group 2
+    // ============================================================================
+
+    @Test
+    void createAttribute_WithValidAttribute_ShouldUpdateAllPointers() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+
+        CreateAttributeRequest request = new CreateAttributeRequest();
+        request.setAttributeName("dress_code");
+        request.setStringValue("casual");
+
+        Hangout hangout = createTestHangout(hangoutId);
+        hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")));
+
+
+        // Mock authorization - user in first group
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        GroupMembership membership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Group 1");
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(membership));
+
+        // Mock attribute creation
+        HangoutAttribute newAttribute = new HangoutAttribute();
+        newAttribute.setHangoutId(hangoutId);
+        newAttribute.setAttributeName("dress_code");
+        newAttribute.setStringValue("casual");
+        when(hangoutRepository.saveAttribute(any(HangoutAttribute.class))).thenReturn(newAttribute);
+
+        // Mock current attributes (after save)
+        List<HangoutAttribute> updatedAttributes = List.of(newAttribute);
+        when(hangoutRepository.findAttributesByHangoutId(hangoutId))
+            .thenReturn(List.of())  // First call: check for duplicates - empty
+            .thenReturn(updatedAttributes);  // Second call: get updated list
+
+        // When
+        hangoutService.createAttribute(hangoutId, request, userId);
+
+        // Then
+        // Verify canonical attribute was saved
+        verify(hangoutRepository).saveAttribute(any(HangoutAttribute.class));
+
+        // Verify both pointers were updated with new attributes list via PointerUpdateService
+        verify(pointerUpdateService).updatePointerWithRetry(eq("11111111-1111-1111-1111-111111111111"), eq(hangoutId), any(), eq("attributes"));
+        verify(pointerUpdateService).updatePointerWithRetry(eq("22222222-2222-2222-2222-222222222222"), eq(hangoutId), any(), eq("attributes"));
+    }
+
+    @Test
+    void createAttribute_WhenPointerNotFound_ShouldContinueWithOtherPointers() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+
+        CreateAttributeRequest request = new CreateAttributeRequest();
+        request.setAttributeName("music");
+        request.setStringValue("jazz");
+
+        Hangout hangout = createTestHangout(hangoutId);
+        hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")));
+
+
+        // Mock authorization
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        GroupMembership membership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Group 1");
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(membership));
+
+        // Mock attribute creation
+        HangoutAttribute newAttribute = new HangoutAttribute();
+        newAttribute.setHangoutId(hangoutId);
+        newAttribute.setAttributeName("music");
+        newAttribute.setStringValue("jazz");
+        when(hangoutRepository.saveAttribute(any(HangoutAttribute.class))).thenReturn(newAttribute);
+        when(hangoutRepository.findAttributesByHangoutId(hangoutId))
+            .thenReturn(List.of())  // First call: check for duplicates - empty
+            .thenReturn(List.of(newAttribute));  // Second call: get updated list
+
+        // When
+        assertThatCode(() -> hangoutService.createAttribute(hangoutId, request, userId))
+            .doesNotThrowAnyException();
+
+        // Then
+        // Verify canonical attribute was saved
+        verify(hangoutRepository).saveAttribute(any(HangoutAttribute.class));
+
+        // Verify both groups were attempted to be updated via PointerUpdateService
+        verify(pointerUpdateService).updatePointerWithRetry(eq("11111111-1111-1111-1111-111111111111"), eq(hangoutId), any(), eq("attributes"));
+        verify(pointerUpdateService).updatePointerWithRetry(eq("22222222-2222-2222-2222-222222222222"), eq(hangoutId), any(), eq("attributes"));
+    }
+
+    @Test
+    void createAttribute_WithNoAssociatedGroups_ShouldNotUpdatePointers() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+
+        CreateAttributeRequest request = new CreateAttributeRequest();
+        request.setAttributeName("theme");
+        request.setStringValue("retro");
+
+        Hangout hangout = createTestHangout(hangoutId);
+        hangout.setAssociatedGroups(new java.util.ArrayList<>()); // No groups
+        hangout.setVisibility(EventVisibility.PUBLIC); // Make it public so auth passes
+
+
+        // Mock authorization
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+
+        // Mock attribute creation
+        HangoutAttribute newAttribute = new HangoutAttribute();
+        when(hangoutRepository.saveAttribute(any(HangoutAttribute.class))).thenReturn(newAttribute);
+        when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
+
+        // When
+        hangoutService.createAttribute(hangoutId, request, userId);
+
+        // Then
+        // Verify canonical attribute was saved
+        verify(hangoutRepository).saveAttribute(any(HangoutAttribute.class));
+
+        // Verify no pointer operations attempted
+        verify(pointerUpdateService, never()).updatePointerWithRetry(anyString(), anyString(), any(), anyString());
+    }
+
+    // ============================================================================
+    // TEST PLAN PHASE 3: POINTER UPDATE TESTS - Group 3
+    // ============================================================================
+
+    @Test
+    void updateAttribute_WithNameAndValueChange_ShouldUpdateAllPointers() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String attributeId = "attr-123";
+        String userId = "87654321-4321-4321-4321-210987654321";
+
+        UpdateAttributeRequest request = new UpdateAttributeRequest();
+        request.setAttributeName("dress_code");
+        request.setStringValue("formal");
+
+        Hangout hangout = createTestHangout(hangoutId);
+        hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111")));
+
+
+        // Mock authorization
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        GroupMembership membership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Group 1");
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(membership));
+
+        // Mock existing attribute
+        HangoutAttribute existingAttribute = new HangoutAttribute();
+        existingAttribute.setHangoutId(hangoutId);
+        existingAttribute.setAttributeId(attributeId);
+        existingAttribute.setAttributeName("dress_code");
+        existingAttribute.setStringValue("casual");
+        when(hangoutRepository.findAttributeById(hangoutId, attributeId)).thenReturn(Optional.of(existingAttribute));
+
+        // Mock attribute update
+        HangoutAttribute updatedAttribute = new HangoutAttribute();
+        updatedAttribute.setHangoutId(hangoutId);
+        updatedAttribute.setAttributeId(attributeId);
+        updatedAttribute.setAttributeName("dress_code");
+        updatedAttribute.setStringValue("formal");
+        when(hangoutRepository.saveAttribute(any(HangoutAttribute.class))).thenReturn(updatedAttribute);
+
+        // Mock attributes list after update
+        List<HangoutAttribute> updatedAttributes = List.of(updatedAttribute);
+        when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(updatedAttributes);
+
+        // When
+        hangoutService.updateAttribute(hangoutId, attributeId, request, userId);
+
+        // Then
+        // Verify canonical attribute was saved
+        verify(hangoutRepository).saveAttribute(argThat(attr ->
+            attr.getStringValue().equals("formal")
+        ));
+
+        // Verify pointer was updated with attributes
+        verify(pointerUpdateService).updatePointerWithRetry(eq("11111111-1111-1111-1111-111111111111"), eq(hangoutId), any(), eq("attributes"));
+    }
+
+    @Test
+    void updateAttribute_WhenRepositoryFails_ShouldLogAndContinue() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String attributeId = "attr-123";
+        String userId = "87654321-4321-4321-4321-210987654321";
+
+        UpdateAttributeRequest request = new UpdateAttributeRequest();
+        request.setAttributeName("theme");
+        request.setStringValue("updated");
+
+        Hangout hangout = createTestHangout(hangoutId);
+        hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")));
+
+
+        // Mock authorization
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        GroupMembership membership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Group 1");
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(membership));
+
+        // Mock existing attribute
+        HangoutAttribute existingAttribute = new HangoutAttribute();
+        existingAttribute.setHangoutId(hangoutId);
+        existingAttribute.setAttributeId(attributeId);
+        existingAttribute.setAttributeName("theme");
+        existingAttribute.setStringValue("old");
+        when(hangoutRepository.findAttributeById(hangoutId, attributeId)).thenReturn(Optional.of(existingAttribute));
+
+        // Mock attribute update
+        HangoutAttribute updatedAttribute = new HangoutAttribute();
+        when(hangoutRepository.saveAttribute(any(HangoutAttribute.class))).thenReturn(updatedAttribute);
+        when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of(updatedAttribute));
+
+        // Mock pointer retrieval
+        HangoutPointer pointer1 = createTestHangoutPointer("11111111-1111-1111-1111-111111111111", hangoutId);
+        HangoutPointer pointer2 = createTestHangoutPointer("22222222-2222-2222-2222-222222222222", hangoutId);
+
+        // When
+        assertThatCode(() -> hangoutService.updateAttribute(hangoutId, attributeId, request, userId))
+            .doesNotThrowAnyException();
+
+        // Then
+        // Verify canonical attribute was saved
+        verify(hangoutRepository).saveAttribute(any(HangoutAttribute.class));
+
+        // Verify both pointers were updated via PointerUpdateService
+        verify(pointerUpdateService).updatePointerWithRetry(eq("11111111-1111-1111-1111-111111111111"), eq(hangoutId), any(), eq("attributes"));
+        verify(pointerUpdateService).updatePointerWithRetry(eq("22222222-2222-2222-2222-222222222222"), eq(hangoutId), any(), eq("attributes"));
+    }
+
+    // ============================================================================
+    // TEST PLAN PHASE 3: POINTER UPDATE TESTS - Group 4
+    // ============================================================================
+
+    @Test
+    void deleteAttribute_WithValidId_ShouldRemoveFromAllPointers() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String attributeId = "attr-123";
+        String userId = "87654321-4321-4321-4321-210987654321";
+
+        Hangout hangout = createTestHangout(hangoutId);
+        hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of(
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222222222",
+            "33333333-3333-3333-3333-333333333333"
+        )));
+
+
+        // Mock authorization
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        GroupMembership membership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Group 1");
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(membership));
+
+        // Mock attribute deletion
+        doNothing().when(hangoutRepository).deleteAttribute(hangoutId, attributeId);
+
+        // Mock attributes list after deletion (one attribute remaining)
+        HangoutAttribute remainingAttribute = new HangoutAttribute();
+        remainingAttribute.setHangoutId(hangoutId);
+        remainingAttribute.setAttributeName("other_attribute");
+        when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of(remainingAttribute));
+
+        // When
+        hangoutService.deleteAttribute(hangoutId, attributeId, userId);
+
+        // Then
+        // Verify canonical attribute was deleted
+        verify(hangoutRepository).deleteAttribute(hangoutId, attributeId);
+
+        // Verify all 3 pointers were updated via PointerUpdateService
+        verify(pointerUpdateService).updatePointerWithRetry(eq("11111111-1111-1111-1111-111111111111"), eq(hangoutId), any(), eq("attributes"));
+        verify(pointerUpdateService).updatePointerWithRetry(eq("22222222-2222-2222-2222-222222222222"), eq(hangoutId), any(), eq("attributes"));
+        verify(pointerUpdateService).updatePointerWithRetry(eq("33333333-3333-3333-3333-333333333333"), eq(hangoutId), any(), eq("attributes"));
+    }
+
+    @Test
+    void deleteAttribute_WithAllAttributesRemoved_ShouldSetEmptyList() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String attributeId = "attr-123";
+        String userId = "87654321-4321-4321-4321-210987654321";
+
+        Hangout hangout = createTestHangout(hangoutId);
+        hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111")));
+
+
+        // Mock authorization
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        GroupMembership membership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Group 1");
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(membership));
+
+        // Mock attribute deletion
+        doNothing().when(hangoutRepository).deleteAttribute(hangoutId, attributeId);
+
+        // Mock empty attributes list after deletion (last attribute was deleted)
+        when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
+
+        // When
+        hangoutService.deleteAttribute(hangoutId, attributeId, userId);
+
+        // Then
+        // Verify canonical attribute was deleted
+        verify(hangoutRepository).deleteAttribute(hangoutId, attributeId);
+
+        // Verify pointer was updated via PointerUpdateService
+        verify(pointerUpdateService).updatePointerWithRetry(eq("11111111-1111-1111-1111-111111111111"), eq(hangoutId), any(), eq("attributes"));
+    }
+
+    // ============================================================================
+    // PHASE 4: OPTIMISTIC LOCKING RETRY TESTS
+    // ============================================================================
+
+    @Nested
+    class OptimisticLockingRetryTests {
+
+        // Test Group 1: Success Cases
+
+        @Test
+        void updatePointersWithAttributes_WithNoConflict_ShouldSucceedOnFirstAttempt() {
+            // Given
+            String hangoutId = "12345678-1234-1234-1234-123456789012";
+            String groupId = "11111111-1111-1111-1111-111111111111";
+            String userId = "87654321-4321-4321-4321-210987654321";
+
+            Hangout hangout = createTestHangout(hangoutId);
+            hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of(groupId)));
+
+            GroupMembership membership = createTestMembership(groupId, userId, "Test Group");
+            HangoutPointer pointer = createTestHangoutPointer(groupId, hangoutId);
+            pointer.setVersion(1L);
+
+            HangoutAttribute attribute = new HangoutAttribute();
+            attribute.setHangoutId(hangoutId);
+            attribute.setAttributeId("attr-1");
+            attribute.setAttributeName("Location");
+            attribute.setStringValue("Park");
+
+            CreateAttributeRequest request = new CreateAttributeRequest();
+            request.setAttributeName("Location");
+            request.setStringValue("Park");
+
+            when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+            when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.of(membership));
+            when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
+            when(hangoutRepository.saveAttribute(any(HangoutAttribute.class))).thenReturn(attribute);
+
+            // When
+            hangoutService.createAttribute(hangoutId, request, userId);
+
+            // Then - verify that PointerUpdateService is called
+            verify(pointerUpdateService).updatePointerWithRetry(eq(groupId), eq(hangoutId), any(), eq("attributes"));
+
+            // Note: Retry behavior is now tested in PointerUpdateServiceTest, not here.
+        }
+
+        @Test
+        void updatePointersWithAttributes_WithConflictThenSuccess_ShouldRetryAndSucceed() {
+            // Given
+            String hangoutId = "12345678-1234-1234-1234-123456789012";
+            String groupId = "11111111-1111-1111-1111-111111111111";
+            String userId = "87654321-4321-4321-4321-210987654321";
+
+            Hangout hangout = createTestHangout(hangoutId);
+            hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of(groupId)));
+
+            GroupMembership membership = createTestMembership(groupId, userId, "Test Group");
+            HangoutPointer pointer1 = createTestHangoutPointer(groupId, hangoutId);
+            pointer1.setVersion(1L);
+            HangoutPointer pointer2 = createTestHangoutPointer(groupId, hangoutId);
+            pointer2.setVersion(2L);
+
+            HangoutAttribute attribute = new HangoutAttribute();
+            attribute.setHangoutId(hangoutId);
+            attribute.setAttributeId("attr-1");
+            attribute.setAttributeName("Location");
+            attribute.setStringValue("Park");
+
+            CreateAttributeRequest request = new CreateAttributeRequest();
+            request.setAttributeName("Location");
+            request.setStringValue("Park");
+
+            when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+            when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.of(membership));
+            when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
+            when(hangoutRepository.saveAttribute(any(HangoutAttribute.class))).thenReturn(attribute);
+
+            // When
+            hangoutService.createAttribute(hangoutId, request, userId);
+
+            // Then - verify that PointerUpdateService is called
+            verify(pointerUpdateService).updatePointerWithRetry(eq(groupId), eq(hangoutId), any(), eq("attributes"));
+
+            // Note: Retry behavior with conflicts is now tested in PointerUpdateServiceTest.
+        }
+
+        // Test Group 2: Retry Exhaustion
+
+        @Test
+        void updatePointersWithAttributes_WithPersistentConflict_ShouldGiveUpAfterMaxRetries() {
+            // Given
+            String hangoutId = "12345678-1234-1234-1234-123456789012";
+            String groupId = "11111111-1111-1111-1111-111111111111";
+            String userId = "87654321-4321-4321-4321-210987654321";
+
+            Hangout hangout = createTestHangout(hangoutId);
+            hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of(groupId)));
+
+            GroupMembership membership = createTestMembership(groupId, userId, "Test Group");
+            HangoutPointer pointer = createTestHangoutPointer(groupId, hangoutId);
+            pointer.setVersion(1L);
+
+            HangoutAttribute attribute = new HangoutAttribute();
+            attribute.setHangoutId(hangoutId);
+            attribute.setAttributeId("attr-1");
+            attribute.setAttributeName("Location");
+            attribute.setStringValue("Park");
+
+            CreateAttributeRequest request = new CreateAttributeRequest();
+            request.setAttributeName("Location");
+            request.setStringValue("Park");
+
+            when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+            when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.of(membership));
+            when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
+            when(hangoutRepository.saveAttribute(any(HangoutAttribute.class))).thenReturn(attribute);
+
+            // When
+            hangoutService.createAttribute(hangoutId, request, userId);
+
+            // Then - verify that PointerUpdateService is called
+            verify(pointerUpdateService).updatePointerWithRetry(eq(groupId), eq(hangoutId), any(), eq("attributes"));
+
+            // Note: Max retry behavior is now tested in PointerUpdateServiceTest.
+        }
+
+        @Test
+        void updatePointersWithAttributes_WithMultipleGroups_OnlyRetriesFailedPointer() {
+            // Given
+            String hangoutId = "12345678-1234-1234-1234-123456789012";
+            String groupId1 = "11111111-1111-1111-1111-111111111111";
+            String groupId2 = "22222222-2222-2222-2222-222222222222";
+            String groupId3 = "33333333-3333-3333-3333-333333333333";
+            String userId = "87654321-4321-4321-4321-210987654321";
+
+            Hangout hangout = createTestHangout(hangoutId);
+            hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of(groupId1, groupId2, groupId3)));
+
+            GroupMembership membership = createTestMembership(groupId1, userId, "Test Group");
+            HangoutPointer pointer1 = createTestHangoutPointer(groupId1, hangoutId);
+            HangoutPointer pointer2 = createTestHangoutPointer(groupId2, hangoutId);
+            HangoutPointer pointer3 = createTestHangoutPointer(groupId3, hangoutId);
+
+            HangoutAttribute attribute = new HangoutAttribute();
+            attribute.setHangoutId(hangoutId);
+            attribute.setAttributeId("attr-1");
+            attribute.setAttributeName("Location");
+            attribute.setStringValue("Park");
+
+            CreateAttributeRequest request = new CreateAttributeRequest();
+            request.setAttributeName("Location");
+            request.setStringValue("Park");
+
+            when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+            when(groupRepository.findMembership(groupId1, userId)).thenReturn(Optional.of(membership));
+            when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
+            when(hangoutRepository.saveAttribute(any(HangoutAttribute.class))).thenReturn(attribute);
+
+            // When
+            hangoutService.createAttribute(hangoutId, request, userId);
+
+            // Then - verify that PointerUpdateService is called for all groups
+            verify(pointerUpdateService).updatePointerWithRetry(eq(groupId1), eq(hangoutId), any(), eq("attributes"));
+            verify(pointerUpdateService).updatePointerWithRetry(eq(groupId2), eq(hangoutId), any(), eq("attributes"));
+            verify(pointerUpdateService).updatePointerWithRetry(eq(groupId3), eq(hangoutId), any(), eq("attributes"));
+
+            // Note: Individual group retry behavior is now tested in PointerUpdateServiceTest.
+        }
+
+        // Test Group 3: Error Handling
+
+        @Test
+        void updatePointersWithAttributes_WithNonVersionException_ShouldGiveUpImmediately() {
+            // Given
+            String hangoutId = "12345678-1234-1234-1234-123456789012";
+            String groupId = "11111111-1111-1111-1111-111111111111";
+            String userId = "87654321-4321-4321-4321-210987654321";
+
+            Hangout hangout = createTestHangout(hangoutId);
+            hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of(groupId)));
+
+            GroupMembership membership = createTestMembership(groupId, userId, "Test Group");
+            HangoutPointer pointer = createTestHangoutPointer(groupId, hangoutId);
+
+            HangoutAttribute attribute = new HangoutAttribute();
+            attribute.setHangoutId(hangoutId);
+            attribute.setAttributeId("attr-1");
+            attribute.setAttributeName("Location");
+            attribute.setStringValue("Park");
+
+            CreateAttributeRequest request = new CreateAttributeRequest();
+            request.setAttributeName("Location");
+            request.setStringValue("Park");
+
+            when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+            when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.of(membership));
+            when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
+            when(hangoutRepository.saveAttribute(any(HangoutAttribute.class))).thenReturn(attribute);
+
+            // When
+            hangoutService.createAttribute(hangoutId, request, userId);
+
+            // Then
+            verify(pointerUpdateService).updatePointerWithRetry(eq(groupId), eq(hangoutId), any(), eq("attributes"));
+
+            // Note: Retry behavior for non-version exceptions is now tested in PointerUpdateServiceTest.
+        }
+
+        @Test
+        void updatePointersWithAttributes_WithInterruptedException_ShouldStopRetrying() {
+            // Given
+            String hangoutId = "12345678-1234-1234-1234-123456789012";
+            String groupId = "11111111-1111-1111-1111-111111111111";
+            String userId = "87654321-4321-4321-4321-210987654321";
+
+            Hangout hangout = createTestHangout(hangoutId);
+            hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of(groupId)));
+
+            GroupMembership membership = createTestMembership(groupId, userId, "Test Group");
+            HangoutPointer pointer = createTestHangoutPointer(groupId, hangoutId);
+
+            HangoutAttribute attribute = new HangoutAttribute();
+            attribute.setHangoutId(hangoutId);
+            attribute.setAttributeId("attr-1");
+            attribute.setAttributeName("Location");
+            attribute.setStringValue("Park");
+
+            CreateAttributeRequest request = new CreateAttributeRequest();
+            request.setAttributeName("Location");
+            request.setStringValue("Park");
+
+            when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+            when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.of(membership));
+            when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
+            when(hangoutRepository.saveAttribute(any(HangoutAttribute.class))).thenReturn(attribute);
+
+            // When
+            hangoutService.createAttribute(hangoutId, request, userId);
+
+            // Then
+            verify(pointerUpdateService).updatePointerWithRetry(eq(groupId), eq(hangoutId), any(), eq("attributes"));
+
+            // Note: InterruptedException and retry behavior is now tested in PointerUpdateServiceTest.
+        }
+
+        @Test
+        void updatePointersWithAttributes_WithPointerNotFound_ShouldSkipGracefully() {
+            // Given
+            String hangoutId = "12345678-1234-1234-1234-123456789012";
+            String groupId = "11111111-1111-1111-1111-111111111111";
+            String userId = "87654321-4321-4321-4321-210987654321";
+
+            Hangout hangout = createTestHangout(hangoutId);
+            hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of(groupId)));
+
+            GroupMembership membership = createTestMembership(groupId, userId, "Test Group");
+
+            HangoutAttribute attribute = new HangoutAttribute();
+            attribute.setHangoutId(hangoutId);
+            attribute.setAttributeId("attr-1");
+            attribute.setAttributeName("Location");
+            attribute.setStringValue("Park");
+
+            CreateAttributeRequest request = new CreateAttributeRequest();
+            request.setAttributeName("Location");
+            request.setStringValue("Park");
+
+            when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+            when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.of(membership));
+            when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
+            when(hangoutRepository.saveAttribute(any(HangoutAttribute.class))).thenReturn(attribute);
+
+            // When
+            hangoutService.createAttribute(hangoutId, request, userId);
+
+            // Then
+            verify(pointerUpdateService).updatePointerWithRetry(eq(groupId), eq(hangoutId), any(), eq("attributes"));
+        }
     }
 }

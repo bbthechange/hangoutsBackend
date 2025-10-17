@@ -17,6 +17,7 @@ import org.springframework.context.annotation.Lazy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -27,27 +28,30 @@ import java.util.stream.Collectors;
  */
 @Service
 public class HangoutServiceImpl implements HangoutService {
-    
+
     private static final Logger logger = LoggerFactory.getLogger(HangoutServiceImpl.class);
-    
+
     private final HangoutRepository hangoutRepository;
     private final GroupRepository groupRepository;
     private final FuzzyTimeService fuzzyTimeService;
     private final UserService userService;
     private final EventSeriesService eventSeriesService;
     private final NotificationService notificationService;
+    private final PointerUpdateService pointerUpdateService;
 
     @Autowired
     public HangoutServiceImpl(HangoutRepository hangoutRepository, GroupRepository groupRepository,
                               FuzzyTimeService fuzzyTimeService, UserService userService,
                               @Lazy EventSeriesService eventSeriesService,
-                              NotificationService notificationService) {
+                              NotificationService notificationService,
+                              PointerUpdateService pointerUpdateService) {
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
         this.fuzzyTimeService = fuzzyTimeService;
         this.userService = userService;
         this.eventSeriesService = eventSeriesService;
         this.notificationService = notificationService;
+        this.pointerUpdateService = pointerUpdateService;
     }
     
     @Override
@@ -72,6 +76,17 @@ public class HangoutServiceImpl implements HangoutService {
                 // Denormalize image path
                 pointer.setMainImagePath(hangout.getMainImagePath());
 
+                // NEW: Denormalize basic hangout fields (Phase 2 - denormalization plan)
+                pointer.setDescription(hangout.getDescription());
+                pointer.setVisibility(hangout.getVisibility());
+                pointer.setCarpoolEnabled(hangout.isCarpoolEnabled());
+
+                // NEW: Initialize empty collections (already done in constructor, but explicit here)
+                // polls, pollOptions, votes, cars, carRiders, needsRide are initialized in HangoutPointer()
+
+                // NEW: Add attributes created with the hangout (will be set after pointer is saved)
+                // Note: attributes will be added after transaction completes
+
                 pointers.add(pointer);
             }
         }
@@ -93,7 +108,12 @@ public class HangoutServiceImpl implements HangoutService {
                 attributes.add(new HangoutAttribute(hangout.getHangoutId(), attrRequest.getTrimmedAttributeName(), attrRequest.getStringValue()));
             }
         }
-        
+
+        // NEW: Denormalize attributes onto all pointers before saving
+        for (HangoutPointer pointer : pointers) {
+            pointer.setAttributes(new ArrayList<>(attributes)); // Create new list to avoid shared references
+        }
+
         // Save everything in a single transaction
         hangout = hangoutRepository.createHangoutWithAttributes(hangout, pointers, attributes);
 
@@ -189,67 +209,63 @@ public class HangoutServiceImpl implements HangoutService {
         // Get and authorize
         Hangout hangout = hangoutRepository.findHangoutById(hangoutId)
             .orElseThrow(() -> new ResourceNotFoundException("Hangout not found: " + hangoutId));
-        
+
         if (!canUserEditHangout(requestingUserId, hangout)) {
             throw new UnauthorizedException("Cannot edit hangout");
         }
-        
-        // Update canonical record
+
+        // Track if any pointer-denormalized fields changed
         boolean needsPointerUpdate = false;
-        Map<String, Object> pointerUpdates = new HashMap<>();
-        
+
+        // Update canonical record fields
         if (request.getTitle() != null && !request.getTitle().equals(hangout.getTitle())) {
             hangout.setTitle(request.getTitle());
-            pointerUpdates.put("title", request.getTitle());
             needsPointerUpdate = true;
         }
-        
+
         if (request.getDescription() != null) {
             hangout.setDescription(request.getDescription());
+            needsPointerUpdate = true;
         }
-        
+
         if (request.getTimeInfo() != null) {
             hangout.setTimeInput(request.getTimeInfo());
-            
+
             // Convert timeInput to canonical timestamps
             FuzzyTimeService.TimeConversionResult timeResult = fuzzyTimeService.convert(request.getTimeInfo());
             hangout.setStartTimestamp(timeResult.startTimestamp);
             hangout.setEndTimestamp(timeResult.endTimestamp);
-            // TODO participantCount? Not used yet, not sure we should use it
-            if (hangout.getAssociatedGroups() != null) {
-                needsPointerUpdate = true;
-                pointerUpdates.put("timeInput", request.getTimeInfo());
-                pointerUpdates.put("startTimestamp", timeResult.startTimestamp);
-                pointerUpdates.put("endTimestamp", timeResult.endTimestamp);
-            }
+            needsPointerUpdate = true;
         }
 
         if (request.getLocation() != null) {
             hangout.setLocation(request.getLocation());
-            pointerUpdates.put("location", request.getLocation());
             needsPointerUpdate = true;
         }
-        
+
         if (request.getVisibility() != null) {
             hangout.setVisibility(request.getVisibility());
+            needsPointerUpdate = true;
         }
 
         if (request.getMainImagePath() != null && !request.getMainImagePath().equals(hangout.getMainImagePath())) {
             hangout.setMainImagePath(request.getMainImagePath());
-            pointerUpdates.put("mainImagePath", request.getMainImagePath());
             needsPointerUpdate = true;
         }
 
-        hangout.setCarpoolEnabled(request.isCarpoolEnabled());
-        
+        if (request.isCarpoolEnabled() != hangout.isCarpoolEnabled()) {
+            hangout.setCarpoolEnabled(request.isCarpoolEnabled());
+            needsPointerUpdate = true;
+        }
+
         // Save canonical record
         hangoutRepository.createHangout(hangout); // Using createHangout as it's a putItem
-        
-        // Update pointer records if needed
+
+        // Update pointer records using read-modify-write pattern with optimistic locking
         if (needsPointerUpdate && hangout.getAssociatedGroups() != null) {
-            updatePointerRecords(hangoutId, hangout.getAssociatedGroups(), pointerUpdates);
+            updatePointersWithBasicFields(hangout);
         }
-        
+
         // If this hangout is part of a series, update the series records
         if (hangout.getSeriesId() != null) {
             try {
@@ -260,7 +276,7 @@ public class HangoutServiceImpl implements HangoutService {
                 // Continue execution - the hangout update itself succeeded
             }
         }
-        
+
         logger.info("Updated hangout {} by user {}", hangoutId, requestingUserId);
     }
     
@@ -351,22 +367,22 @@ public class HangoutServiceImpl implements HangoutService {
         if (!canUserEditHangout(requestingUserId, data.getHangout())) {
             throw new UnauthorizedException("Cannot edit event");
         }
-        
-        // Multi-step process from implementation plan:
-        
+
         // Step 1: Update canonical record first
         Hangout hangout = data.getHangout();
         hangout.setTitle(newTitle);
         hangoutRepository.save(hangout);
-        
-        // Step 2: Get associated groups list from canonical record
+
+        // Step 2: Update each pointer record using read-modify-write pattern with optimistic locking
         List<String> associatedGroups = hangout.getAssociatedGroups();
-        
-        // Step 3: Update each pointer record
         if (associatedGroups != null && !associatedGroups.isEmpty()) {
-            updatePointerRecords(eventId, associatedGroups, Map.of("title", newTitle));
+            for (String groupId : associatedGroups) {
+                pointerUpdateService.updatePointerWithRetry(groupId, eventId, pointer -> {
+                    pointer.setTitle(newTitle);
+                }, "title");
+            }
         }
-        
+
         logger.info("Updated title for event {} to '{}' by user {}", eventId, newTitle, requestingUserId);
     }
     
@@ -393,16 +409,20 @@ public class HangoutServiceImpl implements HangoutService {
         if (!canUserEditHangout(requestingUserId, data.getHangout())) {
             throw new UnauthorizedException("Cannot edit event");
         }
-        
+
         // Step 1: Update canonical record
         Hangout hangout = data.getHangout();
         hangout.setLocation(newLocation);
         hangoutRepository.save(hangout);
 
-        // Step 2: Update pointer records with location
+        // Step 2: Update each pointer record using read-modify-write pattern with optimistic locking
         List<String> associatedGroups = hangout.getAssociatedGroups();
         if (associatedGroups != null && !associatedGroups.isEmpty()) {
-            updatePointerRecords(eventId, associatedGroups, Map.of("location", newLocation));
+            for (String groupId : associatedGroups) {
+                pointerUpdateService.updatePointerWithRetry(groupId, eventId, pointer -> {
+                    pointer.setLocation(newLocation);
+                }, "location");
+            }
         }
 
         logger.info("Updated location for event {} by user {}", eventId, requestingUserId);
@@ -441,7 +461,6 @@ public class HangoutServiceImpl implements HangoutService {
             HangoutPointer pointer = new HangoutPointer(groupId, eventId, hangout.getTitle());
             pointer.setStatus("ACTIVE"); // Default status
             pointer.setLocation(hangout.getLocation());
-            // TODO this looks wrong
             pointer.setParticipantCount(0); // Will be updated as people respond
 
             // Set GSI fields for EntityTimeIndex
@@ -452,6 +471,23 @@ public class HangoutServiceImpl implements HangoutService {
                 pointer.setStartTimestamp(timeResult.startTimestamp);
                 pointer.setEndTimestamp(timeResult.endTimestamp);
             }
+
+            // NEW: Denormalize basic hangout fields (Phase 2 - denormalization plan)
+            pointer.setDescription(hangout.getDescription());
+            pointer.setVisibility(hangout.getVisibility());
+            pointer.setCarpoolEnabled(hangout.isCarpoolEnabled());
+            pointer.setMainImagePath(hangout.getMainImagePath());
+
+            // NEW: Denormalize existing polls, votes, and attributes
+            // Get all existing data from hangout detail
+            HangoutDetailData detailData = hangoutRepository.getHangoutDetailData(eventId);
+            pointer.setPolls(detailData.getPolls());
+            pointer.setPollOptions(detailData.getPollOptions());
+            pointer.setVotes(detailData.getVotes());
+            pointer.setCars(detailData.getCars());
+            pointer.setCarRiders(detailData.getCarRiders());
+            pointer.setNeedsRide(detailData.getNeedsRide());
+            pointer.setAttributes(hangoutRepository.findAttributesByHangoutId(eventId));
 
             groupRepository.saveHangoutPointer(pointer);
         }
@@ -482,60 +518,75 @@ public class HangoutServiceImpl implements HangoutService {
         
         logger.info("Disassociated event {} from {} groups by user {}", eventId, groupIds.size(), requestingUserId);
     }
-    
 
-    private void updatePointerRecords(String eventId, List<String> groupIds, Map<String, Object> updates) {
-        // Convert string updates to AttributeValue updates
-        Map<String, AttributeValue> updateValues = new HashMap<>();
-        for (Map.Entry<String, Object> entry : updates.entrySet()) {
-            String key = entry.getKey();
-            Object value = entry.getValue();
-            AttributeValue attributeValue;
+    /**
+     * Update all pointer records with basic hangout fields using read-modify-write pattern.
+     * This method should be called after updating hangout basic fields (title, description, etc.).
+     *
+     * Uses optimistic locking with retry to handle concurrent pointer updates.
+     *
+     * @param hangout The canonical hangout record with updated fields
+     */
+    private void updatePointersWithBasicFields(Hangout hangout) {
+        List<String> associatedGroups = hangout.getAssociatedGroups();
 
-            // Type checking to build the correct AttributeValue
-            if (value instanceof String) {
-                attributeValue = AttributeValue.builder().s((String) value).build();
-            } else if (value instanceof Number) {
-                attributeValue = AttributeValue.builder().n(value.toString()).build();
-            } else if (value instanceof TimeInfo) {
-                // Handle TimeInfo objects by storing as a DynamoDB Map (M type)
-                TimeInfo timeInfo = (TimeInfo) value;
-                Map<String, AttributeValue> timeInfoMap = new HashMap<>();
-                
-                if (timeInfo.getStartTime() != null) {
-                    timeInfoMap.put("startTime", AttributeValue.builder().s(timeInfo.getStartTime()).build());
-                }
-                if (timeInfo.getEndTime() != null) {
-                    timeInfoMap.put("endTime", AttributeValue.builder().s(timeInfo.getEndTime()).build());
-                }
-                if (timeInfo.getPeriodGranularity() != null) {
-                    timeInfoMap.put("periodGranularity", AttributeValue.builder().s(timeInfo.getPeriodGranularity()).build());
-                }
-                if (timeInfo.getPeriodStart() != null) {
-                    timeInfoMap.put("periodStart", AttributeValue.builder().s(timeInfo.getPeriodStart()).build());
-                }
-                
-                attributeValue = AttributeValue.builder().m(timeInfoMap).build();
-            } else {
-                // Add more types here if needed (e.g., Boolean)
-                logger.warn("Unsupported type in pointer update for key {}: {}", key, value == null? null : value.getClass().getName());
-                continue; // Skip unsupported types
-            }
-            updateValues.put(key, attributeValue);
+        if (associatedGroups == null || associatedGroups.isEmpty()) {
+            logger.debug("No associated groups for hangout {}, skipping pointer update", hangout.getHangoutId());
+            return;
         }
-        
-        // Update each group's hangout pointer
-        for (String groupId : groupIds) {
-            try {
-                groupRepository.updateHangoutPointer(groupId, eventId, updateValues);
-            } catch (Exception e) {
-                logger.warn("Failed to update hangout pointer for group {} and event {}: {}", 
-                    groupId, eventId, e.getMessage());
-            }
+
+        // Update each group's pointer with optimistic locking retry
+        for (String groupId : associatedGroups) {
+            pointerUpdateService.updatePointerWithRetry(groupId, hangout.getHangoutId(), pointer -> {
+                // Update all basic fields from canonical hangout
+                pointer.setTitle(hangout.getTitle());
+                pointer.setDescription(hangout.getDescription());
+                pointer.setLocation(hangout.getLocation());
+                pointer.setVisibility(hangout.getVisibility());
+                pointer.setMainImagePath(hangout.getMainImagePath());
+                pointer.setCarpoolEnabled(hangout.isCarpoolEnabled());
+
+                // Update time fields
+                pointer.setTimeInput(hangout.getTimeInput());
+                pointer.setStartTimestamp(hangout.getStartTimestamp());
+                pointer.setEndTimestamp(hangout.getEndTimestamp());
+            }, "basic fields");
         }
     }
-    
-    
+
+    /**
+     * Update all pointer records with the current attribute list from the canonical hangout.
+     * This method should be called after any attribute create/update/delete operation.
+     *
+     * Uses optimistic locking with retry to handle concurrent pointer updates.
+     */
+    private void updatePointersWithAttributes(String hangoutId) {
+        // Get hangout to find associated groups
+        Optional<Hangout> hangoutOpt = hangoutRepository.findHangoutById(hangoutId);
+        if (hangoutOpt.isEmpty()) {
+            logger.warn("Cannot update pointers for non-existent hangout: {}", hangoutId);
+            return;
+        }
+
+        Hangout hangout = hangoutOpt.get();
+        List<String> associatedGroups = hangout.getAssociatedGroups();
+
+        if (associatedGroups == null || associatedGroups.isEmpty()) {
+            logger.debug("No associated groups for hangout {}, skipping pointer update", hangoutId);
+            return;
+        }
+
+        // Get current attribute list from canonical record
+        List<HangoutAttribute> attributes = hangoutRepository.findAttributesByHangoutId(hangoutId);
+
+        // Update each group's pointer with optimistic locking retry
+        for (String groupId : associatedGroups) {
+            pointerUpdateService.updatePointerWithRetry(groupId, hangoutId, pointer -> {
+                pointer.setAttributes(new ArrayList<>(attributes));
+            }, "attributes");
+        }
+    }
+
     @Override
     public boolean canUserViewHangout(String userId, Hangout hangout) {
         // Check if hangout is public
@@ -766,10 +817,13 @@ public class HangoutServiceImpl implements HangoutService {
         
         // Save to repository
         HangoutAttribute savedAttribute = hangoutRepository.saveAttribute(attribute);
-        
-        logger.info("Successfully created attribute {} for hangout {}", 
+
+        // NEW: Update pointer records with new attribute list
+        updatePointersWithAttributes(hangoutId);
+
+        logger.info("Successfully created attribute {} for hangout {}",
             savedAttribute.getAttributeId(), hangoutId);
-        
+
         return HangoutAttributeDTO.fromEntity(savedAttribute);
     }
     
@@ -810,9 +864,12 @@ public class HangoutServiceImpl implements HangoutService {
         
         // Save updated attribute
         HangoutAttribute savedAttribute = hangoutRepository.saveAttribute(existingAttribute);
-        
+
+        // NEW: Update pointer records with updated attribute list
+        updatePointersWithAttributes(hangoutId);
+
         logger.info("Successfully updated attribute {} for hangout {}", attributeId, hangoutId);
-        
+
         return HangoutAttributeDTO.fromEntity(savedAttribute);
     }
     
@@ -826,7 +883,10 @@ public class HangoutServiceImpl implements HangoutService {
         
         // Delete attribute (idempotent operation)
         hangoutRepository.deleteAttribute(hangoutId, attributeId);
-        
+
+        // NEW: Update pointer records with updated attribute list (attribute now removed)
+        updatePointersWithAttributes(hangoutId);
+
         logger.info("Successfully deleted attribute {} for hangout {}", attributeId, hangoutId);
     }
     

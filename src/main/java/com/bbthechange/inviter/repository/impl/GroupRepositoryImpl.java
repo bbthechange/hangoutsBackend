@@ -275,14 +275,36 @@ public class GroupRepositoryImpl implements GroupRepository {
                 inviterTable.putItem(pointer);
                 logger.debug("Saved hangout pointer {} for group {}", pointer.getHangoutId(), pointer.getGroupId());
                 return null;
-                
+
             } catch (DynamoDbException e) {
                 logger.error("Failed to save hangout pointer {} for group {}", pointer.getHangoutId(), pointer.getGroupId(), e);
                 throw new RepositoryException("Failed to save hangout pointer", e);
             }
         });
     }
-    
+
+    @Override
+    public Optional<HangoutPointer> findHangoutPointer(String groupId, String hangoutId) {
+        return performanceTracker.trackQuery("findHangoutPointer", "InviterTable", () -> {
+            try {
+                Key key = Key.builder()
+                    .partitionValue(InviterKeyFactory.getGroupPk(groupId))
+                    .sortValue(InviterKeyFactory.getHangoutSk(hangoutId))
+                    .build();
+
+                BaseItem item = inviterTable.getItem(key);
+                if (item != null && InviterKeyFactory.isHangoutPointer(item.getSk())) {
+                    return Optional.of((HangoutPointer) item);
+                }
+                return Optional.empty();
+
+            } catch (DynamoDbException e) {
+                logger.error("Failed to find hangout pointer {} for group {}", hangoutId, groupId, e);
+                throw new RepositoryException("Failed to retrieve hangout pointer", e);
+            }
+        });
+    }
+
     @Override
     public void saveSeriesPointer(SeriesPointer pointer) {
         performanceTracker.trackQuery("saveSeriesPointer", "InviterTable", () -> {

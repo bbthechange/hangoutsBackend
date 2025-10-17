@@ -63,6 +63,7 @@ public interface GroupRepository {
     
     // Hangout pointer operations (simple CRUD only - business logic in service layer)
     void saveHangoutPointer(HangoutPointer pointer);
+    Optional<HangoutPointer> findHangoutPointer(String groupId, String hangoutId);
     void updateHangoutPointer(String groupId, String hangoutId, Map<String, AttributeValue> updates);
     void deleteHangoutPointer(String groupId, String hangoutId);
     
