@@ -5,6 +5,7 @@ import com.bbthechange.inviter.util.HangoutDataTransformer;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Data Transfer Object for Hangout summary information in group feeds.
@@ -38,8 +39,8 @@ public class HangoutSummaryDTO implements FeedItem {
     private List<CarWithRidersDTO> cars;
     private List<NeedsRideDTO> needsRide;
 
-    // Attribute data (kept as-is, simple structure)
-    private List<HangoutAttribute> attributes;
+    // Attribute data
+    private List<HangoutAttributeDTO> attributes;
 
     /**
      * Create HangoutSummaryDTO from HangoutPointer with transformed nested data.
@@ -83,8 +84,13 @@ public class HangoutSummaryDTO implements FeedItem {
                 pointer.getNeedsRide()
         );
 
-        // Attributes are already simple, keep as-is
-        this.attributes = pointer.getAttributes() != null ? new ArrayList<>(pointer.getAttributes()) : new ArrayList<>();
+        // Attributes
+        List<HangoutAttribute> hangoutAttributeDTOS = pointer.getAttributes();
+        if (hangoutAttributeDTOS != null) {
+            this.attributes = hangoutAttributeDTOS.stream()
+                    .map(HangoutAttributeDTO::fromEntity)
+                    .collect(Collectors.toList());
+        }
     }
     
     public String getHangoutId() {
@@ -231,11 +237,11 @@ public class HangoutSummaryDTO implements FeedItem {
 
     // Attribute data getters/setters
 
-    public List<HangoutAttribute> getAttributes() {
+    public List<HangoutAttributeDTO> getAttributes() {
         return attributes != null ? attributes : new ArrayList<>();
     }
 
-    public void setAttributes(List<HangoutAttribute> attributes) {
+    public void setAttributes(List<HangoutAttributeDTO> attributes) {
         this.attributes = attributes;
     }
 }
