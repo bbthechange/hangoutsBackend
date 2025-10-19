@@ -283,15 +283,16 @@ public class GroupServiceImpl implements GroupService {
         // Get all memberships for this group
         List<GroupMembership> memberships = groupRepository.findMembersByGroupId(groupId);
         
-        // Convert to DTOs (need to get user names)
+        // Convert to DTOs (need to get current user info)
         return memberships.stream()
             .map(membership -> {
-                // Get user details for display name
+                // Get user details for current display name and profile image
                 User user = userRepository.findById(UUID.fromString(membership.getUserId()))
                     .orElse(null);
                 String userName = user != null ? user.getDisplayName() : "Unknown User";
-                
-                return new GroupMemberDTO(membership, userName);
+                String mainImagePath = user != null ? user.getMainImagePath() : null;
+
+                return new GroupMemberDTO(membership, userName, mainImagePath);
             })
             .collect(Collectors.toList());
     }

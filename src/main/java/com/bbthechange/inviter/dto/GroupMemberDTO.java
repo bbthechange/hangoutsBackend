@@ -8,15 +8,17 @@ import java.time.Instant;
  * Data Transfer Object for Group Member information.
  */
 public class GroupMemberDTO {
-    
+
     private String userId;
-    private String userName;        // We'll need to get this from User lookup
+    private String userName;        // Current user display name
+    private String mainImagePath;   // Current user profile image
     private String role;
     private Instant joinedAt;
-    
-    public GroupMemberDTO(GroupMembership membership, String userName) {
+
+    public GroupMemberDTO(GroupMembership membership, String userName, String mainImagePath) {
         this.userId = membership.getUserId();
         this.userName = userName;
+        this.mainImagePath = mainImagePath;
         this.role = membership.getRole();
         this.joinedAt = membership.getCreatedAt();
     }
@@ -36,7 +38,15 @@ public class GroupMemberDTO {
     public void setUserName(String userName) {
         this.userName = userName;
     }
-    
+
+    public String getMainImagePath() {
+        return mainImagePath;
+    }
+
+    public void setMainImagePath(String mainImagePath) {
+        this.mainImagePath = mainImagePath;
+    }
+
     public String getRole() {
         return role;
     }
