@@ -720,6 +720,7 @@ public class HangoutServiceImpl implements HangoutService {
         // Create/update InterestLevel
         InterestLevel interestLevel = new InterestLevel(hangoutId, requestingUserId, displayName, request.getStatus());
         interestLevel.setNotes(request.getNotes());
+        interestLevel.setMainImagePath(user.getMainImagePath()); // Denormalize user's profile image
         hangoutRepository.saveInterestLevel(interestLevel);
 
         // Update participant counts using atomic counters

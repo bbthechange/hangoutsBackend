@@ -17,6 +17,7 @@ public class InterestLevel extends BaseItem {
     private String userName;        // Denormalized for display
     private String status;          // "GOING", "INTERESTED", "NOT_GOING"
     private String notes;           // Optional notes from the user
+    private String mainImagePath;   // Optional user profile image path (denormalized)
     
     // Default constructor for DynamoDB
     public InterestLevel() {
@@ -78,6 +79,15 @@ public class InterestLevel extends BaseItem {
     
     public void setNotes(String notes) {
         this.notes = notes;
+        touch();
+    }
+
+    public String getMainImagePath() {
+        return mainImagePath;
+    }
+
+    public void setMainImagePath(String mainImagePath) {
+        this.mainImagePath = mainImagePath;
         touch();
     }
 }
