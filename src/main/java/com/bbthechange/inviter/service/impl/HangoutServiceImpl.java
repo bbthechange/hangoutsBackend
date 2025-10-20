@@ -478,7 +478,7 @@ public class HangoutServiceImpl implements HangoutService {
             pointer.setCarpoolEnabled(hangout.isCarpoolEnabled());
             pointer.setMainImagePath(hangout.getMainImagePath());
 
-            // NEW: Denormalize existing polls, votes, and attributes
+            // NEW: Denormalize existing polls, votes, attributes, and interest levels
             // Get all existing data from hangout detail
             HangoutDetailData detailData = hangoutRepository.getHangoutDetailData(eventId);
             pointer.setPolls(detailData.getPolls());
@@ -488,6 +488,7 @@ public class HangoutServiceImpl implements HangoutService {
             pointer.setCarRiders(detailData.getCarRiders());
             pointer.setNeedsRide(detailData.getNeedsRide());
             pointer.setAttributes(hangoutRepository.findAttributesByHangoutId(eventId));
+            pointer.setInterestLevels(detailData.getAttendance());
 
             groupRepository.saveHangoutPointer(pointer);
         }
@@ -727,6 +728,14 @@ public class HangoutServiceImpl implements HangoutService {
         List<String> associatedGroups = data.getHangout().getAssociatedGroups();
         if (associatedGroups != null && !associatedGroups.isEmpty()) {
             updateParticipantCounts(hangoutId, oldStatus, request.getStatus(), associatedGroups);
+
+            // Denormalize updated interest levels to all group pointers
+            List<InterestLevel> updatedInterestLevels = hangoutRepository.getHangoutDetailData(hangoutId).getAttendance();
+            for (String groupId : associatedGroups) {
+                pointerUpdateService.updatePointerWithRetry(groupId, hangoutId, pointer -> {
+                    pointer.setInterestLevels(new ArrayList<>(updatedInterestLevels));
+                }, "interest levels");
+            }
         }
 
         logger.info("Set interest {} for user {} on hangout {}", request.getStatus(), requestingUserId, hangoutId);
@@ -760,6 +769,14 @@ public class HangoutServiceImpl implements HangoutService {
         List<String> associatedGroups = data.getHangout().getAssociatedGroups();
         if (associatedGroups != null && !associatedGroups.isEmpty()) {
             updateParticipantCounts(hangoutId, oldStatus, null, associatedGroups);
+
+            // Denormalize updated interest levels to all group pointers
+            List<InterestLevel> updatedInterestLevels = hangoutRepository.getHangoutDetailData(hangoutId).getAttendance();
+            for (String groupId : associatedGroups) {
+                pointerUpdateService.updatePointerWithRetry(groupId, hangoutId, pointer -> {
+                    pointer.setInterestLevels(new ArrayList<>(updatedInterestLevels));
+                }, "interest levels");
+            }
         }
 
         logger.info("Removed interest for user {} on hangout {}", requestingUserId, hangoutId);
@@ -984,6 +1001,9 @@ public class HangoutServiceImpl implements HangoutService {
 
                 // Update attributes
                 pointer.setAttributes(new ArrayList<>(attributes));
+
+                // Update interest levels
+                pointer.setInterestLevels(new ArrayList<>(detailData.getAttendance()));
             }, "complete resync");
         }
 

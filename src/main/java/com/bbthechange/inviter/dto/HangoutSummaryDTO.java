@@ -42,6 +42,9 @@ public class HangoutSummaryDTO implements FeedItem {
     // Attribute data
     private List<HangoutAttributeDTO> attributes;
 
+    // Interest level / attendance data
+    private List<InterestLevel> interestLevels;
+
     /**
      * Create HangoutSummaryDTO from HangoutPointer with transformed nested data.
      *
@@ -91,6 +94,9 @@ public class HangoutSummaryDTO implements FeedItem {
                     .map(HangoutAttributeDTO::fromEntity)
                     .collect(Collectors.toList());
         }
+
+        // Interest levels
+        this.interestLevels = pointer.getInterestLevels();
     }
     
     public String getHangoutId() {
@@ -243,5 +249,15 @@ public class HangoutSummaryDTO implements FeedItem {
 
     public void setAttributes(List<HangoutAttributeDTO> attributes) {
         this.attributes = attributes;
+    }
+
+    // Interest level / attendance data getters/setters
+
+    public List<InterestLevel> getInterestLevels() {
+        return interestLevels != null ? interestLevels : new ArrayList<>();
+    }
+
+    public void setInterestLevels(List<InterestLevel> interestLevels) {
+        this.interestLevels = interestLevels;
     }
 }

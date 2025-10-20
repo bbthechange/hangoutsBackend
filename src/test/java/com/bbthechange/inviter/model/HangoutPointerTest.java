@@ -60,6 +60,7 @@ class HangoutPointerTest {
         assertThat(pointer.getCarRiders()).isNotNull().isEmpty();
         assertThat(pointer.getNeedsRide()).isNotNull().isEmpty();
         assertThat(pointer.getAttributes()).isNotNull().isEmpty();
+        assertThat(pointer.getInterestLevels()).isNotNull().isEmpty();
     }
 
     @Test
@@ -76,6 +77,7 @@ class HangoutPointerTest {
         assertThat(pointer.getCarRiders()).isNotNull().isEmpty();
         assertThat(pointer.getNeedsRide()).isNotNull().isEmpty();
         assertThat(pointer.getAttributes()).isNotNull().isEmpty();
+        assertThat(pointer.getInterestLevels()).isNotNull().isEmpty();
     }
 
     // ============================================================================
@@ -403,6 +405,64 @@ class HangoutPointerTest {
     }
 
     // ============================================================================
+    // INTEREST LEVEL DATA COLLECTION TESTS
+    // ============================================================================
+
+    @Test
+    void constructor_WithParameters_ShouldInitializeInterestLevels() {
+        // When
+        HangoutPointer pointer = new HangoutPointer(validGroupId, validHangoutId, validTitle);
+
+        // Then - interestLevels should be initialized to empty list
+        assertThat(pointer.getInterestLevels()).isNotNull().isEmpty();
+    }
+
+    @Test
+    void getInterestLevels_WhenNull_ShouldReturnEmptyList() {
+        // Given
+        HangoutPointer pointer = new HangoutPointer();
+        // The getter should protect against null even if field is somehow null
+
+        // When
+        List<InterestLevel> result = pointer.getInterestLevels();
+
+        // Then
+        assertThat(result).isNotNull().isEmpty();
+    }
+
+    @Test
+    void setInterestLevels_WithNull_ShouldCreateEmptyList() {
+        // Given
+        HangoutPointer pointer = new HangoutPointer(validGroupId, validHangoutId, validTitle);
+
+        // When
+        pointer.setInterestLevels(null);
+
+        // Then
+        assertThat(pointer.getInterestLevels()).isNotNull().isEmpty();
+    }
+
+    @Test
+    void setInterestLevels_WithValidList_ShouldUpdateAndTouch() throws InterruptedException {
+        // Given
+        HangoutPointer pointer = new HangoutPointer(validGroupId, validHangoutId, validTitle);
+        Instant initialTimestamp = pointer.getUpdatedAt();
+        Thread.sleep(10);
+
+        InterestLevel interest1 = createTestInterestLevel("1", "GOING");
+        InterestLevel interest2 = createTestInterestLevel("2", "INTERESTED");
+        List<InterestLevel> interestLevels = Arrays.asList(interest1, interest2);
+
+        // When
+        pointer.setInterestLevels(interestLevels);
+
+        // Then
+        assertThat(pointer.getInterestLevels()).hasSize(2);
+        assertThat(pointer.getInterestLevels()).containsExactly(interest1, interest2);
+        assertThat(pointer.getUpdatedAt()).isAfter(initialTimestamp);
+    }
+
+    // ============================================================================
     // EXISTING FIELD TESTS (ensuring they still work)
     // ============================================================================
 
@@ -521,5 +581,14 @@ class HangoutPointerTest {
         String attrId = UUID.randomUUID().toString();
         HangoutAttribute attr = new HangoutAttribute(validHangoutId, attrId, name, value);
         return attr;
+    }
+
+    private InterestLevel createTestInterestLevel(String suffix, String status) {
+        String userId = UUID.randomUUID().toString();
+        String userName = "User " + suffix;
+        InterestLevel interestLevel = new InterestLevel(validHangoutId, userId, userName, status);
+        interestLevel.setNotes("Test notes " + suffix);
+        interestLevel.setMainImagePath("/images/user" + suffix + ".jpg");
+        return interestLevel;
     }
 }

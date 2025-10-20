@@ -2098,6 +2098,224 @@ class HangoutServiceImplTest {
     }
 
     // ============================================================================
+    // INTEREST LEVEL DENORMALIZATION TESTS
+    // ============================================================================
+
+    @Test
+    void associateEventWithGroups_WithExistingInterestLevels_DenormalizesToPointer() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String groupId = "11111111-1111-1111-1111-111111111111";
+        String userId = "87654321-4321-4321-4321-210987654321";
+
+        Hangout hangout = createTestHangout(hangoutId);
+        hangout.setVisibility(EventVisibility.PUBLIC);
+        // Set up hangout so user can edit it (they're admin in a group it's already associated with)
+        hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of(groupId)));
+
+        // Create interest levels that should be denormalized to the pointer
+        String userId1 = UUID.randomUUID().toString();
+        String userId2 = UUID.randomUUID().toString();
+
+        InterestLevel interest1 = new InterestLevel(hangoutId, userId1, "User One", "GOING");
+        InterestLevel interest2 = new InterestLevel(hangoutId, userId2, "User Two", "INTERESTED");
+
+        HangoutDetailData data = new HangoutDetailData(
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(interest1, interest2), List.of(), List.of()
+        );
+        when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
+
+        GroupMembership membership = createTestMembership(groupId, userId, "Test Group");
+        membership.setRole(GroupRole.ADMIN);
+        when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.of(membership));
+
+        // When
+        hangoutService.associateEventWithGroups(hangoutId, List.of(groupId), userId);
+
+        // Then
+        verify(groupRepository).saveHangoutPointer(argThat((HangoutPointer pointer) ->
+            pointer.getInterestLevels() != null &&
+            pointer.getInterestLevels().size() == 2 &&
+            pointer.getInterestLevels().get(0).getUserId().equals(userId1) &&
+            pointer.getInterestLevels().get(1).getUserId().equals(userId2)
+        ));
+    }
+
+    @Test
+    void setUserInterest_UpdatesAllGroupPointers() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+        String groupId1 = "11111111-1111-1111-1111-111111111111";
+        String groupId2 = "22222222-2222-2222-2222-222222222222";
+        SetInterestRequest request = new SetInterestRequest("GOING", "Excited!");
+
+        Hangout hangout = createTestHangout(hangoutId);
+        hangout.setVisibility(EventVisibility.PUBLIC);
+        hangout.setAssociatedGroups(List.of(groupId1, groupId2));
+
+        InterestLevel newInterest = createTestInterestLevel();
+        newInterest.setUserId(userId);
+        newInterest.setStatus("GOING");
+        newInterest.setNotes("Excited!");
+
+        // Mock getHangoutDetailData to return updated attendance after save
+        HangoutDetailData initialData = new HangoutDetailData(
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
+        );
+        HangoutDetailData updatedData = new HangoutDetailData(
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(newInterest), List.of(), List.of()
+        );
+
+        when(hangoutRepository.getHangoutDetailData(hangoutId))
+            .thenReturn(initialData)  // First call for authorization/initial check
+            .thenReturn(updatedData); // Second call after save to get updated interest levels
+
+        User user = createTestUser(userId);
+        when(userService.getUserById(UUID.fromString(userId))).thenReturn(Optional.of(user));
+
+        when(hangoutRepository.saveInterestLevel(any(InterestLevel.class))).thenReturn(newInterest);
+        doNothing().when(groupRepository).atomicallyUpdateParticipantCount(anyString(), anyString(), anyInt());
+
+        // When
+        hangoutService.setUserInterest(hangoutId, request, userId);
+
+        // Then - verify pointerUpdateService was called for both groups
+        verify(pointerUpdateService).updatePointerWithRetry(eq(groupId1), eq(hangoutId), any(), eq("interest levels"));
+        verify(pointerUpdateService).updatePointerWithRetry(eq(groupId2), eq(hangoutId), any(), eq("interest levels"));
+    }
+
+    @Test
+    void setUserInterest_WithNoAssociatedGroups_DoesNotUpdatePointers() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+        SetInterestRequest request = new SetInterestRequest("GOING", "Excited!");
+
+        Hangout hangout = createTestHangout(hangoutId);
+        hangout.setVisibility(EventVisibility.PUBLIC);
+        hangout.setAssociatedGroups(null); // No associated groups
+
+        HangoutDetailData data = new HangoutDetailData(
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
+        );
+        when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
+
+        User user = createTestUser(userId);
+        when(userService.getUserById(UUID.fromString(userId))).thenReturn(Optional.of(user));
+
+        InterestLevel mockInterest = createTestInterestLevel();
+        when(hangoutRepository.saveInterestLevel(any(InterestLevel.class))).thenReturn(mockInterest);
+
+        // When
+        hangoutService.setUserInterest(hangoutId, request, userId);
+
+        // Then - verify interest level was saved but pointers were not updated
+        verify(hangoutRepository).saveInterestLevel(any(InterestLevel.class));
+        verify(pointerUpdateService, never()).updatePointerWithRetry(anyString(), anyString(), any(), anyString());
+    }
+
+    @Test
+    void removeUserInterest_UpdatesAllGroupPointers() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+        String groupId1 = "11111111-1111-1111-1111-111111111111";
+        String groupId2 = "22222222-2222-2222-2222-222222222222";
+
+        Hangout hangout = createTestHangout(hangoutId);
+        hangout.setVisibility(EventVisibility.PUBLIC);
+        hangout.setAssociatedGroups(List.of(groupId1, groupId2));
+
+        InterestLevel existingInterest = createTestInterestLevel();
+        existingInterest.setUserId(userId);
+        existingInterest.setStatus("GOING");
+
+        String otherUserId = UUID.randomUUID().toString();
+        InterestLevel otherInterest = new InterestLevel(hangoutId, otherUserId, "Other User", "INTERESTED");
+
+        // Mock getHangoutDetailData to return attendance before and after deletion
+        HangoutDetailData initialData = new HangoutDetailData(
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(existingInterest, otherInterest), List.of(), List.of()
+        );
+        HangoutDetailData updatedData = new HangoutDetailData(
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(otherInterest), List.of(), List.of()
+        );
+
+        when(hangoutRepository.getHangoutDetailData(hangoutId))
+            .thenReturn(initialData)  // First call for authorization/initial check
+            .thenReturn(updatedData); // Second call after deletion to get updated interest levels
+
+        doNothing().when(hangoutRepository).deleteInterestLevel(hangoutId, userId);
+        doNothing().when(groupRepository).atomicallyUpdateParticipantCount(anyString(), anyString(), anyInt());
+
+        // When
+        hangoutService.removeUserInterest(hangoutId, userId);
+
+        // Then - verify pointerUpdateService was called for both groups
+        verify(pointerUpdateService).updatePointerWithRetry(eq(groupId1), eq(hangoutId), any(), eq("interest levels"));
+        verify(pointerUpdateService).updatePointerWithRetry(eq(groupId2), eq(hangoutId), any(), eq("interest levels"));
+    }
+
+    @Test
+    void removeUserInterest_WithNoAssociatedGroups_DoesNotUpdatePointers() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+
+        Hangout hangout = createTestHangout(hangoutId);
+        hangout.setVisibility(EventVisibility.PUBLIC);
+        hangout.setAssociatedGroups(null); // No associated groups
+
+        InterestLevel existingInterest = createTestInterestLevel();
+        existingInterest.setUserId(userId);
+        existingInterest.setStatus("GOING");
+
+        HangoutDetailData data = new HangoutDetailData(
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(existingInterest), List.of(), List.of()
+        );
+        when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
+
+        doNothing().when(hangoutRepository).deleteInterestLevel(hangoutId, userId);
+
+        // When
+        hangoutService.removeUserInterest(hangoutId, userId);
+
+        // Then - verify interest level was deleted but pointers were not updated
+        verify(hangoutRepository).deleteInterestLevel(hangoutId, userId);
+        verify(pointerUpdateService, never()).updatePointerWithRetry(anyString(), anyString(), any(), anyString());
+    }
+
+    @Test
+    void resyncHangoutPointers_IncludesInterestLevelsInUpdate() {
+        // Given
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String groupId = "11111111-1111-1111-1111-111111111111";
+
+        Hangout hangout = createTestHangout(hangoutId);
+        hangout.setAssociatedGroups(List.of(groupId));
+
+        String userId1 = UUID.randomUUID().toString();
+        String userId2 = UUID.randomUUID().toString();
+
+        InterestLevel interest1 = new InterestLevel(hangoutId, userId1, "User One", "GOING");
+        InterestLevel interest2 = new InterestLevel(hangoutId, userId2, "User Two", "INTERESTED");
+
+        HangoutDetailData data = new HangoutDetailData(
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(interest1, interest2), List.of(), List.of()
+        );
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
+        when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
+
+        // When
+        hangoutService.resyncHangoutPointers(hangoutId);
+
+        // Then - verify pointerUpdateService was called with a lambda that sets interest levels
+        verify(pointerUpdateService).updatePointerWithRetry(eq(groupId), eq(hangoutId), any(), eq("complete resync"));
+    }
+
+    // ============================================================================
     // PHASE 4: OPTIMISTIC LOCKING RETRY TESTS
     // ============================================================================
 

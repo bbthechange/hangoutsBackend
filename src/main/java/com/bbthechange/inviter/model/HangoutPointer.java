@@ -56,7 +56,10 @@ public class HangoutPointer extends BaseItem {
 
     // Complete attribute data (denormalized for single-query feed loading)
     private List<HangoutAttribute> attributes;
-    
+
+    // Complete attendance/interest level data (denormalized for single-query feed loading)
+    private List<InterestLevel> interestLevels;
+
     // Default constructor for DynamoDB
     public HangoutPointer() {
         super();
@@ -94,6 +97,7 @@ public class HangoutPointer extends BaseItem {
         this.carRiders = new ArrayList<>();
         this.needsRide = new ArrayList<>();
         this.attributes = new ArrayList<>();
+        this.interestLevels = new ArrayList<>();
     }
     
     public String getGroupId() {
@@ -329,6 +333,19 @@ public class HangoutPointer extends BaseItem {
 
     public void setAttributes(List<HangoutAttribute> attributes) {
         this.attributes = attributes != null ? attributes : new ArrayList<>();
+        touch();
+    }
+
+    // ============================================================================
+    // COMPLETE INTEREST LEVEL DATA (Denormalized for single-query feed loading)
+    // ============================================================================
+
+    public List<InterestLevel> getInterestLevels() {
+        return interestLevels != null ? interestLevels : new ArrayList<>();
+    }
+
+    public void setInterestLevels(List<InterestLevel> interestLevels) {
+        this.interestLevels = interestLevels != null ? interestLevels : new ArrayList<>();
         touch();
     }
 }
