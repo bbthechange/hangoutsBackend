@@ -1447,7 +1447,7 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                 if (associatedGroups == null || associatedGroups.isEmpty()) {
                     return new ArrayList<>();
                 }
-                
+
                 // Build keys for batch get - one pointer per group
                 List<Map<String, AttributeValue>> keysToGet = new ArrayList<>();
                 for (String groupId : associatedGroups) {
@@ -1460,18 +1460,18 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                         .build());
                     keysToGet.add(key);
                 }
-                
+
                 // Build batch get request
                 BatchGetItemRequest batchGetRequest = BatchGetItemRequest.builder()
-                    .requestItems(Map.of(TABLE_NAME, 
+                    .requestItems(Map.of(TABLE_NAME,
                         KeysAndAttributes.builder()
                             .keys(keysToGet)
                             .build()))
                     .build();
-                
+
                 // Execute batch get
                 BatchGetItemResponse response = dynamoDbClient.batchGetItem(batchGetRequest);
-                
+
                 // Parse results
                 List<HangoutPointer> pointers = new ArrayList<>();
                 List<Map<String, AttributeValue>> items = response.responses().get(TABLE_NAME);
@@ -1481,20 +1481,80 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                         pointers.add(pointer);
                     }
                 }
-                
+
                 // Check for unprocessed keys (shouldn't happen with small batches)
                 if (response.hasUnprocessedKeys() && !response.unprocessedKeys().isEmpty()) {
                     logger.warn("BatchGetItem had unprocessed keys for hangout {}", hangout.getHangoutId());
                 }
-                
-                logger.debug("Found {} pointers for hangout {} across {} groups", 
+
+                logger.debug("Found {} pointers for hangout {} across {} groups",
                     pointers.size(), hangout.getHangoutId(), associatedGroups.size());
-                
+
                 return pointers;
-                
+
             } catch (DynamoDbException e) {
                 logger.error("Failed to batch get pointers for hangout {}", hangout.getHangoutId(), e);
                 throw new RepositoryException("Failed to retrieve hangout pointers", e);
+            }
+        });
+    }
+
+    @Override
+    public Map<String, InterestLevel> batchGetUserInterests(Set<String> hangoutIds, String userId) {
+        return performanceTracker.trackQuery("batchGetUserInterests", TABLE_NAME, () -> {
+            try {
+                if (hangoutIds == null || hangoutIds.isEmpty()) {
+                    return new HashMap<>();
+                }
+
+                // Build keys for batch get - one InterestLevel record per hangout
+                // Key pattern: PK=EVENT#{hangoutId}, SK=ATTENDANCE#{userId}
+                List<Map<String, AttributeValue>> keysToGet = new ArrayList<>();
+                for (String hangoutId : hangoutIds) {
+                    Map<String, AttributeValue> key = new HashMap<>();
+                    key.put("pk", AttributeValue.builder()
+                        .s(InviterKeyFactory.getEventPk(hangoutId))
+                        .build());
+                    key.put("sk", AttributeValue.builder()
+                        .s(InviterKeyFactory.getAttendanceSk(userId))
+                        .build());
+                    keysToGet.add(key);
+                }
+
+                // Build batch get request
+                BatchGetItemRequest batchGetRequest = BatchGetItemRequest.builder()
+                    .requestItems(Map.of(TABLE_NAME,
+                        KeysAndAttributes.builder()
+                            .keys(keysToGet)
+                            .build()))
+                    .build();
+
+                // Execute batch get
+                BatchGetItemResponse response = dynamoDbClient.batchGetItem(batchGetRequest);
+
+                // Parse results into map keyed by hangoutId
+                Map<String, InterestLevel> interestMap = new HashMap<>();
+                List<Map<String, AttributeValue>> items = response.responses().get(TABLE_NAME);
+                if (items != null) {
+                    for (Map<String, AttributeValue> item : items) {
+                        InterestLevel interestLevel = interestLevelSchema.mapToItem(item);
+                        interestMap.put(interestLevel.getEventId(), interestLevel);
+                    }
+                }
+
+                // Check for unprocessed keys (shouldn't happen with small batches)
+                if (response.hasUnprocessedKeys() && !response.unprocessedKeys().isEmpty()) {
+                    logger.warn("BatchGetItem had unprocessed keys for user {} interest records", userId);
+                }
+
+                logger.debug("Found {} interest records for user {} across {} hangouts",
+                    interestMap.size(), userId, hangoutIds.size());
+
+                return interestMap;
+
+            } catch (DynamoDbException e) {
+                logger.error("Failed to batch get interest records for user {}", userId, e);
+                throw new RepositoryException("Failed to retrieve user interest records", e);
             }
         });
     }

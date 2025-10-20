@@ -22,6 +22,7 @@ public class HangoutSummaryDTO implements FeedItem {
     private Address location;
     private int participantCount;
     private String mainImagePath; // Denormalized image path from HangoutPointer
+    private String userInterestStatus; // Current user's interest: "GOING", "INTERESTED", "NOT_GOING", or null
     private String type = "hangout"; // Type discriminator for client-side handling
 
     // Additional basic fields
@@ -147,6 +148,14 @@ public class HangoutSummaryDTO implements FeedItem {
 
     public void setMainImagePath(String mainImagePath) {
         this.mainImagePath = mainImagePath;
+    }
+
+    public String getUserInterestStatus() {
+        return userInterestStatus;
+    }
+
+    public void setUserInterestStatus(String userInterestStatus) {
+        this.userInterestStatus = userInterestStatus;
     }
 
     public String getType() {

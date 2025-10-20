@@ -8,6 +8,7 @@ import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Repository interface for hangout/event management operations in the InviterTable.
@@ -179,12 +180,22 @@ public interface HangoutRepository {
     /**
      * Find all hangouts that belong to a specific EventSeries.
      * Uses the SeriesIndex GSI for efficient querying.
-     * 
+     *
      * ⚠️ PERFORMANCE CRITICAL: This method MUST use the SeriesIndex GSI.
      * Never fetch all hangouts and filter in memory - this would be a severe performance issue.
-     * 
+     *
      * @param seriesId The series identifier
      * @return List of hangouts in the series, ordered by start timestamp
      */
     List<Hangout> findHangoutsBySeriesId(String seriesId);
+
+    /**
+     * Batch fetch user's interest level records for multiple hangouts.
+     * Uses BatchGetItem for efficient retrieval of user's interest status across multiple events.
+     *
+     * @param hangoutIds Set of hangout IDs to fetch interest records for
+     * @param userId User ID to get interest status for
+     * @return Map of hangoutId to InterestLevel record (only includes hangouts where user has expressed interest)
+     */
+    Map<String, InterestLevel> batchGetUserInterests(Set<String> hangoutIds, String userId);
 }

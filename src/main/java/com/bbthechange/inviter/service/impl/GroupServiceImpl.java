@@ -368,7 +368,10 @@ public class GroupServiceImpl implements GroupService {
 
             // Hydrate the mixed feed into FeedItem objects
             List<FeedItem> allFeedItems = hydrateFeed(allItems, requestingUserId);
-            
+
+            // Enrich with user interest status (single batch query for all hangouts)
+            enrichWithUserInterestStatus(allFeedItems, requestingUserId);
+
             // Split into withDay (scheduled) and needsDay (unscheduled)
             List<FeedItem> feedItems = new ArrayList<>();
             List<HangoutSummaryDTO> needsDay = new ArrayList<>();
@@ -426,7 +429,10 @@ public class GroupServiceImpl implements GroupService {
 
             // Hydrate the mixed feed into FeedItem objects
             List<FeedItem> feedItems = hydrateFeed(pastEvents.getResults(), requestingUserId);
-            
+
+            // Enrich with user interest status (single batch query for all hangouts)
+            enrichWithUserInterestStatus(feedItems, requestingUserId);
+
             // For past events, needsDay is empty (past events must have timestamps)
             List<HangoutSummaryDTO> needsDay = List.of();
             
@@ -615,6 +621,48 @@ public class GroupServiceImpl implements GroupService {
     }
     
     /**
+     * Enrich feed items with user's interest status for each hangout.
+     * Uses a single batch query to fetch all interest records efficiently.
+     *
+     * @param feedItems List of feed items to enrich
+     * @param requestingUserId User ID to get interest status for
+     */
+    private void enrichWithUserInterestStatus(List<FeedItem> feedItems, String requestingUserId) {
+        // Collect all hangout IDs from feed items (both standalone and parts of series)
+        Set<String> hangoutIds = new HashSet<>();
+
+        for (FeedItem item : feedItems) {
+            if (item instanceof HangoutSummaryDTO hangout) {
+                hangoutIds.add(hangout.getHangoutId());
+            } else if (item instanceof SeriesSummaryDTO series) {
+                // Also collect IDs from series parts
+                for (HangoutSummaryDTO part : series.getParts()) {
+                    hangoutIds.add(part.getHangoutId());
+                }
+            }
+        }
+
+        // Single batch query to get all user interest records
+        Map<String, InterestLevel> interestMap = hangoutRepository.batchGetUserInterests(hangoutIds, requestingUserId);
+
+        // Enrich each feed item with user's interest status
+        for (FeedItem item : feedItems) {
+            if (item instanceof HangoutSummaryDTO hangout) {
+                InterestLevel interest = interestMap.get(hangout.getHangoutId());
+                hangout.setUserInterestStatus(interest != null ? interest.getStatus() : null);
+            } else if (item instanceof SeriesSummaryDTO series) {
+                // Also enrich series parts
+                for (HangoutSummaryDTO part : series.getParts()) {
+                    InterestLevel interest = interestMap.get(part.getHangoutId());
+                    part.setUserInterestStatus(interest != null ? interest.getStatus() : null);
+                }
+            }
+        }
+
+        logger.debug("Enriched {} feed items with user interest status for user {}", feedItems.size(), requestingUserId);
+    }
+
+    /**
      * Generate previous page token for backward pagination using BaseItem list.
      * Updated version of generatePreviousPageToken to work with BaseItem instead of HangoutPointer.
      */
@@ -623,10 +671,10 @@ public class GroupServiceImpl implements GroupService {
         // Use the current timestamp as the boundary for past events
         GroupFeedPaginationToken token = new GroupFeedPaginationToken(
             null, // No specific event ID needed for initial past events query
-            nowTimestamp, 
+            nowTimestamp,
             false // This is for past events (backward direction)
         );
-        
+
         try {
             return objectMapper.writeValueAsString(token);
         } catch (Exception e) {
