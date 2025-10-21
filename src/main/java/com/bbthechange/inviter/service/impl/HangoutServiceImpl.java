@@ -119,6 +119,9 @@ public class HangoutServiceImpl implements HangoutService {
 
         logger.info("Created hangout {} with {} attributes by user {}", hangout.getHangoutId(), attributes.size(), requestingUserId);
 
+        // Update Group.lastHangoutModified for all associated groups
+        updateGroupLastModified(hangout.getAssociatedGroups());
+
         // Send push notifications to group members
         String creatorName = getCreatorDisplayName(requestingUserId);
         notificationService.notifyNewHangout(hangout, requestingUserId, creatorName);
@@ -266,6 +269,9 @@ public class HangoutServiceImpl implements HangoutService {
             updatePointersWithBasicFields(hangout);
         }
 
+        // Update Group.lastHangoutModified for all associated groups
+        updateGroupLastModified(hangout.getAssociatedGroups());
+
         // If this hangout is part of a series, update the series records
         if (hangout.getSeriesId() != null) {
             try {
@@ -301,18 +307,22 @@ public class HangoutServiceImpl implements HangoutService {
             }
         } else {
             // Standard deletion process for non-series hangouts
-            
+
             // Delete pointer records first
             if (hangout.getAssociatedGroups() != null) {
                 for (String groupId : hangout.getAssociatedGroups()) {
                     groupRepository.deleteHangoutPointer(groupId, hangoutId);
                 }
             }
-            
+
             // Delete canonical record and all associated data (polls, cars, etc.)
             hangoutRepository.deleteHangout(hangoutId);
         }
-        
+
+        // Update Group.lastHangoutModified for all associated groups
+        // (Must happen for both series and non-series hangouts)
+        updateGroupLastModified(hangout.getAssociatedGroups());
+
         logger.info("Deleted hangout {} by user {}", hangoutId, requestingUserId);
     }
 
@@ -383,6 +393,9 @@ public class HangoutServiceImpl implements HangoutService {
             }
         }
 
+        // Update Group.lastHangoutModified for all associated groups
+        updateGroupLastModified(associatedGroups);
+
         logger.info("Updated title for event {} to '{}' by user {}", eventId, newTitle, requestingUserId);
     }
     
@@ -398,7 +411,10 @@ public class HangoutServiceImpl implements HangoutService {
         Hangout hangout = data.getHangout();
         hangout.setDescription(newDescription);
         hangoutRepository.save(hangout);
-        
+
+        // Update Group.lastHangoutModified for all associated groups
+        updateGroupLastModified(hangout.getAssociatedGroups());
+
         logger.info("Updated description for event {} by user {}", eventId, requestingUserId);
     }
     
@@ -424,6 +440,9 @@ public class HangoutServiceImpl implements HangoutService {
                 }, "location");
             }
         }
+
+        // Update Group.lastHangoutModified for all associated groups
+        updateGroupLastModified(associatedGroups);
 
         logger.info("Updated location for event {} by user {}", eventId, requestingUserId);
     }
@@ -492,7 +511,10 @@ public class HangoutServiceImpl implements HangoutService {
 
             groupRepository.saveHangoutPointer(pointer);
         }
-        
+
+        // Update Group.lastHangoutModified for newly associated groups
+        updateGroupLastModified(groupIds);
+
         logger.info("Associated event {} with {} groups by user {}", eventId, groupIds.size(), requestingUserId);
     }
     
@@ -516,7 +538,10 @@ public class HangoutServiceImpl implements HangoutService {
         for (String groupId : groupIds) {
             groupRepository.deleteHangoutPointer(groupId, eventId);
         }
-        
+
+        // Update Group.lastHangoutModified for disassociated groups
+        updateGroupLastModified(groupIds);
+
         logger.info("Disassociated event {} from {} groups by user {}", eventId, groupIds.size(), requestingUserId);
     }
 
@@ -1008,5 +1033,39 @@ public class HangoutServiceImpl implements HangoutService {
         }
 
         logger.info("Successfully resynced {} pointer(s) for hangout {}", associatedGroups.size(), hangoutId);
+    }
+
+    /**
+     * Update lastHangoutModified timestamp for all specified groups.
+     * This method should be called whenever a hangout is created, updated, or deleted.
+     *
+     * @param groupIds List of group IDs to update (can be null)
+     */
+    private void updateGroupLastModified(List<String> groupIds) {
+        if (groupIds == null || groupIds.isEmpty()) {
+            return;
+        }
+
+        java.time.Instant now = java.time.Instant.now();
+
+        for (String groupId : groupIds) {
+            try {
+                // Read group metadata
+                Optional<Group> groupOpt = groupRepository.findById(groupId);
+                if (groupOpt.isEmpty()) {
+                    logger.warn("Cannot update lastHangoutModified for non-existent group: {}", groupId);
+                    continue;
+                }
+
+                Group group = groupOpt.get();
+                group.setLastHangoutModified(now);
+                groupRepository.save(group);
+
+                logger.debug("Updated lastHangoutModified for group {} to {}", groupId, now);
+            } catch (Exception e) {
+                logger.error("Failed to update lastHangoutModified for group {}: {}", groupId, e.getMessage());
+                // Continue with other groups - don't fail the whole operation
+            }
+        }
     }
 }
