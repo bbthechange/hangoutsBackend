@@ -2,17 +2,19 @@ package com.bbthechange.inviter.model;
 
 import com.bbthechange.inviter.util.InviterKeyFactory;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
+import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSecondaryPartitionKey;
 
 /**
  * Group membership entity for the InviterTable.
  * Represents a user's membership in a group with denormalized group name for GSI efficiency.
- * 
- * Key Pattern: PK = GROUP#{GroupID}, SK = USER#{UserID}  
+ *
+ * Key Pattern: PK = GROUP#{GroupID}, SK = USER#{UserID}
  * GSI Pattern: GSI1PK = USER#{UserID}, GSI1SK = GROUP#{GroupID}
+ * Calendar Token GSI: GSI2PK = TOKEN#{calendarToken} (for calendar subscription lookup)
  */
 @DynamoDbBean
 public class GroupMembership extends BaseItem {
-    
+
     private String groupId;
     private String userId;
     private String groupName;  // Denormalized for GSI query efficiency
@@ -20,6 +22,7 @@ public class GroupMembership extends BaseItem {
     private String groupMainImagePath;       // Denormalized from Group
     private String groupBackgroundImagePath; // Denormalized from Group
     private String userMainImagePath;        // Denormalized from User
+    private String calendarToken;            // Calendar subscription token (null if not subscribed)
     
     // Default constructor for DynamoDB
     public GroupMembership() {
@@ -113,5 +116,37 @@ public class GroupMembership extends BaseItem {
     public void setUserMainImagePath(String userMainImagePath) {
         this.userMainImagePath = userMainImagePath;
         touch(); // Update timestamp
+    }
+
+    public String getCalendarToken() {
+        return calendarToken;
+    }
+
+    /**
+     * Set calendar subscription token.
+     * Automatically manages gsi2pk for CalendarTokenIndex lookup.
+     *
+     * @param calendarToken UUID token for calendar subscription, or null to remove subscription
+     */
+    public void setCalendarToken(String calendarToken) {
+        this.calendarToken = calendarToken;
+
+        // Manage GSI2PK for CalendarTokenIndex
+        if (calendarToken != null) {
+            setGsi2pk("TOKEN#" + calendarToken);
+        } else {
+            setGsi2pk(null);
+        }
+
+        touch(); // Update timestamp
+    }
+
+    /**
+     * Override to add CalendarTokenIndex GSI annotation.
+     */
+    @Override
+    @DynamoDbSecondaryPartitionKey(indexNames = "CalendarTokenIndex")
+    public String getGsi2pk() {
+        return super.getGsi2pk();
     }
 }

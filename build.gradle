@@ -52,6 +52,8 @@ dependencies {
 	implementation 'commons-net:commons-net:3.10.0'
 	// For rate limiting cache
 	implementation 'com.github.ben-manes.caffeine:caffeine:3.1.8'
+	// For iCalendar/ICS format generation
+	implementation 'net.sf.biweekly:biweekly:0.6.8'
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'

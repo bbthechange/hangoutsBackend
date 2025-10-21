@@ -1,8 +1,11 @@
 package com.bbthechange.inviter.model;
 
 import com.bbthechange.inviter.util.InviterKeyFactory;
+import com.bbthechange.inviter.util.InstantAsLongAttributeConverter;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
+import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbConvertedBy;
 
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -19,6 +22,7 @@ public class Group extends BaseItem {
     private boolean isPublic;
     private String mainImagePath;
     private String backgroundImagePath;
+    private Instant lastHangoutModified;  // Track last time any hangout was created/updated/deleted
     
     // Default constructor for DynamoDB
     public Group() {
@@ -82,6 +86,16 @@ public class Group extends BaseItem {
 
     public void setBackgroundImagePath(String backgroundImagePath) {
         this.backgroundImagePath = backgroundImagePath;
+        touch(); // Update timestamp
+    }
+
+    @DynamoDbConvertedBy(InstantAsLongAttributeConverter.class)
+    public Instant getLastHangoutModified() {
+        return lastHangoutModified;
+    }
+
+    public void setLastHangoutModified(Instant lastHangoutModified) {
+        this.lastHangoutModified = lastHangoutModified;
         touch(); // Update timestamp
     }
 }
