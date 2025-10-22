@@ -339,18 +339,47 @@ public class PolymorphicGroupRepositoryImpl implements GroupRepository {
                         ":gsi1pk", AttributeValue.builder().s(InviterKeyFactory.getUserGsi1Pk(userId)).build()
                     ))
                     .build();
-                
+
                 QueryResponse response = dynamoDbClient.query(request);
-                
+
                 return response.items().stream()
                     .map(this::deserializeItem)
                     .filter(item -> item instanceof GroupMembership)
                     .map(item -> (GroupMembership) item)
                     .collect(Collectors.toList());
-                    
+
             } catch (DynamoDbException e) {
                 logger.error("Failed to find groups for user {}", userId, e);
                 throw new RepositoryException("Failed to retrieve user groups", e);
+            }
+        });
+    }
+
+    @Override
+    public Optional<GroupMembership> findMembershipByToken(String token) {
+        return queryTracker.trackQuery("Query", TABLE_NAME, () -> {
+            try {
+                QueryRequest request = QueryRequest.builder()
+                    .tableName(TABLE_NAME)
+                    .indexName("CalendarTokenIndex")
+                    .keyConditionExpression("gsi2pk = :gsi2pk")
+                    .expressionAttributeValues(Map.of(
+                        ":gsi2pk", AttributeValue.builder().s("TOKEN#" + token).build()
+                    ))
+                    .limit(1)
+                    .build();
+
+                QueryResponse response = dynamoDbClient.query(request);
+
+                return response.items().stream()
+                    .map(this::deserializeItem)
+                    .filter(item -> item instanceof GroupMembership)
+                    .map(item -> (GroupMembership) item)
+                    .findFirst();
+
+            } catch (DynamoDbException e) {
+                logger.error("Failed to find membership by token", e);
+                throw new RepositoryException("Failed to retrieve membership by token", e);
             }
         });
     }

@@ -60,6 +60,15 @@ public interface GroupRepository {
      * Returns denormalized data with group names - no additional lookups needed.
      */
     List<GroupMembership> findGroupsByUserId(String userId);
+
+    /**
+     * Find group membership by calendar subscription token.
+     * Uses CalendarTokenIndex GSI for efficient token-based lookup.
+     *
+     * @param token Calendar subscription token (UUID)
+     * @return Optional containing GroupMembership if token is valid, empty otherwise
+     */
+    Optional<GroupMembership> findMembershipByToken(String token);
     
     // Hangout pointer operations (simple CRUD only - business logic in service layer)
     void saveHangoutPointer(HangoutPointer pointer);

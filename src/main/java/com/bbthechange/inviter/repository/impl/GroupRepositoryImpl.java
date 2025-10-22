@@ -249,7 +249,7 @@ public class GroupRepositoryImpl implements GroupRepository {
                     .keyEqualTo(Key.builder()
                         .partitionValue(InviterKeyFactory.getUserGsi1Pk(userId))
                         .build());
-                
+
                 return inviterTable.index("UserGroupIndex")
                     .query(QueryEnhancedRequest.builder()
                         .queryConditional(queryConditional)
@@ -260,14 +260,20 @@ public class GroupRepositoryImpl implements GroupRepository {
                     .filter(item -> InviterKeyFactory.isGroupMembership(item.getSk()))
                     .map(item -> (GroupMembership) item)
                     .collect(Collectors.toList());
-                    
+
             } catch (DynamoDbException e) {
                 logger.error("Failed to find groups for user {}", userId, e);
                 throw new RepositoryException("Failed to retrieve user groups", e);
             }
         });
     }
-    
+
+    @Override
+    public Optional<GroupMembership> findMembershipByToken(String token) {
+        // Deprecated implementation - not used
+        throw new UnsupportedOperationException("Use PolymorphicGroupRepositoryImpl instead");
+    }
+
     @Override
     public void saveHangoutPointer(HangoutPointer pointer) {
         performanceTracker.trackQuery("saveHangoutPointer", "InviterTable", () -> {

@@ -25,7 +25,6 @@ import java.util.List;
 public class ICalendarServiceImpl implements ICalendarService {
 
     private static final Logger logger = LoggerFactory.getLogger(ICalendarServiceImpl.class);
-    private static final String BASE_URL = "https://app.inviter.app/hangouts/";
 
     @Override
     public String generateICS(Group group, List<HangoutPointer> hangouts) {
@@ -110,7 +109,7 @@ public class ICalendarServiceImpl implements ICalendarService {
     }
 
     /**
-     * Build event description including hangout details and RSVP link.
+     * Build event description including hangout details and participant count.
      *
      * @param hangout The hangout pointer
      * @return Formatted description string
@@ -129,13 +128,10 @@ public class ICalendarServiceImpl implements ICalendarService {
             description.append("👥 ");
             description.append(hangout.getParticipantCount());
             description.append(hangout.getParticipantCount() == 1 ? " person going" : " people going");
-            description.append("\n\n");
         }
 
-        // Add RSVP link
-        description.append("RSVP: ");
-        description.append(BASE_URL);
-        description.append(hangout.getHangoutId());
+        // TODO: Add RSVP link once we have a proper web frontend URL
+        // description.append("\n\nRSVP: https://..../hangouts/").append(hangout.getHangoutId());
 
         return description.toString();
     }

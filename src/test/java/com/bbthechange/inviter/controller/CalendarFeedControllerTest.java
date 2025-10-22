@@ -248,8 +248,8 @@ class CalendarFeedControllerTest {
             List<HangoutPointer> hangouts = createHangoutPointers(3);
             String icsContent = "BEGIN:VCALENDAR\nVERSION:2.0\nEND:VCALENDAR";
 
-            when(groupRepository.findMembersByGroupId(TEST_GROUP_ID))
-                .thenReturn(Collections.singletonList(membership));
+            when(groupRepository.findMembershipByToken(TEST_TOKEN))
+                .thenReturn(Optional.of(membership));
             when(groupRepository.findById(TEST_GROUP_ID))
                 .thenReturn(Optional.of(group));
             when(hangoutRepository.getFutureEventsPage(eq(TEST_GROUP_ID), anyLong(), eq(100), isNull()))
@@ -265,7 +265,7 @@ class CalendarFeedControllerTest {
                     .andExpect(header().string("ETag", "\"group-456-1234567890000\""))
                     .andExpect(content().string(icsContent));
 
-            verify(groupRepository).findMembersByGroupId(TEST_GROUP_ID);
+            verify(groupRepository).findMembershipByToken(TEST_TOKEN);
             verify(groupRepository).findById(TEST_GROUP_ID);
             verify(hangoutRepository).getFutureEventsPage(eq(TEST_GROUP_ID), anyLong(), eq(100), isNull());
             verify(iCalendarService).generateICS(eq(group), anyList());
@@ -275,16 +275,14 @@ class CalendarFeedControllerTest {
         @DisplayName("With invalid token, returns 403")
         void getCalendarFeed_WithInvalidToken_Returns403() throws Exception {
             // Given
-            GroupMembership membership = createMembership(TEST_USER_ID, TEST_GROUP_ID, "different-token");
-
-            when(groupRepository.findMembersByGroupId(TEST_GROUP_ID))
-                .thenReturn(Collections.singletonList(membership));
+            when(groupRepository.findMembershipByToken("invalid-token"))
+                .thenReturn(Optional.empty());
 
             // When/Then
             mockMvc.perform(get("/v1/calendar/subscribe/" + TEST_GROUP_ID + "/invalid-token"))
                     .andExpect(status().isForbidden());
 
-            verify(groupRepository).findMembersByGroupId(TEST_GROUP_ID);
+            verify(groupRepository).findMembershipByToken("invalid-token");
             verify(iCalendarService, never()).generateICS(any(), anyList());
         }
 
@@ -296,8 +294,8 @@ class CalendarFeedControllerTest {
             Group group = createGroup(TEST_GROUP_ID, Instant.ofEpochMilli(1234567890000L));
             String etag = "\"group-456-1234567890000\"";
 
-            when(groupRepository.findMembersByGroupId(TEST_GROUP_ID))
-                .thenReturn(Collections.singletonList(membership));
+            when(groupRepository.findMembershipByToken(TEST_TOKEN))
+                .thenReturn(Optional.of(membership));
             when(groupRepository.findById(TEST_GROUP_ID))
                 .thenReturn(Optional.of(group));
 
@@ -309,7 +307,7 @@ class CalendarFeedControllerTest {
                     .andExpect(header().string("Cache-Control", "max-age=7200, must-revalidate, public"))
                     .andExpect(content().string(""));
 
-            verify(groupRepository).findMembersByGroupId(TEST_GROUP_ID);
+            verify(groupRepository).findMembershipByToken(TEST_TOKEN);
             verify(groupRepository).findById(TEST_GROUP_ID);
             verify(iCalendarService, never()).generateICS(any(), anyList());
         }
@@ -325,8 +323,8 @@ class CalendarFeedControllerTest {
             String oldEtag = "\"group-456-1234567890000\"";
             String newEtag = "\"group-456-9999999999000\"";
 
-            when(groupRepository.findMembersByGroupId(TEST_GROUP_ID))
-                .thenReturn(Collections.singletonList(membership));
+            when(groupRepository.findMembershipByToken(TEST_TOKEN))
+                .thenReturn(Optional.of(membership));
             when(groupRepository.findById(TEST_GROUP_ID))
                 .thenReturn(Optional.of(group));
             when(hangoutRepository.getFutureEventsPage(eq(TEST_GROUP_ID), anyLong(), eq(100), isNull()))
@@ -353,8 +351,8 @@ class CalendarFeedControllerTest {
             List<HangoutPointer> hangouts = createHangoutPointers(1);
             String icsContent = "BEGIN:VCALENDAR\nVERSION:2.0\nEND:VCALENDAR";
 
-            when(groupRepository.findMembersByGroupId(TEST_GROUP_ID))
-                .thenReturn(Collections.singletonList(membership));
+            when(groupRepository.findMembershipByToken(TEST_TOKEN))
+                .thenReturn(Optional.of(membership));
             when(groupRepository.findById(TEST_GROUP_ID))
                 .thenReturn(Optional.of(group));
             when(hangoutRepository.getFutureEventsPage(eq(TEST_GROUP_ID), anyLong(), eq(100), isNull()))
@@ -378,8 +376,8 @@ class CalendarFeedControllerTest {
             // Given
             GroupMembership membership = createMembership(TEST_USER_ID, TEST_GROUP_ID, TEST_TOKEN);
 
-            when(groupRepository.findMembersByGroupId(TEST_GROUP_ID))
-                .thenReturn(Collections.singletonList(membership));
+            when(groupRepository.findMembershipByToken(TEST_TOKEN))
+                .thenReturn(Optional.of(membership));
             when(groupRepository.findById(TEST_GROUP_ID))
                 .thenReturn(Optional.empty());
 
@@ -387,7 +385,7 @@ class CalendarFeedControllerTest {
             mockMvc.perform(get("/v1/calendar/subscribe/" + TEST_GROUP_ID + "/" + TEST_TOKEN))
                     .andExpect(status().isForbidden());
 
-            verify(groupRepository).findMembersByGroupId(TEST_GROUP_ID);
+            verify(groupRepository).findMembershipByToken(TEST_TOKEN);
             verify(groupRepository).findById(TEST_GROUP_ID);
         }
 
@@ -399,8 +397,8 @@ class CalendarFeedControllerTest {
             Group group = createGroup(TEST_GROUP_ID, null); // null lastHangoutModified
             String icsContent = "BEGIN:VCALENDAR\nVERSION:2.0\nEND:VCALENDAR";
 
-            when(groupRepository.findMembersByGroupId(TEST_GROUP_ID))
-                .thenReturn(Collections.singletonList(membership));
+            when(groupRepository.findMembershipByToken(TEST_TOKEN))
+                .thenReturn(Optional.of(membership));
             when(groupRepository.findById(TEST_GROUP_ID))
                 .thenReturn(Optional.of(group));
             when(hangoutRepository.getFutureEventsPage(eq(TEST_GROUP_ID), anyLong(), eq(100), isNull()))
@@ -433,8 +431,8 @@ class CalendarFeedControllerTest {
 
             String icsContent = "BEGIN:VCALENDAR\nVERSION:2.0\nEND:VCALENDAR";
 
-            when(groupRepository.findMembersByGroupId(TEST_GROUP_ID))
-                .thenReturn(Collections.singletonList(membership));
+            when(groupRepository.findMembershipByToken(TEST_TOKEN))
+                .thenReturn(Optional.of(membership));
             when(groupRepository.findById(TEST_GROUP_ID))
                 .thenReturn(Optional.of(group));
             when(hangoutRepository.getFutureEventsPage(eq(TEST_GROUP_ID), anyLong(), eq(100), isNull()))
@@ -460,14 +458,14 @@ class CalendarFeedControllerTest {
             // Given
             GroupMembership membership = createMembership(TEST_USER_ID, "group-999", TEST_TOKEN);
 
-            when(groupRepository.findMembersByGroupId(TEST_GROUP_ID))
-                .thenReturn(Collections.singletonList(membership));
+            when(groupRepository.findMembershipByToken(TEST_TOKEN))
+                .thenReturn(Optional.of(membership));
 
             // When/Then
             mockMvc.perform(get("/v1/calendar/subscribe/" + TEST_GROUP_ID + "/" + TEST_TOKEN))
                     .andExpect(status().isForbidden());
 
-            verify(groupRepository).findMembersByGroupId(TEST_GROUP_ID);
+            verify(groupRepository).findMembershipByToken(TEST_TOKEN);
         }
     }
 

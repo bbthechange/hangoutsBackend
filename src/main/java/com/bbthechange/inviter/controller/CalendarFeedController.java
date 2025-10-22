@@ -181,16 +181,7 @@ public class CalendarFeedController extends BaseController {
      */
     private GroupMembership validateTokenAndMembership(String token, String groupId) {
         // Query CalendarTokenIndex GSI to find membership by token
-        // Note: This requires the CalendarTokenIndex GSI to be created first
-        // For now, we'll do a simple membership lookup with token validation
-        // TODO: Once GSI is created, replace with GSI query
-
-        // Temporary implementation: get all group members and find by token
-        List<GroupMembership> members = groupRepository.findMembersByGroupId(groupId);
-
-        GroupMembership membership = members.stream()
-            .filter(m -> token.equals(m.getCalendarToken()))
-            .findFirst()
+        GroupMembership membership = groupRepository.findMembershipByToken(token)
             .orElseThrow(() -> new UnauthorizedException("Invalid subscription token"));
 
         // Verify groupId matches (prevent token reuse across groups)

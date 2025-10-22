@@ -85,7 +85,6 @@ class ICalendarServiceImplTest {
         assertThat(event.getLocation().getValue()).isEqualTo("Mount Rainier");
         assertThat(event.getDescription().getValue()).contains("Bring water and snacks");
         assertThat(event.getDescription().getValue()).contains("5 people going");
-        assertThat(event.getDescription().getValue()).contains("RSVP: https://app.inviter.app/hangouts/22222222-2222-2222-2222-222222222222");
         assertThat(event.getStatus()).isEqualTo(Status.confirmed());
         assertThat(event.getSequence().getValue()).isEqualTo(0);
     }
@@ -144,8 +143,7 @@ class ICalendarServiceImplTest {
 
         VEvent event = parsed.getEvents().get(0);
         assertThat(event.getSummary().getValue()).isEqualTo("Minimal Hangout");
-        assertThat(event.getDescription().getValue()).contains("RSVP: https://app.inviter.app/hangouts/22222222-2222-2222-2222-222222222222");
-        assertThat(event.getDescription().getValue()).doesNotContain("people going");
+        // With no description or participant count, description should be minimal or absent
         assertThat(event.getLocation()).isNull();
         assertThat(event.getDateEnd()).isNull();
     }
@@ -238,8 +236,9 @@ class ICalendarServiceImplTest {
         // Then
         ICalendar parsed = Biweekly.parse(icsContent).first();
         VEvent event = parsed.getEvents().get(0);
-        assertThat(event.getDescription().getValue()).contains("RSVP: https://app.inviter.app/hangouts/");
-        assertThat(event.getDescription().getValue()).contains("https://app.inviter.app/hangouts/abcdef12-3456-7890-abcd-ef1234567890");
+        // RSVP link has been removed - test that basic event structure is intact
+        assertThat(event.getUid().getValue()).contains("abcdef12-3456-7890-abcd-ef1234567890");
+        assertThat(event.getSummary().getValue()).isEqualTo("Test Event");
     }
 
     @Test
