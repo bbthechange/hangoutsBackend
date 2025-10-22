@@ -4,16 +4,7 @@ import com.bbthechange.inviter.dto.CalendarSubscriptionListResponse;
 import com.bbthechange.inviter.dto.CalendarSubscriptionResponse;
 import com.bbthechange.inviter.exception.ForbiddenException;
 import com.bbthechange.inviter.exception.NotFoundException;
-import com.bbthechange.inviter.exception.UnauthorizedException;
-import com.bbthechange.inviter.model.BaseItem;
-import com.bbthechange.inviter.model.Group;
-import com.bbthechange.inviter.model.GroupMembership;
-import com.bbthechange.inviter.model.HangoutPointer;
-import com.bbthechange.inviter.repository.GroupRepository;
-import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.service.CalendarSubscriptionService;
-import com.bbthechange.inviter.service.ICalendarService;
-import com.bbthechange.inviter.util.PaginatedResult;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,19 +14,19 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.StringHttpMessageConverter;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.nio.charset.StandardCharsets;
-
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.List;
-import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -46,10 +37,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Unit tests for CalendarFeedController
  *
  * Test Coverage:
- * - POST /v1/calendar/subscriptions/{groupId} - Create subscription (2 tests)
- * - GET /v1/calendar/subscriptions - List subscriptions (2 tests)
- * - DELETE /v1/calendar/subscriptions/{groupId} - Delete subscription (2 tests)
- * - GET /v1/calendar/subscribe/{groupId}/{token} - Calendar feed (9 tests)
+ * - POST /calendar/subscriptions/{groupId} - Create subscription (2 tests)
+ * - GET /calendar/subscriptions - List subscriptions (2 tests)
+ * - DELETE /calendar/subscriptions/{groupId} - Delete subscription (2 tests)
+ * - GET /calendar/feed/{groupId}/{token} - Calendar feed (3 tests)
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("CalendarFeedController Tests")
@@ -57,15 +48,6 @@ class CalendarFeedControllerTest {
 
     @Mock
     private CalendarSubscriptionService subscriptionService;
-
-    @Mock
-    private ICalendarService iCalendarService;
-
-    @Mock
-    private GroupRepository groupRepository;
-
-    @Mock
-    private HangoutRepository hangoutRepository;
 
     @Mock
     private HttpServletRequest httpServletRequest;
@@ -82,8 +64,7 @@ class CalendarFeedControllerTest {
     @BeforeEach
     void setUp() {
         // Override extractUserId to return test user ID
-        controller = new CalendarFeedController(subscriptionService, iCalendarService,
-                                                groupRepository, hangoutRepository) {
+        controller = new CalendarFeedController(subscriptionService) {
             @Override
             protected String extractUserId(HttpServletRequest request) {
                 return TEST_USER_ID;
@@ -101,7 +82,7 @@ class CalendarFeedControllerTest {
     }
 
     @Nested
-    @DisplayName("POST /v1/calendar/subscriptions/{groupId}")
+    @DisplayName("POST /calendar/subscriptions/{groupId}")
     class CreateSubscription {
 
         @Test
@@ -112,8 +93,8 @@ class CalendarFeedControllerTest {
                 "sub-123",
                 TEST_GROUP_ID,
                 TEST_GROUP_NAME,
-                "https://example.com/calendar/subscribe/group-456/token",
-                "webcal://example.com/calendar/subscribe/group-456/token",
+                "https://example.com/calendar/feed/group-456/token",
+                "webcal://example.com/calendar/feed/group-456/token",
                 Instant.now()
             );
 
@@ -121,14 +102,14 @@ class CalendarFeedControllerTest {
                 .thenReturn(expectedResponse);
 
             // When/Then
-            mockMvc.perform(post("/v1/calendar/subscriptions/" + TEST_GROUP_ID)
+            mockMvc.perform(post("/calendar/subscriptions/" + TEST_GROUP_ID)
                     .contentType(MediaType.APPLICATION_JSON))
                     .andExpect(status().isCreated())
                     .andExpect(jsonPath("$.subscriptionId").value("sub-123"))
                     .andExpect(jsonPath("$.groupId").value(TEST_GROUP_ID))
                     .andExpect(jsonPath("$.groupName").value(TEST_GROUP_NAME))
-                    .andExpect(jsonPath("$.subscriptionUrl").value("https://example.com/calendar/subscribe/group-456/token"))
-                    .andExpect(jsonPath("$.webcalUrl").value("webcal://example.com/calendar/subscribe/group-456/token"));
+                    .andExpect(jsonPath("$.subscriptionUrl").value("https://example.com/calendar/feed/group-456/token"))
+                    .andExpect(jsonPath("$.webcalUrl").value("webcal://example.com/calendar/feed/group-456/token"));
 
             verify(subscriptionService).createSubscription(TEST_GROUP_ID, TEST_USER_ID);
         }
@@ -141,7 +122,7 @@ class CalendarFeedControllerTest {
                 .thenThrow(new ForbiddenException("User is not a member of this group"));
 
             // When/Then
-            mockMvc.perform(post("/v1/calendar/subscriptions/" + TEST_GROUP_ID)
+            mockMvc.perform(post("/calendar/subscriptions/" + TEST_GROUP_ID)
                     .contentType(MediaType.APPLICATION_JSON))
                     .andExpect(status().isForbidden());
 
@@ -150,7 +131,7 @@ class CalendarFeedControllerTest {
     }
 
     @Nested
-    @DisplayName("GET /v1/calendar/subscriptions")
+    @DisplayName("GET /calendar/subscriptions")
     class ListSubscriptions {
 
         @Test
@@ -169,7 +150,7 @@ class CalendarFeedControllerTest {
                 .thenReturn(response);
 
             // When/Then
-            mockMvc.perform(get("/v1/calendar/subscriptions")
+            mockMvc.perform(get("/calendar/subscriptions")
                     .contentType(MediaType.APPLICATION_JSON))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.subscriptions").isArray())
@@ -190,7 +171,7 @@ class CalendarFeedControllerTest {
                 .thenReturn(response);
 
             // When/Then
-            mockMvc.perform(get("/v1/calendar/subscriptions")
+            mockMvc.perform(get("/calendar/subscriptions")
                     .contentType(MediaType.APPLICATION_JSON))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.subscriptions").isArray())
@@ -201,7 +182,7 @@ class CalendarFeedControllerTest {
     }
 
     @Nested
-    @DisplayName("DELETE /v1/calendar/subscriptions/{groupId}")
+    @DisplayName("DELETE /calendar/subscriptions/{groupId}")
     class DeleteSubscription {
 
         @Test
@@ -211,7 +192,7 @@ class CalendarFeedControllerTest {
             doNothing().when(subscriptionService).deleteSubscription(TEST_GROUP_ID, TEST_USER_ID);
 
             // When/Then
-            mockMvc.perform(delete("/v1/calendar/subscriptions/" + TEST_GROUP_ID)
+            mockMvc.perform(delete("/calendar/subscriptions/" + TEST_GROUP_ID)
                     .contentType(MediaType.APPLICATION_JSON))
                     .andExpect(status().isNoContent())
                     .andExpect(content().string(""));
@@ -227,7 +208,7 @@ class CalendarFeedControllerTest {
                 .when(subscriptionService).deleteSubscription(TEST_GROUP_ID, TEST_USER_ID);
 
             // When/Then
-            mockMvc.perform(delete("/v1/calendar/subscriptions/" + TEST_GROUP_ID)
+            mockMvc.perform(delete("/calendar/subscriptions/" + TEST_GROUP_ID)
                     .contentType(MediaType.APPLICATION_JSON))
                     .andExpect(status().isNotFound());
 
@@ -236,268 +217,81 @@ class CalendarFeedControllerTest {
     }
 
     @Nested
-    @DisplayName("GET /v1/calendar/subscribe/{groupId}/{token}")
+    @DisplayName("GET /calendar/feed/{groupId}/{token}")
     class GetCalendarFeed {
 
         @Test
-        @DisplayName("With valid token, returns 200 with ICS")
-        void getCalendarFeed_WithValidToken_Returns200WithICS() throws Exception {
+        @DisplayName("Delegates to service with correct parameters")
+        void getCalendarFeed_DelegatesToService() throws Exception {
             // Given
-            GroupMembership membership = createMembership(TEST_USER_ID, TEST_GROUP_ID, TEST_TOKEN);
-            Group group = createGroup(TEST_GROUP_ID, Instant.ofEpochMilli(1234567890000L));
-            List<HangoutPointer> hangouts = createHangoutPointers(3);
             String icsContent = "BEGIN:VCALENDAR\nVERSION:2.0\nEND:VCALENDAR";
-
-            when(groupRepository.findMembershipByToken(TEST_TOKEN))
-                .thenReturn(Optional.of(membership));
-            when(groupRepository.findById(TEST_GROUP_ID))
-                .thenReturn(Optional.of(group));
-            when(hangoutRepository.getFutureEventsPage(eq(TEST_GROUP_ID), anyLong(), eq(100), isNull()))
-                .thenReturn(new PaginatedResult<>(castToBaseItems(hangouts), null));
-            when(iCalendarService.generateICS(eq(group), anyList()))
-                .thenReturn(icsContent);
-
-            // When/Then
-            mockMvc.perform(get("/v1/calendar/subscribe/" + TEST_GROUP_ID + "/" + TEST_TOKEN))
-                    .andExpect(status().isOk())
-                    .andExpect(content().contentType("text/calendar;charset=UTF-8"))
-                    .andExpect(header().string("Cache-Control", "max-age=7200, must-revalidate, public"))
-                    .andExpect(header().string("ETag", "\"group-456-1234567890000\""))
-                    .andExpect(content().string(icsContent));
-
-            verify(groupRepository).findMembershipByToken(TEST_TOKEN);
-            verify(groupRepository).findById(TEST_GROUP_ID);
-            verify(hangoutRepository).getFutureEventsPage(eq(TEST_GROUP_ID), anyLong(), eq(100), isNull());
-            verify(iCalendarService).generateICS(eq(group), anyList());
-        }
-
-        @Test
-        @DisplayName("With invalid token, returns 403")
-        void getCalendarFeed_WithInvalidToken_Returns403() throws Exception {
-            // Given
-            when(groupRepository.findMembershipByToken("invalid-token"))
-                .thenReturn(Optional.empty());
-
-            // When/Then
-            mockMvc.perform(get("/v1/calendar/subscribe/" + TEST_GROUP_ID + "/invalid-token"))
-                    .andExpect(status().isForbidden());
-
-            verify(groupRepository).findMembershipByToken("invalid-token");
-            verify(iCalendarService, never()).generateICS(any(), anyList());
-        }
-
-        @Test
-        @DisplayName("With matching ETag, returns 304")
-        void getCalendarFeed_WithMatchingETag_Returns304() throws Exception {
-            // Given
-            GroupMembership membership = createMembership(TEST_USER_ID, TEST_GROUP_ID, TEST_TOKEN);
-            Group group = createGroup(TEST_GROUP_ID, Instant.ofEpochMilli(1234567890000L));
             String etag = "\"group-456-1234567890000\"";
 
-            when(groupRepository.findMembershipByToken(TEST_TOKEN))
-                .thenReturn(Optional.of(membership));
-            when(groupRepository.findById(TEST_GROUP_ID))
-                .thenReturn(Optional.of(group));
+            ResponseEntity<String> serviceResponse = ResponseEntity.ok()
+                .eTag(etag)
+                .cacheControl(CacheControl.maxAge(2, TimeUnit.HOURS).cachePublic().mustRevalidate())
+                .contentType(MediaType.parseMediaType("text/calendar; charset=utf-8"))
+                .body(icsContent);
+
+            when(subscriptionService.getCalendarFeed(TEST_GROUP_ID, TEST_TOKEN, null))
+                .thenReturn(serviceResponse);
 
             // When/Then
-            mockMvc.perform(get("/v1/calendar/subscribe/" + TEST_GROUP_ID + "/" + TEST_TOKEN)
+            mockMvc.perform(get("/calendar/feed/" + TEST_GROUP_ID + "/" + TEST_TOKEN))
+                    .andExpect(status().isOk())
+                    .andExpect(content().contentType("text/calendar;charset=UTF-8"))
+                    .andExpect(header().string("ETag", etag))
+                    .andExpect(content().string(icsContent));
+
+            verify(subscriptionService).getCalendarFeed(TEST_GROUP_ID, TEST_TOKEN, null);
+        }
+
+        @Test
+        @DisplayName("Passes If-None-Match header to service")
+        void getCalendarFeed_PassesIfNoneMatchToService() throws Exception {
+            // Given
+            String etag = "\"group-456-1234567890000\"";
+
+            ResponseEntity<String> serviceResponse = ResponseEntity.status(304)
+                .eTag(etag)
+                .cacheControl(CacheControl.maxAge(2, TimeUnit.HOURS).cachePublic().mustRevalidate())
+                .build();
+
+            when(subscriptionService.getCalendarFeed(TEST_GROUP_ID, TEST_TOKEN, etag))
+                .thenReturn(serviceResponse);
+
+            // When/Then
+            mockMvc.perform(get("/calendar/feed/" + TEST_GROUP_ID + "/" + TEST_TOKEN)
                     .header("If-None-Match", etag))
                     .andExpect(status().isNotModified())
-                    .andExpect(header().string("ETag", etag))
-                    .andExpect(header().string("Cache-Control", "max-age=7200, must-revalidate, public"))
-                    .andExpect(content().string(""));
+                    .andExpect(header().string("ETag", etag));
 
-            verify(groupRepository).findMembershipByToken(TEST_TOKEN);
-            verify(groupRepository).findById(TEST_GROUP_ID);
-            verify(iCalendarService, never()).generateICS(any(), anyList());
+            verify(subscriptionService).getCalendarFeed(TEST_GROUP_ID, TEST_TOKEN, etag);
         }
 
         @Test
-        @DisplayName("With non-matching ETag, returns 200 with new content")
-        void getCalendarFeed_WithNonMatchingETag_Returns200WithNewContent() throws Exception {
+        @DisplayName("Returns service response directly")
+        void getCalendarFeed_ReturnsServiceResponse() throws Exception {
             // Given
-            GroupMembership membership = createMembership(TEST_USER_ID, TEST_GROUP_ID, TEST_TOKEN);
-            Group group = createGroup(TEST_GROUP_ID, Instant.ofEpochMilli(9999999999000L));
-            List<HangoutPointer> hangouts = createHangoutPointers(2);
-            String icsContent = "BEGIN:VCALENDAR\nVERSION:2.0\nEND:VCALENDAR";
-            String oldEtag = "\"group-456-1234567890000\"";
-            String newEtag = "\"group-456-9999999999000\"";
+            String icsContent = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:test\nEND:VCALENDAR";
 
-            when(groupRepository.findMembershipByToken(TEST_TOKEN))
-                .thenReturn(Optional.of(membership));
-            when(groupRepository.findById(TEST_GROUP_ID))
-                .thenReturn(Optional.of(group));
-            when(hangoutRepository.getFutureEventsPage(eq(TEST_GROUP_ID), anyLong(), eq(100), isNull()))
-                .thenReturn(new PaginatedResult<>(castToBaseItems(hangouts), null));
-            when(iCalendarService.generateICS(eq(group), anyList()))
-                .thenReturn(icsContent);
+            ResponseEntity<String> serviceResponse = ResponseEntity.ok()
+                .eTag("\"test-etag\"")
+                .cacheControl(CacheControl.maxAge(2, TimeUnit.HOURS).cachePublic().mustRevalidate())
+                .contentType(MediaType.parseMediaType("text/calendar; charset=utf-8"))
+                .body(icsContent);
+
+            when(subscriptionService.getCalendarFeed(TEST_GROUP_ID, TEST_TOKEN, null))
+                .thenReturn(serviceResponse);
 
             // When/Then
-            mockMvc.perform(get("/v1/calendar/subscribe/" + TEST_GROUP_ID + "/" + TEST_TOKEN)
-                    .header("If-None-Match", oldEtag))
+            mockMvc.perform(get("/calendar/feed/" + TEST_GROUP_ID + "/" + TEST_TOKEN))
                     .andExpect(status().isOk())
-                    .andExpect(header().string("ETag", newEtag))
-                    .andExpect(content().string(icsContent));
+                    .andExpect(content().string(icsContent))
+                    .andExpect(header().string("ETag", "\"test-etag\""))
+                    .andExpect(header().string("Cache-Control", "max-age=7200, must-revalidate, public"));
 
-            verify(iCalendarService).generateICS(eq(group), anyList());
+            verify(subscriptionService).getCalendarFeed(TEST_GROUP_ID, TEST_TOKEN, null);
         }
-
-        @Test
-        @DisplayName("With no ETag, returns 200 with content")
-        void getCalendarFeed_WithNoETag_Returns200WithContent() throws Exception {
-            // Given
-            GroupMembership membership = createMembership(TEST_USER_ID, TEST_GROUP_ID, TEST_TOKEN);
-            Group group = createGroup(TEST_GROUP_ID, Instant.ofEpochMilli(1234567890000L));
-            List<HangoutPointer> hangouts = createHangoutPointers(1);
-            String icsContent = "BEGIN:VCALENDAR\nVERSION:2.0\nEND:VCALENDAR";
-
-            when(groupRepository.findMembershipByToken(TEST_TOKEN))
-                .thenReturn(Optional.of(membership));
-            when(groupRepository.findById(TEST_GROUP_ID))
-                .thenReturn(Optional.of(group));
-            when(hangoutRepository.getFutureEventsPage(eq(TEST_GROUP_ID), anyLong(), eq(100), isNull()))
-                .thenReturn(new PaginatedResult<>(castToBaseItems(hangouts), null));
-            when(iCalendarService.generateICS(eq(group), anyList()))
-                .thenReturn(icsContent);
-
-            // When/Then
-            mockMvc.perform(get("/v1/calendar/subscribe/" + TEST_GROUP_ID + "/" + TEST_TOKEN))
-                    .andExpect(status().isOk())
-                    .andExpect(header().exists("ETag"))
-                    .andExpect(header().exists("Cache-Control"))
-                    .andExpect(content().string(icsContent));
-
-            verify(iCalendarService).generateICS(eq(group), anyList());
-        }
-
-        @Test
-        @DisplayName("With group not found, returns 403")
-        void getCalendarFeed_WithGroupNotFound_Returns403() throws Exception {
-            // Given
-            GroupMembership membership = createMembership(TEST_USER_ID, TEST_GROUP_ID, TEST_TOKEN);
-
-            when(groupRepository.findMembershipByToken(TEST_TOKEN))
-                .thenReturn(Optional.of(membership));
-            when(groupRepository.findById(TEST_GROUP_ID))
-                .thenReturn(Optional.empty());
-
-            // When/Then
-            mockMvc.perform(get("/v1/calendar/subscribe/" + TEST_GROUP_ID + "/" + TEST_TOKEN))
-                    .andExpect(status().isForbidden());
-
-            verify(groupRepository).findMembershipByToken(TEST_TOKEN);
-            verify(groupRepository).findById(TEST_GROUP_ID);
-        }
-
-        @Test
-        @DisplayName("With null lastHangoutModified, uses zero in ETag")
-        void getCalendarFeed_WithNullLastHangoutModified_UsesZeroInETag() throws Exception {
-            // Given
-            GroupMembership membership = createMembership(TEST_USER_ID, TEST_GROUP_ID, TEST_TOKEN);
-            Group group = createGroup(TEST_GROUP_ID, null); // null lastHangoutModified
-            String icsContent = "BEGIN:VCALENDAR\nVERSION:2.0\nEND:VCALENDAR";
-
-            when(groupRepository.findMembershipByToken(TEST_TOKEN))
-                .thenReturn(Optional.of(membership));
-            when(groupRepository.findById(TEST_GROUP_ID))
-                .thenReturn(Optional.of(group));
-            when(hangoutRepository.getFutureEventsPage(eq(TEST_GROUP_ID), anyLong(), eq(100), isNull()))
-                .thenReturn(new PaginatedResult<>(Collections.emptyList(), null));
-            when(iCalendarService.generateICS(eq(group), anyList()))
-                .thenReturn(icsContent);
-
-            // When/Then
-            mockMvc.perform(get("/v1/calendar/subscribe/" + TEST_GROUP_ID + "/" + TEST_TOKEN))
-                    .andExpect(status().isOk())
-                    .andExpect(header().string("ETag", "\"group-456-0\""))
-                    .andExpect(content().string(icsContent));
-
-            verify(iCalendarService).generateICS(eq(group), anyList());
-        }
-
-        @Test
-        @DisplayName("With paginated hangouts, fetches all pages")
-        void getCalendarFeed_WithPaginatedHangouts_FetchesAllPages() throws Exception {
-            // Given
-            GroupMembership membership = createMembership(TEST_USER_ID, TEST_GROUP_ID, TEST_TOKEN);
-            Group group = createGroup(TEST_GROUP_ID, Instant.ofEpochMilli(1234567890000L));
-
-            // First page: 100 items with nextToken
-            List<HangoutPointer> page1 = createHangoutPointers(100);
-            String nextToken = "next-token-123";
-
-            // Second page: 50 items, no nextToken
-            List<HangoutPointer> page2 = createHangoutPointers(50);
-
-            String icsContent = "BEGIN:VCALENDAR\nVERSION:2.0\nEND:VCALENDAR";
-
-            when(groupRepository.findMembershipByToken(TEST_TOKEN))
-                .thenReturn(Optional.of(membership));
-            when(groupRepository.findById(TEST_GROUP_ID))
-                .thenReturn(Optional.of(group));
-            when(hangoutRepository.getFutureEventsPage(eq(TEST_GROUP_ID), anyLong(), eq(100), isNull()))
-                .thenReturn(new PaginatedResult<>(castToBaseItems(page1), nextToken));
-            when(hangoutRepository.getFutureEventsPage(eq(TEST_GROUP_ID), anyLong(), eq(100), eq(nextToken)))
-                .thenReturn(new PaginatedResult<>(castToBaseItems(page2), null));
-            when(iCalendarService.generateICS(eq(group), argThat(list -> list.size() == 150)))
-                .thenReturn(icsContent);
-
-            // When/Then
-            mockMvc.perform(get("/v1/calendar/subscribe/" + TEST_GROUP_ID + "/" + TEST_TOKEN))
-                    .andExpect(status().isOk())
-                    .andExpect(content().string(icsContent));
-
-            verify(hangoutRepository).getFutureEventsPage(eq(TEST_GROUP_ID), anyLong(), eq(100), isNull());
-            verify(hangoutRepository).getFutureEventsPage(eq(TEST_GROUP_ID), anyLong(), eq(100), eq(nextToken));
-            verify(iCalendarService).generateICS(eq(group), argThat(list -> list.size() == 150));
-        }
-
-        @Test
-        @DisplayName("Token mismatches group, returns 403")
-        void getCalendarFeed_TokenMismatchesGroup_Returns403() throws Exception {
-            // Given
-            GroupMembership membership = createMembership(TEST_USER_ID, "group-999", TEST_TOKEN);
-
-            when(groupRepository.findMembershipByToken(TEST_TOKEN))
-                .thenReturn(Optional.of(membership));
-
-            // When/Then
-            mockMvc.perform(get("/v1/calendar/subscribe/" + TEST_GROUP_ID + "/" + TEST_TOKEN))
-                    .andExpect(status().isForbidden());
-
-            verify(groupRepository).findMembershipByToken(TEST_TOKEN);
-        }
-    }
-
-    // Helper methods
-    private GroupMembership createMembership(String userId, String groupId, String token) {
-        GroupMembership membership = new GroupMembership();
-        membership.setUserId(userId);
-        membership.setGroupId(groupId);
-        membership.setCalendarToken(token);
-        return membership;
-    }
-
-    private Group createGroup(String groupId, Instant lastHangoutModified) {
-        Group group = new Group();
-        group.setGroupId(groupId);
-        group.setGroupName(TEST_GROUP_NAME);
-        group.setLastHangoutModified(lastHangoutModified);
-        return group;
-    }
-
-    private List<HangoutPointer> createHangoutPointers(int count) {
-        List<HangoutPointer> pointers = new java.util.ArrayList<>();
-        for (int i = 0; i < count; i++) {
-            HangoutPointer pointer = new HangoutPointer();
-            pointer.setHangoutId("hangout-" + i);
-            pointer.setTitle("Hangout " + i);
-            pointers.add(pointer);
-        }
-        return pointers;
-    }
-
-    private List<BaseItem> castToBaseItems(List<HangoutPointer> pointers) {
-        return new java.util.ArrayList<>(pointers);
     }
 }

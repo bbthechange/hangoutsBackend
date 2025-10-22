@@ -4,17 +4,30 @@ import com.bbthechange.inviter.dto.CalendarSubscriptionListResponse;
 import com.bbthechange.inviter.dto.CalendarSubscriptionResponse;
 import com.bbthechange.inviter.exception.ForbiddenException;
 import com.bbthechange.inviter.exception.NotFoundException;
+import com.bbthechange.inviter.exception.UnauthorizedException;
+import com.bbthechange.inviter.model.BaseItem;
+import com.bbthechange.inviter.model.Group;
 import com.bbthechange.inviter.model.GroupMembership;
+import com.bbthechange.inviter.model.HangoutPointer;
 import com.bbthechange.inviter.repository.GroupRepository;
+import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.service.CalendarSubscriptionService;
+import com.bbthechange.inviter.service.ICalendarService;
+import com.bbthechange.inviter.util.PaginatedResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -27,12 +40,18 @@ public class CalendarSubscriptionServiceImpl implements CalendarSubscriptionServ
     private static final Logger logger = LoggerFactory.getLogger(CalendarSubscriptionServiceImpl.class);
 
     private final GroupRepository groupRepository;
+    private final HangoutRepository hangoutRepository;
+    private final ICalendarService iCalendarService;
     private final String baseUrl;
 
     @Autowired
     public CalendarSubscriptionServiceImpl(GroupRepository groupRepository,
+                                         HangoutRepository hangoutRepository,
+                                         ICalendarService iCalendarService,
                                          @Value("${calendar.base-url:https://api.inviter.app}") String baseUrl) {
         this.groupRepository = groupRepository;
+        this.hangoutRepository = hangoutRepository;
+        this.iCalendarService = iCalendarService;
         this.baseUrl = baseUrl;
     }
 
@@ -103,6 +122,115 @@ public class CalendarSubscriptionServiceImpl implements CalendarSubscriptionServ
         logger.info("Deleted calendar subscription for user {} in group {}", userId, groupId);
     }
 
+    @Override
+    public ResponseEntity<String> getCalendarFeed(String groupId, String token, String ifNoneMatch) {
+        logger.debug("Calendar feed requested for group {} with token {}", groupId, token.substring(0, 8) + "...");
+
+        // 1. Validate token and check membership (single query via CalendarTokenIndex)
+        GroupMembership membership = validateTokenAndMembership(token, groupId);
+
+        // 2. Get group metadata for ETag calculation
+        Group group = groupRepository.findById(groupId)
+            .orElseThrow(() -> new ForbiddenException("Group not found"));
+
+        // 3. Calculate ETag from group's lastHangoutModified timestamp
+        Instant lastModified = group.getLastHangoutModified();
+        String etag = String.format("\"%s-%d\"",
+            groupId,
+            lastModified != null ? lastModified.toEpochMilli() : 0);
+
+        // 4. Return 304 Not Modified if client has current version
+        if (etag.equals(ifNoneMatch)) {
+            logger.debug("Calendar feed for group {} not modified (ETag match)", groupId);
+            return ResponseEntity.status(HttpStatus.NOT_MODIFIED)
+                .eTag(etag)
+                .cacheControl(CacheControl
+                    .maxAge(2, TimeUnit.HOURS)
+                    .cachePublic()
+                    .mustRevalidate())
+                .build();
+        }
+
+        // 5. Query future hangouts using EntityTimeIndex GSI
+        List<HangoutPointer> hangouts = queryFutureHangouts(groupId);
+
+        logger.debug("Generating ICS feed for group {} with {} future hangouts", groupId, hangouts.size());
+
+        // 6. Generate ICS content
+        String icsContent = iCalendarService.generateICS(group, hangouts);
+
+        // 7. Return with caching headers (CloudFront-ready)
+        return ResponseEntity.ok()
+            .eTag(etag)
+            .cacheControl(CacheControl
+                .maxAge(2, TimeUnit.HOURS)  // Cache for 2 hours
+                .cachePublic()              // Allow CDN caching
+                .mustRevalidate())          // Check ETag after expiry
+            .contentType(MediaType.parseMediaType("text/calendar; charset=utf-8"))
+            .body(icsContent);
+    }
+
+    /**
+     * Validate calendar subscription token and verify user is still a group member.
+     * Uses CalendarTokenIndex GSI for efficient token lookup.
+     *
+     * @param token Calendar subscription token
+     * @param groupId Group ID from URL path
+     * @return GroupMembership if valid
+     * @throws UnauthorizedException if token is invalid
+     * @throws ForbiddenException if user is no longer a member
+     */
+    private GroupMembership validateTokenAndMembership(String token, String groupId) {
+        // Query CalendarTokenIndex GSI to find membership by token
+        GroupMembership membership = groupRepository.findMembershipByToken(token)
+            .orElseThrow(() -> new UnauthorizedException("Invalid subscription token"));
+
+        // Verify groupId matches (prevent token reuse across groups)
+        if (!membership.getGroupId().equals(groupId)) {
+            throw new UnauthorizedException("Token does not match group");
+        }
+
+        logger.debug("Validated calendar token for user {} in group {}", membership.getUserId(), groupId);
+
+        return membership;
+    }
+
+    /**
+     * Query future hangouts for a group using EntityTimeIndex GSI.
+     *
+     * @param groupId Group ID
+     * @return List of future hangout pointers sorted by start time
+     */
+    private List<HangoutPointer> queryFutureHangouts(String groupId) {
+        long nowTimestamp = Instant.now().getEpochSecond();
+
+        // Query EntityTimeIndex for future hangouts
+        // Use pagination with large limit to get all future hangouts
+        PaginatedResult<BaseItem> result =
+            hangoutRepository.getFutureEventsPage(groupId, nowTimestamp, 100, null);
+
+        // Filter for HangoutPointer items and collect
+        List<HangoutPointer> hangouts = result.getResults().stream()
+            .filter(item -> item instanceof HangoutPointer)
+            .map(item -> (HangoutPointer) item)
+            .collect(Collectors.toList());
+
+        // If there are more pages, fetch them (should be rare for calendar feeds)
+        String nextToken = result.getNextToken();
+        while (nextToken != null && hangouts.size() < 500) {  // Cap at 500 events for safety
+            result = hangoutRepository.getFutureEventsPage(groupId, nowTimestamp, 100, nextToken);
+
+            hangouts.addAll(result.getResults().stream()
+                .filter(item -> item instanceof HangoutPointer)
+                .map(item -> (HangoutPointer) item)
+                .collect(Collectors.toList()));
+
+            nextToken = result.getNextToken();
+        }
+
+        return hangouts;
+    }
+
     /**
      * Convert GroupMembership with token to CalendarSubscriptionResponse.
      *
@@ -110,7 +238,7 @@ public class CalendarSubscriptionServiceImpl implements CalendarSubscriptionServ
      * @return Subscription response with URLs
      */
     private CalendarSubscriptionResponse toResponse(GroupMembership membership) {
-        String subscriptionUrl = String.format("%s/v1/calendar/subscribe/%s/%s",
+        String subscriptionUrl = String.format("%s/calendar/feed/%s/%s",
             baseUrl, membership.getGroupId(), membership.getCalendarToken());
 
         String webcalUrl = subscriptionUrl.replace("https://", "webcal://")
