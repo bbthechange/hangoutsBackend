@@ -1,0 +1,7 @@
+Write a unit test plan for this change, I will have another instance of Claude write the actual unit tests in order to preserve your context.  Write the plan for what needs to be tested and make sure to detail *what* each test is looking for; we don't want unit tests that just reinforce what the code already does, we ideally don't want tests that will fail when we make small implementation changes that don't change functionality, we want unit tests that verify that the methods do the thing they're intended to do.
+
+Include the methods you wrote (from your context, don't re read the file) in the test plan so that the implementor doesn't have to read the files, and add anything else that's in your context that the implementor might need.  Don't include target test coverage percentages. Do not add tests that rely on dynamoDB local.
+
+If the test plan is large, more than 15 tests, probably split it into more than one test plan. The plans will be exected in parallel so make sure that there's no overlap in which test files are being modified between the plans, and make sure each test plan has all the context it needs.
+
+The test plan should tell the agent to read context/UNIT_TESTING_PATTERNS.md
