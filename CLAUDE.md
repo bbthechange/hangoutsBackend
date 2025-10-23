@@ -2,10 +2,9 @@
 
 ## ⚠️ CRITICAL REQUIREMENTS
 
-- **MANDATORY TESTING**: Every new method/field MUST have unit tests before completion
 - **DATABASE ARCHITECTURE**: MUST read `DATABASE_ARCHITECTURE_CRITICAL.md` before ANY database modifications or hangout retrievals
 - **ATTRIBUTE ADDITIONS**: Follow `context/ATTRIBUTE_ADDITION_GUIDE.md` for adding fields to User/Group/Hangout
-- **TDD Protocol**: Never exit until `./gradlew test` shows "BUILD SUCCESSFUL"
+- **MANDATORY TESTING**: You must create a test plan according to context/TestPlan.txt in order for a task to be complete.  
 - **No Claude References**: Never include Claude in commit messages
 - **Java 21 Required**: Development and production use Corretto 21
 
@@ -61,6 +60,7 @@ eb deploy                     # Deploy to production
 | **Event Series** | `context/EVENT_SERIES_CONTEXT.md` | Recurring events, series management |
 | **Polls** | `context/POLLS_CONTEXT.md` | Poll creation, voting, results |
 | **Carpooling** | `context/CARPOOLING_CONTEXT.md` | Ride coordination, driver/passenger management |
+| **Calendar Subscriptions** | `context/CALENDAR_SUBSCRIPTION_CONTEXT.md` | ICS calendar feeds, token-based subscriptions, HTTP caching |
 | **Notifications** | `context/NOTIFICATIONS_CONTEXT.md` | Push notifications, device registration |
 | **Adding Attributes** | `context/ATTRIBUTE_ADDITION_GUIDE.md` | Guide for adding fields to User/Group/Hangout |
 | **Unit tests** | `context/UNIT_TESTING_PATTERNS.md` | Guide for unit tests |
