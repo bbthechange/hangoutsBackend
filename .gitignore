@@ -65,6 +65,7 @@ server.log
 .env.local
 .env.production
 .env.staging
+gradle.properties
 
 # AWS credentials and config
 .aws/
