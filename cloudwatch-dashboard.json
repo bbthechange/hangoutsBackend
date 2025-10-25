@@ -1,0 +1,288 @@
+{
+  "widgets": [
+    {
+      "type": "metric",
+      "properties": {
+        "metrics": [
+          [ "AWS/ApiGateway", "Latency", "ApiName", "inviter-api", "Stage", "prod", { "stat": "Average", "label": "Average" } ],
+          [ "...", { "stat": "p50", "label": "P50" } ],
+          [ "...", { "stat": "p90", "label": "P90" } ],
+          [ "...", { "stat": "p99", "label": "P99" } ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-west-2",
+        "title": "API Gateway - Request Latency (ms)",
+        "period": 300,
+        "yAxis": {
+          "left": {
+            "label": "Milliseconds",
+            "showUnits": false
+          }
+        },
+        "annotations": {
+          "horizontal": [
+            {
+              "label": "Target P99 < 1000ms",
+              "value": 1000,
+              "fill": "above",
+              "color": "#ff0000"
+            }
+          ]
+        }
+      },
+      "width": 12,
+      "height": 6,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "type": "metric",
+      "properties": {
+        "metrics": [
+          [ "AWS/ApiGateway", "IntegrationLatency", "ApiName", "inviter-api", "Stage", "prod", { "stat": "Average", "label": "Avg Backend Latency" } ],
+          [ "...", { "stat": "p90", "label": "P90 Backend Latency" } ],
+          [ "...", { "stat": "p99", "label": "P99 Backend Latency" } ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-west-2",
+        "title": "Backend Integration Latency (ms)",
+        "period": 300,
+        "yAxis": {
+          "left": {
+            "label": "Milliseconds",
+            "showUnits": false
+          }
+        }
+      },
+      "width": 12,
+      "height": 6,
+      "x": 12,
+      "y": 0
+    },
+    {
+      "type": "metric",
+      "properties": {
+        "metrics": [
+          [ "AWS/ApiGateway", "Count", "ApiName", "inviter-api", "Stage", "prod", { "stat": "Sum", "label": "Total Requests" } ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-west-2",
+        "title": "API Gateway - Request Count",
+        "period": 300,
+        "yAxis": {
+          "left": {
+            "label": "Requests",
+            "showUnits": false
+          }
+        }
+      },
+      "width": 8,
+      "height": 6,
+      "x": 0,
+      "y": 6
+    },
+    {
+      "type": "metric",
+      "properties": {
+        "metrics": [
+          [ "AWS/ApiGateway", "4XXError", "ApiName", "inviter-api", "Stage", "prod", { "stat": "Sum", "label": "4XX Errors", "color": "#ff7f0e" } ],
+          [ ".", "5XXError", ".", ".", ".", ".", { "stat": "Sum", "label": "5XX Errors", "color": "#d62728" } ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-west-2",
+        "title": "API Gateway - Error Rates",
+        "period": 300,
+        "yAxis": {
+          "left": {
+            "label": "Errors",
+            "showUnits": false
+          }
+        }
+      },
+      "width": 8,
+      "height": 6,
+      "x": 8,
+      "y": 6
+    },
+    {
+      "type": "metric",
+      "properties": {
+        "metrics": [
+          [ { "expression": "100 * (m1 / (m1 + m2 + m3))", "label": "Success Rate %", "id": "e1" } ],
+          [ "AWS/ApiGateway", "Count", "ApiName", "inviter-api", "Stage", "prod", { "id": "m1", "visible": false, "label": "2XX" } ],
+          [ ".", "4XXError", ".", ".", ".", ".", { "id": "m2", "visible": false } ],
+          [ ".", "5XXError", ".", ".", ".", ".", { "id": "m3", "visible": false } ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-west-2",
+        "title": "API Success Rate (%)",
+        "period": 300,
+        "yAxis": {
+          "left": {
+            "min": 0,
+            "max": 100,
+            "label": "Percent",
+            "showUnits": false
+          }
+        },
+        "annotations": {
+          "horizontal": [
+            {
+              "label": "Target > 99%",
+              "value": 99,
+              "fill": "below",
+              "color": "#ff0000"
+            }
+          ]
+        }
+      },
+      "width": 8,
+      "height": 6,
+      "x": 16,
+      "y": 6
+    },
+    {
+      "type": "metric",
+      "properties": {
+        "metrics": [
+          [ "AWS/ElasticBeanstalk", "EnvironmentHealth", "EnvironmentName", "inviter-test", { "stat": "Average" } ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-west-2",
+        "title": "Elastic Beanstalk - Health Status",
+        "period": 300,
+        "yAxis": {
+          "left": {
+            "label": "Health (0=OK, 1=Info, 5=Warning, 10=Degraded, 15=Severe, 20=Unknown)",
+            "showUnits": false,
+            "min": 0,
+            "max": 20
+          }
+        },
+        "annotations": {
+          "horizontal": [
+            {
+              "label": "Degraded",
+              "value": 10,
+              "fill": "above",
+              "color": "#ff7f0e"
+            }
+          ]
+        }
+      },
+      "width": 24,
+      "height": 6,
+      "x": 0,
+      "y": 12
+    },
+    {
+      "type": "metric",
+      "properties": {
+        "metrics": [
+          [ "AWS/DynamoDB", "SuccessfulRequestLatency", "TableName", "InviterTable", "Operation", "GetItem", { "stat": "Average", "label": "GetItem Avg" } ],
+          [ "...", { "stat": "p90", "label": "GetItem P90" } ],
+          [ ".", ".", ".", ".", ".", "Query", { "stat": "Average", "label": "Query Avg" } ],
+          [ "...", { "stat": "p90", "label": "Query P90" } ],
+          [ ".", ".", ".", ".", ".", "PutItem", { "stat": "Average", "label": "PutItem Avg" } ],
+          [ "...", { "stat": "p90", "label": "PutItem P90" } ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-west-2",
+        "title": "DynamoDB - InviterTable Latency (ms)",
+        "period": 300,
+        "yAxis": {
+          "left": {
+            "label": "Milliseconds",
+            "showUnits": false
+          }
+        }
+      },
+      "width": 12,
+      "height": 6,
+      "x": 0,
+      "y": 18
+    },
+    {
+      "type": "metric",
+      "properties": {
+        "metrics": [
+          [ "AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", "InviterTable", { "stat": "Sum", "label": "Read Capacity" } ],
+          [ ".", "ConsumedWriteCapacityUnits", ".", ".", { "stat": "Sum", "label": "Write Capacity" } ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-west-2",
+        "title": "DynamoDB - InviterTable Capacity Usage",
+        "period": 300,
+        "yAxis": {
+          "left": {
+            "label": "Capacity Units",
+            "showUnits": false
+          }
+        }
+      },
+      "width": 12,
+      "height": 6,
+      "x": 12,
+      "y": 18
+    },
+    {
+      "type": "metric",
+      "properties": {
+        "metrics": [
+          [ "AWS/DynamoDB", "UserErrors", "TableName", "InviterTable", { "stat": "Sum", "label": "User Errors" } ],
+          [ ".", "SystemErrors", ".", ".", { "stat": "Sum", "label": "System Errors" } ],
+          [ ".", "ConditionalCheckFailedRequests", ".", ".", { "stat": "Sum", "label": "Conditional Check Failed" } ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-west-2",
+        "title": "DynamoDB - InviterTable Errors",
+        "period": 300,
+        "yAxis": {
+          "left": {
+            "label": "Error Count",
+            "showUnits": false
+          }
+        }
+      },
+      "width": 12,
+      "height": 6,
+      "x": 0,
+      "y": 24
+    },
+    {
+      "type": "metric",
+      "properties": {
+        "metrics": [
+          [ "AWS/DynamoDB", "SuccessfulRequestLatency", "TableName", "Users", "Operation", "GetItem", { "stat": "p90", "label": "Users GetItem P90" } ],
+          [ "...", "TableName", "Events", ".", ".", { "stat": "p90", "label": "Events GetItem P90" } ],
+          [ "...", "TableName", "Invites", ".", ".", { "stat": "p90", "label": "Invites GetItem P90" } ],
+          [ "...", "TableName", "Devices", ".", ".", { "stat": "p90", "label": "Devices GetItem P90" } ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-west-2",
+        "title": "DynamoDB - Other Tables P90 Latency (ms)",
+        "period": 300,
+        "yAxis": {
+          "left": {
+            "label": "Milliseconds",
+            "showUnits": false
+          }
+        }
+      },
+      "width": 12,
+      "height": 6,
+      "x": 12,
+      "y": 24
+    }
+  ]
+}
