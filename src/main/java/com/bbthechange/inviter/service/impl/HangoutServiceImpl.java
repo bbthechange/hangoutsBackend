@@ -5,6 +5,7 @@ import com.bbthechange.inviter.service.FuzzyTimeService;
 import com.bbthechange.inviter.service.UserService;
 import com.bbthechange.inviter.service.EventSeriesService;
 import com.bbthechange.inviter.service.NotificationService;
+import com.bbthechange.inviter.service.S3Service;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.model.*;
@@ -38,13 +39,15 @@ public class HangoutServiceImpl implements HangoutService {
     private final EventSeriesService eventSeriesService;
     private final NotificationService notificationService;
     private final PointerUpdateService pointerUpdateService;
+    private final S3Service s3Service;
 
     @Autowired
     public HangoutServiceImpl(HangoutRepository hangoutRepository, GroupRepository groupRepository,
                               FuzzyTimeService fuzzyTimeService, UserService userService,
                               @Lazy EventSeriesService eventSeriesService,
                               NotificationService notificationService,
-                              PointerUpdateService pointerUpdateService) {
+                              PointerUpdateService pointerUpdateService,
+                              S3Service s3Service) {
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
         this.fuzzyTimeService = fuzzyTimeService;
@@ -52,6 +55,7 @@ public class HangoutServiceImpl implements HangoutService {
         this.eventSeriesService = eventSeriesService;
         this.notificationService = notificationService;
         this.pointerUpdateService = pointerUpdateService;
+        this.s3Service = s3Service;
     }
     
     @Override
@@ -219,6 +223,7 @@ public class HangoutServiceImpl implements HangoutService {
 
         // Track if any pointer-denormalized fields changed
         boolean needsPointerUpdate = false;
+        String oldMainImagePath = null;
 
         // Update canonical record fields
         if (request.getTitle() != null && !request.getTitle().equals(hangout.getTitle())) {
@@ -252,6 +257,7 @@ public class HangoutServiceImpl implements HangoutService {
         }
 
         if (request.getMainImagePath() != null && !request.getMainImagePath().equals(hangout.getMainImagePath())) {
+            oldMainImagePath = hangout.getMainImagePath(); // Store old path for cleanup
             hangout.setMainImagePath(request.getMainImagePath());
             needsPointerUpdate = true;
         }
@@ -281,6 +287,12 @@ public class HangoutServiceImpl implements HangoutService {
                 logger.warn("Failed to update series after hangout modification: {}", e.getMessage());
                 // Continue execution - the hangout update itself succeeded
             }
+        }
+
+        // Delete old image from S3 asynchronously if it was changed
+        if (oldMainImagePath != null) {
+            s3Service.deleteImageAsync(oldMainImagePath);
+            logger.info("Initiated async deletion of old hangout image: {}", oldMainImagePath);
         }
 
         logger.info("Updated hangout {} by user {}", hangoutId, requestingUserId);

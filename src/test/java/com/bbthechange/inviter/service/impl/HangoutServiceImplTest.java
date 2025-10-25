@@ -54,6 +54,9 @@ class HangoutServiceImplTest {
     @Mock
     private PointerUpdateService pointerUpdateService;
 
+    @Mock
+    private com.bbthechange.inviter.service.S3Service s3Service;
+
     @InjectMocks
     private HangoutServiceImpl hangoutService;
     

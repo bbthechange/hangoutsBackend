@@ -45,7 +45,10 @@ class GroupServiceImplTest {
 
     @Mock
     private InviteService inviteService;
-    
+
+    @Mock
+    private com.bbthechange.inviter.service.S3Service s3Service;
+
     @InjectMocks
     private GroupServiceImpl groupService;
     

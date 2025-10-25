@@ -4,8 +4,10 @@ import com.bbthechange.inviter.dto.PredefinedImageResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -124,7 +126,7 @@ public class S3Service {
     public String generatePresignedUploadUrl(String key, String contentType) {
         try {
             log.info("Generating presigned upload URL for key: {} with content type: {}", key, contentType);
-            
+
             // Create PutObjectRequest with contentType to ensure signature matches the actual request
             PutObjectRequest putObjectRequest = PutObjectRequest.builder()
                     .bucket(bucketName)
@@ -139,14 +141,62 @@ public class S3Service {
 
             PresignedPutObjectRequest presignedRequest = s3Presigner.presignPutObject(presignRequest);
             String presignedUrl = presignedRequest.url().toString();
-            
+
             log.info("Generated presigned URL for key: {} with content-type: {}", key, contentType);
             log.debug("Presigned URL: {}", presignedUrl);
             return presignedUrl;
-            
+
         } catch (Exception e) {
             log.error("Error generating presigned upload URL for key {}: {}", key, e.getMessage(), e);
             throw new RuntimeException("Failed to generate presigned upload URL", e);
         }
+    }
+
+    /**
+     * Delete an image from S3.
+     * Skips deletion for predefined images to avoid accidental removal of shared resources.
+     *
+     * @param imagePath The S3 key/path of the image to delete
+     */
+    public void deleteImage(String imagePath) {
+        if (imagePath == null || imagePath.isEmpty()) {
+            log.debug("Skipping deletion - imagePath is null or empty");
+            return;
+        }
+
+        // Never delete predefined images
+        if (imagePath.startsWith(PREDEFINED_PREFIX)) {
+            log.debug("Skipping deletion of predefined image: {}", imagePath);
+            return;
+        }
+
+        try {
+            log.info("Deleting image from S3: {}", imagePath);
+
+            DeleteObjectRequest deleteRequest = DeleteObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(imagePath)
+                    .build();
+
+            s3Client.deleteObject(deleteRequest);
+
+            log.info("Successfully deleted image from S3: {}", imagePath);
+
+        } catch (Exception e) {
+            // Log error but don't throw - we don't want to fail the main operation
+            // if S3 deletion fails (image might already be deleted, network issue, etc.)
+            log.error("Error deleting image from S3: {}", imagePath, e);
+        }
+    }
+
+    /**
+     * Asynchronously delete an image from S3.
+     * This runs in a background thread to avoid blocking the main API response.
+     *
+     * @param imagePath The S3 key/path of the image to delete
+     */
+    @Async
+    public void deleteImageAsync(String imagePath) {
+        deleteImage(imagePath);
     }
 }

@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.service.impl;
 
 import com.bbthechange.inviter.service.GroupService;
+import com.bbthechange.inviter.service.S3Service;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.UserRepository;
@@ -43,14 +44,16 @@ public class GroupServiceImpl implements GroupService {
     private final HangoutRepository hangoutRepository;
     private final UserRepository userRepository;
     private final InviteService inviteService;
-    
+    private final S3Service s3Service;
+
     @Autowired
     public GroupServiceImpl(GroupRepository groupRepository, HangoutRepository hangoutRepository,
-                           UserRepository userRepository, InviteService inviteService) {
+                           UserRepository userRepository, InviteService inviteService, S3Service s3Service) {
         this.groupRepository = groupRepository;
         this.hangoutRepository = hangoutRepository;
         this.userRepository = userRepository;
         this.inviteService = inviteService;
+        this.s3Service = s3Service;
     }
     
     @Override
@@ -115,6 +118,8 @@ public class GroupServiceImpl implements GroupService {
         boolean nameChanged = false;
         String newGroupName = null;
         boolean imagePathsChanged = false;
+        String oldMainImagePath = null;
+        String oldBackgroundImagePath = null;
 
         // Update only provided fields
         boolean updated = false;
@@ -129,12 +134,16 @@ public class GroupServiceImpl implements GroupService {
             group.setPublic(request.isPublic());
             updated = true;
         }
-        if (request.getMainImagePath() != null) {
+        if (request.getMainImagePath() != null &&
+            !request.getMainImagePath().equals(group.getMainImagePath())) {
+            oldMainImagePath = group.getMainImagePath(); // Store old path for cleanup
             group.setMainImagePath(request.getMainImagePath());
             imagePathsChanged = true;
             updated = true;
         }
-        if (request.getBackgroundImagePath() != null) {
+        if (request.getBackgroundImagePath() != null &&
+            !request.getBackgroundImagePath().equals(group.getBackgroundImagePath())) {
+            oldBackgroundImagePath = group.getBackgroundImagePath(); // Store old path for cleanup
             group.setBackgroundImagePath(request.getBackgroundImagePath());
             imagePathsChanged = true;
             updated = true;
@@ -159,6 +168,16 @@ public class GroupServiceImpl implements GroupService {
         if (imagePathsChanged) {
             groupRepository.updateMembershipGroupImagePaths(groupId, savedGroup.getMainImagePath(), savedGroup.getBackgroundImagePath());
             logger.info("Updated group {} image paths and synchronized membership records", groupId);
+
+            // Delete old images from S3 asynchronously
+            if (oldMainImagePath != null) {
+                s3Service.deleteImageAsync(oldMainImagePath);
+                logger.info("Initiated async deletion of old group main image: {}", oldMainImagePath);
+            }
+            if (oldBackgroundImagePath != null) {
+                s3Service.deleteImageAsync(oldBackgroundImagePath);
+                logger.info("Initiated async deletion of old group background image: {}", oldBackgroundImagePath);
+            }
         }
 
         // Update the membership object we're returning to reflect the new values

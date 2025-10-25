@@ -41,7 +41,10 @@ public class UserService {
 
     @Autowired
     private GroupRepository groupRepository;
-    
+
+    @Autowired
+    private S3Service s3Service;
+
     public User updateProfile(UUID userId, UpdateProfileRequest request) {
         Optional<User> userOpt = userRepository.findById(userId);
         if (userOpt.isEmpty()) {
@@ -51,6 +54,7 @@ public class UserService {
         User user = userOpt.get();
         boolean updated = false;
         boolean mainImagePathChanged = false;
+        String oldImagePath = null;
 
         if (request.getDisplayName() != null) {
             user.setDisplayName(request.getDisplayName());
@@ -58,6 +62,7 @@ public class UserService {
         }
 
         if (request.getMainImagePath() != null && !request.getMainImagePath().equals(user.getMainImagePath())) {
+            oldImagePath = user.getMainImagePath(); // Store old path for cleanup
             user.setMainImagePath(request.getMainImagePath());
             mainImagePathChanged = true;
             updated = true;
@@ -73,6 +78,12 @@ public class UserService {
         if (mainImagePathChanged) {
             groupRepository.updateMembershipUserImagePath(userId.toString(), savedUser.getMainImagePath());
             logger.info("Updated user {} mainImagePath and synchronized membership records", userId);
+
+            // Delete old image from S3 asynchronously
+            if (oldImagePath != null) {
+                s3Service.deleteImageAsync(oldImagePath);
+                logger.info("Initiated async deletion of old profile image: {}", oldImagePath);
+            }
         }
 
         return savedUser;

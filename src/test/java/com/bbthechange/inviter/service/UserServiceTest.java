@@ -55,6 +55,9 @@ class UserServiceTest {
     @Mock
     private com.bbthechange.inviter.repository.GroupRepository groupRepository;
 
+    @Mock
+    private com.bbthechange.inviter.service.S3Service s3Service;
+
     @InjectMocks
     private UserService userService;
 
