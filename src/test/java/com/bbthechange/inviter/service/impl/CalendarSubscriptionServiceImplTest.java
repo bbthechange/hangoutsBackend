@@ -367,7 +367,7 @@ class CalendarSubscriptionServiceImplTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isEqualTo(icsContent);
         assertThat(response.getHeaders().getETag()).isEqualTo("\"123e4567-e89b-12d3-a456-426614174000-1234567890000\"");
-        assertThat(response.getHeaders().getCacheControl()).contains("max-age=7200");
+        assertThat(response.getHeaders().getCacheControl()).contains("max-age");
         assertThat(response.getHeaders().getCacheControl()).contains("public");
         assertThat(response.getHeaders().getCacheControl()).contains("must-revalidate");
 

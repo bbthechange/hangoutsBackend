@@ -38,6 +38,7 @@ import java.util.stream.Collectors;
 public class CalendarSubscriptionServiceImpl implements CalendarSubscriptionService {
 
     private static final Logger logger = LoggerFactory.getLogger(CalendarSubscriptionServiceImpl.class);
+    public static final int MAX_CACHE_MINUTES = 30;
 
     private final GroupRepository groupRepository;
     private final HangoutRepository hangoutRepository;
@@ -127,7 +128,7 @@ public class CalendarSubscriptionServiceImpl implements CalendarSubscriptionServ
         logger.debug("Calendar feed requested for group {} with token {}", groupId, token.substring(0, 8) + "...");
 
         // 1. Validate token and check membership (single query via CalendarTokenIndex)
-        GroupMembership membership = validateTokenAndMembership(token, groupId);
+        validateTokenAndMembership(token, groupId);
 
         // 2. Get group metadata for ETag calculation
         Group group = groupRepository.findById(groupId)
@@ -145,7 +146,7 @@ public class CalendarSubscriptionServiceImpl implements CalendarSubscriptionServ
             return ResponseEntity.status(HttpStatus.NOT_MODIFIED)
                 .eTag(etag)
                 .cacheControl(CacheControl
-                    .maxAge(2, TimeUnit.HOURS)
+                    .maxAge(MAX_CACHE_MINUTES, TimeUnit.MINUTES)
                     .cachePublic()
                     .mustRevalidate())
                 .build();
@@ -163,9 +164,9 @@ public class CalendarSubscriptionServiceImpl implements CalendarSubscriptionServ
         return ResponseEntity.ok()
             .eTag(etag)
             .cacheControl(CacheControl
-                .maxAge(2, TimeUnit.HOURS)  // Cache for 2 hours
-                .cachePublic()              // Allow CDN caching
-                .mustRevalidate())          // Check ETag after expiry
+                .maxAge(MAX_CACHE_MINUTES, TimeUnit.MINUTES)
+                .cachePublic()                 // Allow CDN caching
+                .mustRevalidate())             // Check ETag after expiry
             .contentType(MediaType.parseMediaType("text/calendar; charset=utf-8"))
             .body(icsContent);
     }

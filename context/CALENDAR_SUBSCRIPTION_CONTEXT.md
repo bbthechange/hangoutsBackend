@@ -19,21 +19,44 @@ Calendar subscription tokens are stored **directly on GroupMembership records** 
 Two-layer HTTP caching to reduce DynamoDB queries:
 
 1. **Client-side Cache (Cache-Control)**
-   - `max-age=7200` (2 hours)
+   - `max-age=1800` (30 minutes)
    - `public` (allows CloudFront caching)
    - `must-revalidate` (check ETag after expiry)
-   - Expected: Reduces poll frequency from 3/hour to 0.5/hour
+   - Expected: Reduces poll frequency from 3/hour to 2/hour
 
 2. **ETag Validation**
    - ETag format: `"{groupId}-{lastHangoutModifiedTimestamp}"`
    - Returns 304 Not Modified if ETag matches
-   - Expected: 99.8% of requests return 304 (no DynamoDB query)
+   - Expected: Most requests return 304 (avoids expensive hangout query + ICS generation)
 
 **Load Characteristics**:
 - Without caching: ~2,160 requests/day per group (1 request/min)
-- With caching: ~12 requests/day per group (1 request/2 hours)
-- 304 responses: ~11 requests/day (no DynamoDB query needed)
-- Full feed generation: ~1 request/day
+- With caching: ~48 requests/day per group (1 request/30 minutes)
+- Most requests return 304 (2 DynamoDB queries: token validation + group metadata)
+- Full feed generation (3+ DynamoDB queries) only when events change
+- 304 responses avoid: hangout query (paginated), ICS generation, large response body
+
+**Cache Invalidation**:
+- No automatic CloudFront invalidation (too expensive at scale)
+- Changes appear within 30 minutes of cache expiry
+- Calendar apps typically poll every 15-60 minutes, so 30-minute cache is reasonable
+
+### DynamoDB Query Breakdown
+
+**Every Request (including 304 responses)**:
+1. Token validation query (CalendarTokenIndex GSI) - 1 read unit
+2. Group metadata query (main table) - 1 read unit
+3. ETag calculation from `lastHangoutModified` timestamp
+
+**Additional Queries for 200 OK Responses (when ETag doesn't match)**:
+4. Future hangouts query (EntityTimeIndex GSI, paginated) - 1+ read units
+5. ICS content generation (in-memory, no database)
+
+**Cost Savings from 304 Responses**:
+- Avoids expensive paginated hangout query (can be multiple pages)
+- Avoids ICS generation CPU/memory costs
+- Reduces data transfer (no response body)
+- Expected 304 rate: ~90%+ when events haven't changed
 
 ## API Endpoints
 
