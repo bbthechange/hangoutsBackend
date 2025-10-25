@@ -27,7 +27,9 @@ import java.util.Map;
 import com.bbthechange.inviter.util.PaginatedResult;
 import com.bbthechange.inviter.util.GroupFeedPaginationToken;
 import com.bbthechange.inviter.util.RepositoryTokenData;
+import com.bbthechange.inviter.util.InviteCodeGenerator;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Value;
 
 /**
  * Implementation of GroupService with atomic operations and efficient GSI patterns.
@@ -45,15 +47,18 @@ public class GroupServiceImpl implements GroupService {
     private final UserRepository userRepository;
     private final InviteService inviteService;
     private final S3Service s3Service;
+    private final String appBaseUrl;
 
     @Autowired
     public GroupServiceImpl(GroupRepository groupRepository, HangoutRepository hangoutRepository,
-                           UserRepository userRepository, InviteService inviteService, S3Service s3Service) {
+                           UserRepository userRepository, InviteService inviteService, S3Service s3Service,
+                           @Value("${app.base-url}") String appBaseUrl) {
         this.groupRepository = groupRepository;
         this.hangoutRepository = hangoutRepository;
         this.userRepository = userRepository;
         this.inviteService = inviteService;
         this.s3Service = s3Service;
+        this.appBaseUrl = appBaseUrl;
     }
     
     @Override
@@ -652,5 +657,87 @@ public class GroupServiceImpl implements GroupService {
             logger.warn("Failed to create previous page token, returning null", e);
             return null;
         }
+    }
+
+    @Override
+    public InviteCodeResponse generateInviteCode(String groupId, String requestingUserId) {
+        // Verify group exists
+        Group group = groupRepository.findById(groupId)
+            .orElseThrow(() -> new ResourceNotFoundException("Group not found: " + groupId));
+
+        // Verify user is a member
+        if (!groupRepository.isUserMemberOfGroup(groupId, requestingUserId)) {
+            throw new UnauthorizedException("Only group members can generate invite codes");
+        }
+
+        // Check if group already has an invite code (idempotent operation)
+        String inviteCode = group.getInviteCode();
+
+        if (inviteCode == null) {
+            // Generate unique invite code (utility handles collision checking)
+            inviteCode = InviteCodeGenerator.generateUnique(groupRepository::inviteCodeExists);
+
+            // Update group with invite code and GSI keys
+            group.setInviteCode(inviteCode);
+            group.setGsi3pk(inviteCode);  // For InviteCodeIndex lookup
+            // gsi3sk stays null (following CalendarTokenIndex pattern)
+
+            groupRepository.save(group);
+
+            logger.info("Generated new invite code {} for group {}", inviteCode, groupId);
+        } else {
+            logger.debug("Returning existing invite code for group {}", groupId);
+        }
+
+        // Build shareable URL
+        String shareUrl = String.format("%s/join-group/%s", appBaseUrl, inviteCode);
+
+        return new InviteCodeResponse(inviteCode, shareUrl);
+    }
+
+    @Override
+    public GroupPreviewDTO getGroupPreviewByInviteCode(String inviteCode) {
+        // Public endpoint - no auth required
+        Group group = groupRepository.findByInviteCode(inviteCode)
+            .orElseThrow(() -> new ResourceNotFoundException("Invalid invite code: " + inviteCode));
+
+        return new GroupPreviewDTO(group);
+    }
+
+    @Override
+    public GroupDTO joinGroupByInviteCode(String inviteCode, String userId) {
+        // Find group by invite code
+        Group group = groupRepository.findByInviteCode(inviteCode)
+            .orElseThrow(() -> new ResourceNotFoundException("Invalid invite code: " + inviteCode));
+
+        // Check if user is already a member
+        if (groupRepository.isUserMemberOfGroup(group.getGroupId(), userId)) {
+            logger.info("User {} already a member of group {}, returning group info", userId, group.getGroupId());
+            // Return existing membership info
+            GroupMembership membership = groupRepository.findMembership(group.getGroupId(), userId)
+                .orElseThrow(() -> new IllegalStateException("Membership check passed but findMembership failed"));
+            return new GroupDTO(group, membership);
+        }
+
+        // Get user info for denormalization
+        User user = userRepository.findById(UUID.fromString(userId))
+            .orElseThrow(() -> new UserNotFoundException("User not found: " + userId));
+
+        // Create membership
+        GroupMembership membership = new GroupMembership(
+            group.getGroupId(),
+            userId,
+            group.getGroupName()
+        );
+        membership.setRole(GroupRole.MEMBER);  // New members join as regular members
+        membership.setGroupMainImagePath(group.getMainImagePath());
+        membership.setGroupBackgroundImagePath(group.getBackgroundImagePath());
+        membership.setUserMainImagePath(user.getMainImagePath());
+
+        groupRepository.addMember(membership);
+
+        logger.info("User {} joined group {} via invite code {}", userId, group.getGroupId(), inviteCode);
+
+        return new GroupDTO(group, membership);
     }
 }

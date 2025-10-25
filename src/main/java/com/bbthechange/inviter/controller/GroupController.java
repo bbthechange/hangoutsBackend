@@ -183,13 +183,51 @@ public class GroupController extends BaseController {
             @RequestParam(defaultValue = "10") @Min(1) @Max(50) Integer limit,
             @RequestParam(required = false) String startToken,
             HttpServletRequest httpRequest) {
-        
+
         String userId = extractUserId(httpRequest);
         logger.info("Getting feed items for group {} with limit {} for user {}", groupId, limit, userId);
-        
+
         GroupFeedItemsResponse response = groupFeedService.getFeedItems(groupId, limit, startToken, userId);
         logger.debug("Retrieved {} feed items for group {}", response.getItems().size(), groupId);
-        
+
         return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/{groupId}/invite-code")
+    public ResponseEntity<InviteCodeResponse> generateInviteCode(
+            @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid group ID format") String groupId,
+            HttpServletRequest httpRequest) {
+
+        String userId = extractUserId(httpRequest);
+        logger.info("Generating invite code for group {} by user {}", groupId, userId);
+
+        InviteCodeResponse response = groupService.generateInviteCode(groupId, userId);
+        logger.info("Generated invite code for group {}", groupId);
+
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/invite/{inviteCode}")
+    public ResponseEntity<GroupPreviewDTO> getGroupPreviewByInviteCode(
+            @PathVariable String inviteCode) {
+
+        logger.info("Getting group preview for invite code {}", inviteCode);
+        GroupPreviewDTO preview = groupService.getGroupPreviewByInviteCode(inviteCode);
+
+        return ResponseEntity.ok(preview);
+    }
+
+    @PostMapping("/invite/join")
+    public ResponseEntity<GroupDTO> joinGroupByInviteCode(
+            @Valid @RequestBody JoinGroupRequest request,
+            HttpServletRequest httpRequest) {
+
+        String userId = extractUserId(httpRequest);
+        logger.info("User {} joining group via invite code", userId);
+
+        GroupDTO group = groupService.joinGroupByInviteCode(request.getInviteCode(), userId);
+        logger.info("User {} successfully joined group {}", userId, group.getGroupId());
+
+        return ResponseEntity.ok(group);
     }
 }

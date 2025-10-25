@@ -18,6 +18,8 @@ public abstract class BaseItem {
     private String gsi1sk;      // GSI1 Sort Key
     private String gsi2pk;      // GSI2 Partition Key (for CalendarTokenIndex)
     private String gsi2sk;      // GSI2 Sort Key (reserved for future use)
+    private String gsi3pk;      // GSI3 Partition Key (for InviteCodeIndex)
+    private String gsi3sk;      // GSI3 Sort Key (reserved for future use)
     private String itemType;    // Type discriminator for polymorphic deserialization
     private Instant createdAt;
     private Instant updatedAt;
@@ -77,6 +79,24 @@ public abstract class BaseItem {
 
     public void setGsi2sk(String gsi2sk) {
         this.gsi2sk = gsi2sk;
+    }
+
+    @DynamoDbSecondaryPartitionKey(indexNames = "InviteCodeIndex")
+    public String getGsi3pk() {
+        return gsi3pk;
+    }
+
+    public void setGsi3pk(String gsi3pk) {
+        this.gsi3pk = gsi3pk;
+    }
+
+    @DynamoDbSecondarySortKey(indexNames = "InviteCodeIndex")
+    public String getGsi3sk() {
+        return gsi3sk;
+    }
+
+    public void setGsi3sk(String gsi3sk) {
+        this.gsi3sk = gsi3sk;
     }
 
     @DynamoDbAttribute("itemType")
