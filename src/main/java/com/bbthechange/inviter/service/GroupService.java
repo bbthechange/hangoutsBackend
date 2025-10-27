@@ -68,7 +68,7 @@ public interface GroupService {
     /**
      * Get the group feed showing current/future hangouts chronologically with pagination support.
      * Uses parallel queries for optimal performance - future events + in-progress events.
-     * 
+     *
      * @param groupId The group ID
      * @param requestingUserId The user requesting the feed (for authorization)
      * @param limit Maximum number of events to return (null for no limit)
@@ -76,6 +76,24 @@ public interface GroupService {
      * @param endingBefore Pagination token for backward pagination (get past events)
      * @return GroupFeedDTO with chronological events and pagination tokens
      */
-    GroupFeedDTO getGroupFeed(String groupId, String requestingUserId, Integer limit, 
+    GroupFeedDTO getGroupFeed(String groupId, String requestingUserId, Integer limit,
                              String startingAfter, String endingBefore);
+
+    /**
+     * Generate a new invite code for a group (members only).
+     * Generates a unique code and returns it with a shareable URL.
+     */
+    InviteCodeResponse generateInviteCode(String groupId, String requestingUserId);
+
+    /**
+     * Get group preview information by invite code (public - no auth required).
+     * Returns basic group information for display before joining.
+     */
+    GroupPreviewDTO getGroupPreviewByInviteCode(String inviteCode);
+
+    /**
+     * Join a group using an invite code (authenticated users only).
+     * Validates the code and adds the user as a member.
+     */
+    GroupDTO joinGroupByInviteCode(String inviteCode, String userId);
 }

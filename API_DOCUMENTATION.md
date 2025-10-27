@@ -673,6 +673,108 @@ Get group feed showing hangouts organized by status.
 - `status`: String representing hangout status
 - `participantCount`: Integer count of participants
 
+#### POST `/groups/{groupId}/invite-code`
+Generate or retrieve shareable invite code for a group (idempotent).
+
+**Path Parameters:**
+- `groupId`: UUID of the group
+
+**Authorization:** User must be a member of the group.
+
+**Response (200 OK):**
+```json
+{
+  "inviteCode": "abc123xy",
+  "shareUrl": "https://d1713f2ygzp5es.cloudfront.net/join-group/abc123xy"
+}
+```
+
+**Field Details:**
+- `inviteCode`: String - 8-character alphanumeric code (lowercase)
+- `shareUrl`: String - Complete shareable URL for Universal Links/deep linking
+- Calling this endpoint multiple times returns the same code (idempotent)
+
+#### GET `/groups/invite/{inviteCode}` (Public)
+Preview group information before joining (no authentication required).
+
+**Path Parameters:**
+- `inviteCode`: String - The invite code to preview
+
+**Response (200 OK) - Public Group:**
+```json
+{
+  "isPrivate": false,
+  "groupName": "Hiking Buddies",
+  "mainImagePath": "groups/group123/image.jpg"
+}
+```
+
+**Response (200 OK) - Private Group:**
+```json
+{
+  "isPrivate": true
+}
+```
+
+**Response (404 Not Found):**
+```json
+{
+  "error": "Invalid invite code: abc123xy"
+}
+```
+
+**Field Details:**
+- `isPrivate`: Boolean - If true, group details are hidden for privacy
+- `groupName`: String - Group name (only present for public groups)
+- `mainImagePath`: String - Main image path (only present for public groups)
+
+**Privacy:**
+- Public endpoint - accessible without authentication
+- For private groups, only the `isPrivate` flag is returned to prevent leaking group information
+- Null fields are omitted from the response (using @JsonInclude annotation)
+- Frontend should show generic message like "You've been invited to a private group"
+- Full group details revealed only after authenticated join
+
+**Security:**
+- Does not include groupId - only minimal info needed for preview
+- User receives groupId after successfully joining via POST /groups/invite/join
+
+#### POST `/groups/invite/join`
+Join a group using an invite code.
+
+**Request Body:**
+```json
+{
+  "inviteCode": "abc123xy"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "groupId": "990e8400-e29b-41d4-a716-446655440000",
+  "groupName": "Hiking Buddies",
+  "isPublic": false,
+  "userRole": "MEMBER",
+  "joinedAt": "2024-01-15T10:30:00Z",
+  "createdAt": "2024-01-15T10:30:00Z",
+  "mainImagePath": "groups/group123/image.jpg",
+  "backgroundImagePath": "groups/group123/bg.jpg"
+}
+```
+
+**Response (404 Not Found):**
+```json
+{
+  "error": "Invalid invite code: abc123xy"
+}
+```
+
+**Field Details:**
+- If user is already a member, returns existing membership info (idempotent)
+- New members are added with `MEMBER` role
+- Returns full GroupDTO with user's membership details
+
 ---
 
 ### 8. Devices (Requires JWT)

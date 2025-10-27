@@ -90,4 +90,22 @@ public interface GroupRepository {
      * Uses DynamoDB atomic ADD operation to safely increment/decrement.
      */
     void atomicallyUpdateParticipantCount(String groupId, String hangoutId, int delta);
+
+    /**
+     * Find a group by its invite code.
+     * Uses InviteCodeIndex GSI for efficient lookup.
+     *
+     * @param inviteCode The invite code to search for
+     * @return Optional containing the Group if found, empty otherwise
+     */
+    Optional<Group> findByInviteCode(String inviteCode);
+
+    /**
+     * Check if an invite code is already in use.
+     * Used to prevent collisions during code generation.
+     *
+     * @param inviteCode The invite code to check
+     * @return true if the code is already in use, false otherwise
+     */
+    boolean inviteCodeExists(String inviteCode);
 }

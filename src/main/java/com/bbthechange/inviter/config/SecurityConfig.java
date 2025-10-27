@@ -38,6 +38,7 @@ public class SecurityConfig {
                 .requestMatchers("/hangouts/time-options").permitAll()
                 .requestMatchers("/hiking/**").permitAll() // Allow public hiking trail search
                 .requestMatchers("/calendar/feed/**").permitAll() // Allow public calendar feed access
+                .requestMatchers("/groups/invite/**").permitAll() // Allow public group invite preview
                 .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
                 .anyRequest().authenticated()
             )

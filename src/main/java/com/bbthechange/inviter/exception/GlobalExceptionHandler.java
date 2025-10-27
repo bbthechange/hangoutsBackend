@@ -29,18 +29,32 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(errorResponse, HttpStatus.INTERNAL_SERVER_ERROR);
     }
     
-    @ExceptionHandler(ResourceNotFoundException.class)
-    public ResponseEntity<Map<String, Object>> handleResourceNotFoundException(ResourceNotFoundException e) {
+    @ExceptionHandler(software.amazon.awssdk.services.dynamodb.model.ResourceNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleDynamoDbResourceNotFoundException(
+            software.amazon.awssdk.services.dynamodb.model.ResourceNotFoundException e) {
         logger.error("DynamoDB resource not found: {}", e.getMessage(), e);
-        
+
         Map<String, Object> errorResponse = new HashMap<>();
         errorResponse.put("error", "Resource not found");
         errorResponse.put("message", "The requested resource does not exist");
-        
+
         // Return 404 Not Found for missing resources
         return new ResponseEntity<>(errorResponse, HttpStatus.NOT_FOUND);
     }
-    
+
+    @ExceptionHandler(com.bbthechange.inviter.exception.ResourceNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleResourceNotFoundException(
+            com.bbthechange.inviter.exception.ResourceNotFoundException e) {
+        logger.warn("Resource not found: {}", e.getMessage());
+
+        Map<String, Object> errorResponse = new HashMap<>();
+        errorResponse.put("error", "Resource not found");
+        errorResponse.put("message", e.getMessage());
+
+        // Return 404 Not Found for missing resources
+        return new ResponseEntity<>(errorResponse, HttpStatus.NOT_FOUND);
+    }
+
     @ExceptionHandler(EventNotFoundException.class)
     public ResponseEntity<Map<String, Object>> handleEventNotFoundException(EventNotFoundException e) {
         logger.warn("Event not found: {}", e.getMessage());
