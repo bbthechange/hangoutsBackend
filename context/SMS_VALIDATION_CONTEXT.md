@@ -332,6 +332,51 @@ Configurable settings:
 - **Rate Limits** - Twilio's abuse prevention
 - **Channels** - SMS, Voice, Email, WhatsApp (we use "sms")
 
+**Test Phone Number Support:**
+
+For easy testing across all environments without sending real SMS or calling Twilio API, specific phone numbers are designated as test numbers:
+
+Test Phone Numbers (hardcoded in `TwilioSmsValidationService`):
+- `+11112223333`
+- `+12223334444`
+- `+13334445555`
+- `+14445556666`
+- `+15556667777`
+
+Test Verification Code: `123456`
+
+**Test Number Behavior:**
+- `sendVerificationCode()`: Logs code to application logs with `[TEST MODE]` prefix, no Twilio API call
+- `verifyCode()`: Accepts only `123456` as valid code, no Twilio API call
+- Works in all environments (dev, staging, production) without configuration
+- Allows testing full registration flow without real SMS
+
+**Usage Example:**
+```bash
+# Register with test number
+POST /auth/register
+{
+  "phoneNumber": "+11112223333",
+  "username": "testuser",
+  "displayName": "Test User",
+  "password": "password123"
+}
+
+# Check logs - will show:
+# [TEST MODE] Verification code for test number +11112223333: 123456
+# [TEST MODE] Use code '123456' to verify this test account
+
+# Verify with hardcoded code
+POST /auth/verify
+{
+  "phoneNumber": "+11112223333",
+  "code": "123456"
+}
+# Returns 200 OK, user status updated to ACTIVE
+```
+
+**Security Note:** Test phone numbers are obviously fake formats (+1111..., +2222...) that won't conflict with real numbers. Test accounts are easily identifiable in logs via `[TEST MODE]` prefix.
+
 ### 5.4 Configuration & Provider Selection
 
 **Class:** `SmsValidationConfig`

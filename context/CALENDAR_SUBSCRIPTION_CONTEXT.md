@@ -364,6 +364,7 @@ For caching to work properly:
 
 ### Scaling Considerations
 - Current design handles 50,000+ groups efficiently
-- Cost ~$13.55/month for 150K subscriptions (GSI + DynamoDB)
-- 99.8% cache hit rate expected reduces DynamoDB costs significantly
-- If scale increases 10x, consider CloudFront invalidation API for instant updates
+- Cost ~$13.55/month for 150K subscriptions (GSI + DynamoDB reads)
+- 304 responses (90%+ expected) avoid expensive hangout queries but still require 2 DynamoDB reads
+- Per-group cost: ~96 DynamoDB reads/day (48 requests × 2 queries) for 304s, plus occasional full feed generation
+- If scale increases 10x, consider CloudFront invalidation API for instant updates (currently too expensive at ~$0.005 per invalidation)
