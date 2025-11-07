@@ -38,17 +38,21 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
-        Subsegment jwtSubsegment = AWSXRay.beginSubsegment("JWT Authentication");
+        // Only trace if X-Ray segment is available (prevents errors when filter runs before X-Ray servlet filter)
+        boolean xrayAvailable = AWSXRay.getCurrentSegmentOptional().isPresent();
+        Subsegment jwtSubsegment = xrayAvailable ? AWSXRay.beginSubsegment("JWT Authentication") : null;
         try {
             String authHeader = request.getHeader("Authorization");
 
             if (authHeader != null && authHeader.startsWith("Bearer ")) {
                 String token = authHeader.substring(7);
 
-                Subsegment validationSubsegment = AWSXRay.beginSubsegment("JWT Validation");
+                Subsegment validationSubsegment = xrayAvailable ? AWSXRay.beginSubsegment("JWT Validation") : null;
                 try {
                     if (jwtService.isTokenValid(token)) {
-                        validationSubsegment.putAnnotation("valid", true);
+                        if (validationSubsegment != null) {
+                            validationSubsegment.putAnnotation("valid", true);
+                        }
 
                         String userId = jwtService.extractUserId(token);
 
@@ -58,18 +62,26 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
                         request.setAttribute("userId", userId);
                     } else {
-                        validationSubsegment.putAnnotation("valid", false);
+                        if (validationSubsegment != null) {
+                            validationSubsegment.putAnnotation("valid", false);
+                        }
                         logger.warn("Invalid or expired JWT token for request: {} {}", request.getMethod(), requestPath);
                     }
                 } finally {
-                    AWSXRay.endSubsegment();
+                    if (validationSubsegment != null) {
+                        AWSXRay.endSubsegment();
+                    }
                 }
                 // If token is invalid, don't set authentication - let AuthenticationEntryPoint handle it
             } else {
-                jwtSubsegment.putAnnotation("has_bearer_token", false);
+                if (jwtSubsegment != null) {
+                    jwtSubsegment.putAnnotation("has_bearer_token", false);
+                }
             }
         } finally {
-            AWSXRay.endSubsegment();
+            if (jwtSubsegment != null) {
+                AWSXRay.endSubsegment();
+            }
         }
 
         filterChain.doFilter(request, response);
