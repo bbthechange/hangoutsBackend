@@ -241,20 +241,20 @@ public class HangoutRepositoryImpl implements HangoutRepository {
     }
 
     @Override
-    public Hangout createHangoutWithAttributes(Hangout hangout, List<HangoutPointer> pointers, List<HangoutAttribute> attributes) {
+    public Hangout createHangoutWithAttributes(Hangout hangout, List<HangoutPointer> pointers, List<HangoutAttribute> attributes, List<Poll> polls, List<PollOption> pollOptions) {
         return performanceTracker.trackQuery("createHangoutWithAttributes", TABLE_NAME, () -> {
             try {
                 hangout.touch();
-                
+
                 // Prepare all transact write items
                 List<TransactWriteItem> transactItems = new ArrayList<>();
-                
+
                 // 1. Add Hangout (canonical record)
                 Map<String, AttributeValue> hangoutItem = hangoutSchema.itemToMap(hangout, true);
                 transactItems.add(TransactWriteItem.builder()
                     .put(Put.builder().tableName(TABLE_NAME).item(hangoutItem).build())
                     .build());
-                
+
                 // 2. Add HangoutPointers (for group feeds)
                 for (HangoutPointer pointer : pointers) {
                     pointer.touch();
@@ -272,22 +272,40 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                         .put(Put.builder().tableName(TABLE_NAME).item(attributeItem).build())
                         .build());
                 }
-                
+
+                // 4. Add Polls
+                for (Poll poll : polls) {
+                    poll.touch();
+                    Map<String, AttributeValue> pollItem = pollSchema.itemToMap(poll, true);
+                    transactItems.add(TransactWriteItem.builder()
+                        .put(Put.builder().tableName(TABLE_NAME).item(pollItem).build())
+                        .build());
+                }
+
+                // 5. Add PollOptions
+                for (PollOption pollOption : pollOptions) {
+                    pollOption.touch();
+                    Map<String, AttributeValue> pollOptionItem = pollOptionSchema.itemToMap(pollOption, true);
+                    transactItems.add(TransactWriteItem.builder()
+                        .put(Put.builder().tableName(TABLE_NAME).item(pollOptionItem).build())
+                        .build());
+                }
+
                 // Execute atomic transaction
                 TransactWriteItemsRequest request = TransactWriteItemsRequest.builder()
                     .transactItems(transactItems)
                     .build();
-                
+
                 dynamoDbClient.transactWriteItems(request);
-                
-                logger.info("Atomically created hangout {} with {} pointers and {} attributes.",
-                    hangout.getHangoutId(), pointers.size(), attributes.size());
-                
+
+                logger.info("Atomically created hangout {} with {} pointers, {} attributes, {} polls, and {} poll options.",
+                    hangout.getHangoutId(), pointers.size(), attributes.size(), polls.size(), pollOptions.size());
+
                 return hangout;
-                
+
             } catch (DynamoDbException e) {
-                logger.error("Failed to atomically create hangout {}, pointers, and attributes", hangout.getHangoutId(), e);
-                throw new RepositoryException("Failed to atomically create hangout with attributes", e);
+                logger.error("Failed to atomically create hangout {}, pointers, attributes, and polls", hangout.getHangoutId(), e);
+                throw new RepositoryException("Failed to atomically create hangout with attributes and polls", e);
             }
         });
     }

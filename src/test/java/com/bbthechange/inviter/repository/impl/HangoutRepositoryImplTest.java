@@ -1084,7 +1084,7 @@ class HangoutRepositoryImplTest {
         when(dynamoDbClient.transactWriteItems(any(TransactWriteItemsRequest.class))).thenReturn(response);
 
         // When
-        Hangout result = repository.createHangoutWithAttributes(hangout, pointers, attributes);
+        Hangout result = repository.createHangoutWithAttributes(hangout, pointers, attributes, Collections.emptyList(), Collections.emptyList());
 
         // Then
         assertThat(result).isSameAs(hangout);
@@ -1129,7 +1129,7 @@ class HangoutRepositoryImplTest {
             .thenThrow(DynamoDbException.builder().message("Transaction failed").build());
 
         // When/Then
-        assertThatThrownBy(() -> repository.createHangoutWithAttributes(hangout, pointers, attributes))
+        assertThatThrownBy(() -> repository.createHangoutWithAttributes(hangout, pointers, attributes, Collections.emptyList(), Collections.emptyList()))
             .isInstanceOf(RepositoryException.class)
             .hasMessageContaining("Failed to atomically create hangout with attributes")
             .hasCauseInstanceOf(DynamoDbException.class);
@@ -1206,14 +1206,14 @@ class HangoutRepositoryImplTest {
         when(dynamoDbClient.transactWriteItems(any(TransactWriteItemsRequest.class))).thenReturn(response);
 
         // When
-        Hangout result = repository.createHangoutWithAttributes(hangout, emptyPointers, attributes);
+        Hangout result = repository.createHangoutWithAttributes(hangout, emptyPointers, attributes, Collections.emptyList(), Collections.emptyList());
 
         // Then
         assertThat(result).isSameAs(hangout);
-        
+
         ArgumentCaptor<TransactWriteItemsRequest> captor = ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
         verify(dynamoDbClient).transactWriteItems(captor.capture());
-        
+
         TransactWriteItemsRequest request = captor.getValue();
         assertThat(request.transactItems()).hasSize(2); // 1 hangout + 1 attribute (no pointers)
     }
@@ -1223,17 +1223,17 @@ class HangoutRepositoryImplTest {
         // Given
         Hangout hangout = createValidHangout();
         String groupId = UUID.randomUUID().toString();
-        
+
         List<HangoutPointer> pointers = Arrays.asList(
             createValidHangoutPointer(hangout.getHangoutId(), groupId)
         );
         List<HangoutAttribute> emptyAttributes = new ArrayList<>();
-        
+
         TransactWriteItemsResponse response = TransactWriteItemsResponse.builder().build();
         when(dynamoDbClient.transactWriteItems(any(TransactWriteItemsRequest.class))).thenReturn(response);
 
         // When
-        Hangout result = repository.createHangoutWithAttributes(hangout, pointers, emptyAttributes);
+        Hangout result = repository.createHangoutWithAttributes(hangout, pointers, emptyAttributes, Collections.emptyList(), Collections.emptyList());
 
         // Then
         assertThat(result).isSameAs(hangout);
@@ -1243,6 +1243,126 @@ class HangoutRepositoryImplTest {
         
         TransactWriteItemsRequest request = captor.getValue();
         assertThat(request.transactItems()).hasSize(2); // 1 hangout + 1 pointer (no attributes)
+    }
+
+    @Test
+    void createHangoutWithAttributes_IncludingPolls_ExecutesAtomicTransaction() {
+        // Given
+        Hangout hangout = createValidHangout();
+        String groupId = UUID.randomUUID().toString();
+
+        List<HangoutPointer> pointers = Arrays.asList(
+            createValidHangoutPointer(hangout.getHangoutId(), groupId)
+        );
+
+        // Create one poll with no options
+        Poll poll = new Poll(hangout.getHangoutId(), "What time?", null, false);
+        List<Poll> polls = Arrays.asList(poll);
+        List<PollOption> pollOptions = Collections.emptyList();
+
+        TransactWriteItemsResponse response = TransactWriteItemsResponse.builder().build();
+        when(dynamoDbClient.transactWriteItems(any(TransactWriteItemsRequest.class))).thenReturn(response);
+
+        // When
+        Hangout result = repository.createHangoutWithAttributes(hangout, pointers, Collections.emptyList(), polls, pollOptions);
+
+        // Then
+        assertThat(result).isSameAs(hangout);
+
+        ArgumentCaptor<TransactWriteItemsRequest> captor = ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamoDbClient).transactWriteItems(captor.capture());
+
+        TransactWriteItemsRequest request = captor.getValue();
+        assertThat(request.transactItems()).hasSize(3); // 1 hangout + 1 pointer + 1 poll
+
+        // Verify poll item is included
+        boolean hasPollItem = request.transactItems().stream()
+            .anyMatch(item -> item.put().item().get("itemType").s().equals("POLL"));
+        assertThat(hasPollItem).isTrue();
+    }
+
+    @Test
+    void createHangoutWithAttributes_WithPollsAndOptions_CorrectItemCount() {
+        // Given
+        Hangout hangout = createValidHangout();
+        String groupId = UUID.randomUUID().toString();
+        String attributeId = UUID.randomUUID().toString();
+
+        List<HangoutPointer> pointers = Arrays.asList(
+            createValidHangoutPointer(hangout.getHangoutId(), groupId)
+        );
+        List<HangoutAttribute> attributes = Arrays.asList(
+            createValidHangoutAttribute(hangout.getHangoutId(), attributeId, "Test Value")
+        );
+
+        // Create poll with 3 options
+        Poll poll = new Poll(hangout.getHangoutId(), "Food choice?", "Pick one", false);
+        List<Poll> polls = Arrays.asList(poll);
+        List<PollOption> pollOptions = Arrays.asList(
+            new PollOption(hangout.getHangoutId(), poll.getPollId(), "Pizza"),
+            new PollOption(hangout.getHangoutId(), poll.getPollId(), "Tacos"),
+            new PollOption(hangout.getHangoutId(), poll.getPollId(), "Sushi")
+        );
+
+        TransactWriteItemsResponse response = TransactWriteItemsResponse.builder().build();
+        when(dynamoDbClient.transactWriteItems(any(TransactWriteItemsRequest.class))).thenReturn(response);
+
+        // When
+        Hangout result = repository.createHangoutWithAttributes(hangout, pointers, attributes, polls, pollOptions);
+
+        // Then
+        assertThat(result).isSameAs(hangout);
+
+        ArgumentCaptor<TransactWriteItemsRequest> captor = ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamoDbClient).transactWriteItems(captor.capture());
+
+        TransactWriteItemsRequest request = captor.getValue();
+        // 1 hangout + 1 pointer + 1 attribute + 1 poll + 3 poll options = 7 items
+        assertThat(request.transactItems()).hasSize(7);
+
+        // Verify poll and poll option items are included
+        long pollCount = request.transactItems().stream()
+            .filter(item -> item.put().item().get("itemType").s().equals("POLL"))
+            .count();
+        long pollOptionCount = request.transactItems().stream()
+            .filter(item -> item.put().item().get("itemType").s().equals("POLL_OPTION"))
+            .count();
+
+        assertThat(pollCount).isEqualTo(1);
+        assertThat(pollOptionCount).isEqualTo(3);
+    }
+
+    @Test
+    void createHangoutWithAttributes_EmptyPolls_HandlesCorrectly() {
+        // Given
+        Hangout hangout = createValidHangout();
+        String groupId = UUID.randomUUID().toString();
+
+        List<HangoutPointer> pointers = Arrays.asList(
+            createValidHangoutPointer(hangout.getHangoutId(), groupId)
+        );
+        List<Poll> emptyPolls = new ArrayList<>();
+        List<PollOption> emptyPollOptions = new ArrayList<>();
+
+        TransactWriteItemsResponse response = TransactWriteItemsResponse.builder().build();
+        when(dynamoDbClient.transactWriteItems(any(TransactWriteItemsRequest.class))).thenReturn(response);
+
+        // When
+        Hangout result = repository.createHangoutWithAttributes(hangout, pointers, Collections.emptyList(), emptyPolls, emptyPollOptions);
+
+        // Then
+        assertThat(result).isSameAs(hangout);
+
+        ArgumentCaptor<TransactWriteItemsRequest> captor = ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamoDbClient).transactWriteItems(captor.capture());
+
+        TransactWriteItemsRequest request = captor.getValue();
+        assertThat(request.transactItems()).hasSize(2); // 1 hangout + 1 pointer (no polls)
+
+        // Verify no poll items are included
+        boolean hasPollItem = request.transactItems().stream()
+            .anyMatch(item -> item.put().item().get("itemType").s().equals("POLL"));
+        assertThat(hasPollItem).isFalse();
     }
 
     // ============================================================================

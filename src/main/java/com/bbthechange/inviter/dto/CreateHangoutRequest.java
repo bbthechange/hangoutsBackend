@@ -16,4 +16,5 @@ public class CreateHangoutRequest {
     private List<String> associatedGroups; // Groups to associate this hangout with
     private List<CreateAttributeRequest> attributes;
     private boolean carpoolEnabled;
+    private List<CreatePollRequest> polls; // Polls to create with the hangout
 }

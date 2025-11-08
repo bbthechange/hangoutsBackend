@@ -22,6 +22,7 @@ public class PollOption extends BaseItem {
     // Default constructor for DynamoDB
     public PollOption() {
         super();
+        setItemType("POLL_OPTION");
     }
 
     /**
@@ -29,6 +30,7 @@ public class PollOption extends BaseItem {
      */
     public PollOption(String eventId, String pollId, String text) {
         super();
+        setItemType("POLL_OPTION");
         this.eventId = eventId;
         this.pollId = pollId;
         this.optionId = UUID.randomUUID().toString();

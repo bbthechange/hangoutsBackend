@@ -24,7 +24,7 @@ public interface HangoutRepository {
     
     // New Hangout CRUD operations for InviterTable
     Hangout createHangout(Hangout hangout);
-    Hangout createHangoutWithAttributes(Hangout hangout, List<HangoutPointer> pointers, List<HangoutAttribute> attributes);
+    Hangout createHangoutWithAttributes(Hangout hangout, List<HangoutPointer> pointers, List<HangoutAttribute> attributes, List<Poll> polls, List<PollOption> pollOptions);
     Optional<Hangout> findHangoutById(String hangoutId);
     void updateHangoutMetadata(String hangoutId, Map<String, AttributeValue> updates);
     void deleteHangout(String hangoutId);

@@ -118,10 +118,47 @@ public class HangoutServiceImpl implements HangoutService {
             pointer.setAttributes(new ArrayList<>(attributes)); // Create new list to avoid shared references
         }
 
-        // Save everything in a single transaction
-        hangout = hangoutRepository.createHangoutWithAttributes(hangout, pointers, attributes);
+        // Prepare poll records
+        List<Poll> polls = new ArrayList<>();
+        List<PollOption> pollOptions = new ArrayList<>();
+        if (request.getPolls() != null) {
+            for (CreatePollRequest pollRequest : request.getPolls()) {
+                // Validate poll request
+                if (pollRequest.getTitle() == null || pollRequest.getTitle().trim().isEmpty()) {
+                    throw new ValidationException("Poll title is required");
+                }
+                if (pollRequest.getTitle().trim().length() > 200) {
+                    throw new ValidationException("Poll title must be between 1 and 200 characters");
+                }
+                if (pollRequest.getDescription() != null && pollRequest.getDescription().length() > 1000) {
+                    throw new ValidationException("Poll description cannot exceed 1000 characters");
+                }
 
-        logger.info("Created hangout {} with {} attributes by user {}", hangout.getHangoutId(), attributes.size(), requestingUserId);
+                // Create poll entity
+                Poll poll = new Poll(
+                    hangout.getHangoutId(),
+                    pollRequest.getTitle(),
+                    pollRequest.getDescription(),
+                    pollRequest.isMultipleChoice()
+                );
+                polls.add(poll);
+
+                // Create poll option entities
+                if (pollRequest.getOptions() != null) {
+                    for (String optionText : pollRequest.getOptions()) {
+                        if (optionText != null && !optionText.trim().isEmpty()) {
+                            pollOptions.add(new PollOption(hangout.getHangoutId(), poll.getPollId(), optionText.trim()));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Save everything in a single transaction
+        hangout = hangoutRepository.createHangoutWithAttributes(hangout, pointers, attributes, polls, pollOptions);
+
+        logger.info("Created hangout {} with {} attributes and {} polls by user {}",
+            hangout.getHangoutId(), attributes.size(), polls.size(), requestingUserId);
 
         // Update Group.lastHangoutModified for all associated groups
         updateGroupLastModified(hangout.getAssociatedGroups());
