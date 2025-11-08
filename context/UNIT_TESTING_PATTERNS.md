@@ -79,6 +79,38 @@ class ServiceTest {
 
 ---
 
+## Repository Test File Organization
+
+**HangoutRepositoryImpl tests are split by feature domain for focused testing:**
+
+| Test File | Coverage | Test Count | Token Size |
+|-----------|----------|------------|------------|
+| `HangoutRepositoryPollsTest` | Poll creation, options, votes, deletion transactions | 6 tests | ~3k tokens |
+| `HangoutRepositoryCarpoolingTest` | Cars, riders, needs-ride requests | 14 tests | ~5k tokens |
+| `HangoutRepositoryAttributesTest` | Generic attribute CRUD operations | 8 tests | ~3k tokens |
+| `HangoutRepositorySeriesTest` | Series queries via SeriesIndex GSI | 3 tests | ~2k tokens |
+| `HangoutRepositoryPointersTest` | Pointer batch retrieval, partial results handling | 5 tests | ~3k tokens |
+| `HangoutRepositoryDeserializationTest` | Item type deserialization, SK pattern fallback | 7 tests | ~3k tokens |
+| `HangoutRepositoryDetailDataTest` | Complete hangout detail retrieval | 3 tests | ~2k tokens |
+| `HangoutRepositoryCreationTest` | Hangout creation, atomic operations with pointers/attributes | 11 tests | ~4k tokens |
+| `HangoutRepositoryPaginationTest` | All pagination queries (upcoming, past, future, in-progress) | 33 tests | ~8k tokens |
+
+**Common test setup:** All test classes extend `HangoutRepositoryTestBase` for shared mocking configuration.
+
+### Quick Lookup for Agents
+
+**Adding poll feature?** → Read `HangoutRepositoryPollsTest.java` only (~3k tokens)
+**Modifying carpooling?** → Read `HangoutRepositoryCarpoolingTest.java` only (~5k tokens)
+**Working on pagination?** → Read `HangoutRepositoryPaginationTest.java` only (~8k tokens)
+**Adding attributes?** → Read `HangoutRepositoryAttributesTest.java` only (~3k tokens)
+**Changing creation logic?** → Read `HangoutRepositoryCreationTest.java` only (~4k tokens)
+
+**Don't grep** - Just look up the feature in the table above and go directly to the file.
+
+**Efficiency gain:** 70-90% token reduction vs reading the original 31k token monolithic test file.
+
+---
+
 ## Critical Pitfalls (Will Cause Test Failures)
 
 ### ❌ MockedStatic in @BeforeEach
