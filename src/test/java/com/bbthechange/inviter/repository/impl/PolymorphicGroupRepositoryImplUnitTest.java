@@ -631,4 +631,641 @@ class PolymorphicGroupRepositoryImplUnitTest {
             "groupName", AttributeValue.builder().s("Test Group").build()
         );
     }
+
+    // ============================================================================
+    // DELETE METHOD TESTS (Complex batch deletion)
+    // ============================================================================
+
+    @Test
+    void delete_WithMultipleRecords_DeletesAllInBatches() {
+        // Given - 30 records (group metadata + 29 memberships)
+        List<Map<String, AttributeValue>> items = new ArrayList<>();
+
+        // Add group metadata
+        items.add(createGroupItemMap());
+
+        // Add 29 membership records
+        for (int i = 0; i < 29; i++) {
+            String memberId = UUID.randomUUID().toString();
+            items.add(createGroupMembershipItemMap(memberId));
+        }
+
+        QueryResponse queryResponse = QueryResponse.builder()
+            .items(items)
+            .build();
+        when(dynamoDbClient.query(any(QueryRequest.class))).thenReturn(queryResponse);
+
+        BatchWriteItemResponse batchResponse = BatchWriteItemResponse.builder().build();
+        when(dynamoDbClient.batchWriteItem(any(BatchWriteItemRequest.class))).thenReturn(batchResponse);
+
+        // When
+        repository.delete(groupId);
+
+        // Then
+        // Verify query was executed
+        ArgumentCaptor<QueryRequest> queryCaptor = ArgumentCaptor.forClass(QueryRequest.class);
+        verify(dynamoDbClient).query(queryCaptor.capture());
+
+        QueryRequest queryRequest = queryCaptor.getValue();
+        assertThat(queryRequest.tableName()).isEqualTo("InviterTable");
+        assertThat(queryRequest.keyConditionExpression()).isEqualTo("pk = :pk");
+        assertThat(queryRequest.expressionAttributeValues().get(":pk").s()).isEqualTo("GROUP#" + groupId);
+
+        // Verify batch delete was called twice (30 items = 25 + 5)
+        ArgumentCaptor<BatchWriteItemRequest> batchCaptor = ArgumentCaptor.forClass(BatchWriteItemRequest.class);
+        verify(dynamoDbClient, times(2)).batchWriteItem(batchCaptor.capture());
+
+        List<BatchWriteItemRequest> batchRequests = batchCaptor.getAllValues();
+        assertThat(batchRequests.get(0).requestItems().get(TABLE_NAME)).hasSize(25);
+        assertThat(batchRequests.get(1).requestItems().get(TABLE_NAME)).hasSize(5);
+    }
+
+    @Test
+    void delete_WithNoRecords_ReturnsEarly() {
+        // Given
+        QueryResponse queryResponse = QueryResponse.builder()
+            .items(new ArrayList<>())
+            .build();
+        when(dynamoDbClient.query(any(QueryRequest.class))).thenReturn(queryResponse);
+
+        // When
+        repository.delete(groupId);
+
+        // Then - should not call batchWriteItem
+        verify(dynamoDbClient, never()).batchWriteItem(any(BatchWriteItemRequest.class));
+    }
+
+    @Test
+    void delete_WithExactly25Records_DeletesInOneBatch() {
+        // Given - exactly 25 records
+        List<Map<String, AttributeValue>> items = new ArrayList<>();
+        for (int i = 0; i < 25; i++) {
+            items.add(createGroupMembershipItemMap(UUID.randomUUID().toString()));
+        }
+
+        QueryResponse queryResponse = QueryResponse.builder()
+            .items(items)
+            .build();
+        when(dynamoDbClient.query(any(QueryRequest.class))).thenReturn(queryResponse);
+
+        BatchWriteItemResponse batchResponse = BatchWriteItemResponse.builder().build();
+        when(dynamoDbClient.batchWriteItem(any(BatchWriteItemRequest.class))).thenReturn(batchResponse);
+
+        // When
+        repository.delete(groupId);
+
+        // Then - should call batchWriteItem exactly once
+        ArgumentCaptor<BatchWriteItemRequest> batchCaptor = ArgumentCaptor.forClass(BatchWriteItemRequest.class);
+        verify(dynamoDbClient, times(1)).batchWriteItem(batchCaptor.capture());
+
+        BatchWriteItemRequest request = batchCaptor.getValue();
+        assertThat(request.requestItems().get(TABLE_NAME)).hasSize(25);
+    }
+
+    @Test
+    void delete_WithDynamoDbException_WrapsInRepositoryException() {
+        // Given
+        when(dynamoDbClient.query(any(QueryRequest.class)))
+            .thenThrow(DynamoDbException.builder().message("DynamoDB error").build());
+
+        // When/Then
+        assertThatThrownBy(() -> repository.delete(groupId))
+            .isInstanceOf(RepositoryException.class)
+            .hasMessageContaining("Failed to delete group completely")
+            .hasCauseInstanceOf(DynamoDbException.class);
+    }
+
+    // ============================================================================
+    // TRANSACTION TESTS (createGroupWithFirstMember)
+    // ============================================================================
+
+    @Test
+    void createGroupWithFirstMember_CreatesGroupAndMembershipAtomically() {
+        // Given
+        Group group = new Group("Test Group", true);
+        group.setGroupId(groupId);
+        group.setPk(InviterKeyFactory.getGroupPk(groupId));
+        group.setSk(InviterKeyFactory.getMetadataSk());
+
+        GroupMembership membership = new GroupMembership(groupId, userId, "Test Group");
+        membership.setPk(InviterKeyFactory.getGroupPk(groupId));
+        membership.setSk(InviterKeyFactory.getUserSk(userId));
+
+        TransactWriteItemsResponse response = TransactWriteItemsResponse.builder().build();
+        when(dynamoDbClient.transactWriteItems(any(TransactWriteItemsRequest.class))).thenReturn(response);
+
+        // When
+        repository.createGroupWithFirstMember(group, membership);
+
+        // Then
+        ArgumentCaptor<TransactWriteItemsRequest> captor = ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamoDbClient).transactWriteItems(captor.capture());
+
+        TransactWriteItemsRequest request = captor.getValue();
+        assertThat(request.transactItems()).hasSize(2);
+
+        // Verify first item is the group
+        TransactWriteItem groupItem = request.transactItems().get(0);
+        assertThat(groupItem.put()).isNotNull();
+        assertThat(groupItem.put().tableName()).isEqualTo(TABLE_NAME);
+        assertThat(groupItem.put().item().get("groupId").s()).isEqualTo(groupId);
+
+        // Verify second item is the membership
+        TransactWriteItem membershipItem = request.transactItems().get(1);
+        assertThat(membershipItem.put()).isNotNull();
+        assertThat(membershipItem.put().tableName()).isEqualTo(TABLE_NAME);
+        assertThat(membershipItem.put().item().get("userId").s()).isEqualTo(userId);
+    }
+
+    @Test
+    void createGroupWithFirstMember_WithDynamoDbException_WrapsInRepositoryException() {
+        // Given
+        Group group = new Group("Test Group", true);
+        group.setGroupId(groupId);
+        group.setPk(InviterKeyFactory.getGroupPk(groupId));
+        group.setSk(InviterKeyFactory.getMetadataSk());
+
+        GroupMembership membership = new GroupMembership(groupId, userId, "Test Group");
+
+        when(dynamoDbClient.transactWriteItems(any(TransactWriteItemsRequest.class)))
+            .thenThrow(DynamoDbException.builder().message("Transaction failed").build());
+
+        // When/Then
+        assertThatThrownBy(() -> repository.createGroupWithFirstMember(group, membership))
+            .isInstanceOf(RepositoryException.class)
+            .hasMessageContaining("Failed to create group with first member")
+            .hasCauseInstanceOf(DynamoDbException.class);
+    }
+
+    // ============================================================================
+    // DYNAMIC UPDATE EXPRESSION TESTS (updateHangoutPointer)
+    // ============================================================================
+
+    @Test
+    void updateHangoutPointer_WithSingleUpdate_BuildsCorrectExpression() {
+        // Given
+        Map<String, AttributeValue> updates = Map.of(
+            "title", AttributeValue.builder().s("Updated Title").build()
+        );
+
+        UpdateItemResponse response = UpdateItemResponse.builder().build();
+        when(dynamoDbClient.updateItem(any(UpdateItemRequest.class))).thenReturn(response);
+
+        // When
+        repository.updateHangoutPointer(groupId, hangoutId, updates);
+
+        // Then
+        ArgumentCaptor<UpdateItemRequest> captor = ArgumentCaptor.forClass(UpdateItemRequest.class);
+        verify(dynamoDbClient).updateItem(captor.capture());
+
+        UpdateItemRequest request = captor.getValue();
+        assertThat(request.tableName()).isEqualTo(TABLE_NAME);
+        assertThat(request.key().get("pk").s()).isEqualTo("GROUP#" + groupId);
+        assertThat(request.key().get("sk").s()).isEqualTo("HANGOUT#" + hangoutId);
+
+        // Verify update expression includes both the provided field and updatedAt
+        assertThat(request.updateExpression()).contains("SET title = :val0");
+        assertThat(request.updateExpression()).contains("updatedAt = :updatedAt");
+        assertThat(request.expressionAttributeValues().get(":val0").s()).isEqualTo("Updated Title");
+        assertThat(request.expressionAttributeValues()).containsKey(":updatedAt");
+    }
+
+    @Test
+    void updateHangoutPointer_WithMultipleUpdates_BuildsCorrectExpression() {
+        // Given
+        Map<String, AttributeValue> updates = new LinkedHashMap<>();
+        updates.put("title", AttributeValue.builder().s("New Title").build());
+        updates.put("participantCount", AttributeValue.builder().n("15").build());
+        updates.put("description", AttributeValue.builder().s("New Description").build());
+
+        UpdateItemResponse response = UpdateItemResponse.builder().build();
+        when(dynamoDbClient.updateItem(any(UpdateItemRequest.class))).thenReturn(response);
+
+        // When
+        repository.updateHangoutPointer(groupId, hangoutId, updates);
+
+        // Then
+        ArgumentCaptor<UpdateItemRequest> captor = ArgumentCaptor.forClass(UpdateItemRequest.class);
+        verify(dynamoDbClient).updateItem(captor.capture());
+
+        UpdateItemRequest request = captor.getValue();
+
+        // Verify all three fields are in the update expression
+        assertThat(request.updateExpression()).contains("title = :val0");
+        assertThat(request.updateExpression()).contains("participantCount = :val1");
+        assertThat(request.updateExpression()).contains("description = :val2");
+        assertThat(request.updateExpression()).contains("updatedAt = :updatedAt");
+
+        // Verify all values are present
+        assertThat(request.expressionAttributeValues().get(":val0").s()).isEqualTo("New Title");
+        assertThat(request.expressionAttributeValues().get(":val1").n()).isEqualTo("15");
+        assertThat(request.expressionAttributeValues().get(":val2").s()).isEqualTo("New Description");
+    }
+
+    @Test
+    void updateHangoutPointer_WithDynamoDbException_WrapsInRepositoryException() {
+        // Given
+        Map<String, AttributeValue> updates = Map.of(
+            "title", AttributeValue.builder().s("Updated Title").build()
+        );
+
+        when(dynamoDbClient.updateItem(any(UpdateItemRequest.class)))
+            .thenThrow(DynamoDbException.builder().message("Update failed").build());
+
+        // When/Then
+        assertThatThrownBy(() -> repository.updateHangoutPointer(groupId, hangoutId, updates))
+            .isInstanceOf(RepositoryException.class)
+            .hasMessageContaining("Failed to update hangout pointer")
+            .hasCauseInstanceOf(DynamoDbException.class);
+    }
+
+    // ============================================================================
+    // BATCH UPDATE TESTS (updateMembershipGroupNames)
+    // ============================================================================
+
+    @Test
+    void updateMembershipGroupNames_UpdatesAllMembershipNames() {
+        // Given
+        String userId1 = UUID.randomUUID().toString();
+        String userId2 = UUID.randomUUID().toString();
+
+        QueryResponse queryResponse = QueryResponse.builder()
+            .items(Arrays.asList(
+                createGroupMembershipItemMap(userId1),
+                createGroupMembershipItemMap(userId2)
+            ))
+            .build();
+        when(dynamoDbClient.query(any(QueryRequest.class))).thenReturn(queryResponse);
+
+        TransactWriteItemsResponse transactResponse = TransactWriteItemsResponse.builder().build();
+        when(dynamoDbClient.transactWriteItems(any(TransactWriteItemsRequest.class))).thenReturn(transactResponse);
+
+        // When
+        repository.updateMembershipGroupNames(groupId, "Updated Group Name");
+
+        // Then
+        ArgumentCaptor<TransactWriteItemsRequest> captor = ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamoDbClient).transactWriteItems(captor.capture());
+
+        TransactWriteItemsRequest request = captor.getValue();
+        assertThat(request.transactItems()).hasSize(2);
+
+        // Verify both updates have correct structure
+        for (TransactWriteItem item : request.transactItems()) {
+            assertThat(item.update()).isNotNull();
+            assertThat(item.update().updateExpression())
+                .isEqualTo("SET groupName = :newName, updatedAt = :timestamp");
+            assertThat(item.update().expressionAttributeValues().get(":newName").s())
+                .isEqualTo("Updated Group Name");
+            assertThat(item.update().expressionAttributeValues()).containsKey(":timestamp");
+        }
+    }
+
+    @Test
+    void updateMembershipGroupNames_BatchesLargeGroups() {
+        // Given - 50 memberships should be split into 2 batches (25, 25)
+        List<Map<String, AttributeValue>> membershipItems = new ArrayList<>();
+        for (int i = 0; i < 50; i++) {
+            membershipItems.add(createGroupMembershipItemMap(UUID.randomUUID().toString()));
+        }
+
+        QueryResponse queryResponse = QueryResponse.builder()
+            .items(membershipItems)
+            .build();
+        when(dynamoDbClient.query(any(QueryRequest.class))).thenReturn(queryResponse);
+
+        TransactWriteItemsResponse transactResponse = TransactWriteItemsResponse.builder().build();
+        when(dynamoDbClient.transactWriteItems(any(TransactWriteItemsRequest.class))).thenReturn(transactResponse);
+
+        // When
+        repository.updateMembershipGroupNames(groupId, "New Name");
+
+        // Then
+        ArgumentCaptor<TransactWriteItemsRequest> captor = ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamoDbClient, times(2)).transactWriteItems(captor.capture());
+
+        List<TransactWriteItemsRequest> requests = captor.getAllValues();
+        assertThat(requests.get(0).transactItems()).hasSize(25);
+        assertThat(requests.get(1).transactItems()).hasSize(25);
+    }
+
+    @Test
+    void updateMembershipGroupNames_ReturnsEarlyWhenNoMemberships() {
+        // Given
+        QueryResponse queryResponse = QueryResponse.builder()
+            .items(new ArrayList<>())
+            .build();
+        when(dynamoDbClient.query(any(QueryRequest.class))).thenReturn(queryResponse);
+
+        // When
+        repository.updateMembershipGroupNames(groupId, "New Name");
+
+        // Then - should not call transactWriteItems
+        verify(dynamoDbClient, never()).transactWriteItems(any(TransactWriteItemsRequest.class));
+    }
+
+    // ============================================================================
+    // POLYMORPHIC DESERIALIZATION EDGE CASES
+    // ============================================================================
+
+    @Test
+    void findById_WithMissingItemTypeButValidSk_UsesBackwardCompatibility() {
+        // Given - old data format without itemType discriminator
+        Map<String, AttributeValue> groupItem = Map.of(
+            "pk", AttributeValue.builder().s(InviterKeyFactory.getGroupPk(groupId)).build(),
+            "sk", AttributeValue.builder().s("METADATA").build(), // No itemType, but SK indicates group
+            "groupId", AttributeValue.builder().s(groupId).build(),
+            "groupName", AttributeValue.builder().s("Test Group").build(),
+            "public", AttributeValue.builder().bool(true).build()
+        );
+
+        GetItemResponse response = GetItemResponse.builder()
+            .item(groupItem)
+            .build();
+        when(dynamoDbClient.getItem(any(GetItemRequest.class))).thenReturn(response);
+
+        // When
+        Optional<Group> result = repository.findById(groupId);
+
+        // Then - should still deserialize correctly using SK pattern matching
+        assertThat(result).isPresent();
+        assertThat(result.get().getGroupId()).isEqualTo(groupId);
+    }
+
+    @Test
+    void findMembersByGroupId_WithMissingItemTypeButValidSk_UsesBackwardCompatibility() {
+        // Given - membership without itemType
+        Map<String, AttributeValue> membershipItem = Map.of(
+            "pk", AttributeValue.builder().s(InviterKeyFactory.getGroupPk(groupId)).build(),
+            "sk", AttributeValue.builder().s(InviterKeyFactory.getUserSk(userId)).build(), // No itemType
+            "groupId", AttributeValue.builder().s(groupId).build(),
+            "userId", AttributeValue.builder().s(userId).build(),
+            "groupName", AttributeValue.builder().s("Test Group").build()
+        );
+
+        QueryResponse queryResponse = QueryResponse.builder()
+            .items(List.of(membershipItem))
+            .build();
+        when(dynamoDbClient.query(any(QueryRequest.class))).thenReturn(queryResponse);
+
+        // When
+        List<GroupMembership> result = repository.findMembersByGroupId(groupId);
+
+        // Then - should deserialize using SK pattern
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getUserId()).isEqualTo(userId);
+    }
+
+    @Test
+    void findHangoutsByGroupId_FiltersOutUnknownItemTypes() {
+        // Given - mix of valid and unknown item types
+        List<Map<String, AttributeValue>> items = Arrays.asList(
+            createHangoutPointerItemMap(hangoutId),
+            Map.of(
+                "pk", AttributeValue.builder().s(InviterKeyFactory.getGroupPk(groupId)).build(),
+                "sk", AttributeValue.builder().s("HANGOUT#unknown").build(),
+                "itemType", AttributeValue.builder().s("UNKNOWN_TYPE").build() // Unknown type
+            ),
+            createHangoutPointerItemMap(UUID.randomUUID().toString())
+        );
+
+        QueryResponse queryResponse = QueryResponse.builder()
+            .items(items)
+            .build();
+        when(dynamoDbClient.query(any(QueryRequest.class))).thenReturn(queryResponse);
+
+        // When
+        List<HangoutPointer> result = repository.findHangoutsByGroupId(groupId);
+
+        // Then - should only return valid hangout pointers, filtering out unknown type
+        assertThat(result).hasSize(2);
+    }
+
+    // ============================================================================
+    // REMAINING UNCOVERED METHODS
+    // ============================================================================
+
+    @Test
+    void save_UpdatesTimestampAndSavesGroup() {
+        // Given
+        Group group = new Group("Test Group", true);
+        group.setGroupId(groupId);
+        group.setPk(InviterKeyFactory.getGroupPk(groupId));
+        group.setSk(InviterKeyFactory.getMetadataSk());
+
+        PutItemResponse response = PutItemResponse.builder().build();
+        when(dynamoDbClient.putItem(any(PutItemRequest.class))).thenReturn(response);
+
+        // When
+        Group result = repository.save(group);
+
+        // Then
+        assertThat(result).isSameAs(group);
+        assertThat(result.getUpdatedAt()).isNotNull(); // touch() should set this
+
+        ArgumentCaptor<PutItemRequest> captor = ArgumentCaptor.forClass(PutItemRequest.class);
+        verify(dynamoDbClient).putItem(captor.capture());
+
+        PutItemRequest request = captor.getValue();
+        assertThat(request.tableName()).isEqualTo(TABLE_NAME);
+        assertThat(request.item().get("groupId").s()).isEqualTo(groupId);
+    }
+
+    @Test
+    void findMembership_WithExistingMembership_ReturnsMembership() {
+        // Given
+        Map<String, AttributeValue> membershipItem = createGroupMembershipItemMap();
+        GetItemResponse response = GetItemResponse.builder()
+            .item(membershipItem)
+            .build();
+        when(dynamoDbClient.getItem(any(GetItemRequest.class))).thenReturn(response);
+
+        // When
+        Optional<GroupMembership> result = repository.findMembership(groupId, userId);
+
+        // Then
+        assertThat(result).isPresent();
+        assertThat(result.get().getGroupId()).isEqualTo(groupId);
+        assertThat(result.get().getUserId()).isEqualTo(userId);
+
+        ArgumentCaptor<GetItemRequest> captor = ArgumentCaptor.forClass(GetItemRequest.class);
+        verify(dynamoDbClient).getItem(captor.capture());
+
+        GetItemRequest request = captor.getValue();
+        assertThat(request.key().get("pk").s()).isEqualTo("GROUP#" + groupId);
+        assertThat(request.key().get("sk").s()).isEqualTo("USER#" + userId);
+    }
+
+    @Test
+    void findMembership_WithNoMembership_ReturnsEmpty() {
+        // Given
+        GetItemResponse response = GetItemResponse.builder().build(); // No item
+        when(dynamoDbClient.getItem(any(GetItemRequest.class))).thenReturn(response);
+
+        // When
+        Optional<GroupMembership> result = repository.findMembership(groupId, userId);
+
+        // Then
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void removeMember_DeletesMembershipRecord() {
+        // Given
+        DeleteItemResponse response = DeleteItemResponse.builder().build();
+        when(dynamoDbClient.deleteItem(any(DeleteItemRequest.class))).thenReturn(response);
+
+        // When
+        repository.removeMember(groupId, userId);
+
+        // Then
+        ArgumentCaptor<DeleteItemRequest> captor = ArgumentCaptor.forClass(DeleteItemRequest.class);
+        verify(dynamoDbClient).deleteItem(captor.capture());
+
+        DeleteItemRequest request = captor.getValue();
+        assertThat(request.tableName()).isEqualTo(TABLE_NAME);
+        assertThat(request.key().get("pk").s()).isEqualTo("GROUP#" + groupId);
+        assertThat(request.key().get("sk").s()).isEqualTo("USER#" + userId);
+    }
+
+    @Test
+    void saveHangoutPointer_UpdatesTimestampAndSavesPointer() {
+        // Given
+        HangoutPointer pointer = new HangoutPointer(groupId, hangoutId, "Test Hangout");
+        pointer.setPk(InviterKeyFactory.getGroupPk(groupId));
+        pointer.setSk(InviterKeyFactory.getHangoutSk(hangoutId));
+
+        PutItemResponse response = PutItemResponse.builder().build();
+        when(dynamoDbClient.putItem(any(PutItemRequest.class))).thenReturn(response);
+
+        // When
+        repository.saveHangoutPointer(pointer);
+
+        // Then
+        assertThat(pointer.getUpdatedAt()).isNotNull(); // touch() should set this
+
+        ArgumentCaptor<PutItemRequest> captor = ArgumentCaptor.forClass(PutItemRequest.class);
+        verify(dynamoDbClient).putItem(captor.capture());
+
+        PutItemRequest request = captor.getValue();
+        assertThat(request.tableName()).isEqualTo(TABLE_NAME);
+        assertThat(request.item().get("hangoutId").s()).isEqualTo(hangoutId);
+    }
+
+    @Test
+    void findHangoutPointer_WithExistingPointer_ReturnsPointer() {
+        // Given
+        Map<String, AttributeValue> pointerItem = createHangoutPointerItemMap();
+        GetItemResponse response = GetItemResponse.builder()
+            .item(pointerItem)
+            .build();
+        when(dynamoDbClient.getItem(any(GetItemRequest.class))).thenReturn(response);
+
+        // When
+        Optional<HangoutPointer> result = repository.findHangoutPointer(groupId, hangoutId);
+
+        // Then
+        assertThat(result).isPresent();
+        assertThat(result.get().getGroupId()).isEqualTo(groupId);
+        assertThat(result.get().getHangoutId()).isEqualTo(hangoutId);
+    }
+
+    @Test
+    void findHangoutPointer_WithNoPointer_ReturnsEmpty() {
+        // Given
+        GetItemResponse response = GetItemResponse.builder().build(); // No item
+        when(dynamoDbClient.getItem(any(GetItemRequest.class))).thenReturn(response);
+
+        // When
+        Optional<HangoutPointer> result = repository.findHangoutPointer(groupId, hangoutId);
+
+        // Then
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void deleteHangoutPointer_DeletesPointerRecord() {
+        // Given
+        DeleteItemResponse response = DeleteItemResponse.builder().build();
+        when(dynamoDbClient.deleteItem(any(DeleteItemRequest.class))).thenReturn(response);
+
+        // When
+        repository.deleteHangoutPointer(groupId, hangoutId);
+
+        // Then
+        ArgumentCaptor<DeleteItemRequest> captor = ArgumentCaptor.forClass(DeleteItemRequest.class);
+        verify(dynamoDbClient).deleteItem(captor.capture());
+
+        DeleteItemRequest request = captor.getValue();
+        assertThat(request.tableName()).isEqualTo(TABLE_NAME);
+        assertThat(request.key().get("pk").s()).isEqualTo("GROUP#" + groupId);
+        assertThat(request.key().get("sk").s()).isEqualTo("HANGOUT#" + hangoutId);
+    }
+
+    @Test
+    void saveSeriesPointer_UpdatesTimestampAndSavesPointer() {
+        // Given
+        SeriesPointer pointer = new SeriesPointer(groupId, seriesId, "Test Series");
+        pointer.setPk(InviterKeyFactory.getGroupPk(groupId));
+        pointer.setSk(InviterKeyFactory.getSeriesSk(seriesId));
+
+        PutItemResponse response = PutItemResponse.builder().build();
+        when(dynamoDbClient.putItem(any(PutItemRequest.class))).thenReturn(response);
+
+        // When
+        repository.saveSeriesPointer(pointer);
+
+        // Then
+        assertThat(pointer.getUpdatedAt()).isNotNull(); // touch() should set this
+
+        ArgumentCaptor<PutItemRequest> captor = ArgumentCaptor.forClass(PutItemRequest.class);
+        verify(dynamoDbClient).putItem(captor.capture());
+
+        PutItemRequest request = captor.getValue();
+        assertThat(request.tableName()).isEqualTo(TABLE_NAME);
+        assertThat(request.item().get("seriesId").s()).isEqualTo(seriesId);
+    }
+
+    @Test
+    void findMembershipByToken_QueriesCalendarTokenIndex() {
+        // Given
+        String token = "test-calendar-token-123";
+        Map<String, AttributeValue> membershipItem = createGroupMembershipItemMap();
+
+        QueryResponse queryResponse = QueryResponse.builder()
+            .items(List.of(membershipItem))
+            .build();
+        when(dynamoDbClient.query(any(QueryRequest.class))).thenReturn(queryResponse);
+
+        // When
+        Optional<GroupMembership> result = repository.findMembershipByToken(token);
+
+        // Then
+        assertThat(result).isPresent();
+        assertThat(result.get().getGroupId()).isEqualTo(groupId);
+
+        ArgumentCaptor<QueryRequest> captor = ArgumentCaptor.forClass(QueryRequest.class);
+        verify(dynamoDbClient).query(captor.capture());
+
+        QueryRequest request = captor.getValue();
+        assertThat(request.indexName()).isEqualTo("CalendarTokenIndex");
+        assertThat(request.keyConditionExpression()).isEqualTo("gsi2pk = :gsi2pk");
+        assertThat(request.expressionAttributeValues().get(":gsi2pk").s()).isEqualTo("TOKEN#" + token);
+        assertThat(request.limit()).isEqualTo(1);
+    }
+
+    @Test
+    void findMembershipByToken_WithNoResults_ReturnsEmpty() {
+        // Given
+        QueryResponse queryResponse = QueryResponse.builder()
+            .items(new ArrayList<>())
+            .build();
+        when(dynamoDbClient.query(any(QueryRequest.class))).thenReturn(queryResponse);
+
+        // When
+        Optional<GroupMembership> result = repository.findMembershipByToken("invalid-token");
+
+        // Then
+        assertThat(result).isEmpty();
+    }
 }

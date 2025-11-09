@@ -670,7 +670,7 @@ class SeriesTransactionRepositoryTest {
         List<SeriesPointer> seriesPointersToDelete = Arrays.asList(
             createTestSeriesPointer(series.getSeriesId(), series.getGroupId())
         );
-        
+
         DynamoDbException dynamoException = ProvisionedThroughputExceededException.builder()
             .message("DynamoDB error")
             .build();
@@ -680,6 +680,662 @@ class SeriesTransactionRepositoryTest {
         // When & Then
         assertThatThrownBy(() -> repository.deleteEntireSeriesWithAllHangouts(
             series, hangoutsToDelete, pointersToDelete, seriesPointersToDelete))
+            .isInstanceOf(RepositoryException.class)
+            .hasMessageContaining("DynamoDB error")
+            .hasCause(dynamoException);
+    }
+
+    // 3. unlinkHangoutFromSeries() Tests
+
+    @Test
+    void unlinkHangoutFromSeries_WithValidInputs_ShouldCreateTransactionWithCorrectItems() {
+        // Given
+        EventSeries series = createTestEventSeries();
+        series.setHangoutIds(Arrays.asList("hangout-1", "hangout-2"));
+        String hangout1Id = "hangout-1";
+        Hangout hangoutToUnlink = createTestHangout(hangout1Id);
+        List<HangoutPointer> pointersToUpdate = Arrays.asList(
+            createTestPointer(hangout1Id, series.getGroupId()),
+            createTestPointer(hangout1Id, "group-2")
+        );
+        List<SeriesPointer> seriesPointersToUpdate = Arrays.asList(
+            createTestSeriesPointer(series.getSeriesId(), series.getGroupId())
+        );
+
+        // When
+        repository.unlinkHangoutFromSeries(series, hangoutToUnlink, pointersToUpdate, seriesPointersToUpdate);
+
+        // Then
+        ArgumentCaptor<TransactWriteItemsRequest> captor =
+            ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamoDbClient).transactWriteItems(captor.capture());
+
+        TransactWriteItemsRequest request = captor.getValue();
+        // Should have: 1 series update + 1 hangout update + 2 pointer updates + 1 series pointer = 5 items
+        assertThat(request.transactItems()).hasSize(5);
+
+        List<TransactWriteItem> items = request.transactItems();
+        assertThat(items.get(0).update()).isNotNull(); // Update series
+        assertThat(items.get(1).update()).isNotNull(); // Update hangout (REMOVE seriesId)
+        assertThat(items.get(2).update()).isNotNull(); // Update pointer 1 (REMOVE seriesId)
+        assertThat(items.get(3).update()).isNotNull(); // Update pointer 2 (REMOVE seriesId)
+        assertThat(items.get(4).put()).isNotNull(); // Update series pointer
+
+        verify(performanceTracker).trackQuery(eq("unlinkHangoutFromSeries"), eq("InviterTable"), any());
+    }
+
+    @Test
+    void unlinkHangoutFromSeries_ShouldRemoveSeriesIdFromHangoutAndPointers() {
+        // Given
+        EventSeries series = createTestEventSeries();
+        series.setHangoutIds(Arrays.asList("hangout-1"));
+        String hangout1Id = "hangout-1";
+        Hangout hangoutToUnlink = createTestHangout(hangout1Id);
+        List<HangoutPointer> pointersToUpdate = Arrays.asList(
+            createTestPointer(hangout1Id, series.getGroupId())
+        );
+
+        // When
+        repository.unlinkHangoutFromSeries(series, hangoutToUnlink, pointersToUpdate, Collections.emptyList());
+
+        // Then
+        ArgumentCaptor<TransactWriteItemsRequest> captor =
+            ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamoDbClient).transactWriteItems(captor.capture());
+
+        List<TransactWriteItem> items = captor.getValue().transactItems();
+
+        // Verify hangout update removes seriesId
+        Update hangoutUpdate = items.get(1).update();
+        assertThat(hangoutUpdate.updateExpression())
+            .contains("REMOVE seriesId")
+            .contains("SET updatedAt = :updated");
+
+        // Verify pointer update removes seriesId
+        Update pointerUpdate = items.get(2).update();
+        assertThat(pointerUpdate.updateExpression())
+            .contains("REMOVE seriesId")
+            .contains("SET updatedAt = :updated");
+    }
+
+    @Test
+    void unlinkHangoutFromSeries_ShouldUpdateSeriesWithModifiedHangoutList() {
+        // Given
+        EventSeries series = createTestEventSeries();
+        series.setHangoutIds(Arrays.asList("hangout-2")); // Already has hangout removed
+        String hangout1Id = "hangout-1";
+        Hangout hangoutToUnlink = createTestHangout(hangout1Id);
+
+        // When
+        repository.unlinkHangoutFromSeries(series, hangoutToUnlink, Collections.emptyList(), Collections.emptyList());
+
+        // Then
+        ArgumentCaptor<TransactWriteItemsRequest> captor =
+            ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamoDbClient).transactWriteItems(captor.capture());
+
+        List<TransactWriteItem> items = captor.getValue().transactItems();
+
+        // Verify series update expression sets the new hangoutIds list
+        Update seriesUpdate = items.get(0).update();
+        assertThat(seriesUpdate.updateExpression())
+            .contains("SET hangoutIds = :hangoutIds")
+            .contains("updatedAt = :updated")
+            .contains("version = :version");
+    }
+
+    @Test
+    void unlinkHangoutFromSeries_WithTransactionCancellation_ShouldThrowRepositoryException() {
+        // Given
+        EventSeries series = createTestEventSeries();
+        series.setHangoutIds(Arrays.asList("hangout-1"));
+        Hangout hangoutToUnlink = createTestHangout("hangout-1");
+
+        TransactionCanceledException canceledException = TransactionCanceledException.builder()
+            .message("Transaction cancelled")
+            .build();
+        when(dynamoDbClient.transactWriteItems(any(TransactWriteItemsRequest.class)))
+            .thenThrow(canceledException);
+
+        // When & Then
+        assertThatThrownBy(() -> repository.unlinkHangoutFromSeries(
+            series, hangoutToUnlink, Collections.emptyList(), Collections.emptyList()))
+            .isInstanceOf(RepositoryException.class)
+            .hasMessageContaining("transaction cancelled")
+            .hasCause(canceledException);
+    }
+
+    @Test
+    void unlinkHangoutFromSeries_WithDynamoDbError_ShouldThrowRepositoryException() {
+        // Given
+        EventSeries series = createTestEventSeries();
+        series.setHangoutIds(Arrays.asList("hangout-1"));
+        Hangout hangoutToUnlink = createTestHangout("hangout-1");
+
+        DynamoDbException dynamoException = ProvisionedThroughputExceededException.builder()
+            .message("DynamoDB error")
+            .build();
+        when(dynamoDbClient.transactWriteItems(any(TransactWriteItemsRequest.class)))
+            .thenThrow(dynamoException);
+
+        // When & Then
+        assertThatThrownBy(() -> repository.unlinkHangoutFromSeries(
+            series, hangoutToUnlink, Collections.emptyList(), Collections.emptyList()))
+            .isInstanceOf(RepositoryException.class)
+            .hasMessageContaining("DynamoDB error")
+            .hasCause(dynamoException);
+    }
+
+    // 4. deleteEntireSeries() Tests
+
+    @Test
+    void deleteEntireSeries_WithValidInputs_ShouldCreateTransactionWithCorrectItems() {
+        // Given
+        EventSeries series = createTestEventSeries();
+        String hangout1Id = UUID.randomUUID().toString();
+        Hangout hangoutToUpdate = createTestHangout(hangout1Id);
+        List<HangoutPointer> pointersToUpdate = Arrays.asList(
+            createTestPointer(hangout1Id, series.getGroupId()),
+            createTestPointer(hangout1Id, "group-2")
+        );
+
+        // When
+        repository.deleteEntireSeries(series, hangoutToUpdate, pointersToUpdate);
+
+        // Then
+        ArgumentCaptor<TransactWriteItemsRequest> captor =
+            ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamoDbClient).transactWriteItems(captor.capture());
+
+        TransactWriteItemsRequest request = captor.getValue();
+        // Should have: 1 series delete + 1 hangout update + 2 pointer updates + 1 series pointer delete = 5 items
+        assertThat(request.transactItems()).hasSize(5);
+
+        List<TransactWriteItem> items = request.transactItems();
+        assertThat(items.get(0).delete()).isNotNull(); // Delete series
+        assertThat(items.get(1).update()).isNotNull(); // Update hangout (REMOVE seriesId)
+        assertThat(items.get(2).update()).isNotNull(); // Update pointer 1 (REMOVE seriesId)
+        assertThat(items.get(3).update()).isNotNull(); // Update pointer 2 (REMOVE seriesId)
+        assertThat(items.get(4).delete()).isNotNull(); // Delete series pointer
+
+        verify(performanceTracker).trackQuery(eq("deleteEntireSeries"), eq("InviterTable"), any());
+    }
+
+    @Test
+    void deleteEntireSeries_ShouldDeleteSeriesRecord() {
+        // Given
+        EventSeries series = createTestEventSeries();
+        Hangout hangoutToUpdate = createTestHangout(UUID.randomUUID().toString());
+
+        // When
+        repository.deleteEntireSeries(series, hangoutToUpdate, Collections.emptyList());
+
+        // Then
+        ArgumentCaptor<TransactWriteItemsRequest> captor =
+            ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamoDbClient).transactWriteItems(captor.capture());
+
+        List<TransactWriteItem> items = captor.getValue().transactItems();
+
+        // Verify series delete operation
+        Delete seriesDelete = items.get(0).delete();
+        assertThat(seriesDelete.key().get("pk").s()).isEqualTo(series.getPk());
+        assertThat(seriesDelete.key().get("sk").s()).isEqualTo(series.getSk());
+    }
+
+    @Test
+    void deleteEntireSeries_ShouldDeleteSeriesPointerWithConstructedKey() {
+        // Given
+        EventSeries series = createTestEventSeries();
+        Hangout hangoutToUpdate = createTestHangout(UUID.randomUUID().toString());
+
+        // When
+        repository.deleteEntireSeries(series, hangoutToUpdate, Collections.emptyList());
+
+        // Then
+        ArgumentCaptor<TransactWriteItemsRequest> captor =
+            ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamoDbClient).transactWriteItems(captor.capture());
+
+        List<TransactWriteItem> items = captor.getValue().transactItems();
+
+        // Verify series pointer delete uses GROUP# and SERIES# pattern
+        Delete seriesPointerDelete = items.get(items.size() - 1).delete();
+        assertThat(seriesPointerDelete.key().get("pk").s())
+            .startsWith("GROUP#")
+            .contains(series.getGroupId());
+        assertThat(seriesPointerDelete.key().get("sk").s())
+            .startsWith("SERIES#")
+            .contains(series.getSeriesId());
+    }
+
+    @Test
+    void deleteEntireSeries_WithTransactionCancellation_ShouldThrowRepositoryException() {
+        // Given
+        EventSeries series = createTestEventSeries();
+        Hangout hangoutToUpdate = createTestHangout(UUID.randomUUID().toString());
+
+        TransactionCanceledException canceledException = TransactionCanceledException.builder()
+            .message("Transaction cancelled")
+            .build();
+        when(dynamoDbClient.transactWriteItems(any(TransactWriteItemsRequest.class)))
+            .thenThrow(canceledException);
+
+        // When & Then
+        assertThatThrownBy(() -> repository.deleteEntireSeries(series, hangoutToUpdate, Collections.emptyList()))
+            .isInstanceOf(RepositoryException.class)
+            .hasMessageContaining("transaction cancelled")
+            .hasCause(canceledException);
+    }
+
+    @Test
+    void deleteEntireSeries_WithDynamoDbError_ShouldThrowRepositoryException() {
+        // Given
+        EventSeries series = createTestEventSeries();
+        Hangout hangoutToUpdate = createTestHangout(UUID.randomUUID().toString());
+
+        DynamoDbException dynamoException = ProvisionedThroughputExceededException.builder()
+            .message("DynamoDB error")
+            .build();
+        when(dynamoDbClient.transactWriteItems(any(TransactWriteItemsRequest.class)))
+            .thenThrow(dynamoException);
+
+        // When & Then
+        assertThatThrownBy(() -> repository.deleteEntireSeries(series, hangoutToUpdate, Collections.emptyList()))
+            .isInstanceOf(RepositoryException.class)
+            .hasMessageContaining("DynamoDB error")
+            .hasCause(dynamoException);
+    }
+
+    // 5. removeHangoutFromSeries() Tests
+
+    @Test
+    void removeHangoutFromSeries_WithValidInputs_ShouldCreateTransactionWithCorrectItems() {
+        // Given
+        EventSeries series = createTestEventSeries();
+        series.setHangoutIds(Arrays.asList("hangout-2")); // Already has hangout removed
+        String hangout1Id = "hangout-1";
+        Hangout hangoutToDelete = createTestHangout(hangout1Id);
+        List<HangoutPointer> pointersToDelete = Arrays.asList(
+            createTestPointer(hangout1Id, series.getGroupId()),
+            createTestPointer(hangout1Id, "group-2")
+        );
+        List<SeriesPointer> seriesPointersToUpdate = Arrays.asList(
+            createTestSeriesPointer(series.getSeriesId(), series.getGroupId())
+        );
+
+        // When
+        repository.removeHangoutFromSeries(series, hangoutToDelete, pointersToDelete, seriesPointersToUpdate);
+
+        // Then
+        ArgumentCaptor<TransactWriteItemsRequest> captor =
+            ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamoDbClient).transactWriteItems(captor.capture());
+
+        TransactWriteItemsRequest request = captor.getValue();
+        // Should have: 1 series update + 1 hangout delete + 2 pointer deletes + 1 series pointer update = 5 items
+        assertThat(request.transactItems()).hasSize(5);
+
+        List<TransactWriteItem> items = request.transactItems();
+        assertThat(items.get(0).update()).isNotNull(); // Update series
+        assertThat(items.get(1).delete()).isNotNull(); // Delete hangout
+        assertThat(items.get(2).delete()).isNotNull(); // Delete pointer 1
+        assertThat(items.get(3).delete()).isNotNull(); // Delete pointer 2
+        assertThat(items.get(4).put()).isNotNull(); // Update series pointer
+
+        verify(performanceTracker).trackQuery(eq("removeHangoutFromSeries"), eq("InviterTable"), any());
+    }
+
+    @Test
+    void removeHangoutFromSeries_ShouldUpdateSeriesWithModifiedHangoutList() {
+        // Given
+        EventSeries series = createTestEventSeries();
+        series.setHangoutIds(Arrays.asList("hangout-2")); // Already has hangout removed
+        Hangout hangoutToDelete = createTestHangout("hangout-1");
+
+        // When
+        repository.removeHangoutFromSeries(series, hangoutToDelete, Collections.emptyList(), Collections.emptyList());
+
+        // Then
+        ArgumentCaptor<TransactWriteItemsRequest> captor =
+            ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamoDbClient).transactWriteItems(captor.capture());
+
+        List<TransactWriteItem> items = captor.getValue().transactItems();
+
+        // Verify series update sets the modified hangoutIds list
+        Update seriesUpdate = items.get(0).update();
+        assertThat(seriesUpdate.updateExpression())
+            .contains("SET hangoutIds = :hangoutIds")
+            .contains("updatedAt = :updated")
+            .contains("version = :version");
+    }
+
+    @Test
+    void removeHangoutFromSeries_ShouldDeleteHangoutAndPointers() {
+        // Given
+        EventSeries series = createTestEventSeries();
+        series.setHangoutIds(Arrays.asList("hangout-2"));
+        String hangout1Id = "hangout-1";
+        Hangout hangoutToDelete = createTestHangout(hangout1Id);
+        HangoutPointer pointer1 = createTestPointer(hangout1Id, series.getGroupId());
+        HangoutPointer pointer2 = createTestPointer(hangout1Id, "group-2");
+        List<HangoutPointer> pointersToDelete = Arrays.asList(pointer1, pointer2);
+
+        // When
+        repository.removeHangoutFromSeries(series, hangoutToDelete, pointersToDelete, Collections.emptyList());
+
+        // Then
+        ArgumentCaptor<TransactWriteItemsRequest> captor =
+            ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamoDbClient).transactWriteItems(captor.capture());
+
+        List<TransactWriteItem> items = captor.getValue().transactItems();
+
+        // Verify hangout delete
+        Delete hangoutDelete = items.get(1).delete();
+        assertThat(hangoutDelete.key().get("pk").s()).isEqualTo(hangoutToDelete.getPk());
+        assertThat(hangoutDelete.key().get("sk").s()).isEqualTo(hangoutToDelete.getSk());
+
+        // Verify pointer deletes
+        Delete pointer1Delete = items.get(2).delete();
+        assertThat(pointer1Delete.key().get("pk").s()).isEqualTo(pointer1.getPk());
+        assertThat(pointer1Delete.key().get("sk").s()).isEqualTo(pointer1.getSk());
+
+        Delete pointer2Delete = items.get(3).delete();
+        assertThat(pointer2Delete.key().get("pk").s()).isEqualTo(pointer2.getPk());
+        assertThat(pointer2Delete.key().get("sk").s()).isEqualTo(pointer2.getSk());
+    }
+
+    @Test
+    void removeHangoutFromSeries_WithTransactionCancellation_ShouldThrowRepositoryException() {
+        // Given
+        EventSeries series = createTestEventSeries();
+        series.setHangoutIds(Arrays.asList("hangout-2"));
+        Hangout hangoutToDelete = createTestHangout("hangout-1");
+
+        TransactionCanceledException canceledException = TransactionCanceledException.builder()
+            .message("Transaction cancelled")
+            .build();
+        when(dynamoDbClient.transactWriteItems(any(TransactWriteItemsRequest.class)))
+            .thenThrow(canceledException);
+
+        // When & Then
+        assertThatThrownBy(() -> repository.removeHangoutFromSeries(
+            series, hangoutToDelete, Collections.emptyList(), Collections.emptyList()))
+            .isInstanceOf(RepositoryException.class)
+            .hasMessageContaining("transaction cancelled")
+            .hasCause(canceledException);
+    }
+
+    @Test
+    void removeHangoutFromSeries_WithDynamoDbError_ShouldThrowRepositoryException() {
+        // Given
+        EventSeries series = createTestEventSeries();
+        series.setHangoutIds(Arrays.asList("hangout-2"));
+        Hangout hangoutToDelete = createTestHangout("hangout-1");
+
+        DynamoDbException dynamoException = ProvisionedThroughputExceededException.builder()
+            .message("DynamoDB error")
+            .build();
+        when(dynamoDbClient.transactWriteItems(any(TransactWriteItemsRequest.class)))
+            .thenThrow(dynamoException);
+
+        // When & Then
+        assertThatThrownBy(() -> repository.removeHangoutFromSeries(
+            series, hangoutToDelete, Collections.emptyList(), Collections.emptyList()))
+            .isInstanceOf(RepositoryException.class)
+            .hasMessageContaining("DynamoDB error")
+            .hasCause(dynamoException);
+    }
+
+    // 6. deleteSeriesAndFinalHangout() Tests
+
+    @Test
+    void deleteSeriesAndFinalHangout_WithValidInputs_ShouldCreateTransactionWithCorrectItems() {
+        // Given
+        EventSeries series = createTestEventSeries();
+        String hangout1Id = UUID.randomUUID().toString();
+        Hangout hangoutToDelete = createTestHangout(hangout1Id);
+        List<HangoutPointer> pointersToDelete = Arrays.asList(
+            createTestPointer(hangout1Id, series.getGroupId()),
+            createTestPointer(hangout1Id, "group-2")
+        );
+
+        // When
+        repository.deleteSeriesAndFinalHangout(series, hangoutToDelete, pointersToDelete);
+
+        // Then
+        ArgumentCaptor<TransactWriteItemsRequest> captor =
+            ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamoDbClient).transactWriteItems(captor.capture());
+
+        TransactWriteItemsRequest request = captor.getValue();
+        // Should have: 1 series delete + 1 hangout delete + 2 pointer deletes + 1 series pointer delete = 5 items
+        assertThat(request.transactItems()).hasSize(5);
+
+        List<TransactWriteItem> items = request.transactItems();
+        assertThat(items.get(0).delete()).isNotNull(); // Delete series
+        assertThat(items.get(1).delete()).isNotNull(); // Delete hangout
+        assertThat(items.get(2).delete()).isNotNull(); // Delete pointer 1
+        assertThat(items.get(3).delete()).isNotNull(); // Delete pointer 2
+        assertThat(items.get(4).delete()).isNotNull(); // Delete series pointer
+
+        verify(performanceTracker).trackQuery(eq("deleteSeriesAndFinalHangout"), eq("InviterTable"), any());
+    }
+
+    @Test
+    void deleteSeriesAndFinalHangout_ShouldDeleteAllRecordsAtomically() {
+        // Given
+        EventSeries series = createTestEventSeries();
+        String hangout1Id = UUID.randomUUID().toString();
+        Hangout hangoutToDelete = createTestHangout(hangout1Id);
+        HangoutPointer pointer = createTestPointer(hangout1Id, series.getGroupId());
+        List<HangoutPointer> pointersToDelete = Arrays.asList(pointer);
+
+        // When
+        repository.deleteSeriesAndFinalHangout(series, hangoutToDelete, pointersToDelete);
+
+        // Then
+        ArgumentCaptor<TransactWriteItemsRequest> captor =
+            ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamoDbClient).transactWriteItems(captor.capture());
+
+        List<TransactWriteItem> items = captor.getValue().transactItems();
+
+        // Verify series delete
+        Delete seriesDelete = items.get(0).delete();
+        assertThat(seriesDelete.key().get("pk").s()).isEqualTo(series.getPk());
+        assertThat(seriesDelete.key().get("sk").s()).isEqualTo(series.getSk());
+
+        // Verify hangout delete
+        Delete hangoutDelete = items.get(1).delete();
+        assertThat(hangoutDelete.key().get("pk").s()).isEqualTo(hangoutToDelete.getPk());
+        assertThat(hangoutDelete.key().get("sk").s()).isEqualTo(hangoutToDelete.getSk());
+
+        // Verify pointer delete
+        Delete pointerDelete = items.get(2).delete();
+        assertThat(pointerDelete.key().get("pk").s()).isEqualTo(pointer.getPk());
+        assertThat(pointerDelete.key().get("sk").s()).isEqualTo(pointer.getSk());
+
+        // Verify series pointer delete with constructed key
+        Delete seriesPointerDelete = items.get(3).delete();
+        assertThat(seriesPointerDelete.key().get("pk").s())
+            .startsWith("GROUP#")
+            .contains(series.getGroupId());
+        assertThat(seriesPointerDelete.key().get("sk").s())
+            .startsWith("SERIES#")
+            .contains(series.getSeriesId());
+    }
+
+    @Test
+    void deleteSeriesAndFinalHangout_WithEmptyPointerList_ShouldOnlyDeleteSeriesAndHangout() {
+        // Given
+        EventSeries series = createTestEventSeries();
+        Hangout hangoutToDelete = createTestHangout(UUID.randomUUID().toString());
+
+        // When
+        repository.deleteSeriesAndFinalHangout(series, hangoutToDelete, Collections.emptyList());
+
+        // Then
+        ArgumentCaptor<TransactWriteItemsRequest> captor =
+            ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamoDbClient).transactWriteItems(captor.capture());
+
+        TransactWriteItemsRequest request = captor.getValue();
+        // Should have: 1 series delete + 1 hangout delete + 1 series pointer delete = 3 items
+        assertThat(request.transactItems()).hasSize(3);
+    }
+
+    @Test
+    void deleteSeriesAndFinalHangout_WithTransactionCancellation_ShouldThrowRepositoryException() {
+        // Given
+        EventSeries series = createTestEventSeries();
+        Hangout hangoutToDelete = createTestHangout(UUID.randomUUID().toString());
+
+        TransactionCanceledException canceledException = TransactionCanceledException.builder()
+            .message("Transaction cancelled")
+            .build();
+        when(dynamoDbClient.transactWriteItems(any(TransactWriteItemsRequest.class)))
+            .thenThrow(canceledException);
+
+        // When & Then
+        assertThatThrownBy(() -> repository.deleteSeriesAndFinalHangout(
+            series, hangoutToDelete, Collections.emptyList()))
+            .isInstanceOf(RepositoryException.class)
+            .hasMessageContaining("transaction cancelled")
+            .hasCause(canceledException);
+    }
+
+    @Test
+    void deleteSeriesAndFinalHangout_WithDynamoDbError_ShouldThrowRepositoryException() {
+        // Given
+        EventSeries series = createTestEventSeries();
+        Hangout hangoutToDelete = createTestHangout(UUID.randomUUID().toString());
+
+        DynamoDbException dynamoException = ProvisionedThroughputExceededException.builder()
+            .message("DynamoDB error")
+            .build();
+        when(dynamoDbClient.transactWriteItems(any(TransactWriteItemsRequest.class)))
+            .thenThrow(dynamoException);
+
+        // When & Then
+        assertThatThrownBy(() -> repository.deleteSeriesAndFinalHangout(
+            series, hangoutToDelete, Collections.emptyList()))
+            .isInstanceOf(RepositoryException.class)
+            .hasMessageContaining("DynamoDB error")
+            .hasCause(dynamoException);
+    }
+
+    // 7. updateSeriesAfterHangoutChange() Tests
+
+    @Test
+    void updateSeriesAfterHangoutChange_WithValidInputs_ShouldCreateTransactionWithCorrectItems() {
+        // Given
+        EventSeries series = createTestEventSeries();
+        List<SeriesPointer> seriesPointersToUpdate = Arrays.asList(
+            createTestSeriesPointer(series.getSeriesId(), series.getGroupId()),
+            createTestSeriesPointer(series.getSeriesId(), "group-2")
+        );
+
+        // When
+        repository.updateSeriesAfterHangoutChange(series, seriesPointersToUpdate);
+
+        // Then
+        ArgumentCaptor<TransactWriteItemsRequest> captor =
+            ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamoDbClient).transactWriteItems(captor.capture());
+
+        TransactWriteItemsRequest request = captor.getValue();
+        // Should have: 1 series update + 2 series pointer updates = 3 items
+        assertThat(request.transactItems()).hasSize(3);
+
+        List<TransactWriteItem> items = request.transactItems();
+        assertThat(items.get(0).put()).isNotNull(); // Update series (PUT)
+        assertThat(items.get(1).put()).isNotNull(); // Update series pointer 1 (PUT)
+        assertThat(items.get(2).put()).isNotNull(); // Update series pointer 2 (PUT)
+
+        verify(performanceTracker).trackQuery(eq("updateSeriesAfterHangoutChange"), eq("InviterTable"), any());
+    }
+
+    @Test
+    void updateSeriesAfterHangoutChange_ShouldUsePutOperationsForUpdates() {
+        // Given
+        EventSeries series = createTestEventSeries();
+        SeriesPointer seriesPointer = createTestSeriesPointer(series.getSeriesId(), series.getGroupId());
+        List<SeriesPointer> seriesPointersToUpdate = Arrays.asList(seriesPointer);
+
+        // When
+        repository.updateSeriesAfterHangoutChange(series, seriesPointersToUpdate);
+
+        // Then
+        ArgumentCaptor<TransactWriteItemsRequest> captor =
+            ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamoDbClient).transactWriteItems(captor.capture());
+
+        List<TransactWriteItem> items = captor.getValue().transactItems();
+
+        // Verify series is updated with PUT (complete replacement)
+        assertThat(items.get(0).put()).isNotNull();
+        assertThat(items.get(0).put().item()).isNotEmpty();
+
+        // Verify series pointer is updated with PUT (complete replacement)
+        assertThat(items.get(1).put()).isNotNull();
+        assertThat(items.get(1).put().item()).isNotEmpty();
+    }
+
+    @Test
+    void updateSeriesAfterHangoutChange_WithEmptyPointerList_ShouldOnlyUpdateSeries() {
+        // Given
+        EventSeries series = createTestEventSeries();
+
+        // When
+        repository.updateSeriesAfterHangoutChange(series, Collections.emptyList());
+
+        // Then
+        ArgumentCaptor<TransactWriteItemsRequest> captor =
+            ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamoDbClient).transactWriteItems(captor.capture());
+
+        TransactWriteItemsRequest request = captor.getValue();
+        // Should have only 1 series update
+        assertThat(request.transactItems()).hasSize(1);
+
+        TransactWriteItem item = request.transactItems().get(0);
+        assertThat(item.put()).isNotNull();
+    }
+
+    @Test
+    void updateSeriesAfterHangoutChange_WithTransactionCancellation_ShouldThrowRepositoryException() {
+        // Given
+        EventSeries series = createTestEventSeries();
+
+        TransactionCanceledException canceledException = TransactionCanceledException.builder()
+            .message("Transaction cancelled")
+            .build();
+        when(dynamoDbClient.transactWriteItems(any(TransactWriteItemsRequest.class)))
+            .thenThrow(canceledException);
+
+        // When & Then
+        assertThatThrownBy(() -> repository.updateSeriesAfterHangoutChange(series, Collections.emptyList()))
+            .isInstanceOf(RepositoryException.class)
+            .hasMessageContaining("transaction cancelled")
+            .hasCause(canceledException);
+    }
+
+    @Test
+    void updateSeriesAfterHangoutChange_WithDynamoDbError_ShouldThrowRepositoryException() {
+        // Given
+        EventSeries series = createTestEventSeries();
+
+        DynamoDbException dynamoException = ProvisionedThroughputExceededException.builder()
+            .message("DynamoDB error")
+            .build();
+        when(dynamoDbClient.transactWriteItems(any(TransactWriteItemsRequest.class)))
+            .thenThrow(dynamoException);
+
+        // When & Then
+        assertThatThrownBy(() -> repository.updateSeriesAfterHangoutChange(series, Collections.emptyList()))
             .isInstanceOf(RepositoryException.class)
             .hasMessageContaining("DynamoDB error")
             .hasCause(dynamoException);

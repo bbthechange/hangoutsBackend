@@ -3,6 +3,7 @@ package com.bbthechange.inviter.service.impl;
 import com.bbthechange.inviter.dto.CreateHangoutRequest;
 import com.bbthechange.inviter.dto.EventSeriesDetailDTO;
 import com.bbthechange.inviter.dto.HangoutDetailDTO;
+import com.bbthechange.inviter.dto.UpdateSeriesRequest;
 import com.bbthechange.inviter.exception.RepositoryException;
 import com.bbthechange.inviter.exception.ResourceNotFoundException;
 import com.bbthechange.inviter.exception.UnauthorizedException;
@@ -2033,5 +2034,534 @@ class EventSeriesServiceImplTest {
         assertThat(newPointers).hasSize(2); // One for each group
         assertThat(newPointers.get(0).getMainImagePath()).isEqualTo("/new-part-image.jpg");
         assertThat(newPointers.get(1).getMainImagePath()).isEqualTo("/new-part-image.jpg");
+    }
+
+    // Tests for updateSeries() method
+
+    @Test
+    void updateSeries_WithTitleUpdate_UpdatesSeriesTitle() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        String groupId = UUID.randomUUID().toString();
+
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setSeriesTitle("Old Title");
+        series.setVersion(1L);
+        series.setGroupId(groupId);
+        series.setHangoutIds(Arrays.asList("hangout1", "hangout2"));
+
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+
+        UpdateSeriesRequest request = new UpdateSeriesRequest();
+        request.setVersion(1L);
+        request.setSeriesTitle("New Title");
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(hangoutRepository.findHangoutById("hangout1")).thenReturn(Optional.of(new Hangout()));
+        when(hangoutRepository.findHangoutById("hangout2")).thenReturn(Optional.of(new Hangout()));
+        when(hangoutRepository.findPointersForHangout(any())).thenReturn(Collections.emptyList());
+
+        // When
+        EventSeries result = eventSeriesService.updateSeries(seriesId, request, userId);
+
+        // Then
+        assertThat(result.getSeriesTitle()).isEqualTo("New Title");
+        assertThat(result.getVersion()).isEqualTo(2L); // Version incremented
+        verify(eventSeriesRepository).save(series);
+        verify(groupRepository, atLeastOnce()).saveSeriesPointer(any(SeriesPointer.class));
+    }
+
+    @Test
+    void updateSeries_WithDescriptionUpdate_UpdatesSeriesDescription() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        String groupId = UUID.randomUUID().toString();
+
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setSeriesTitle("Title");
+        series.setSeriesDescription("Old Description");
+        series.setVersion(1L);
+        series.setGroupId(groupId);
+        series.setHangoutIds(Arrays.asList("hangout1"));
+
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+
+        UpdateSeriesRequest request = new UpdateSeriesRequest();
+        request.setVersion(1L);
+        request.setSeriesDescription("New Description");
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(hangoutRepository.findHangoutById("hangout1")).thenReturn(Optional.of(new Hangout()));
+        when(hangoutRepository.findPointersForHangout(any())).thenReturn(Collections.emptyList());
+
+        // When
+        EventSeries result = eventSeriesService.updateSeries(seriesId, request, userId);
+
+        // Then
+        assertThat(result.getSeriesDescription()).isEqualTo("New Description");
+        assertThat(result.getVersion()).isEqualTo(2L);
+        verify(eventSeriesRepository).save(series);
+    }
+
+    @Test
+    void updateSeries_WithPrimaryEventIdUpdate_UpdatesPrimaryEventId() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        String groupId = UUID.randomUUID().toString();
+        String hangout1Id = UUID.randomUUID().toString();
+        String hangout2Id = UUID.randomUUID().toString();
+
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setSeriesTitle("Title");
+        series.setPrimaryEventId(hangout1Id);
+        series.setVersion(1L);
+        series.setGroupId(groupId);
+        series.setHangoutIds(Arrays.asList(hangout1Id, hangout2Id));
+
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+
+        UpdateSeriesRequest request = new UpdateSeriesRequest();
+        request.setVersion(1L);
+        request.setPrimaryEventId(hangout2Id); // Change to hangout2
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(hangoutRepository.findHangoutById(hangout1Id)).thenReturn(Optional.of(new Hangout()));
+        when(hangoutRepository.findHangoutById(hangout2Id)).thenReturn(Optional.of(new Hangout()));
+        when(hangoutRepository.findPointersForHangout(any())).thenReturn(Collections.emptyList());
+
+        // When
+        EventSeries result = eventSeriesService.updateSeries(seriesId, request, userId);
+
+        // Then
+        assertThat(result.getPrimaryEventId()).isEqualTo(hangout2Id);
+        assertThat(result.getVersion()).isEqualTo(2L);
+        verify(eventSeriesRepository).save(series);
+    }
+
+    @Test
+    void updateSeries_WithAllFieldsUpdated_UpdatesAllFields() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        String groupId = UUID.randomUUID().toString();
+        String hangout1Id = UUID.randomUUID().toString();
+        String hangout2Id = UUID.randomUUID().toString();
+
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setSeriesTitle("Old Title");
+        series.setSeriesDescription("Old Description");
+        series.setPrimaryEventId(hangout1Id);
+        series.setVersion(1L);
+        series.setGroupId(groupId);
+        series.setHangoutIds(Arrays.asList(hangout1Id, hangout2Id));
+
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+
+        UpdateSeriesRequest request = new UpdateSeriesRequest();
+        request.setVersion(1L);
+        request.setSeriesTitle("New Title");
+        request.setSeriesDescription("New Description");
+        request.setPrimaryEventId(hangout2Id);
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(hangoutRepository.findHangoutById(hangout1Id)).thenReturn(Optional.of(new Hangout()));
+        when(hangoutRepository.findHangoutById(hangout2Id)).thenReturn(Optional.of(new Hangout()));
+        when(hangoutRepository.findPointersForHangout(any())).thenReturn(Collections.emptyList());
+
+        // When
+        EventSeries result = eventSeriesService.updateSeries(seriesId, request, userId);
+
+        // Then
+        assertThat(result.getSeriesTitle()).isEqualTo("New Title");
+        assertThat(result.getSeriesDescription()).isEqualTo("New Description");
+        assertThat(result.getPrimaryEventId()).isEqualTo(hangout2Id);
+        assertThat(result.getVersion()).isEqualTo(2L);
+        verify(eventSeriesRepository).save(series);
+    }
+
+    @Test
+    void updateSeries_WithNoUpdates_ReturnsUnchangedSeries() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        String groupId = UUID.randomUUID().toString();
+
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setSeriesTitle("Title");
+        series.setVersion(1L);
+        series.setGroupId(groupId);
+        series.setHangoutIds(Arrays.asList("hangout1"));
+
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+
+        UpdateSeriesRequest request = new UpdateSeriesRequest();
+        request.setVersion(1L);
+        // No updates set - all fields are null
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+
+        // When
+        EventSeries result = eventSeriesService.updateSeries(seriesId, request, userId);
+
+        // Then
+        assertThat(result.getSeriesTitle()).isEqualTo("Title");
+        assertThat(result.getVersion()).isEqualTo(1L); // Version not incremented
+        verify(eventSeriesRepository, never()).save(any());
+        verify(groupRepository, never()).saveSeriesPointer(any());
+    }
+
+    @Test
+    void updateSeries_WithInvalidPrimaryEventId_ThrowsValidationException() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        String groupId = UUID.randomUUID().toString();
+        String hangout1Id = UUID.randomUUID().toString();
+        String invalidHangoutId = UUID.randomUUID().toString(); // Not in series
+
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setSeriesTitle("Title");
+        series.setVersion(1L);
+        series.setGroupId(groupId);
+        series.setHangoutIds(Arrays.asList(hangout1Id)); // Only contains hangout1
+
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+
+        UpdateSeriesRequest request = new UpdateSeriesRequest();
+        request.setVersion(1L);
+        request.setPrimaryEventId(invalidHangoutId);
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+
+        // When & Then
+        assertThatThrownBy(() -> eventSeriesService.updateSeries(seriesId, request, userId))
+            .isInstanceOf(ValidationException.class)
+            .hasMessageContaining("not a member of series");
+
+        verify(eventSeriesRepository, never()).save(any());
+    }
+
+    @Test
+    void updateSeries_WithNonExistentUser_ThrowsUnauthorizedException() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+
+        UpdateSeriesRequest request = new UpdateSeriesRequest();
+        request.setVersion(1L);
+        request.setSeriesTitle("New Title");
+
+        when(userRepository.findById(userId)).thenReturn(Optional.empty());
+
+        // When & Then
+        assertThatThrownBy(() -> eventSeriesService.updateSeries(seriesId, request, userId))
+            .isInstanceOf(UnauthorizedException.class)
+            .hasMessageContaining("not found");
+
+        verify(eventSeriesRepository, never()).findById(any());
+        verify(eventSeriesRepository, never()).save(any());
+    }
+
+    @Test
+    void updateSeries_WithNonExistentSeries_ThrowsResourceNotFoundException() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+
+        UpdateSeriesRequest request = new UpdateSeriesRequest();
+        request.setVersion(1L);
+        request.setSeriesTitle("New Title");
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.empty());
+
+        // When & Then
+        assertThatThrownBy(() -> eventSeriesService.updateSeries(seriesId, request, userId))
+            .isInstanceOf(ResourceNotFoundException.class)
+            .hasMessageContaining("EventSeries not found");
+
+        verify(eventSeriesRepository, never()).save(any());
+    }
+
+    @Test
+    void updateSeries_WithSaveFailure_ThrowsRepositoryException() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        String groupId = UUID.randomUUID().toString();
+
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setSeriesTitle("Old Title");
+        series.setVersion(1L);
+        series.setGroupId(groupId);
+        series.setHangoutIds(Arrays.asList("hangout1"));
+
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+
+        UpdateSeriesRequest request = new UpdateSeriesRequest();
+        request.setVersion(1L);
+        request.setSeriesTitle("New Title");
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(eventSeriesRepository.save(any())).thenThrow(new RuntimeException("Database error"));
+
+        // When & Then
+        assertThatThrownBy(() -> eventSeriesService.updateSeries(seriesId, request, userId))
+            .isInstanceOf(RepositoryException.class)
+            .hasMessageContaining("Failed to update series");
+    }
+
+    @Test
+    void updateSeries_UpdatesSeriesPointers_ToMaintainConsistency() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        String groupId = UUID.randomUUID().toString();
+        String hangout1Id = UUID.randomUUID().toString();
+
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setSeriesTitle("Old Title");
+        series.setVersion(1L);
+        series.setGroupId(groupId);
+        series.setHangoutIds(Arrays.asList(hangout1Id));
+
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+
+        UpdateSeriesRequest request = new UpdateSeriesRequest();
+        request.setVersion(1L);
+        request.setSeriesTitle("New Title");
+
+        Hangout hangout = new Hangout();
+        hangout.setHangoutId(hangout1Id);
+
+        HangoutPointer pointer = HangoutPointerTestBuilder.aPointer()
+            .forGroup(groupId)
+            .forHangout(hangout1Id)
+            .build();
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(hangoutRepository.findHangoutById(hangout1Id)).thenReturn(Optional.of(hangout));
+        when(hangoutRepository.findPointersForHangout(hangout)).thenReturn(Arrays.asList(pointer));
+
+        // When
+        eventSeriesService.updateSeries(seriesId, request, userId);
+
+        // Then
+        ArgumentCaptor<SeriesPointer> seriesPointerCaptor = ArgumentCaptor.forClass(SeriesPointer.class);
+        verify(groupRepository, atLeastOnce()).saveSeriesPointer(seriesPointerCaptor.capture());
+
+        // Verify SeriesPointer has updated title
+        SeriesPointer savedPointer = seriesPointerCaptor.getValue();
+        assertThat(savedPointer.getSeriesTitle()).isEqualTo("New Title");
+        assertThat(savedPointer.getGroupId()).isEqualTo(groupId);
+    }
+
+    // Tests for calculateLatestTimestamp() helper method
+
+    @Test
+    void calculateLatestTimestamp_WithMultipleHangoutsWithEndTimes_ReturnsLatestEndTime() throws Exception {
+        // Given
+        Hangout hangout1 = HangoutTestBuilder.aHangout()
+            .withStartTimestamp(1000L)
+            .withEndTimestamp(2000L)
+            .build();
+
+        Hangout hangout2 = HangoutTestBuilder.aHangout()
+            .withStartTimestamp(1500L)
+            .withEndTimestamp(3000L) // Latest
+            .build();
+
+        Hangout hangout3 = HangoutTestBuilder.aHangout()
+            .withStartTimestamp(500L)
+            .withEndTimestamp(1500L)
+            .build();
+
+        List<Hangout> hangouts = Arrays.asList(hangout1, hangout2, hangout3);
+
+        // When
+        Method calculateLatestMethod = EventSeriesServiceImpl.class.getDeclaredMethod("calculateLatestTimestamp", List.class);
+        calculateLatestMethod.setAccessible(true);
+        Long result = (Long) calculateLatestMethod.invoke(eventSeriesService, hangouts);
+
+        // Then
+        assertThat(result).isEqualTo(3000L); // Latest endTimestamp
+    }
+
+    @Test
+    void calculateLatestTimestamp_WithHangoutsWithOnlyStartTimes_ReturnsLatestStartTime() throws Exception {
+        // Given
+        Hangout hangout1 = HangoutTestBuilder.aHangout()
+            .withStartTimestamp(1000L)
+            .build();
+
+        Hangout hangout2 = HangoutTestBuilder.aHangout()
+            .withStartTimestamp(3000L) // Latest
+            .build();
+
+        Hangout hangout3 = HangoutTestBuilder.aHangout()
+            .withStartTimestamp(2000L)
+            .build();
+
+        List<Hangout> hangouts = Arrays.asList(hangout1, hangout2, hangout3);
+
+        // When
+        Method calculateLatestMethod = EventSeriesServiceImpl.class.getDeclaredMethod("calculateLatestTimestamp", List.class);
+        calculateLatestMethod.setAccessible(true);
+        Long result = (Long) calculateLatestMethod.invoke(eventSeriesService, hangouts);
+
+        // Then
+        assertThat(result).isEqualTo(3000L); // Latest startTimestamp (no endTimestamp)
+    }
+
+    @Test
+    void calculateLatestTimestamp_WithMixedTimestamps_PrefersEndOverStart() throws Exception {
+        // Given
+        Hangout hangout1 = HangoutTestBuilder.aHangout()
+            .withStartTimestamp(1000L)
+            .withEndTimestamp(2000L)
+            .build();
+
+        Hangout hangout2 = HangoutTestBuilder.aHangout()
+            .withStartTimestamp(5000L) // Latest start, but no end
+            .build();
+
+        Hangout hangout3 = HangoutTestBuilder.aHangout()
+            .withStartTimestamp(1500L)
+            .withEndTimestamp(4000L) // Latest end
+            .build();
+
+        List<Hangout> hangouts = Arrays.asList(hangout1, hangout2, hangout3);
+
+        // When
+        Method calculateLatestMethod = EventSeriesServiceImpl.class.getDeclaredMethod("calculateLatestTimestamp", List.class);
+        calculateLatestMethod.setAccessible(true);
+        Long result = (Long) calculateLatestMethod.invoke(eventSeriesService, hangouts);
+
+        // Then
+        assertThat(result).isEqualTo(5000L); // Latest overall (start from hangout2)
+    }
+
+    @Test
+    void calculateLatestTimestamp_WithSomeNullTimestamps_HandlesGracefully() throws Exception {
+        // Given
+        Hangout hangout1 = HangoutTestBuilder.aHangout()
+            .withStartTimestamp(1000L)
+            .withEndTimestamp(2000L)
+            .build();
+
+        Hangout hangout2 = HangoutTestBuilder.aHangout()
+            .build(); // No timestamps
+
+        Hangout hangout3 = HangoutTestBuilder.aHangout()
+            .withStartTimestamp(3000L) // Latest
+            .build();
+
+        List<Hangout> hangouts = Arrays.asList(hangout1, hangout2, hangout3);
+
+        // When
+        Method calculateLatestMethod = EventSeriesServiceImpl.class.getDeclaredMethod("calculateLatestTimestamp", List.class);
+        calculateLatestMethod.setAccessible(true);
+        Long result = (Long) calculateLatestMethod.invoke(eventSeriesService, hangouts);
+
+        // Then
+        assertThat(result).isEqualTo(3000L); // Ignores hangout with null timestamps
+    }
+
+    @Test
+    void calculateLatestTimestamp_WithAllNullTimestamps_ReturnsNull() throws Exception {
+        // Given
+        Hangout hangout1 = HangoutTestBuilder.aHangout().build();
+        Hangout hangout2 = HangoutTestBuilder.aHangout().build();
+
+        List<Hangout> hangouts = Arrays.asList(hangout1, hangout2);
+
+        // When
+        Method calculateLatestMethod = EventSeriesServiceImpl.class.getDeclaredMethod("calculateLatestTimestamp", List.class);
+        calculateLatestMethod.setAccessible(true);
+        Long result = (Long) calculateLatestMethod.invoke(eventSeriesService, hangouts);
+
+        // Then
+        assertThat(result).isNull();
+    }
+
+    @Test
+    void calculateLatestTimestamp_WithEmptyList_ReturnsNull() throws Exception {
+        // Given
+        List<Hangout> hangouts = Collections.emptyList();
+
+        // When
+        Method calculateLatestMethod = EventSeriesServiceImpl.class.getDeclaredMethod("calculateLatestTimestamp", List.class);
+        calculateLatestMethod.setAccessible(true);
+        Long result = (Long) calculateLatestMethod.invoke(eventSeriesService, hangouts);
+
+        // Then
+        assertThat(result).isNull();
+    }
+
+    @Test
+    void calculateLatestTimestamp_WithSingleHangoutWithBothTimestamps_ReturnsEndTimestamp() throws Exception {
+        // Given
+        Hangout hangout = HangoutTestBuilder.aHangout()
+            .withStartTimestamp(1000L)
+            .withEndTimestamp(2000L)
+            .build();
+
+        List<Hangout> hangouts = Arrays.asList(hangout);
+
+        // When
+        Method calculateLatestMethod = EventSeriesServiceImpl.class.getDeclaredMethod("calculateLatestTimestamp", List.class);
+        calculateLatestMethod.setAccessible(true);
+        Long result = (Long) calculateLatestMethod.invoke(eventSeriesService, hangouts);
+
+        // Then
+        assertThat(result).isEqualTo(2000L); // Prefers endTimestamp when both exist
+    }
+
+    @Test
+    void calculateLatestTimestamp_WithSingleHangoutOnlyStartTime_ReturnsStartTimestamp() throws Exception {
+        // Given
+        Hangout hangout = HangoutTestBuilder.aHangout()
+            .withStartTimestamp(1000L)
+            .build();
+
+        List<Hangout> hangouts = Arrays.asList(hangout);
+
+        // When
+        Method calculateLatestMethod = EventSeriesServiceImpl.class.getDeclaredMethod("calculateLatestTimestamp", List.class);
+        calculateLatestMethod.setAccessible(true);
+        Long result = (Long) calculateLatestMethod.invoke(eventSeriesService, hangouts);
+
+        // Then
+        assertThat(result).isEqualTo(1000L);
     }
 }

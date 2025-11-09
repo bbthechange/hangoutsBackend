@@ -15,9 +15,12 @@ import static org.mockito.Mockito.*;
  * Tests for poll-related operations in HangoutRepositoryImpl.
  *
  * Coverage:
+ * - Poll CRUD operations (savePoll, deletePoll)
  * - Poll option CRUD operations
  * - Poll data queries (all polls, specific poll)
  * - Poll option deletion with cascade vote cleanup
+ *
+ * Total tests: 10
  */
 class HangoutRepositoryPollsTest extends HangoutRepositoryTestBase {
 
@@ -155,5 +158,95 @@ class HangoutRepositoryPollsTest extends HangoutRepositoryTestBase {
         QueryRequest request = captor.getValue();
         assertThat(request.keyConditionExpression()).contains("begins_with");
         assertThat(request.expressionAttributeValues().get(":sk_prefix").s()).contains("POLL#" + pollId + "#OPTION#");
+    }
+
+    @Test
+    void savePoll_WithValidData_SavesSuccessfully() {
+        // Given
+        Poll poll = createValidPoll("What time should we meet?", false);
+
+        PutItemResponse response = PutItemResponse.builder().build();
+        when(dynamoDbClient.putItem(any(PutItemRequest.class))).thenReturn(response);
+
+        // When
+        Poll result = repository.savePoll(poll);
+
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result.getEventId()).isEqualTo(eventId);
+        assertThat(result.getPollId()).isEqualTo(pollId);
+        assertThat(result.getTitle()).isEqualTo("What time should we meet?");
+        assertThat(result.isMultipleChoice()).isFalse();
+        assertThat(result.getUpdatedAt()).isNotNull(); // Should be touched
+
+        ArgumentCaptor<PutItemRequest> captor = ArgumentCaptor.forClass(PutItemRequest.class);
+        verify(dynamoDbClient).putItem(captor.capture());
+
+        PutItemRequest request = captor.getValue();
+        assertThat(request.tableName()).isEqualTo("InviterTable");
+        assertThat(request.item()).containsKey("pk");
+        assertThat(request.item()).containsKey("sk");
+    }
+
+    @Test
+    void savePoll_WithMultipleChoice_SavesCorrectly() {
+        // Given
+        Poll poll = createValidPoll("Select all that apply", true);
+
+        PutItemResponse response = PutItemResponse.builder().build();
+        when(dynamoDbClient.putItem(any(PutItemRequest.class))).thenReturn(response);
+
+        // When
+        Poll result = repository.savePoll(poll);
+
+        // Then
+        assertThat(result.isMultipleChoice()).isTrue();
+        verify(dynamoDbClient).putItem(any(PutItemRequest.class));
+    }
+
+    @Test
+    void savePoll_WithDescription_PersistsDescription() {
+        // Given
+        Poll poll = createValidPoll("Food preferences?", false);
+        poll.setDescription("Help us plan catering");
+
+        PutItemResponse response = PutItemResponse.builder().build();
+        when(dynamoDbClient.putItem(any(PutItemRequest.class))).thenReturn(response);
+
+        // When
+        Poll result = repository.savePoll(poll);
+
+        // Then
+        assertThat(result.getDescription()).isEqualTo("Help us plan catering");
+        verify(dynamoDbClient).putItem(any(PutItemRequest.class));
+    }
+
+    @Test
+    void deletePoll_WithValidIds_DeletesSuccessfully() {
+        // Given
+        DeleteItemResponse response = DeleteItemResponse.builder().build();
+        when(dynamoDbClient.deleteItem(any(DeleteItemRequest.class))).thenReturn(response);
+
+        // When
+        repository.deletePoll(eventId, pollId);
+
+        // Then
+        ArgumentCaptor<DeleteItemRequest> captor = ArgumentCaptor.forClass(DeleteItemRequest.class);
+        verify(dynamoDbClient).deleteItem(captor.capture());
+
+        DeleteItemRequest request = captor.getValue();
+        assertThat(request.tableName()).isEqualTo("InviterTable");
+        assertThat(request.key()).containsKey("pk");
+        assertThat(request.key()).containsKey("sk");
+    }
+
+    // ============================================================================
+    // HELPER METHODS
+    // ============================================================================
+
+    private Poll createValidPoll(String title, boolean multipleChoice) {
+        Poll poll = new Poll(eventId, title, null, multipleChoice);
+        poll.setPollId(pollId);
+        return poll;
     }
 }
