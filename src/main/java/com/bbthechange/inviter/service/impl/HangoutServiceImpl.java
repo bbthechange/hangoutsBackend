@@ -80,7 +80,7 @@ public class HangoutServiceImpl implements HangoutService {
                 // Denormalize image path
                 pointer.setMainImagePath(hangout.getMainImagePath());
 
-                // NEW: Denormalize basic hangout fields (Phase 2 - denormalization plan)
+                // Denormalize basic hangout fields
                 pointer.setDescription(hangout.getDescription());
                 pointer.setVisibility(hangout.getVisibility());
                 pointer.setCarpoolEnabled(hangout.isCarpoolEnabled());
@@ -113,7 +113,7 @@ public class HangoutServiceImpl implements HangoutService {
             }
         }
 
-        // NEW: Denormalize attributes onto all pointers before saving
+        // Denormalize attributes onto all pointers before saving
         for (HangoutPointer pointer : pointers) {
             pointer.setAttributes(new ArrayList<>(attributes)); // Create new list to avoid shared references
         }
@@ -152,6 +152,13 @@ public class HangoutServiceImpl implements HangoutService {
                     }
                 }
             }
+        }
+
+        // Denormalize polls onto pointers before saving
+        for (HangoutPointer pointer : pointers) {
+            pointer.setPolls(new ArrayList<>(polls)); // Create new list to avoid shared references
+            pointer.setPollOptions(new ArrayList<>(pollOptions)); // Create new list to avoid shared references
+            pointer.setVotes(new ArrayList<>()); // Initialize empty votes list
         }
 
         // Save everything in a single transaction
@@ -540,13 +547,13 @@ public class HangoutServiceImpl implements HangoutService {
                 pointer.setEndTimestamp(timeResult.endTimestamp);
             }
 
-            // NEW: Denormalize basic hangout fields (Phase 2 - denormalization plan)
+            // Denormalize basic hangout fields (Phase 2 - denormalization plan)
             pointer.setDescription(hangout.getDescription());
             pointer.setVisibility(hangout.getVisibility());
             pointer.setCarpoolEnabled(hangout.isCarpoolEnabled());
             pointer.setMainImagePath(hangout.getMainImagePath());
 
-            // NEW: Denormalize existing polls, votes, attributes, and interest levels
+            // Denormalize existing polls, votes, attributes, and interest levels
             // Get all existing data from hangout detail
             HangoutDetailData detailData = hangoutRepository.getHangoutDetailData(eventId);
             pointer.setPolls(detailData.getPolls());
@@ -910,7 +917,7 @@ public class HangoutServiceImpl implements HangoutService {
         // Save to repository
         HangoutAttribute savedAttribute = hangoutRepository.saveAttribute(attribute);
 
-        // NEW: Update pointer records with new attribute list
+        // Update pointer records with new attribute list
         updatePointersWithAttributes(hangoutId);
 
         logger.info("Successfully created attribute {} for hangout {}",
@@ -957,7 +964,7 @@ public class HangoutServiceImpl implements HangoutService {
         // Save updated attribute
         HangoutAttribute savedAttribute = hangoutRepository.saveAttribute(existingAttribute);
 
-        // NEW: Update pointer records with updated attribute list
+        // Update pointer records with updated attribute list
         updatePointersWithAttributes(hangoutId);
 
         logger.info("Successfully updated attribute {} for hangout {}", attributeId, hangoutId);
@@ -976,7 +983,7 @@ public class HangoutServiceImpl implements HangoutService {
         // Delete attribute (idempotent operation)
         hangoutRepository.deleteAttribute(hangoutId, attributeId);
 
-        // NEW: Update pointer records with updated attribute list (attribute now removed)
+        // Update pointer records with updated attribute list (attribute now removed)
         updatePointersWithAttributes(hangoutId);
 
         logger.info("Successfully deleted attribute {} for hangout {}", attributeId, hangoutId);
