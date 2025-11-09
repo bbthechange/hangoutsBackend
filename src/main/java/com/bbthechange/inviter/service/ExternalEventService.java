@@ -5,6 +5,8 @@ import com.bbthechange.inviter.dto.Address;
 import com.bbthechange.inviter.dto.ParsedEventDetailsDto;
 import com.bbthechange.inviter.dto.TicketOffer;
 import com.bbthechange.inviter.exception.*;
+import com.bbthechange.inviter.service.ticketmaster.TicketmasterApiService;
+import com.bbthechange.inviter.service.ticketmaster.TicketmasterUrlParser;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.commons.net.util.SubnetUtils;
 import org.jsoup.Jsoup;
@@ -44,6 +46,7 @@ public class ExternalEventService {
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
     private final ExternalParserProperties properties;
+    private final TicketmasterApiService ticketmasterApiService;
 
     private static final List<String> BLOCKED_CIDR = List.of(
         "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", // Private networks
@@ -61,30 +64,39 @@ public class ExternalEventService {
         "localhost", "127.0.0.1", "0.0.0.0", "::1"
     );
 
-    public ExternalEventService(@Qualifier("externalRestTemplate") RestTemplate restTemplate, 
+    public ExternalEventService(@Qualifier("externalRestTemplate") RestTemplate restTemplate,
                                ObjectMapper objectMapper,
-                               ExternalParserProperties properties) {
+                               ExternalParserProperties properties,
+                               TicketmasterApiService ticketmasterApiService) {
         this.restTemplate = restTemplate;
         this.objectMapper = objectMapper;
         this.properties = properties;
+        this.ticketmasterApiService = ticketmasterApiService;
     }
 
     public ParsedEventDetailsDto parseUrl(String urlString) {
         logger.info("Parsing URL: {}", urlString);
-        
+
         validateUrlIsSafe(urlString);
 
+        // Route Ticketmaster URLs to Discovery API instead of scraping
+        if (TicketmasterUrlParser.isTicketmasterEventUrl(urlString)) {
+            logger.info("Detected Ticketmaster URL, using Discovery API");
+            return parseTicketmasterUrl(urlString);
+        }
+
+        // For all other URLs, use schema.org scraping
         try {
             ResponseEntity<String> response = restTemplate.exchange(
-                urlString, 
-                HttpMethod.GET, 
-                null, 
+                urlString,
+                HttpMethod.GET,
+                null,
                 String.class
             );
 
             validateResponse(response);
             String htmlContent = response.getBody();
-            
+
             if (htmlContent == null || htmlContent.isEmpty()) {
                 throw new NetworkException("Received empty response from URL");
             }
@@ -101,6 +113,27 @@ public class ExternalEventService {
         } catch (Exception e) {
             logger.error("Unexpected error parsing URL: {}", urlString, e);
             throw new EventParseException("Failed to parse event details: " + e.getMessage(), e);
+        }
+    }
+
+    private ParsedEventDetailsDto parseTicketmasterUrl(String urlString) {
+        try {
+            TicketmasterUrlParser.ParsedTicketmasterUrl parsedUrl = TicketmasterUrlParser.parse(urlString);
+
+            if (parsedUrl == null) {
+                throw new EventParseException(
+                    "Ticketmaster URL does not contain event details in the path. " +
+                    "Please provide a URL with event name in the format: " +
+                    "https://www.ticketmaster.com/event-name-city-state-date/event/ID"
+                );
+            }
+
+            return ticketmasterApiService.searchEvent(parsedUrl);
+
+        } catch (IllegalArgumentException e) {
+            // Should not happen since we already checked isTicketmasterEventUrl
+            logger.error("Failed to parse Ticketmaster URL: {}", urlString, e);
+            throw new EventParseException("Invalid Ticketmaster URL format", e);
         }
     }
 
