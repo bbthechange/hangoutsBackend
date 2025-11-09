@@ -111,6 +111,39 @@ class ServiceTest {
 
 ---
 
+## Service Test File Organization
+
+**HangoutServiceImpl tests are split by feature domain for focused testing:**
+
+| Test File | Coverage | Test Count | Token Size |
+|-----------|----------|------------|------------|
+| `HangoutServiceCreationTest` | Hangout creation with fuzzy/exact time, attributes, polls, validation | 18 tests | ~6k tokens |
+| `HangoutServiceUpdateTest` | Title, time, description, visibility updates, series integration | 12 tests | ~4k tokens |
+| `HangoutServiceDeletionTest` | Deletion with series handling, authorization, group updates | 5 tests | ~2k tokens |
+| `HangoutServiceInterestLevelTest` | Setting/removing interest levels, denormalization, authorization | 14 tests | ~5k tokens |
+| `HangoutServiceAttributeTest` | Create/update/delete attributes with pointer propagation | 7 tests | ~3k tokens |
+| `HangoutServiceGroupAssociationTest` | Associate/disassociate groups, timestamp handling | 5 tests | ~2k tokens |
+| `HangoutServiceRetrievalTest` | Get hangout details, user hangouts, needs ride data, time formatting | 11 tests | ~4k tokens |
+| `HangoutServicePointerUpdateTest` | Optimistic locking retries, pointer resync (@Nested class) | 8 tests | ~3k tokens |
+| `HangoutServiceGroupLastModifiedTest` | Group lastModified timestamp updates (@Nested class) | 7 tests | ~3k tokens |
+
+**Common test setup:** All test classes extend `HangoutServiceTestBase` for shared mocking and helper methods.
+
+### Quick Lookup for Agents
+
+**Creating hangouts?** → Read `HangoutServiceCreationTest.java` only (~6k tokens)
+**Updating hangouts?** → Read `HangoutServiceUpdateTest.java` only (~4k tokens)
+**Working on interest levels?** → Read `HangoutServiceInterestLevelTest.java` only (~5k tokens)
+**Managing attributes?** → Read `HangoutServiceAttributeTest.java` only (~3k tokens)
+**Retrieving hangout data?** → Read `HangoutServiceRetrievalTest.java` only (~4k tokens)
+**Pointer updates with retries?** → Read `HangoutServicePointerUpdateTest.java` only (~3k tokens)
+
+**Don't grep** - Just look up the feature in the table above and go directly to the file.
+
+**Efficiency gain:** 75-85% token reduction vs reading the original 15k token monolithic test file.
+
+---
+
 ## Critical Pitfalls (Will Cause Test Failures)
 
 ### ❌ MockedStatic in @BeforeEach
