@@ -203,14 +203,17 @@ Generates RFC 5545 compliant ICS/iCalendar feeds.
 - Start/End: Timestamps from hangout
 - Status: CONFIRMED
 
-### Future Hangout Query
-Uses **EntityTimeIndex GSI** to efficiently query future hangouts:
+### Hangout Query (Past 30 Days + Future)
+Uses **EntityTimeIndex GSI** to efficiently query relevant hangouts:
 
 ```java
-hangoutRepository.getFutureEventsPage(groupId, nowTimestamp, 100, null)
+long thirtyDaysAgoTimestamp = Instant.now().minus(30, ChronoUnit.DAYS).getEpochSecond();
+hangoutRepository.getFutureEventsPage(groupId, thirtyDaysAgoTimestamp, 100, null)
 ```
 
-**Pagination**: Fetches up to 500 events total (cap for safety and calendar app limits).
+**Query Range**: Events from 30 days ago onwards (past 30 days + all future events)
+**Rationale**: Prevents calendar apps from deleting events immediately after they end
+**Pagination**: Fetches up to 500 events total (cap for safety and calendar app limits)
 
 ## Configuration
 
@@ -332,6 +335,11 @@ For caching to work properly:
 - Token in URL path (not header or query param)
 
 ## Common Issues
+
+### Events Disappear After They End
+**Symptom**: Events vanish from calendar immediately after they start/end
+**Cause**: Calendar subscription feeds only show what's currently in the feed - when events are removed, calendar apps delete them
+**Solution**: Include past 30 days of events in feed (implemented - events stay visible for 30 days after ending)
 
 ### Feed Not Updating
 **Symptom**: New hangouts don't appear in calendar

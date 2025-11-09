@@ -25,6 +25,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -152,10 +153,10 @@ public class CalendarSubscriptionServiceImpl implements CalendarSubscriptionServ
                 .build();
         }
 
-        // 5. Query future hangouts using EntityTimeIndex GSI
+        // 5. Query relevant hangouts (past 30 days + future) using EntityTimeIndex GSI
         List<HangoutPointer> hangouts = queryFutureHangouts(groupId);
 
-        logger.debug("Generating ICS feed for group {} with {} future hangouts", groupId, hangouts.size());
+        logger.debug("Generating ICS feed for group {} with {} hangouts", groupId, hangouts.size());
 
         // 6. Generate ICS content
         String icsContent = iCalendarService.generateICS(group, hangouts);
@@ -197,18 +198,20 @@ public class CalendarSubscriptionServiceImpl implements CalendarSubscriptionServ
     }
 
     /**
-     * Query future hangouts for a group using EntityTimeIndex GSI.
+     * Query relevant hangouts for calendar feed (past 30 days + all future events).
+     * Uses EntityTimeIndex GSI with a threshold of 30 days ago to include recent past events.
      *
      * @param groupId Group ID
-     * @return List of future hangout pointers sorted by start time
+     * @return List of hangout pointers from past 30 days onwards, sorted by start time
      */
     private List<HangoutPointer> queryFutureHangouts(String groupId) {
-        long nowTimestamp = Instant.now().getEpochSecond();
+        // Query for events from 30 days ago onwards (includes past 30 days + all future events)
+        long thirtyDaysAgoTimestamp = Instant.now().minus(30, ChronoUnit.DAYS).getEpochSecond();
 
-        // Query EntityTimeIndex for future hangouts
-        // Use pagination with large limit to get all future hangouts
+        // Query EntityTimeIndex for hangouts starting after 30 days ago
+        // Use pagination with large limit to get all relevant hangouts
         PaginatedResult<BaseItem> result =
-            hangoutRepository.getFutureEventsPage(groupId, nowTimestamp, 100, null);
+            hangoutRepository.getFutureEventsPage(groupId, thirtyDaysAgoTimestamp, 100, null);
 
         // Filter for HangoutPointer items and collect
         List<HangoutPointer> hangouts = result.getResults().stream()
@@ -219,7 +222,7 @@ public class CalendarSubscriptionServiceImpl implements CalendarSubscriptionServ
         // If there are more pages, fetch them (should be rare for calendar feeds)
         String nextToken = result.getNextToken();
         while (nextToken != null && hangouts.size() < 500) {  // Cap at 500 events for safety
-            result = hangoutRepository.getFutureEventsPage(groupId, nowTimestamp, 100, nextToken);
+            result = hangoutRepository.getFutureEventsPage(groupId, thirtyDaysAgoTimestamp, 100, nextToken);
 
             hangouts.addAll(result.getResults().stream()
                 .filter(item -> item instanceof HangoutPointer)
