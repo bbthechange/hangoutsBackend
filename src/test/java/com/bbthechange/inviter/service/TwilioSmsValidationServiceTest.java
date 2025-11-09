@@ -461,4 +461,126 @@ class TwilioSmsValidationServiceTest {
             }
         }
     }
+
+    // ========================================================================
+    // Section 3: Test Phone Number Support Tests
+    // ========================================================================
+
+    @Test
+    void sendVerificationCode_TestPhoneNumber_DoesNotCallTwilioApi() {
+        // Given
+        String testPhoneNumber = "+11112223333";
+
+        try (MockedStatic<Verification> mockedVerificationStatic = mockStatic(Verification.class)) {
+            // When
+            service.sendVerificationCode(testPhoneNumber);
+
+            // Then
+            // Verify that Twilio API was never called for test phone number
+            mockedVerificationStatic.verifyNoInteractions();
+        }
+    }
+
+    @Test
+    void verifyCode_TestPhoneNumberWithValidCode_ReturnsSuccess() {
+        // Given
+        String testPhoneNumber = "+11112223333";
+        String validTestCode = "123456";
+
+        try (MockedStatic<VerificationCheck> mockedCheckStatic = mockStatic(VerificationCheck.class)) {
+            // When
+            VerificationResult result = service.verifyCode(testPhoneNumber, validTestCode);
+
+            // Then
+            assertThat(result.getStatus()).isEqualTo(VerificationResult.Status.SUCCESS);
+            assertThat(result.isSuccess()).isTrue();
+            // Verify that Twilio API was never called for test phone number
+            mockedCheckStatic.verifyNoInteractions();
+        }
+    }
+
+    @Test
+    void verifyCode_TestPhoneNumberWithInvalidCode_ReturnsInvalidCode() {
+        // Given
+        String testPhoneNumber = "+11112223333";
+        String invalidCode = "999999";
+
+        try (MockedStatic<VerificationCheck> mockedCheckStatic = mockStatic(VerificationCheck.class)) {
+            // When
+            VerificationResult result = service.verifyCode(testPhoneNumber, invalidCode);
+
+            // Then
+            assertThat(result.getStatus()).isEqualTo(VerificationResult.Status.INVALID_CODE);
+            assertThat(result.isSuccess()).isFalse();
+            // Verify that Twilio API was never called for test phone number
+            mockedCheckStatic.verifyNoInteractions();
+        }
+    }
+
+    @Test
+    void verifyCode_AllTestPhoneNumbers_WorkCorrectly() {
+        // Given
+        String[] testPhoneNumbers = {
+                "+11112223333",
+                "+12223334444",
+                "+13334445555",
+                "+14445556666",
+                "+15556667777"
+        };
+        String validTestCode = "123456";
+
+        try (MockedStatic<VerificationCheck> mockedCheckStatic = mockStatic(VerificationCheck.class)) {
+            for (String phoneNumber : testPhoneNumbers) {
+                // When
+                VerificationResult result = service.verifyCode(phoneNumber, validTestCode);
+
+                // Then
+                assertThat(result.getStatus())
+                        .as("Test phone number %s should verify successfully", phoneNumber)
+                        .isEqualTo(VerificationResult.Status.SUCCESS);
+                assertThat(result.isSuccess()).isTrue();
+            }
+
+            // Verify that Twilio API was never called for any test phone number
+            mockedCheckStatic.verifyNoInteractions();
+        }
+    }
+
+    @Test
+    void sendVerificationCode_PhoneNumberWithSpaces_CallsTwilioApi() {
+        // Given - phone number with spaces should NOT be treated as test number
+        String phoneNumberWithSpaces = "+1 111 222 3333";
+
+        try (MockedStatic<Verification> mockedVerificationStatic = mockStatic(Verification.class)) {
+            mockedVerificationStatic.when(() -> Verification.creator(TEST_VERIFY_SERVICE_SID, phoneNumberWithSpaces, "sms"))
+                    .thenReturn(mockVerificationCreator);
+            when(mockVerificationCreator.create()).thenReturn(mockVerification);
+            when(mockVerification.getSid()).thenReturn("VE123456");
+            when(mockVerification.getStatus()).thenReturn("pending");
+
+            // When
+            service.sendVerificationCode(phoneNumberWithSpaces);
+
+            // Then - Twilio API should be called because it's not an exact match to test number
+            mockedVerificationStatic.verify(() -> Verification.creator(TEST_VERIFY_SERVICE_SID, phoneNumberWithSpaces, "sms"));
+        }
+    }
+
+    @Test
+    void verifyCode_TestPhoneNumberWithCodeWithSpaces_ReturnsInvalidCode() {
+        // Given
+        String testPhoneNumber = "+11112223333";
+        String codeWithSpaces = "  123456  ";
+
+        try (MockedStatic<VerificationCheck> mockedCheckStatic = mockStatic(VerificationCheck.class)) {
+            // When
+            VerificationResult result = service.verifyCode(testPhoneNumber, codeWithSpaces);
+
+            // Then - code must be exact match, spaces should cause failure
+            assertThat(result.getStatus()).isEqualTo(VerificationResult.Status.INVALID_CODE);
+            assertThat(result.isSuccess()).isFalse();
+            // Verify that Twilio API was never called for test phone number
+            mockedCheckStatic.verifyNoInteractions();
+        }
+    }
 }
