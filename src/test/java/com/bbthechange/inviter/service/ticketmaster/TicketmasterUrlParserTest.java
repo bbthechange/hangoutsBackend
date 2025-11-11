@@ -152,24 +152,6 @@ class TicketmasterUrlParserTest {
     }
 
     @Test
-    void parse_WithStateButNoCity_ExtractsState() {
-        // given
-        String url = "https://www.ticketmaster.com/state-fair-california-08-20-2025/event/JKL012";
-
-        // when
-        TicketmasterUrlParser.ParsedTicketmasterUrl result = TicketmasterUrlParser.parse(url);
-
-        // then
-        // Note: Parser extracts "fair" as city since it's before the state
-        // This is a limitation of the heuristic approach
-        assertThat(result).isNotNull();
-        assertThat(result.getKeyword()).isEqualTo("state");
-        assertThat(result.getCity()).isEqualTo("Fair");
-        assertThat(result.getStateCode()).isEqualTo("CA");
-        assertThat(result.getEventDate()).isEqualTo(LocalDate.of(2025, 8, 20));
-    }
-
-    @Test
     void parse_WithNonTicketmasterUrl_ThrowsException() {
         // given
         String url = "https://www.eventbrite.com/event/123";

@@ -198,9 +198,7 @@ public class TicketmasterUrlParser {
         builder.stateCode(stateCode);
 
         // Step 3: Extract city (word before state, if state was found)
-        // Only extract city if there are at least 2 parts before the state
-        // (to avoid treating single-word event names as cities)
-        if (stateCode != null && stateEndIndex > 1) {
+        if (stateCode != null && stateEndIndex > 0) {
             // City is the part immediately before the state
             // Handle multi-word cities by taking only the last word before state
             String city = parts[stateEndIndex - 1];
