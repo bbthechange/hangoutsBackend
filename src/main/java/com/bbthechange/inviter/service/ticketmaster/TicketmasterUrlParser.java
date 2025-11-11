@@ -125,10 +125,11 @@ public class TicketmasterUrlParser {
             throw new IllegalArgumentException("Not a Ticketmaster event URL: " + url);
         }
 
-        // Extract slug (everything between domain and /event/)
-        int eventIndex = url.indexOf("/event/");
-        int domainEnd = url.indexOf("//") + 2;
-        int pathStart = url.indexOf('/', domainEnd);
+        // Extract slug (everything between domain and /event/) - case insensitive
+        String lowerUrl = url.toLowerCase();
+        int eventIndex = lowerUrl.indexOf("/event/");
+        int domainEnd = lowerUrl.indexOf("//") + 2;
+        int pathStart = lowerUrl.indexOf('/', domainEnd);
 
         if (pathStart == -1 || pathStart >= eventIndex) {
             // Simple URL format: /event/ID with no slug
@@ -197,7 +198,9 @@ public class TicketmasterUrlParser {
         builder.stateCode(stateCode);
 
         // Step 3: Extract city (word before state, if state was found)
-        if (stateCode != null && stateEndIndex > 0) {
+        // Only extract city if there are at least 2 parts before the state
+        // (to avoid treating single-word event names as cities)
+        if (stateCode != null && stateEndIndex > 1) {
             // City is the part immediately before the state
             // Handle multi-word cities by taking only the last word before state
             String city = parts[stateEndIndex - 1];

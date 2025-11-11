@@ -8,7 +8,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
@@ -33,14 +32,14 @@ public class TicketmasterApiService {
 
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
-
-    @Value("${ticketmaster.api.key:}")
-    private String apiKey;
+    private final String apiKey;
 
     public TicketmasterApiService(@Qualifier("externalRestTemplate") RestTemplate restTemplate,
-                                   ObjectMapper objectMapper) {
+                                   ObjectMapper objectMapper,
+                                   @Qualifier("ticketmasterApiKey") String apiKey) {
         this.restTemplate = restTemplate;
         this.objectMapper = objectMapper;
+        this.apiKey = apiKey;
     }
 
     /**
@@ -88,11 +87,45 @@ public class TicketmasterApiService {
                 throw new EventParseException("No events found matching URL: " + parsedUrl.getOriginalSlug());
             }
 
-            // Return first event (closest match)
-            JsonNode firstEvent = events.get(0);
-            logger.info("Found {} events, using first match: {}",
-                events.size(), firstEvent.get("name").asText());
+            logger.info("Found {} events from API", events.size());
 
+            // If URL had a date, filter events to exact local date match
+            // This prevents returning wrong show when artist has multiple consecutive dates
+            JsonNode filteredEvents = events;
+            if (parsedUrl.getEventDate() != null) {
+                String targetLocalDate = parsedUrl.getEventDate().toString(); // e.g., "2026-05-12"
+
+                java.util.List<JsonNode> matchingEvents = new java.util.ArrayList<>();
+                for (JsonNode event : events) {
+                    if (event.has("dates") && event.get("dates").has("start")) {
+                        JsonNode start = event.get("dates").get("start");
+                        if (start.has("localDate")) {
+                            String eventLocalDate = start.get("localDate").asText();
+                            if (targetLocalDate.equals(eventLocalDate)) {
+                                matchingEvents.add(event);
+                            }
+                        }
+                    }
+                }
+
+                if (matchingEvents.isEmpty()) {
+                    logger.warn("API returned {} events but none match local date {}",
+                        events.size(), targetLocalDate);
+                    throw new EventParseException("No events found matching URL: " + parsedUrl.getOriginalSlug());
+                }
+
+                logger.info("Filtered to {} events matching local date {}",
+                    matchingEvents.size(), targetLocalDate);
+
+                // Use first filtered event
+                JsonNode firstEvent = matchingEvents.get(0);
+                logger.info("Using first match: {}", firstEvent.get("name").asText());
+                return mapEventToDto(firstEvent);
+            }
+
+            // No date filtering needed - return first result
+            JsonNode firstEvent = events.get(0);
+            logger.info("Using first match: {}", firstEvent.get("name").asText());
             return mapEventToDto(firstEvent);
 
         } catch (EventParseException e) {

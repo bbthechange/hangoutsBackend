@@ -3,6 +3,7 @@ package com.bbthechange.inviter.service;
 import com.bbthechange.inviter.config.ExternalParserProperties;
 import com.bbthechange.inviter.dto.ParsedEventDetailsDto;
 import com.bbthechange.inviter.exception.*;
+import com.bbthechange.inviter.service.ticketmaster.TicketmasterApiService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -31,6 +32,9 @@ class ExternalEventServiceTest {
     @Mock
     private ExternalParserProperties properties;
 
+    @Mock
+    private TicketmasterApiService ticketmasterApiService;
+
     private ObjectMapper objectMapper;
     private ExternalEventService externalEventService;
 
@@ -43,8 +47,8 @@ class ExternalEventServiceTest {
         lenient().when(properties.getConnectionTimeout()).thenReturn(Duration.ofSeconds(5));
         lenient().when(properties.getReadTimeout()).thenReturn(Duration.ofSeconds(10));
         lenient().when(properties.getMaxRedirects()).thenReturn(3);
-        
-        externalEventService = new ExternalEventService(restTemplate, objectMapper, properties);
+
+        externalEventService = new ExternalEventService(restTemplate, objectMapper, properties, ticketmasterApiService);
     }
 
     @Test
@@ -464,5 +468,115 @@ class ExternalEventServiceTest {
         // Then
         assertThat(result).isNotNull();
         assertThat(result.getTicketOffers()).isEmpty();
+    }
+
+    // ==================== Ticketmaster Routing Tests ====================
+
+    @Test
+    void parseUrl_WithTicketmasterUrl_RoutesToApiService() {
+        // Given
+        String url = "https://www.ticketmaster.com/florence-machine-seattle-washington-05-12-2026/event/ABC123";
+        ParsedEventDetailsDto expectedResult = ParsedEventDetailsDto.builder()
+                .title("Florence + The Machine")
+                .description("Amazing concert")
+                .build();
+
+        when(ticketmasterApiService.searchEvent(any())).thenReturn(expectedResult);
+
+        // When
+        ParsedEventDetailsDto result = externalEventService.parseUrl(url);
+
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result).isEqualTo(expectedResult);
+        verify(ticketmasterApiService).searchEvent(any());
+        verify(restTemplate, never()).exchange(any(), any(), any(), eq(String.class));
+    }
+
+    @Test
+    void parseUrl_WithNonTicketmasterUrl_UsesSchemaOrgScraping() {
+        // Given
+        String url = "https://www.eventbrite.com/e/test-event-123";
+        String htmlContent = """
+            <html>
+            <script type="application/ld+json">
+            {
+                "@type": "Event",
+                "name": "Eventbrite Concert"
+            }
+            </script>
+            </html>
+            """;
+
+        ResponseEntity<String> response = new ResponseEntity<>(htmlContent, HttpStatus.OK);
+        when(restTemplate.exchange(eq(url), any(), any(), eq(String.class))).thenReturn(response);
+
+        // When
+        ParsedEventDetailsDto result = externalEventService.parseUrl(url);
+
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result.getTitle()).isEqualTo("Eventbrite Concert");
+        verify(restTemplate).exchange(eq(url), any(), any(), eq(String.class));
+        verify(ticketmasterApiService, never()).searchEvent(any());
+    }
+
+    @Test
+    void parseUrl_WithTicketmasterVenueUrl_UsesSchemaOrgScraping() {
+        // Given
+        String url = "https://www.ticketmaster.com/climate-pledge-arena-tickets/venue/123894";
+        String htmlContent = """
+            <html>
+            <script type="application/ld+json">
+            {
+                "@type": "Event",
+                "name": "Venue Event"
+            }
+            </script>
+            </html>
+            """;
+
+        ResponseEntity<String> response = new ResponseEntity<>(htmlContent, HttpStatus.OK);
+        when(restTemplate.exchange(eq(url), any(), any(), eq(String.class))).thenReturn(response);
+
+        // When
+        ParsedEventDetailsDto result = externalEventService.parseUrl(url);
+
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result.getTitle()).isEqualTo("Venue Event");
+        verify(restTemplate).exchange(eq(url), any(), any(), eq(String.class));
+        verify(ticketmasterApiService, never()).searchEvent(any());
+    }
+
+    @Test
+    void parseUrl_WithSimpleTicketmasterUrl_ReturnsDescriptiveError() {
+        // Given
+        String url = "https://www.ticketmaster.com/event/3B00533D15B0171F";
+
+        // When & Then
+        assertThatThrownBy(() -> externalEventService.parseUrl(url))
+                .isInstanceOf(EventParseException.class)
+                .hasMessageContaining("does not contain event details")
+                .hasMessageContaining("provide a URL with event name in the format")
+                .hasMessageContaining("ticketmaster.com/event-name-city-state-date/event/");
+
+        verify(restTemplate, never()).exchange(any(), any(), any(), eq(String.class));
+        verify(ticketmasterApiService, never()).searchEvent(any());
+    }
+
+    @Test
+    void parseUrl_WithTicketmasterUrl_PropagatesApiServiceException() {
+        // Given
+        String url = "https://www.ticketmaster.com/test-event-seattle-wa-12-25-2024/event/ABC123";
+        String errorMessage = "No events found matching URL: test-slug";
+
+        when(ticketmasterApiService.searchEvent(any()))
+                .thenThrow(new EventParseException(errorMessage));
+
+        // When & Then
+        assertThatThrownBy(() -> externalEventService.parseUrl(url))
+                .isInstanceOf(EventParseException.class)
+                .hasMessage(errorMessage);
     }
 }
