@@ -63,17 +63,20 @@ public class PollServiceImpl implements PollService {
         // Create poll
         Poll poll = new Poll(eventId, request.getTitle(), request.getDescription(), request.isMultipleChoice());
         Poll savedPoll = hangoutRepository.savePoll(poll);
-        
+
         // Create poll options individually (following UI flow)
-        for (String optionText : request.getOptions()) {
-            PollOption option = new PollOption(eventId, poll.getPollId(), optionText);
-            hangoutRepository.savePollOption(option);
+        if (request.getOptions() != null && !request.getOptions().isEmpty()) {
+            for (String optionText : request.getOptions()) {
+                PollOption option = new PollOption(eventId, poll.getPollId(), optionText);
+                hangoutRepository.savePollOption(option);
+            }
         }
 
         // Update pointer records with new poll data
         updatePointersWithPolls(eventId);
 
-        logger.info("Successfully created poll {} for event {} with {} options", savedPoll.getPollId(), eventId, request.getOptions().size());
+        int optionCount = (request.getOptions() != null) ? request.getOptions().size() : 0;
+        logger.info("Successfully created poll {} for event {} with {} options", savedPoll.getPollId(), eventId, optionCount);
 
         return savedPoll;
     }
