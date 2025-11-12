@@ -642,15 +642,29 @@ public class GroupServiceImpl implements GroupService {
         // Use the current timestamp as the boundary for past events
         GroupFeedPaginationToken token = new GroupFeedPaginationToken(
             null, // No specific event ID needed for initial past events query
-            nowTimestamp, 
+            nowTimestamp,
             false // This is for past events (backward direction)
         );
-        
+
         try {
             return objectMapper.writeValueAsString(token);
         } catch (Exception e) {
             logger.warn("Failed to create previous page token, returning null", e);
             return null;
         }
+    }
+
+    @Override
+    public Group getGroupForEtagCheck(String groupId, String requestingUserId) {
+        logger.debug("ETag check for group {} by user {}", groupId, requestingUserId);
+
+        // Verify membership (cheap - 1 RCU)
+        if (!isUserInGroup(requestingUserId, groupId)) {
+            throw new ForbiddenException("User is not a member of this group");
+        }
+
+        // Return group metadata (1 RCU)
+        return groupRepository.findById(groupId)
+                .orElseThrow(() -> new NotFoundException("Group not found"));
     }
 }

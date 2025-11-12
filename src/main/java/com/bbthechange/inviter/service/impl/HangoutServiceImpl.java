@@ -6,6 +6,7 @@ import com.bbthechange.inviter.service.UserService;
 import com.bbthechange.inviter.service.EventSeriesService;
 import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.S3Service;
+import com.bbthechange.inviter.service.GroupTimestampService;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.model.*;
@@ -40,6 +41,7 @@ public class HangoutServiceImpl implements HangoutService {
     private final NotificationService notificationService;
     private final PointerUpdateService pointerUpdateService;
     private final S3Service s3Service;
+    private final GroupTimestampService groupTimestampService;
 
     @Autowired
     public HangoutServiceImpl(HangoutRepository hangoutRepository, GroupRepository groupRepository,
@@ -47,7 +49,8 @@ public class HangoutServiceImpl implements HangoutService {
                               @Lazy EventSeriesService eventSeriesService,
                               NotificationService notificationService,
                               PointerUpdateService pointerUpdateService,
-                              S3Service s3Service) {
+                              S3Service s3Service,
+                              GroupTimestampService groupTimestampService) {
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
         this.fuzzyTimeService = fuzzyTimeService;
@@ -56,6 +59,7 @@ public class HangoutServiceImpl implements HangoutService {
         this.notificationService = notificationService;
         this.pointerUpdateService = pointerUpdateService;
         this.s3Service = s3Service;
+        this.groupTimestampService = groupTimestampService;
     }
     
     @Override
@@ -168,7 +172,7 @@ public class HangoutServiceImpl implements HangoutService {
             hangout.getHangoutId(), attributes.size(), polls.size(), requestingUserId);
 
         // Update Group.lastHangoutModified for all associated groups
-        updateGroupLastModified(hangout.getAssociatedGroups());
+        groupTimestampService.updateGroupTimestamps(hangout.getAssociatedGroups());
 
         // Send push notifications to group members
         String creatorName = getCreatorDisplayName(requestingUserId);
@@ -320,7 +324,7 @@ public class HangoutServiceImpl implements HangoutService {
         }
 
         // Update Group.lastHangoutModified for all associated groups
-        updateGroupLastModified(hangout.getAssociatedGroups());
+        groupTimestampService.updateGroupTimestamps(hangout.getAssociatedGroups());
 
         // If this hangout is part of a series, update the series records
         if (hangout.getSeriesId() != null) {
@@ -377,7 +381,7 @@ public class HangoutServiceImpl implements HangoutService {
 
         // Update Group.lastHangoutModified for all associated groups
         // (Must happen for both series and non-series hangouts)
-        updateGroupLastModified(hangout.getAssociatedGroups());
+        groupTimestampService.updateGroupTimestamps(hangout.getAssociatedGroups());
 
         logger.info("Deleted hangout {} by user {}", hangoutId, requestingUserId);
     }
@@ -450,7 +454,7 @@ public class HangoutServiceImpl implements HangoutService {
         }
 
         // Update Group.lastHangoutModified for all associated groups
-        updateGroupLastModified(associatedGroups);
+        groupTimestampService.updateGroupTimestamps(associatedGroups);
 
         logger.info("Updated title for event {} to '{}' by user {}", eventId, newTitle, requestingUserId);
     }
@@ -469,7 +473,7 @@ public class HangoutServiceImpl implements HangoutService {
         hangoutRepository.save(hangout);
 
         // Update Group.lastHangoutModified for all associated groups
-        updateGroupLastModified(hangout.getAssociatedGroups());
+        groupTimestampService.updateGroupTimestamps(hangout.getAssociatedGroups());
 
         logger.info("Updated description for event {} by user {}", eventId, requestingUserId);
     }
@@ -498,7 +502,7 @@ public class HangoutServiceImpl implements HangoutService {
         }
 
         // Update Group.lastHangoutModified for all associated groups
-        updateGroupLastModified(associatedGroups);
+        groupTimestampService.updateGroupTimestamps(associatedGroups);
 
         logger.info("Updated location for event {} by user {}", eventId, requestingUserId);
     }
@@ -569,7 +573,7 @@ public class HangoutServiceImpl implements HangoutService {
         }
 
         // Update Group.lastHangoutModified for newly associated groups
-        updateGroupLastModified(groupIds);
+        groupTimestampService.updateGroupTimestamps(groupIds);
 
         logger.info("Associated event {} with {} groups by user {}", eventId, groupIds.size(), requestingUserId);
     }
@@ -596,7 +600,7 @@ public class HangoutServiceImpl implements HangoutService {
         }
 
         // Update Group.lastHangoutModified for disassociated groups
-        updateGroupLastModified(groupIds);
+        groupTimestampService.updateGroupTimestamps(groupIds);
 
         logger.info("Disassociated event {} from {} groups by user {}", eventId, groupIds.size(), requestingUserId);
     }
@@ -667,6 +671,9 @@ public class HangoutServiceImpl implements HangoutService {
                 pointer.setAttributes(new ArrayList<>(attributes));
             }, "attributes");
         }
+
+        // Update group timestamps for ETag invalidation
+        groupTimestampService.updateGroupTimestamps(associatedGroups);
     }
 
     @Override
@@ -817,6 +824,9 @@ public class HangoutServiceImpl implements HangoutService {
                     pointer.setInterestLevels(new ArrayList<>(updatedInterestLevels));
                 }, "interest levels");
             }
+
+            // Update group timestamps for ETag invalidation
+            groupTimestampService.updateGroupTimestamps(associatedGroups);
         }
 
         logger.info("Set interest {} for user {} on hangout {}", request.getStatus(), requestingUserId, hangoutId);
@@ -858,6 +868,9 @@ public class HangoutServiceImpl implements HangoutService {
                     pointer.setInterestLevels(new ArrayList<>(updatedInterestLevels));
                 }, "interest levels");
             }
+
+            // Update group timestamps for ETag invalidation
+            groupTimestampService.updateGroupTimestamps(associatedGroups);
         }
 
         logger.info("Removed interest for user {} on hangout {}", requestingUserId, hangoutId);
@@ -1091,37 +1104,4 @@ public class HangoutServiceImpl implements HangoutService {
         logger.info("Successfully resynced {} pointer(s) for hangout {}", associatedGroups.size(), hangoutId);
     }
 
-    /**
-     * Update lastHangoutModified timestamp for all specified groups.
-     * This method should be called whenever a hangout is created, updated, or deleted.
-     *
-     * @param groupIds List of group IDs to update (can be null)
-     */
-    private void updateGroupLastModified(List<String> groupIds) {
-        if (groupIds == null || groupIds.isEmpty()) {
-            return;
-        }
-
-        java.time.Instant now = java.time.Instant.now();
-
-        for (String groupId : groupIds) {
-            try {
-                // Read group metadata
-                Optional<Group> groupOpt = groupRepository.findById(groupId);
-                if (groupOpt.isEmpty()) {
-                    logger.warn("Cannot update lastHangoutModified for non-existent group: {}", groupId);
-                    continue;
-                }
-
-                Group group = groupOpt.get();
-                group.setLastHangoutModified(now);
-                groupRepository.save(group);
-
-                logger.debug("Updated lastHangoutModified for group {} to {}", groupId, now);
-            } catch (Exception e) {
-                logger.error("Failed to update lastHangoutModified for group {}: {}", groupId, e.getMessage());
-                // Continue with other groups - don't fail the whole operation
-            }
-        }
-    }
 }

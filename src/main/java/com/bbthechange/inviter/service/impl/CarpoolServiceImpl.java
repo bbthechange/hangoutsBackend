@@ -3,6 +3,7 @@ package com.bbthechange.inviter.service.impl;
 import com.bbthechange.inviter.service.CarpoolService;
 import com.bbthechange.inviter.service.HangoutService;
 import com.bbthechange.inviter.service.UserService;
+import com.bbthechange.inviter.service.GroupTimestampService;
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.HangoutRepository;
@@ -32,16 +33,19 @@ public class CarpoolServiceImpl implements CarpoolService {
     private final HangoutService hangoutService;
     private final UserService userService;
     private final PointerUpdateService pointerUpdateService;
+    private final GroupTimestampService groupTimestampService;
 
     @Autowired
     public CarpoolServiceImpl(HangoutRepository hangoutRepository, GroupRepository groupRepository,
                              HangoutService hangoutService, UserService userService,
-                             PointerUpdateService pointerUpdateService) {
+                             PointerUpdateService pointerUpdateService,
+                             GroupTimestampService groupTimestampService) {
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
         this.hangoutService = hangoutService;
         this.userService = userService;
         this.pointerUpdateService = pointerUpdateService;
+        this.groupTimestampService = groupTimestampService;
     }
     
     @Override
@@ -458,5 +462,8 @@ public class CarpoolServiceImpl implements CarpoolService {
                 pointer.setNeedsRide(new ArrayList<>(needsRide));
             }, "carpool data");
         }
+
+        // Update group timestamps for ETag invalidation
+        groupTimestampService.updateGroupTimestamps(associatedGroups);
     }
 }

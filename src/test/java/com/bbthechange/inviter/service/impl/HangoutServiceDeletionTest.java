@@ -169,39 +169,14 @@ class HangoutServiceDeletionTest extends HangoutServiceTestBase {
         doNothing().when(groupRepository).deleteHangoutPointer(anyString(), anyString());
         doNothing().when(hangoutRepository).deleteHangout(hangoutId);
 
-        // Mock groups for timestamp updates
-        Group group1 = new Group();
-        group1.setGroupId(group1Id);
-        group1.setGroupName("Group 1");
-
-        Group group2 = new Group();
-        group2.setGroupId(group2Id);
-        group2.setGroupName("Group 2");
-
-        when(groupRepository.findById(group1Id)).thenReturn(Optional.of(group1));
-        when(groupRepository.findById(group2Id)).thenReturn(Optional.of(group2));
-        when(groupRepository.save(any(Group.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
-        Instant beforeCall = Instant.now().minusSeconds(1);
-
         // When
         hangoutService.deleteHangout(hangoutId, userId);
 
-        Instant afterCall = Instant.now().plusSeconds(1);
+        // Then - Verify GroupTimestampService was called with both group IDs
+        ArgumentCaptor<List<String>> groupIdsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(groupTimestampService).updateGroupTimestamps(groupIdsCaptor.capture());
 
-        // Then - Verify timestamps were updated for both groups even though hangout was deleted
-        verify(groupRepository).findById(group1Id);
-        verify(groupRepository).findById(group2Id);
-
-        ArgumentCaptor<Group> groupCaptor = ArgumentCaptor.forClass(Group.class);
-        verify(groupRepository, times(2)).save(groupCaptor.capture());
-
-        List<Group> savedGroups = groupCaptor.getAllValues();
-        assertThat(savedGroups).hasSize(2);
-
-        for (Group savedGroup : savedGroups) {
-            assertThat(savedGroup.getLastHangoutModified()).isNotNull();
-            assertThat(savedGroup.getLastHangoutModified()).isBetween(beforeCall, afterCall);
-        }
+        List<String> capturedGroupIds = groupIdsCaptor.getValue();
+        assertThat(capturedGroupIds).containsExactlyInAnyOrder(group1Id, group2Id);
     }
 }

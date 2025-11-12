@@ -3,6 +3,7 @@ package com.bbthechange.inviter.service.impl;
 import com.bbthechange.inviter.model.Hangout;
 import com.bbthechange.inviter.service.PollService;
 import com.bbthechange.inviter.service.AuthorizationService;
+import com.bbthechange.inviter.service.GroupTimestampService;
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.HangoutRepository;
@@ -34,15 +35,18 @@ public class PollServiceImpl implements PollService {
     private final GroupRepository groupRepository;
     private final AuthorizationService authorizationService;
     private final PointerUpdateService pointerUpdateService;
+    private final GroupTimestampService groupTimestampService;
 
     @Autowired
     public PollServiceImpl(HangoutRepository hangoutRepository, GroupRepository groupRepository,
                           AuthorizationService authorizationService,
-                          PointerUpdateService pointerUpdateService) {
+                          PointerUpdateService pointerUpdateService,
+                          GroupTimestampService groupTimestampService) {
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
         this.authorizationService = authorizationService;
         this.pointerUpdateService = pointerUpdateService;
+        this.groupTimestampService = groupTimestampService;
     }
     
     @Override
@@ -378,6 +382,9 @@ public class PollServiceImpl implements PollService {
                 pointer.setVotes(new ArrayList<>(votes));
             }, "poll data");
         }
+
+        // Update group timestamps for ETag invalidation
+        groupTimestampService.updateGroupTimestamps(associatedGroups);
     }
 
     // ============================================================================

@@ -6,6 +6,7 @@ import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.service.EventSeriesService;
 import com.bbthechange.inviter.service.FuzzyTimeService;
+import com.bbthechange.inviter.service.GroupTimestampService;
 import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.UserService;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -45,6 +46,9 @@ abstract class HangoutServiceTestBase {
 
     @Mock
     protected com.bbthechange.inviter.service.S3Service s3Service;
+
+    @Mock
+    protected GroupTimestampService groupTimestampService;
 
     @InjectMocks
     protected HangoutServiceImpl hangoutService;

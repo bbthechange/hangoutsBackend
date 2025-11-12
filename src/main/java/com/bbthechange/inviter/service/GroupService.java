@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.service;
 
 import com.bbthechange.inviter.dto.*;
+import com.bbthechange.inviter.model.Group;
 import java.util.List;
 
 /**
@@ -68,7 +69,7 @@ public interface GroupService {
     /**
      * Get the group feed showing current/future hangouts chronologically with pagination support.
      * Uses parallel queries for optimal performance - future events + in-progress events.
-     * 
+     *
      * @param groupId The group ID
      * @param requestingUserId The user requesting the feed (for authorization)
      * @param limit Maximum number of events to return (null for no limit)
@@ -76,6 +77,19 @@ public interface GroupService {
      * @param endingBefore Pagination token for backward pagination (get past events)
      * @return GroupFeedDTO with chronological events and pagination tokens
      */
-    GroupFeedDTO getGroupFeed(String groupId, String requestingUserId, Integer limit, 
+    GroupFeedDTO getGroupFeed(String groupId, String requestingUserId, Integer limit,
                              String startingAfter, String endingBefore);
+
+    /**
+     * Get group metadata for ETag validation.
+     * Verifies user has access and returns group with lastHangoutModified timestamp.
+     * Lightweight check (2 RCUs: group metadata + membership check).
+     *
+     * @param groupId The group ID
+     * @param requestingUserId The user requesting the check (for authorization)
+     * @return Group metadata with lastHangoutModified timestamp
+     * @throws ForbiddenException if user is not a member of the group
+     * @throws NotFoundException if group does not exist
+     */
+    Group getGroupForEtagCheck(String groupId, String requestingUserId);
 }

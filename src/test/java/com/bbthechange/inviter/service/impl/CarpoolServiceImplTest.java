@@ -5,6 +5,7 @@ import com.bbthechange.inviter.exception.*;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.GroupRepository;
+import com.bbthechange.inviter.service.GroupTimestampService;
 import com.bbthechange.inviter.service.HangoutService;
 import com.bbthechange.inviter.service.UserService;
 import com.bbthechange.inviter.testutil.HangoutPointerTestBuilder;
@@ -41,6 +42,9 @@ class CarpoolServiceImplTest {
 
     @Mock
     private PointerUpdateService pointerUpdateService;
+
+    @Mock
+    private GroupTimestampService groupTimestampService;
 
     @InjectMocks
     private CarpoolServiceImpl carpoolService;

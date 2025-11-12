@@ -596,47 +596,20 @@ class HangoutServiceCreationTest extends HangoutServiceTestBase {
         when(groupRepository.findMembership(group1Id, userId)).thenReturn(Optional.of(membership1));
         when(groupRepository.findMembership(group2Id, userId)).thenReturn(Optional.of(membership2));
 
-        // Mock groups for timestamp updates
-        Group group1 = new Group();
-        group1.setGroupId(group1Id);
-        group1.setGroupName("Group 1");
-
-        Group group2 = new Group();
-        group2.setGroupId(group2Id);
-        group2.setGroupName("Group 2");
-
-        when(groupRepository.findById(group1Id)).thenReturn(Optional.of(group1));
-        when(groupRepository.findById(group2Id)).thenReturn(Optional.of(group2));
-        when(groupRepository.save(any(Group.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
         // Mock repository to return hangout WITH associated groups set
         Hangout savedHangout = createTestHangout("test-hangout-id");
         savedHangout.setAssociatedGroups(new java.util.ArrayList<>(List.of(group1Id, group2Id)));
         when(hangoutRepository.createHangoutWithAttributes(any(Hangout.class), anyList(), anyList(), anyList(), anyList()))
             .thenReturn(savedHangout);
 
-        Instant beforeCall = Instant.now().minusSeconds(1);
-
         // When
         hangoutService.createHangout(request, userId);
 
-        Instant afterCall = Instant.now().plusSeconds(1);
+        // Then - Verify GroupTimestampService was called with both group IDs
+        ArgumentCaptor<List<String>> groupIdsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(groupTimestampService).updateGroupTimestamps(groupIdsCaptor.capture());
 
-        // Then - Verify findById was called for both groups
-        verify(groupRepository).findById(group1Id);
-        verify(groupRepository).findById(group2Id);
-
-        // Verify save was called for both groups with updated timestamps
-        ArgumentCaptor<Group> groupCaptor = ArgumentCaptor.forClass(Group.class);
-        verify(groupRepository, times(2)).save(groupCaptor.capture());
-
-        List<Group> savedGroups = groupCaptor.getAllValues();
-        assertThat(savedGroups).hasSize(2);
-
-        // Verify timestamps are approximately "now" (within test execution window)
-        for (Group savedGroup : savedGroups) {
-            assertThat(savedGroup.getLastHangoutModified()).isNotNull();
-            assertThat(savedGroup.getLastHangoutModified()).isBetween(beforeCall, afterCall);
-        }
+        List<String> capturedGroupIds = groupIdsCaptor.getValue();
+        assertThat(capturedGroupIds).containsExactlyInAnyOrder(group1Id, group2Id);
     }
 }

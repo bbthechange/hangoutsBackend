@@ -3,7 +3,9 @@ package com.bbthechange.inviter.controller;
 import com.bbthechange.inviter.service.GroupService;
 import com.bbthechange.inviter.service.GroupFeedService;
 import com.bbthechange.inviter.dto.*;
+import com.bbthechange.inviter.model.Group;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
@@ -16,6 +18,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Max;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -165,16 +168,47 @@ public class GroupController extends BaseController {
             @RequestParam(required = false) @Min(1) Integer limit,
             @RequestParam(required = false) String startingAfter,
             @RequestParam(required = false) String endingBefore,
+            @RequestHeader(value = "If-None-Match", required = false) String ifNoneMatch,
             HttpServletRequest httpRequest) {
-        
+
         String userId = extractUserId(httpRequest);
-        
-        // Enhanced chronological feed with bi-directional pagination
+
+        // Step 1: Cheap ETag check - just fetch Group metadata (2 RCUs: group + membership)
+        Group group = groupService.getGroupForEtagCheck(groupId, userId);
+        String etag = calculateETag(groupId, group.getLastHangoutModified());
+
+        // Step 2: Return 304 if ETag matches (saves 2-4 expensive GSI queries!)
+        if (etag.equals(ifNoneMatch)) {
+            logger.debug("Feed unchanged for group {}, returning 304", groupId);
+            return ResponseEntity.status(HttpStatus.NOT_MODIFIED)
+                    .eTag(etag)
+                    .cacheControl(CacheControl.noCache().mustRevalidate())
+                    .build();
+        }
+
+        // Step 3: ETag doesn't match - do the expensive feed query
         GroupFeedDTO feed = groupService.getGroupFeed(groupId, userId, limit, startingAfter, endingBefore);
-        logger.debug("Retrieved group feed for group {} with {} chronological events", 
+        logger.debug("Retrieved group feed for group {} with {} chronological events",
                     groupId, feed.getWithDay().size());
-        
-        return ResponseEntity.ok(feed);
+
+        return ResponseEntity.ok()
+                .eTag(etag)
+                .cacheControl(CacheControl.noCache().mustRevalidate()) // Always revalidate, never stale
+                .body(feed);
+    }
+
+    /**
+     * Calculate ETag for group feed based on groupId and last modification timestamp.
+     * ETag format: "{groupId}-{lastModifiedMillis}"
+     *
+     * @param groupId The group ID
+     * @param lastModified The last hangout modification timestamp (can be null)
+     * @return ETag string in quotes
+     */
+    private String calculateETag(String groupId, Instant lastModified) {
+        return String.format("\"%s-%d\"",
+            groupId,
+            lastModified != null ? lastModified.toEpochMilli() : 0);
     }
     
     @GetMapping("/{groupId}/feed-items")

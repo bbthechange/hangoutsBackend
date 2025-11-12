@@ -51,12 +51,6 @@ class HangoutServiceLocationDescriptionUpdateTest extends HangoutServiceTestBase
             when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.of(membership));
             when(hangoutRepository.save(any(Hangout.class))).thenReturn(hangout);
 
-            // Mock group for lastModified timestamp
-            Group group = new Group();
-            group.setGroupId(groupId);
-            when(groupRepository.findById(groupId)).thenReturn(Optional.of(group));
-            when(groupRepository.save(any(Group.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
             // When
             assertThatCode(() -> hangoutService.updateEventLocation(eventId, newLocation, userId))
                 .doesNotThrowAnyException();
@@ -69,10 +63,6 @@ class HangoutServiceLocationDescriptionUpdateTest extends HangoutServiceTestBase
 
             // Verify pointer was updated with location
             verify(pointerUpdateService).updatePointerWithRetry(eq(groupId), eq(eventId), any(), eq("location"));
-
-            // Verify group lastModified was updated
-            verify(groupRepository).findById(groupId);
-            verify(groupRepository).save(any(Group.class));
         }
 
         @Test
@@ -96,19 +86,6 @@ class HangoutServiceLocationDescriptionUpdateTest extends HangoutServiceTestBase
             GroupMembership membership = createTestMembership(groupId1, userId, "Test Group");
             when(groupRepository.findMembership(groupId1, userId)).thenReturn(Optional.of(membership));
             when(hangoutRepository.save(any(Hangout.class))).thenReturn(hangout);
-
-            // Mock groups for lastModified - only mock the groups that will be accessed
-            Group group1 = new Group();
-            group1.setGroupId(groupId1);
-            Group group2 = new Group();
-            group2.setGroupId(groupId2);
-            Group group3 = new Group();
-            group3.setGroupId(groupId3);
-
-            when(groupRepository.findById(groupId1)).thenReturn(Optional.of(group1));
-            when(groupRepository.findById(groupId2)).thenReturn(Optional.of(group2));
-            when(groupRepository.findById(groupId3)).thenReturn(Optional.of(group3));
-            when(groupRepository.save(any(Group.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
             // When
             hangoutService.updateEventLocation(eventId, newLocation, userId);
@@ -181,8 +158,6 @@ class HangoutServiceLocationDescriptionUpdateTest extends HangoutServiceTestBase
             when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.of(membership));
             when(hangoutRepository.save(any(Hangout.class))).thenReturn(hangout);
 
-            mockGroupForTimestamp(groupId);
-
             // When - Update with null location
             assertThatCode(() -> hangoutService.updateEventLocation(eventId, null, userId))
                 .doesNotThrowAnyException();
@@ -213,24 +188,15 @@ class HangoutServiceLocationDescriptionUpdateTest extends HangoutServiceTestBase
             when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.of(membership));
             when(hangoutRepository.save(any(Hangout.class))).thenReturn(hangout);
 
-            Group group = new Group();
-            group.setGroupId(groupId);
-            when(groupRepository.findById(groupId)).thenReturn(Optional.of(group));
-            when(groupRepository.save(any(Group.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
-            Instant beforeCall = Instant.now().minusSeconds(1);
-
             // When
             hangoutService.updateEventLocation(eventId, newLocation, userId);
 
-            Instant afterCall = Instant.now().plusSeconds(1);
+            // Then - Verify GroupTimestampService was called with group ID
+            ArgumentCaptor<List<String>> groupIdsCaptor = ArgumentCaptor.forClass(List.class);
+            verify(groupTimestampService).updateGroupTimestamps(groupIdsCaptor.capture());
 
-            // Then
-            ArgumentCaptor<Group> groupCaptor = ArgumentCaptor.forClass(Group.class);
-            verify(groupRepository).save(groupCaptor.capture());
-
-            assertThat(groupCaptor.getValue().getLastHangoutModified()).isNotNull();
-            assertThat(groupCaptor.getValue().getLastHangoutModified()).isBetween(beforeCall, afterCall);
+            List<String> capturedGroupIds = groupIdsCaptor.getValue();
+            assertThat(capturedGroupIds).containsExactly(groupId);
         }
     }
 
@@ -255,8 +221,6 @@ class HangoutServiceLocationDescriptionUpdateTest extends HangoutServiceTestBase
             when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.of(membership));
             when(hangoutRepository.save(any(Hangout.class))).thenReturn(hangout);
 
-            mockGroupForTimestamp(groupId);
-
             // When
             assertThatCode(() -> hangoutService.updateEventDescription(eventId, newDescription, userId))
                 .doesNotThrowAnyException();
@@ -265,10 +229,6 @@ class HangoutServiceLocationDescriptionUpdateTest extends HangoutServiceTestBase
             ArgumentCaptor<Hangout> hangoutCaptor = ArgumentCaptor.forClass(Hangout.class);
             verify(hangoutRepository).save(hangoutCaptor.capture());
             assertThat(hangoutCaptor.getValue().getDescription()).isEqualTo(newDescription);
-
-            // Verify group lastModified was updated
-            verify(groupRepository).findById(groupId);
-            verify(groupRepository).save(any(Group.class));
         }
 
         @Test
@@ -288,8 +248,6 @@ class HangoutServiceLocationDescriptionUpdateTest extends HangoutServiceTestBase
             GroupMembership membership = createTestMembership(groupId, userId, "Test Group");
             when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.of(membership));
             when(hangoutRepository.save(any(Hangout.class))).thenReturn(hangout);
-
-            mockGroupForTimestamp(groupId);
 
             // When
             hangoutService.updateEventDescription(eventId, newDescription, userId);
@@ -341,8 +299,6 @@ class HangoutServiceLocationDescriptionUpdateTest extends HangoutServiceTestBase
             when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.of(membership));
             when(hangoutRepository.save(any(Hangout.class))).thenReturn(hangout);
 
-            mockGroupForTimestamp(groupId);
-
             // When - Update with empty description
             assertThatCode(() -> hangoutService.updateEventDescription(eventId, "", userId))
                 .doesNotThrowAnyException();
@@ -369,8 +325,6 @@ class HangoutServiceLocationDescriptionUpdateTest extends HangoutServiceTestBase
             GroupMembership membership = createTestMembership(groupId, userId, "Test Group");
             when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.of(membership));
             when(hangoutRepository.save(any(Hangout.class))).thenReturn(hangout);
-
-            mockGroupForTimestamp(groupId);
 
             // When - Update with null description
             assertThatCode(() -> hangoutService.updateEventDescription(eventId, null, userId))
@@ -400,24 +354,15 @@ class HangoutServiceLocationDescriptionUpdateTest extends HangoutServiceTestBase
             when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.of(membership));
             when(hangoutRepository.save(any(Hangout.class))).thenReturn(hangout);
 
-            Group group = new Group();
-            group.setGroupId(groupId);
-            when(groupRepository.findById(groupId)).thenReturn(Optional.of(group));
-            when(groupRepository.save(any(Group.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
-            Instant beforeCall = Instant.now().minusSeconds(1);
-
             // When
             hangoutService.updateEventDescription(eventId, newDescription, userId);
 
-            Instant afterCall = Instant.now().plusSeconds(1);
+            // Then - Verify GroupTimestampService was called with group ID
+            ArgumentCaptor<List<String>> groupIdsCaptor = ArgumentCaptor.forClass(List.class);
+            verify(groupTimestampService).updateGroupTimestamps(groupIdsCaptor.capture());
 
-            // Then
-            ArgumentCaptor<Group> groupCaptor = ArgumentCaptor.forClass(Group.class);
-            verify(groupRepository).save(groupCaptor.capture());
-
-            assertThat(groupCaptor.getValue().getLastHangoutModified()).isNotNull();
-            assertThat(groupCaptor.getValue().getLastHangoutModified()).isBetween(beforeCall, afterCall);
+            List<String> capturedGroupIds = groupIdsCaptor.getValue();
+            assertThat(capturedGroupIds).containsExactly(groupId);
         }
     }
 

@@ -431,30 +431,16 @@ class HangoutServiceUpdateTest extends HangoutServiceTestBase {
         membership.setRole(GroupRole.ADMIN);
         when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.of(membership));
 
-        // Mock group for timestamp update
-        Group group = new Group();
-        group.setGroupId(groupId);
-        group.setGroupName("Test Group");
-        when(groupRepository.findById(groupId)).thenReturn(Optional.of(group));
-        when(groupRepository.save(any(Group.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
         when(hangoutRepository.save(any(Hangout.class))).thenReturn(hangout);
-
-        Instant beforeCall = Instant.now().minusSeconds(1);
 
         // When
         hangoutService.updateEventTitle(hangoutId, "New Title", userId);
 
-        Instant afterCall = Instant.now().plusSeconds(1);
+        // Then - Verify GroupTimestampService was called with group ID
+        ArgumentCaptor<List<String>> groupIdsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(groupTimestampService).updateGroupTimestamps(groupIdsCaptor.capture());
 
-        // Then - Verify group timestamp was updated
-        verify(groupRepository).findById(groupId);
-
-        ArgumentCaptor<Group> groupCaptor = ArgumentCaptor.forClass(Group.class);
-        verify(groupRepository).save(groupCaptor.capture());
-
-        Group savedGroup = groupCaptor.getValue();
-        assertThat(savedGroup.getLastHangoutModified()).isNotNull();
-        assertThat(savedGroup.getLastHangoutModified()).isBetween(beforeCall, afterCall);
+        List<String> capturedGroupIds = groupIdsCaptor.getValue();
+        assertThat(capturedGroupIds).containsExactly(groupId);
     }
 }
