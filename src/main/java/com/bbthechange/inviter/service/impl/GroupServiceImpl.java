@@ -5,6 +5,7 @@ import com.bbthechange.inviter.service.S3Service;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.UserRepository;
+import com.bbthechange.inviter.repository.InviteCodeRepository;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.exception.*;
@@ -17,6 +18,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.concurrent.CompletableFuture;
@@ -47,17 +49,20 @@ public class GroupServiceImpl implements GroupService {
     private final UserRepository userRepository;
     private final InviteService inviteService;
     private final S3Service s3Service;
+    private final InviteCodeRepository inviteCodeRepository;
     private final String appBaseUrl;
 
     @Autowired
     public GroupServiceImpl(GroupRepository groupRepository, HangoutRepository hangoutRepository,
                            UserRepository userRepository, InviteService inviteService, S3Service s3Service,
+                           InviteCodeRepository inviteCodeRepository,
                            @Value("${app.base-url}") String appBaseUrl) {
         this.groupRepository = groupRepository;
         this.hangoutRepository = hangoutRepository;
         this.userRepository = userRepository;
         this.inviteService = inviteService;
         this.s3Service = s3Service;
+        this.inviteCodeRepository = inviteCodeRepository;
         this.appBaseUrl = appBaseUrl;
     }
     
@@ -670,45 +675,62 @@ public class GroupServiceImpl implements GroupService {
             throw new UnauthorizedException("Only group members can generate invite codes");
         }
 
-        // Check if group already has an invite code (idempotent operation)
-        String inviteCode = group.getInviteCode();
+        // Check if there's already an active code for this group (idempotent)
+        Optional<InviteCode> existingCode = inviteCodeRepository.findActiveCodeForGroup(groupId);
 
-        if (inviteCode == null) {
-            // Generate unique invite code (utility handles collision checking)
-            inviteCode = InviteCodeGenerator.generateUnique(groupRepository::inviteCodeExists);
+        if (existingCode.isPresent()) {
+            InviteCode inviteCode = existingCode.get();
+            logger.debug("Returning existing active invite code {} for group {}", inviteCode.getCode(), groupId);
 
-            // Update group with invite code and GSI keys
-            group.setInviteCode(inviteCode);
-            group.setGsi3pk(inviteCode);  // For InviteCodeIndex lookup
-            // gsi3sk stays null (following CalendarTokenIndex pattern)
-
-            groupRepository.save(group);
-
-            logger.info("Generated new invite code {} for group {}", inviteCode, groupId);
-        } else {
-            logger.debug("Returning existing invite code for group {}", groupId);
+            // Build shareable URL
+            String shareUrl = String.format("%s/join-group/%s", appBaseUrl, inviteCode.getCode());
+            return new InviteCodeResponse(inviteCode.getCode(), shareUrl);
         }
 
-        // Build shareable URL
-        String shareUrl = String.format("%s/join-group/%s", appBaseUrl, inviteCode);
+        // No active code exists, generate a new one
+        String codeString = InviteCodeGenerator.generateUnique(inviteCodeRepository::codeExists);
 
-        return new InviteCodeResponse(inviteCode, shareUrl);
+        // Create new InviteCode entity
+        InviteCode inviteCode = new InviteCode(groupId, codeString, requestingUserId, group.getGroupName());
+
+        // Save invite code
+        inviteCodeRepository.save(inviteCode);
+
+        logger.info("Generated new invite code {} for group {}", codeString, groupId);
+
+        // Build shareable URL
+        String shareUrl = String.format("%s/join-group/%s", appBaseUrl, codeString);
+
+        return new InviteCodeResponse(codeString, shareUrl);
     }
 
     @Override
     public GroupPreviewDTO getGroupPreviewByInviteCode(String inviteCode) {
         // Public endpoint - no auth required
-        Group group = groupRepository.findByInviteCode(inviteCode)
+        InviteCode code = inviteCodeRepository.findByCode(inviteCode)
             .orElseThrow(() -> new ResourceNotFoundException("Invalid invite code: " + inviteCode));
+
+        // Get the group
+        Group group = groupRepository.findById(code.getGroupId())
+            .orElseThrow(() -> new ResourceNotFoundException("Group not found for invite code"));
 
         return new GroupPreviewDTO(group);
     }
 
     @Override
-    public GroupDTO joinGroupByInviteCode(String inviteCode, String userId) {
-        // Find group by invite code
-        Group group = groupRepository.findByInviteCode(inviteCode)
-            .orElseThrow(() -> new ResourceNotFoundException("Invalid invite code: " + inviteCode));
+    public GroupDTO joinGroupByInviteCode(String inviteCodeString, String userId) {
+        // Find invite code
+        InviteCode inviteCode = inviteCodeRepository.findByCode(inviteCodeString)
+            .orElseThrow(() -> new ResourceNotFoundException("Invalid invite code: " + inviteCodeString));
+
+        // Check if code is usable (active and not expired)
+        if (!inviteCode.isUsable()) {
+            throw new ResourceNotFoundException("This invite code is no longer valid");
+        }
+
+        // Get the group
+        Group group = groupRepository.findById(inviteCode.getGroupId())
+            .orElseThrow(() -> new ResourceNotFoundException("Group not found for invite code"));
 
         // Check if user is already a member
         if (groupRepository.isUserMemberOfGroup(group.getGroupId(), userId)) {
@@ -736,7 +758,11 @@ public class GroupServiceImpl implements GroupService {
 
         groupRepository.addMember(membership);
 
-        logger.info("User {} joined group {} via invite code {}", userId, group.getGroupId(), inviteCode);
+        // Record usage on invite code
+        inviteCode.recordUsage(userId);
+        inviteCodeRepository.save(inviteCode);
+
+        logger.info("User {} joined group {} via invite code {}", userId, group.getGroupId(), inviteCodeString);
 
         return new GroupDTO(group, membership);
     }

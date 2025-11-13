@@ -2,6 +2,7 @@ package com.bbthechange.inviter.controller;
 
 import com.bbthechange.inviter.service.GroupService;
 import com.bbthechange.inviter.service.GroupFeedService;
+import com.bbthechange.inviter.service.RateLimitingService;
 import com.bbthechange.inviter.dto.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -17,6 +18,8 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Max;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 
 /**
  * REST controller for group management operations.
@@ -31,11 +34,13 @@ public class GroupController extends BaseController {
     
     private final GroupService groupService;
     private final GroupFeedService groupFeedService;
-    
+    private final RateLimitingService rateLimitingService;
+
     @Autowired
-    public GroupController(GroupService groupService, GroupFeedService groupFeedService) {
+    public GroupController(GroupService groupService, GroupFeedService groupFeedService, RateLimitingService rateLimitingService) {
         this.groupService = groupService;
         this.groupFeedService = groupFeedService;
+        this.rateLimitingService = rateLimitingService;
     }
     
     @PostMapping
@@ -208,13 +213,39 @@ public class GroupController extends BaseController {
     }
 
     @GetMapping("/invite/{inviteCode}")
-    public ResponseEntity<GroupPreviewDTO> getGroupPreviewByInviteCode(
-            @PathVariable String inviteCode) {
+    public ResponseEntity<?> getGroupPreviewByInviteCode(
+            @PathVariable String inviteCode,
+            HttpServletRequest httpRequest) {
+
+        // Extract client IP address
+        String ipAddress = extractClientIp(httpRequest);
+
+        // Check rate limiting
+        if (!rateLimitingService.isInvitePreviewAllowed(ipAddress, inviteCode)) {
+            logger.warn("Rate limit exceeded for invite preview - IP: {}, Code: {}", ipAddress, inviteCode);
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("error", "Rate limit exceeded");
+            errorResponse.put("message", "Too many requests. Please try again later.");
+            return ResponseEntity.status(429).body(errorResponse);
+        }
 
         logger.info("Getting group preview for invite code {}", inviteCode);
         GroupPreviewDTO preview = groupService.getGroupPreviewByInviteCode(inviteCode);
 
         return ResponseEntity.ok(preview);
+    }
+
+    /**
+     * Extract client IP address from request, handling X-Forwarded-For header for API Gateway.
+     */
+    private String extractClientIp(HttpServletRequest request) {
+        String xff = request.getHeader("X-Forwarded-For");
+        if (xff != null && !xff.isEmpty()) {
+            // X-Forwarded-For can be: "client, proxy1, proxy2"
+            // We want the first (original client)
+            return xff.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
     }
 
     @PostMapping("/invite/join")

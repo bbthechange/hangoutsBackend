@@ -35,6 +35,9 @@ public final class InviterKeyFactory {
     public static final String IDEA_PREFIX = "IDEA";
     public static final String PLACE_PREFIX = "PLACE";
     public static final String PRIMARY_PLACE = "PRIMARY_PLACE";
+    public static final String INVITE_CODE_PREFIX = "INVITE_CODE";
+    public static final String CODE_PREFIX = "CODE";
+    public static final String CREATED_PREFIX = "CREATED";
 
     // Status constants
     public static final String STATUS_ACTIVE = "ACTIVE";
@@ -276,5 +279,29 @@ public final class InviterKeyFactory {
 
     public static boolean isPlace(String sortKey) {
         return sortKey != null && sortKey.startsWith(PLACE_PREFIX + DELIMITER);
+    }
+
+    // Invite Code Keys
+    public static String getInviteCodePk(String inviteCodeId) {
+        validateId(inviteCodeId, "InviteCode");
+        return INVITE_CODE_PREFIX + DELIMITER + inviteCodeId;
+    }
+
+    public static String getCodeLookupGsi3pk(String code) {
+        if (code == null || code.trim().isEmpty()) {
+            throw new InvalidKeyException("Code cannot be null or empty");
+        }
+        return CODE_PREFIX + DELIMITER + code;
+    }
+
+    public static String getCreatedSk(java.time.Instant createdAt) {
+        if (createdAt == null) {
+            throw new InvalidKeyException("CreatedAt cannot be null");
+        }
+        return CREATED_PREFIX + DELIMITER + createdAt.toString();
+    }
+
+    public static boolean isInviteCode(String sortKey) {
+        return sortKey != null && METADATA_SUFFIX.equals(sortKey);
     }
 }

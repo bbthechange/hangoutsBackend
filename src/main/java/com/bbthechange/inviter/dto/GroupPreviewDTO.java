@@ -2,6 +2,7 @@ package com.bbthechange.inviter.dto;
 
 import com.bbthechange.inviter.model.Group;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 
 /**
@@ -17,6 +18,7 @@ import lombok.Data;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class GroupPreviewDTO {
 
+    @JsonProperty("isPrivate")
     private boolean isPrivate;
     private String groupName;
     private String mainImagePath;

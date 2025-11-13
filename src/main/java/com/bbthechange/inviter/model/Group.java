@@ -23,8 +23,7 @@ public class Group extends BaseItem {
     private String mainImagePath;
     private String backgroundImagePath;
     private Instant lastHangoutModified;  // Track last time any hangout was created/updated/deleted
-    private String inviteCode;  // Unique code for joining via shareable link
-    
+
     // Default constructor for DynamoDB
     public Group() {
         super();
@@ -97,15 +96,6 @@ public class Group extends BaseItem {
 
     public void setLastHangoutModified(Instant lastHangoutModified) {
         this.lastHangoutModified = lastHangoutModified;
-        touch(); // Update timestamp
-    }
-
-    public String getInviteCode() {
-        return inviteCode;
-    }
-
-    public void setInviteCode(String inviteCode) {
-        this.inviteCode = inviteCode;
         touch(); // Update timestamp
     }
 }

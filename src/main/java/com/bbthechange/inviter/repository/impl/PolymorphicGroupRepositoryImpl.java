@@ -809,40 +809,4 @@ public class PolymorphicGroupRepositoryImpl implements GroupRepository {
         });
     }
 
-    @Override
-    public Optional<Group> findByInviteCode(String inviteCode) {
-        return queryTracker.trackQuery("Query", TABLE_NAME, () -> {
-            try {
-                QueryRequest request = QueryRequest.builder()
-                    .tableName(TABLE_NAME)
-                    .indexName("InviteCodeIndex")
-                    .keyConditionExpression("gsi3pk = :gsi3pk")
-                    .expressionAttributeValues(Map.of(
-                        ":gsi3pk", AttributeValue.builder().s(inviteCode).build()
-                    ))
-                    .build();
-
-                QueryResponse response = dynamoDbClient.query(request);
-
-                if (response.items().isEmpty()) {
-                    return Optional.empty();
-                }
-
-                BaseItem item = deserializeItem(response.items().get(0));
-                if (item instanceof Group) {
-                    return Optional.of((Group) item);
-                }
-                return Optional.empty();
-
-            } catch (DynamoDbException e) {
-                logger.error("Failed to find group by invite code {}", inviteCode, e);
-                throw new RepositoryException("Failed to find group by invite code", e);
-            }
-        });
-    }
-
-    @Override
-    public boolean inviteCodeExists(String inviteCode) {
-        return findByInviteCode(inviteCode).isPresent();
-    }
 }
