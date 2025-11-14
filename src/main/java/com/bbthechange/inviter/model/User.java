@@ -31,7 +31,8 @@ public class User {
         this.displayName = null;
         this.password = password;
         this.accountStatus = AccountStatus.UNVERIFIED;
-        this.creationDate = Instant.now();
+        // Only set creationDate for real users, not placeholder users (password null)
+        this.creationDate = (password == null) ? null : Instant.now();
         this.isTestAccount = false;
     }
     
@@ -42,7 +43,8 @@ public class User {
         this.displayName = displayName;
         this.password = password;
         this.accountStatus = AccountStatus.UNVERIFIED;
-        this.creationDate = Instant.now();
+        // Only set creationDate for real users, not placeholder users (password null)
+        this.creationDate = (password == null) ? null : Instant.now();
         this.isTestAccount = false;
     }
     

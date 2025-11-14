@@ -341,6 +341,50 @@ class AuthControllerTest {
             ));
             verify(accountService).sendVerificationCode("+19995550001");
         }
+
+        @Test
+        @DisplayName("Should set creationDate when registering new user")
+        void register_Success_SetsCreationDateForNewUser() {
+            // Arrange
+            when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.empty());
+            when(passwordService.encryptPassword("password123")).thenReturn("hashedpassword");
+            when(userRepository.save(any(User.class))).thenReturn(testUser);
+
+            // Act
+            ResponseEntity<Map<String, String>> response = authController.register(testUser);
+
+            // Assert
+            assertEquals(HttpStatus.CREATED, response.getStatusCode());
+
+            verify(userRepository).save(argThat(user ->
+                user.getCreationDate() != null  // creationDate should be set for new users
+            ));
+        }
+
+        @Test
+        @DisplayName("Should set creationDate when upgrading placeholder user to full account")
+        void register_Success_SetsCreationDateForPlaceholderUser() {
+            // Arrange - User exists but has no password (created via group invite with null creationDate)
+            User placeholderUser = new User("+1234567890", null, null);
+            placeholderUser.setId(testUserId);
+            placeholderUser.setAccountStatus(AccountStatus.UNVERIFIED);
+            // Placeholder user should have null creationDate
+            assertNull(placeholderUser.getCreationDate());
+
+            when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.of(placeholderUser));
+            when(passwordService.encryptPassword("password123")).thenReturn("hashedpassword");
+            when(userRepository.save(any(User.class))).thenReturn(placeholderUser);
+
+            // Act
+            ResponseEntity<Map<String, String>> response = authController.register(testUser);
+
+            // Assert
+            assertEquals(HttpStatus.CREATED, response.getStatusCode());
+
+            verify(userRepository).save(argThat(user ->
+                user.getCreationDate() != null  // creationDate should be set when placeholder upgrades to full account
+            ));
+        }
     }
 
     @Nested

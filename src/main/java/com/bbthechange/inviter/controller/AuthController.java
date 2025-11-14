@@ -90,12 +90,13 @@ public class AuthController {
             userToSave.setDisplayName(user.getDisplayName());
             userToSave.setPassword(passwordService.encryptPassword(user.getPassword()));
             userToSave.setAccountStatus(AccountStatus.UNVERIFIED); // Ensure it's UNVERIFIED
+            userToSave.setCreationDate(java.time.Instant.now()); // Set creation date for registration
         } else {
-            userToSave = new User(user.getPhoneNumber(), user.getUsername(), user.getDisplayName(), 
+            userToSave = new User(user.getPhoneNumber(), user.getUsername(), user.getDisplayName(),
                                  passwordService.encryptPassword(user.getPassword()));
-            // Constructor already sets AccountStatus.UNVERIFIED
+            // Constructor already sets AccountStatus.UNVERIFIED and creationDate
         }
-        
+
         userRepository.save(userToSave);
         
         // Send verification code
