@@ -323,4 +323,168 @@ class RateLimitingServiceTest {
             assertFalse(thirdResult); // Confirms rate limiting (and thus metric publishing) occurred
         }
     }
+
+    @Nested
+    @DisplayName("Password Reset Request Rate Limiting Tests")
+    class PasswordResetRequestTests {
+
+        @Test
+        @DisplayName("Should return true for first password reset request")
+        void isPasswordResetRequestAllowed_FirstRequest_ReturnsTrue() {
+            // Arrange
+            String phoneNumber = "+19285251044";
+
+            // Act
+            boolean result = rateLimitingService.isPasswordResetRequestAllowed(phoneNumber);
+
+            // Assert
+            assertTrue(result);
+        }
+
+        @Test
+        @DisplayName("Should return false for second request within hour")
+        void isPasswordResetRequestAllowed_SecondRequestWithinHour_ReturnsFalse() {
+            // Arrange
+            String phoneNumber = "+19285251044";
+
+            // Act
+            boolean firstResult = rateLimitingService.isPasswordResetRequestAllowed(phoneNumber);
+            boolean secondResult = rateLimitingService.isPasswordResetRequestAllowed(phoneNumber);
+
+            // Assert
+            assertTrue(firstResult);
+            assertFalse(secondResult);
+        }
+
+        @Test
+        @DisplayName("Should return true after cache expires (documents expected behavior)")
+        void isPasswordResetRequestAllowed_SecondRequestAfterHour_ReturnsTrue() {
+            // Note: This documents expected behavior after cache expiration
+            // Actual time-based testing would be done in integration tests
+
+            // Arrange
+            String phoneNumber = "+19285251044";
+
+            // Act - First request should succeed
+            boolean result = rateLimitingService.isPasswordResetRequestAllowed(phoneNumber);
+
+            // Assert
+            assertTrue(result);
+
+            // After 1 hour cache expiry, requests should be allowed again
+            // This behavior is handled automatically by Caffeine cache
+        }
+
+        @Test
+        @DisplayName("Should maintain independent limits for different phone numbers")
+        void isPasswordResetRequestAllowed_DifferentPhoneNumbers_IndependentLimits() {
+            // Arrange
+            String phone1 = "+19285251044";
+            String phone2 = "+15551234567";
+
+            // Act
+            boolean phone1FirstResult = rateLimitingService.isPasswordResetRequestAllowed(phone1);
+            boolean phone1SecondResult = rateLimitingService.isPasswordResetRequestAllowed(phone1);
+            boolean phone2FirstResult = rateLimitingService.isPasswordResetRequestAllowed(phone2);
+
+            // Assert
+            assertTrue(phone1FirstResult);
+            assertFalse(phone1SecondResult); // phone1 is rate limited
+            assertTrue(phone2FirstResult);   // phone2 is independent
+        }
+    }
+
+    @Nested
+    @DisplayName("Password Reset Verify Rate Limiting Tests")
+    class PasswordResetVerifyTests {
+
+        @Test
+        @DisplayName("Should return true for first verification attempt")
+        void isPasswordResetVerifyAllowed_FirstAttempt_ReturnsTrue() {
+            // Arrange
+            String phoneNumber = "+19285251044";
+
+            // Act
+            boolean result = rateLimitingService.isPasswordResetVerifyAllowed(phoneNumber);
+
+            // Assert
+            assertTrue(result);
+        }
+
+        @Test
+        @DisplayName("Should return true for tenth verification attempt")
+        void isPasswordResetVerifyAllowed_TenthAttempt_ReturnsTrue() {
+            // Arrange
+            String phoneNumber = "+19285251044";
+
+            // Act - Make 10 attempts
+            boolean[] results = new boolean[10];
+            for (int i = 0; i < 10; i++) {
+                results[i] = rateLimitingService.isPasswordResetVerifyAllowed(phoneNumber);
+            }
+
+            // Assert - All 10 should succeed
+            for (int i = 0; i < 10; i++) {
+                assertTrue(results[i], "Attempt " + (i + 1) + " should have succeeded");
+            }
+        }
+
+        @Test
+        @DisplayName("Should return false for eleventh verification attempt")
+        void isPasswordResetVerifyAllowed_EleventhAttempt_ReturnsFalse() {
+            // Arrange
+            String phoneNumber = "+19285251044";
+
+            // Act - Make 10 successful attempts
+            for (int i = 0; i < 10; i++) {
+                assertTrue(rateLimitingService.isPasswordResetVerifyAllowed(phoneNumber));
+            }
+
+            // 11th attempt should fail
+            boolean eleventhResult = rateLimitingService.isPasswordResetVerifyAllowed(phoneNumber);
+
+            // Assert
+            assertFalse(eleventhResult);
+        }
+
+        @Test
+        @DisplayName("Should maintain independent limits for different phone numbers")
+        void isPasswordResetVerifyAllowed_DifferentPhoneNumbers_IndependentLimits() {
+            // Arrange
+            String phone1 = "+19285251044";
+            String phone2 = "+15551234567";
+
+            // Act - Fill up phone1's limit (10 attempts)
+            for (int i = 0; i < 10; i++) {
+                assertTrue(rateLimitingService.isPasswordResetVerifyAllowed(phone1));
+            }
+            boolean phone1ExceededResult = rateLimitingService.isPasswordResetVerifyAllowed(phone1);
+
+            // phone2 should still be allowed
+            boolean phone2FirstResult = rateLimitingService.isPasswordResetVerifyAllowed(phone2);
+
+            // Assert
+            assertFalse(phone1ExceededResult); // phone1 exceeded limit
+            assertTrue(phone2FirstResult);     // phone2 is independent
+        }
+
+        @Test
+        @DisplayName("Should return true after cache expires (documents expected behavior)")
+        void isPasswordResetVerifyAllowed_AfterHourlyExpiry_ReturnsTrue() {
+            // Note: This documents expected behavior for cache expiration
+            // Actual time-based testing would be done in integration tests
+
+            // Arrange
+            String phoneNumber = "+19285251044";
+
+            // Act - First attempt should always succeed
+            boolean result = rateLimitingService.isPasswordResetVerifyAllowed(phoneNumber);
+
+            // Assert
+            assertTrue(result);
+
+            // After hourly cache expiry, attempts should be allowed again
+            // This behavior is handled automatically by Caffeine cache
+        }
+    }
 }

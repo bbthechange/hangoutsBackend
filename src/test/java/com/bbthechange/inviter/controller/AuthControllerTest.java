@@ -76,6 +76,9 @@ class AuthControllerTest {
     private RateLimitingService rateLimitingService;
 
     @Mock
+    private com.bbthechange.inviter.service.PasswordResetService passwordResetService;
+
+    @Mock
     private HttpServletRequest request;
 
     @Mock
@@ -103,7 +106,8 @@ class AuthControllerTest {
             rotationService,
             refreshTokenRepository,
             accountService,
-            rateLimitingService
+            rateLimitingService,
+            passwordResetService
         );
         
         testUserId = UUID.randomUUID();
@@ -1233,12 +1237,302 @@ class AuthControllerTest {
             String expectedMessage = "Rate limit exceeded for test";
 
             // Act
-            com.bbthechange.inviter.exception.RateLimitExceededException exception = 
+            com.bbthechange.inviter.exception.RateLimitExceededException exception =
                 new com.bbthechange.inviter.exception.RateLimitExceededException(expectedMessage);
 
             // Assert
             assertEquals(expectedMessage, exception.getMessage());
             assertTrue(exception instanceof RuntimeException);
+        }
+    }
+
+    @Nested
+    @DisplayName("POST /auth/request-password-reset - Password Reset Request Tests")
+    class RequestPasswordResetTests {
+
+        @Test
+        @DisplayName("Should return 200 with generic message for valid phone")
+        void requestPasswordReset_WithValidPhone_Returns200() {
+            // Arrange
+            com.bbthechange.inviter.dto.PasswordResetRequestDto requestDto =
+                new com.bbthechange.inviter.dto.PasswordResetRequestDto();
+            requestDto.setPhoneNumber("+19285251044");
+
+            when(rateLimitingService.isPasswordResetRequestAllowed(anyString())).thenReturn(true);
+            doNothing().when(passwordResetService).requestPasswordReset(anyString(), any());
+
+            // Act
+            ResponseEntity<Map<String, String>> response =
+                authController.requestPasswordReset(requestDto, request);
+
+            // Assert
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("If an account exists for this number, you'll receive a password reset code via SMS.",
+                response.getBody().get("message"));
+            verify(passwordResetService).requestPasswordReset(eq("+19285251044"), eq(request));
+        }
+
+        @Test
+        @DisplayName("Should return 429 when rate limit exceeded")
+        void requestPasswordReset_RateLimitExceeded_Returns429() {
+            // Arrange
+            com.bbthechange.inviter.dto.PasswordResetRequestDto requestDto =
+                new com.bbthechange.inviter.dto.PasswordResetRequestDto();
+            requestDto.setPhoneNumber("+19285251044");
+
+            when(rateLimitingService.isPasswordResetRequestAllowed(anyString())).thenReturn(false);
+
+            // Act
+            ResponseEntity<Map<String, String>> response =
+                authController.requestPasswordReset(requestDto, request);
+
+            // Assert
+            assertEquals(HttpStatus.TOO_MANY_REQUESTS, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("TOO_MANY_REQUESTS", response.getBody().get("error"));
+            assertEquals("Please wait before requesting another password reset.",
+                response.getBody().get("message"));
+            verify(passwordResetService, never()).requestPasswordReset(any(), any());
+        }
+    }
+
+    @Nested
+    @DisplayName("POST /auth/verify-reset-code - Verify Reset Code Tests")
+    class VerifyResetCodeTests {
+
+        @Test
+        @DisplayName("Should return 200 with reset token for valid code")
+        void verifyResetCode_WithValidCode_Returns200() {
+            // Arrange
+            com.bbthechange.inviter.dto.VerifyResetCodeRequest requestDto =
+                new com.bbthechange.inviter.dto.VerifyResetCodeRequest();
+            requestDto.setPhoneNumber("+19285251044");
+            requestDto.setCode("123456");
+
+            String resetToken = "eyJhbGci...";
+
+            when(rateLimitingService.isPasswordResetVerifyAllowed(anyString())).thenReturn(true);
+            when(passwordResetService.verifyResetCode(anyString(), anyString())).thenReturn(resetToken);
+
+            // Act
+            ResponseEntity<Map<String, Object>> response =
+                authController.verifyResetCode(requestDto);
+
+            // Assert
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("Code verified successfully", response.getBody().get("message"));
+            assertEquals(resetToken, response.getBody().get("resetToken"));
+            assertEquals(900, response.getBody().get("expiresIn"));
+        }
+
+        @Test
+        @DisplayName("Should return 400 when code is invalid")
+        void verifyResetCode_WithInvalidCode_Returns400() {
+            // Arrange
+            com.bbthechange.inviter.dto.VerifyResetCodeRequest requestDto =
+                new com.bbthechange.inviter.dto.VerifyResetCodeRequest();
+            requestDto.setPhoneNumber("+19285251044");
+            requestDto.setCode("999999");
+
+            when(rateLimitingService.isPasswordResetVerifyAllowed(anyString())).thenReturn(true);
+            when(passwordResetService.verifyResetCode(anyString(), anyString()))
+                .thenThrow(new com.bbthechange.inviter.exception.InvalidCodeException("The reset code is incorrect."));
+
+            // Act
+            ResponseEntity<Map<String, Object>> response =
+                authController.verifyResetCode(requestDto);
+
+            // Assert
+            assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("INVALID_CODE", response.getBody().get("error"));
+            assertEquals("The reset code is incorrect.", response.getBody().get("message"));
+        }
+
+        @Test
+        @DisplayName("Should return 400 when no reset request exists")
+        void verifyResetCode_WithNoResetRequest_Returns400() {
+            // Arrange
+            com.bbthechange.inviter.dto.VerifyResetCodeRequest requestDto =
+                new com.bbthechange.inviter.dto.VerifyResetCodeRequest();
+            requestDto.setPhoneNumber("+19285251044");
+            requestDto.setCode("123456");
+
+            when(rateLimitingService.isPasswordResetVerifyAllowed(anyString())).thenReturn(true);
+            when(passwordResetService.verifyResetCode(anyString(), anyString()))
+                .thenThrow(new com.bbthechange.inviter.exception.InvalidResetRequestException(
+                    "No password reset requested for this number"));
+
+            // Act
+            ResponseEntity<Map<String, Object>> response =
+                authController.verifyResetCode(requestDto);
+
+            // Assert
+            assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("INVALID_RESET_REQUEST", response.getBody().get("error"));
+        }
+
+        @Test
+        @DisplayName("Should return 429 when rate limit exceeded")
+        void verifyResetCode_RateLimitExceeded_Returns429() {
+            // Arrange
+            com.bbthechange.inviter.dto.VerifyResetCodeRequest requestDto =
+                new com.bbthechange.inviter.dto.VerifyResetCodeRequest();
+            requestDto.setPhoneNumber("+19285251044");
+            requestDto.setCode("123456");
+
+            when(rateLimitingService.isPasswordResetVerifyAllowed(anyString())).thenReturn(false);
+
+            // Act
+            ResponseEntity<Map<String, Object>> response =
+                authController.verifyResetCode(requestDto);
+
+            // Assert
+            assertEquals(HttpStatus.TOO_MANY_REQUESTS, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("TOO_MANY_REQUESTS", response.getBody().get("error"));
+        }
+    }
+
+    @Nested
+    @DisplayName("POST /auth/reset-password - Reset Password Tests")
+    class ResetPasswordTests {
+
+        @Test
+        @DisplayName("Should return 200 and auto-login for mobile client")
+        void resetPassword_WithValidToken_Returns200AndAutoLoginsForMobile() {
+            // Arrange
+            com.bbthechange.inviter.dto.ResetPasswordRequest requestDto =
+                new com.bbthechange.inviter.dto.ResetPasswordRequest();
+            requestDto.setResetToken("eyJhbGci...");
+            requestDto.setNewPassword("newSecurePassword123");
+
+            String userId = testUserId.toString();
+            String accessToken = "access.token";
+            String refreshToken = "refresh.token";
+            String tokenHash = "hash";
+            String securityHash = "secHash";
+
+            when(request.getHeader("X-Client-Type")).thenReturn("mobile");
+            when(request.getHeader("X-Device-ID")).thenReturn("device-123");
+            when(request.getHeader("X-Forwarded-For")).thenReturn(null);
+            when(request.getRemoteAddr()).thenReturn("192.168.1.1");
+            when(jwtService.extractUserIdFromResetToken(anyString())).thenReturn(userId);
+            doNothing().when(passwordResetService).resetPassword(anyString(), anyString());
+            when(jwtService.generateToken(anyString())).thenReturn(accessToken);
+            when(jwtService.getAccessTokenExpirationSeconds()).thenReturn(1800);
+            when(hashingService.generateRefreshToken()).thenReturn(refreshToken);
+            when(hashingService.generateLookupHash(anyString())).thenReturn(tokenHash);
+            when(hashingService.generateSecurityHash(anyString())).thenReturn(securityHash);
+
+            // Act
+            ResponseEntity<Map<String, Object>> response =
+                authController.resetPassword(requestDto, request, mockResponse);
+
+            // Assert
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("Password successfully reset", response.getBody().get("message"));
+            assertEquals(accessToken, response.getBody().get("accessToken"));
+            assertEquals(refreshToken, response.getBody().get("refreshToken")); // Mobile gets refresh token in body
+            assertEquals(1800, response.getBody().get("expiresIn"));
+            assertEquals("Bearer", response.getBody().get("tokenType"));
+
+            verify(passwordResetService).resetPassword(eq("eyJhbGci..."), eq("newSecurePassword123"));
+            verify(refreshTokenRepository).save(any(RefreshToken.class));
+        }
+
+        @Test
+        @DisplayName("Should return 200 and auto-login for web client with cookie")
+        void resetPassword_WithValidToken_Returns200AndAutoLoginsForWeb() {
+            // Arrange
+            com.bbthechange.inviter.dto.ResetPasswordRequest requestDto =
+                new com.bbthechange.inviter.dto.ResetPasswordRequest();
+            requestDto.setResetToken("eyJhbGci...");
+            requestDto.setNewPassword("newSecurePassword123");
+
+            String userId = testUserId.toString();
+            String accessToken = "access.token";
+            String refreshToken = "refresh.token";
+            ResponseCookie cookie = ResponseCookie.from("refreshToken", refreshToken).build();
+
+            when(request.getHeader("X-Client-Type")).thenReturn("web");
+            when(request.getHeader("X-Device-ID")).thenReturn("device-456");
+            when(request.getHeader("X-Forwarded-For")).thenReturn(null);
+            when(request.getRemoteAddr()).thenReturn("10.0.0.1");
+            when(jwtService.extractUserIdFromResetToken(anyString())).thenReturn(userId);
+            doNothing().when(passwordResetService).resetPassword(anyString(), anyString());
+            when(jwtService.generateToken(anyString())).thenReturn(accessToken);
+            when(jwtService.getAccessTokenExpirationSeconds()).thenReturn(1800);
+            when(hashingService.generateRefreshToken()).thenReturn(refreshToken);
+            when(hashingService.generateLookupHash(anyString())).thenReturn("hash");
+            when(hashingService.generateSecurityHash(anyString())).thenReturn("secHash");
+            when(cookieService.createRefreshTokenCookie(anyString())).thenReturn(cookie);
+
+            // Act
+            ResponseEntity<Map<String, Object>> response =
+                authController.resetPassword(requestDto, request, mockResponse);
+
+            // Assert
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertNull(response.getBody().get("refreshToken")); // Web doesn't get refresh token in body
+            verify(cookieService).createRefreshTokenCookie(refreshToken);
+        }
+
+        @Test
+        @DisplayName("Should return 400 when reset token is invalid")
+        void resetPassword_WithInvalidToken_Returns400() {
+            // Arrange
+            com.bbthechange.inviter.dto.ResetPasswordRequest requestDto =
+                new com.bbthechange.inviter.dto.ResetPasswordRequest();
+            requestDto.setResetToken("invalid.token");
+            requestDto.setNewPassword("newPassword123");
+
+            String userId = testUserId.toString();
+
+            when(jwtService.extractUserIdFromResetToken(anyString())).thenReturn(userId);
+            doThrow(new com.bbthechange.inviter.exception.InvalidTokenException("The reset token is invalid or has expired"))
+                .when(passwordResetService).resetPassword(anyString(), anyString());
+
+            // Act
+            ResponseEntity<Map<String, Object>> response =
+                authController.resetPassword(requestDto, request, mockResponse);
+
+            // Assert
+            assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("INVALID_RESET_TOKEN", response.getBody().get("error"));
+            assertEquals("The reset token is invalid or has expired.", response.getBody().get("message"));
+        }
+
+        @Test
+        @DisplayName("Should return 400 when reset token already used")
+        void resetPassword_WithAlreadyUsedToken_Returns400() {
+            // Arrange
+            com.bbthechange.inviter.dto.ResetPasswordRequest requestDto =
+                new com.bbthechange.inviter.dto.ResetPasswordRequest();
+            requestDto.setResetToken("eyJhbGci...");
+            requestDto.setNewPassword("newPassword123");
+
+            String userId = testUserId.toString();
+
+            when(jwtService.extractUserIdFromResetToken(anyString())).thenReturn(userId);
+            doThrow(new com.bbthechange.inviter.exception.InvalidResetRequestException("Reset token already used"))
+                .when(passwordResetService).resetPassword(anyString(), anyString());
+
+            // Act
+            ResponseEntity<Map<String, Object>> response =
+                authController.resetPassword(requestDto, request, mockResponse);
+
+            // Assert
+            assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals("INVALID_RESET_REQUEST", response.getBody().get("error"));
+            assertEquals("Reset token already used", response.getBody().get("message"));
         }
     }
 }

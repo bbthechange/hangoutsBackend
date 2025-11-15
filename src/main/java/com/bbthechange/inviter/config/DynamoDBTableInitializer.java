@@ -7,6 +7,7 @@ import com.bbthechange.inviter.model.User;
 import com.bbthechange.inviter.model.BaseItem;
 import com.bbthechange.inviter.model.RefreshToken;
 import com.bbthechange.inviter.model.VerificationCode;
+import com.bbthechange.inviter.model.PasswordResetRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,10 +47,14 @@ public class DynamoDBTableInitializer implements ApplicationRunner {
         
         // Verification codes table with TTL
         createTableIfNotExists("VerificationCodes", VerificationCode.class);
-        
-        // Configure TTL for refresh tokens and verification codes
+
+        // Password reset requests table with TTL
+        createTableIfNotExists("PasswordResetRequest", PasswordResetRequest.class);
+
+        // Configure TTL for refresh tokens, verification codes, and password reset requests
         configureTTL("InviterTable", "expiryDate");
         configureTTL("VerificationCodes", "expiresAt");
+        configureTTL("PasswordResetRequest", "ttl");
     }
     
     private <T> void createTableIfNotExists(String tableName, Class<T> entityClass) {
@@ -103,6 +108,12 @@ public class DynamoDBTableInitializer implements ApplicationRunner {
                     createGSI("EntityTimeIndex"),
                     createGSI("TokenHashIndex"),  // Add new GSI for refresh token lookups
                     createGSI("InviteCodeIndex")  // Add new GSI for group invite code lookups
+                );
+                break;
+            case "PasswordResetRequest":
+                requestBuilder.globalSecondaryIndices(
+                    createGSI("PhoneNumberIndex"),  // For phone-based password reset lookups
+                    createGSI("EmailIndex")          // For future email-based password reset lookups
                 );
                 break;
             // Events table has no GSIs

@@ -3,10 +3,16 @@ package com.bbthechange.inviter.controller;
 import com.bbthechange.inviter.dto.RefreshRequest;
 import com.bbthechange.inviter.dto.RefreshTokenPair;
 import com.bbthechange.inviter.dto.VerifyRequest;
+import com.bbthechange.inviter.dto.PasswordResetRequestDto;
+import com.bbthechange.inviter.dto.VerifyResetCodeRequest;
+import com.bbthechange.inviter.dto.ResetPasswordRequest;
 import com.bbthechange.inviter.exception.UnauthorizedException;
 import com.bbthechange.inviter.exception.AccountNotFoundException;
 import com.bbthechange.inviter.exception.AccountAlreadyVerifiedException;
 import com.bbthechange.inviter.exception.RateLimitExceededException;
+import com.bbthechange.inviter.exception.InvalidResetRequestException;
+import com.bbthechange.inviter.exception.InvalidCodeException;
+import com.bbthechange.inviter.exception.InvalidTokenException;
 import com.bbthechange.inviter.model.RefreshToken;
 import com.bbthechange.inviter.model.User;
 import com.bbthechange.inviter.model.AccountStatus;
@@ -20,6 +26,7 @@ import com.bbthechange.inviter.service.RefreshTokenRotationService;
 import com.bbthechange.inviter.service.AccountService;
 import com.bbthechange.inviter.service.VerificationResult;
 import com.bbthechange.inviter.service.RateLimitingService;
+import com.bbthechange.inviter.service.PasswordResetService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -51,6 +58,7 @@ public class AuthController {
     private final RefreshTokenRepository refreshTokenRepository;
     private final AccountService accountService;
     private final RateLimitingService rateLimitingService;
+    private final PasswordResetService passwordResetService;
     
     @PostMapping("/register")
     public ResponseEntity<Map<String, String>> register(@RequestBody User user) {
@@ -404,8 +412,134 @@ public class AuthController {
     
     public static class ResendCodeRequest {
         private String phoneNumber;
-        
+
         public String getPhoneNumber() { return phoneNumber; }
         public void setPhoneNumber(String phoneNumber) { this.phoneNumber = phoneNumber; }
+    }
+
+    // ========== Password Reset Endpoints ==========
+
+    @PostMapping("/request-password-reset")
+    public ResponseEntity<Map<String, String>> requestPasswordReset(
+            @RequestBody PasswordResetRequestDto request,
+            HttpServletRequest httpRequest) {
+
+        // Rate limit check
+        if (!rateLimitingService.isPasswordResetRequestAllowed(request.getPhoneNumber())) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", "TOO_MANY_REQUESTS");
+            error.put("message", "Please wait before requesting another password reset.");
+            return new ResponseEntity<>(error, HttpStatus.TOO_MANY_REQUESTS);
+        }
+
+        // Delegate to service (always returns void to prevent account enumeration)
+        passwordResetService.requestPasswordReset(request.getPhoneNumber(), httpRequest);
+
+        Map<String, String> response = new HashMap<>();
+        response.put("message", "If an account exists for this number, you'll receive a password reset code via SMS.");
+        return new ResponseEntity<>(response, HttpStatus.OK);
+    }
+
+    @PostMapping("/verify-reset-code")
+    public ResponseEntity<Map<String, Object>> verifyResetCode(
+            @RequestBody VerifyResetCodeRequest request) {
+
+        // Rate limit check
+        if (!rateLimitingService.isPasswordResetVerifyAllowed(request.getPhoneNumber())) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "TOO_MANY_REQUESTS");
+            error.put("message", "Too many verification attempts. Please try again later.");
+            return new ResponseEntity<>(error, HttpStatus.TOO_MANY_REQUESTS);
+        }
+
+        try {
+            String resetToken = passwordResetService.verifyResetCode(
+                request.getPhoneNumber(),
+                request.getCode()
+            );
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("message", "Code verified successfully");
+            response.put("resetToken", resetToken);
+            response.put("expiresIn", 900); // 15 minutes
+            return new ResponseEntity<>(response, HttpStatus.OK);
+
+        } catch (InvalidResetRequestException e) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "INVALID_RESET_REQUEST");
+            error.put("message", e.getMessage());
+            return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
+
+        } catch (InvalidCodeException e) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "INVALID_CODE");
+            error.put("message", "The reset code is incorrect.");
+            return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<Map<String, Object>> resetPassword(
+            @RequestBody ResetPasswordRequest request,
+            HttpServletRequest httpRequest,
+            HttpServletResponse httpResponse) {
+
+        try {
+            // Extract userId before resetting (needed for auto-login)
+            String userId = jwtService.extractUserIdFromResetToken(request.getResetToken());
+
+            // Reset password (validates token, updates password, revokes sessions)
+            passwordResetService.resetPassword(request.getResetToken(), request.getNewPassword());
+
+            // Auto-login: Generate new access + refresh tokens
+            String accessToken = jwtService.generateToken(userId);
+            String refreshToken = hashingService.generateRefreshToken();
+
+            // Create refresh token record
+            String deviceId = extractDeviceId(httpRequest);
+            String ipAddress = extractClientIP(httpRequest);
+            String tokenHash = hashingService.generateLookupHash(refreshToken);
+            String securityHash = hashingService.generateSecurityHash(refreshToken);
+
+            RefreshToken refreshTokenRecord = new RefreshToken(
+                userId,
+                tokenHash,
+                securityHash,
+                deviceId,
+                ipAddress
+            );
+            refreshTokenRepository.save(refreshTokenRecord);
+
+            // Check client type for response format
+            String clientType = httpRequest.getHeader("X-Client-Type");
+            boolean isMobile = "mobile".equals(clientType);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("message", "Password successfully reset");
+            response.put("accessToken", accessToken);
+            response.put("expiresIn", jwtService.getAccessTokenExpirationSeconds());
+            response.put("tokenType", "Bearer");
+
+            if (isMobile) {
+                response.put("refreshToken", refreshToken);
+            } else {
+                ResponseCookie refreshCookie = cookieService.createRefreshTokenCookie(refreshToken);
+                httpResponse.addHeader(HttpHeaders.SET_COOKIE, refreshCookie.toString());
+            }
+
+            return new ResponseEntity<>(response, HttpStatus.OK);
+
+        } catch (InvalidTokenException e) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "INVALID_RESET_TOKEN");
+            error.put("message", "The reset token is invalid or has expired.");
+            return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
+
+        } catch (InvalidResetRequestException e) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "INVALID_RESET_REQUEST");
+            error.put("message", e.getMessage());
+            return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
+        }
     }
 }

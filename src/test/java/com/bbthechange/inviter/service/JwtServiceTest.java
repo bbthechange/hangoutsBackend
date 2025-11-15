@@ -417,4 +417,200 @@ class JwtServiceTest {
             assertEquals(longUserId, extractedUserId);
         }
     }
+
+    @Nested
+    @DisplayName("Password Reset Token Tests")
+    class PasswordResetTokenTests {
+
+        @Test
+        @DisplayName("generatePasswordResetToken - Should create valid token with correct claims")
+        void generatePasswordResetToken_CreatesValidToken() {
+            // Act
+            String resetToken = jwtService.generatePasswordResetToken(testUserId);
+
+            // Assert
+            assertNotNull(resetToken);
+            assertFalse(resetToken.isEmpty());
+
+            // Parse and verify claims
+            Claims claims = Jwts.parser()
+                .verifyWith(key)
+                .build()
+                .parseSignedClaims(resetToken)
+                .getPayload();
+
+            assertEquals(testUserId, claims.getSubject());
+            assertEquals("password_reset", claims.get("type"));
+            assertNotNull(claims.getExpiration());
+
+            // Verify expiration is ~15 minutes from now
+            long expectedExpiration = System.currentTimeMillis() + 900000; // 15 minutes
+            long actualExpiration = claims.getExpiration().getTime();
+            assertTrue(Math.abs(actualExpiration - expectedExpiration) < 1000,
+                "Token should expire in approximately 15 minutes");
+        }
+
+        @Test
+        @DisplayName("isPasswordResetTokenValid - Should return true for valid reset token")
+        void isPasswordResetTokenValid_WithValidToken_ReturnsTrue() {
+            // Arrange
+            String resetToken = jwtService.generatePasswordResetToken(testUserId);
+
+            // Act
+            boolean isValid = jwtService.isPasswordResetTokenValid(resetToken);
+
+            // Assert
+            assertTrue(isValid);
+        }
+
+        @Test
+        @DisplayName("isPasswordResetTokenValid - Should return false for expired token")
+        void isPasswordResetTokenValid_WithExpiredToken_ReturnsFalse() {
+            // Arrange - Create expired reset token
+            String expiredToken = Jwts.builder()
+                .subject(testUserId)
+                .claim("type", "password_reset")
+                .issuedAt(new Date(System.currentTimeMillis() - 1000000)) // Long ago
+                .expiration(new Date(System.currentTimeMillis() - 1000)) // 1 second ago
+                .signWith(key)
+                .compact();
+
+            // Act
+            boolean isValid = jwtService.isPasswordResetTokenValid(expiredToken);
+
+            // Assert
+            assertFalse(isValid);
+        }
+
+        @Test
+        @DisplayName("isPasswordResetTokenValid - Should return false for access token")
+        void isPasswordResetTokenValid_WithAccessToken_ReturnsFalse() {
+            // Arrange - Generate regular access token (no type claim)
+            String accessToken = jwtService.generateToken(testUserId);
+
+            // Act
+            boolean isValid = jwtService.isPasswordResetTokenValid(accessToken);
+
+            // Assert
+            assertFalse(isValid);
+        }
+
+        @Test
+        @DisplayName("isPasswordResetTokenValid - Should return false for wrong type claim")
+        void isPasswordResetTokenValid_WithWrongType_ReturnsFalse() {
+            // Arrange - Create token with wrong type
+            String wrongTypeToken = Jwts.builder()
+                .subject(testUserId)
+                .claim("type", "refresh_token") // Wrong type
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + 900000))
+                .signWith(key)
+                .compact();
+
+            // Act
+            boolean isValid = jwtService.isPasswordResetTokenValid(wrongTypeToken);
+
+            // Assert
+            assertFalse(isValid);
+        }
+
+        @Test
+        @DisplayName("isPasswordResetTokenValid - Should return false for invalid signature")
+        void isPasswordResetTokenValid_WithInvalidSignature_ReturnsFalse() {
+            // Arrange - Create token with wrong key
+            SecretKey wrongKey = Keys.hmacShaKeyFor("differentSecretKeyForPasswordReset123456789".getBytes());
+            String invalidToken = Jwts.builder()
+                .subject(testUserId)
+                .claim("type", "password_reset")
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + 900000))
+                .signWith(wrongKey)
+                .compact();
+
+            // Act
+            boolean isValid = jwtService.isPasswordResetTokenValid(invalidToken);
+
+            // Assert
+            assertFalse(isValid);
+        }
+
+        @Test
+        @DisplayName("isPasswordResetTokenValid - Should return false for malformed token")
+        void isPasswordResetTokenValid_WithMalformedToken_ReturnsFalse() {
+            // Act
+            boolean isValid = jwtService.isPasswordResetTokenValid("not.a.valid.token");
+
+            // Assert
+            assertFalse(isValid);
+        }
+
+        @Test
+        @DisplayName("extractUserIdFromResetToken - Should extract userId from valid token")
+        void extractUserIdFromResetToken_WithValidToken_ReturnsUserId() {
+            // Arrange
+            String resetToken = jwtService.generatePasswordResetToken(testUserId);
+
+            // Act
+            String extractedUserId = jwtService.extractUserIdFromResetToken(resetToken);
+
+            // Assert
+            assertEquals(testUserId, extractedUserId);
+        }
+
+        @Test
+        @DisplayName("extractUserIdFromResetToken - Should throw exception for access token")
+        void extractUserIdFromResetToken_WithAccessToken_ThrowsException() {
+            // Arrange - Regular access token
+            String accessToken = jwtService.generateToken(testUserId);
+
+            // Act & Assert
+            assertThrows(IllegalArgumentException.class, () -> {
+                jwtService.extractUserIdFromResetToken(accessToken);
+            }, "Should throw IllegalArgumentException for non-reset token");
+        }
+
+        @Test
+        @DisplayName("extractUserIdFromResetToken - Should throw exception for expired token")
+        void extractUserIdFromResetToken_WithExpiredToken_ThrowsException() {
+            // Arrange - Expired reset token
+            String expiredToken = Jwts.builder()
+                .subject(testUserId)
+                .claim("type", "password_reset")
+                .issuedAt(new Date(System.currentTimeMillis() - 1000000))
+                .expiration(new Date(System.currentTimeMillis() - 1000))
+                .signWith(key)
+                .compact();
+
+            // Act & Assert
+            assertThrows(IllegalArgumentException.class, () -> {
+                jwtService.extractUserIdFromResetToken(expiredToken);
+            }, "Should throw IllegalArgumentException for expired token");
+        }
+
+        @Test
+        @DisplayName("extractUserIdFromResetToken - Should throw exception for invalid token")
+        void extractUserIdFromResetToken_WithInvalidToken_ThrowsException() {
+            // Act & Assert
+            assertThrows(IllegalArgumentException.class, () -> {
+                jwtService.extractUserIdFromResetToken("invalid.token");
+            }, "Should throw IllegalArgumentException for invalid token");
+        }
+
+        @Test
+        @DisplayName("Password reset token should be different from access token")
+        void passwordResetToken_DifferentFromAccessToken() {
+            // Arrange
+            String accessToken = jwtService.generateToken(testUserId);
+            String resetToken = jwtService.generatePasswordResetToken(testUserId);
+
+            // Act
+            boolean accessTokenValidAsReset = jwtService.isPasswordResetTokenValid(accessToken);
+            boolean resetTokenValidAsAccess = jwtService.isTokenValid(resetToken); // Should be true (valid JWT)
+
+            // Assert
+            assertNotEquals(accessToken, resetToken, "Reset and access tokens should be different");
+            assertFalse(accessTokenValidAsReset, "Access token should not be valid as reset token");
+            assertTrue(resetTokenValidAsAccess, "Reset token should be valid JWT (but used differently)");
+        }
+    }
 }

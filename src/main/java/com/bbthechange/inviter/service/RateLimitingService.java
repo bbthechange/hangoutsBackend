@@ -30,6 +30,12 @@ public class RateLimitingService {
     // For /groups/invite/{code} preview: 100 requests per hour per code
     private final Cache<String, AtomicInteger> invitePreviewPerCodeCache;
 
+    // For /auth/request-password-reset: 1 request per hour per phone
+    private final Cache<String, Instant> passwordResetRequestCache;
+
+    // For /auth/verify-reset-code: 10 requests per hour per phone
+    private final Cache<String, AtomicInteger> passwordResetVerifyCache;
+
     public RateLimitingService() {
         // Cache for 1 minute rate limit - stores last request time
         this.resendCodePerMinuteCache = Caffeine.newBuilder()
@@ -54,6 +60,16 @@ public class RateLimitingService {
                 .build();
 
         this.invitePreviewPerCodeCache = Caffeine.newBuilder()
+                .expireAfterWrite(Duration.ofHours(1))
+                .maximumSize(10000)
+                .build();
+
+        this.passwordResetRequestCache = Caffeine.newBuilder()
+                .expireAfterWrite(Duration.ofHours(1))
+                .maximumSize(10000)
+                .build();
+
+        this.passwordResetVerifyCache = Caffeine.newBuilder()
                 .expireAfterWrite(Duration.ofHours(1))
                 .maximumSize(10000)
                 .build();
@@ -159,6 +175,48 @@ public class RateLimitingService {
         ipCount.incrementAndGet();
         codeCount.incrementAndGet();
 
+        return true;
+    }
+
+    /**
+     * Check if password reset request is allowed for the given phone number.
+     * Enforces: 1 request per hour per phone number.
+     */
+    public boolean isPasswordResetRequestAllowed(String phoneNumber) {
+        String key = "password_reset_request_" + phoneNumber;
+        Instant now = Instant.now();
+
+        Instant lastRequest = passwordResetRequestCache.getIfPresent(key);
+        if (lastRequest != null) {
+            logger.info("Rate limit exceeded for password-reset-request (1/hour): {}", phoneNumber);
+            publishRateLimitMetric("/auth/request-password-reset");
+            return false;
+        }
+
+        passwordResetRequestCache.put(key, now);
+        return true;
+    }
+
+    /**
+     * Check if password reset code verification is allowed for the given phone number.
+     * Enforces: 10 requests per hour per phone number.
+     */
+    public boolean isPasswordResetVerifyAllowed(String phoneNumber) {
+        String key = "password_reset_verify_" + phoneNumber;
+
+        AtomicInteger hourlyCount = passwordResetVerifyCache.getIfPresent(key);
+        if (hourlyCount == null) {
+            hourlyCount = new AtomicInteger(0);
+            passwordResetVerifyCache.put(key, hourlyCount);
+        }
+
+        if (hourlyCount.get() >= 10) {
+            logger.info("Rate limit exceeded for password-reset-verify (10/hour): {}", phoneNumber);
+            publishRateLimitMetric("/auth/verify-reset-code");
+            return false;
+        }
+
+        hourlyCount.incrementAndGet();
         return true;
     }
 

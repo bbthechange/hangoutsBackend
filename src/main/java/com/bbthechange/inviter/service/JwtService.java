@@ -30,7 +30,8 @@ public class JwtService {
     private String secretKey; // Environment variable, not hardcoded
     
     private static final long ACCESS_TOKEN_EXPIRATION = 1800000; // 30 minutes
-    
+    private static final long PASSWORD_RESET_TOKEN_EXPIRATION = 900000; // 15 minutes
+
     private SecretKey key;
     
     @PostConstruct
@@ -74,5 +75,57 @@ public class JwtService {
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
+    }
+
+    /**
+     * Generate a password reset token (15 minute expiration).
+     * These tokens include a "type" claim to distinguish them from access tokens.
+     *
+     * @param userId The user ID to encode in the token
+     * @return JWT reset token with 15 minute expiration
+     */
+    public String generatePasswordResetToken(String userId) {
+        return Jwts.builder()
+                .subject(userId)
+                .claim("type", "password_reset")  // Distinguish from access tokens
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + PASSWORD_RESET_TOKEN_EXPIRATION))
+                .signWith(key, SignatureAlgorithm.HS256)
+                .compact();
+    }
+
+    /**
+     * Validate a password reset token.
+     * Checks:
+     * - Valid signature
+     * - Not expired
+     * - Has correct "type" claim
+     *
+     * @param token The JWT token to validate
+     * @return true if token is valid, false otherwise
+     */
+    public boolean isPasswordResetTokenValid(String token) {
+        try {
+            Claims claims = extractClaims(token);
+            return "password_reset".equals(claims.get("type"))
+                && !claims.getExpiration().before(new Date());
+        } catch (JwtException | IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Extract user ID from a password reset token.
+     * Validates the token before extraction to prevent token confusion attacks.
+     *
+     * @param token The JWT reset token
+     * @return The user ID from the token subject
+     * @throws IllegalArgumentException if token is not a valid password reset token
+     */
+    public String extractUserIdFromResetToken(String token) {
+        if (!isPasswordResetTokenValid(token)) {
+            throw new IllegalArgumentException("Not a valid password reset token");
+        }
+        return extractClaims(token).getSubject();
     }
 }
