@@ -172,7 +172,20 @@ public class AuthController {
         responseBody.put("accessToken", accessToken);
         responseBody.put("expiresIn", jwtService.getAccessTokenExpirationSeconds());
         responseBody.put("tokenType", "Bearer");
-        
+
+        // Include user profile in response to eliminate need for separate /profile call
+        // Note: We don't include password field at all for security
+        Map<String, Object> userResponse = new HashMap<>();
+        userResponse.put("id", user.getId());
+        userResponse.put("phoneNumber", user.getPhoneNumber());
+        userResponse.put("username", user.getUsername());
+        userResponse.put("displayName", user.getDisplayName());
+        userResponse.put("mainImagePath", user.getMainImagePath());
+        userResponse.put("accountStatus", user.getAccountStatus());
+        userResponse.put("creationDate", user.getCreationDate());
+        userResponse.put("isTestAccount", user.getIsTestAccount());
+        responseBody.put("user", userResponse);
+
         if (isMobile) {
             // Mobile: Return refresh token in JSON
             responseBody.put("refreshToken", refreshToken);
@@ -181,7 +194,7 @@ public class AuthController {
             ResponseCookie refreshCookie = cookieService.createRefreshTokenCookie(refreshToken);
             response.addHeader(HttpHeaders.SET_COOKIE, refreshCookie.toString());
         }
-        
+
         return new ResponseEntity<>(responseBody, HttpStatus.OK);
     }
     
