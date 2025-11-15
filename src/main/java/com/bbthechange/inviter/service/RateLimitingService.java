@@ -24,6 +24,12 @@ public class RateLimitingService {
     // For /auth/verify: 20 requests per 1 hour
     private final Cache<String, AtomicInteger> verifyPerHourCache;
 
+    // For /groups/invite/{code} preview: 60 requests per hour per IP
+    private final Cache<String, AtomicInteger> invitePreviewPerIpCache;
+
+    // For /groups/invite/{code} preview: 100 requests per hour per code
+    private final Cache<String, AtomicInteger> invitePreviewPerCodeCache;
+
     public RateLimitingService() {
         // Cache for 1 minute rate limit - stores last request time
         this.resendCodePerMinuteCache = Caffeine.newBuilder()
@@ -38,6 +44,16 @@ public class RateLimitingService {
                 .build();
         
         this.verifyPerHourCache = Caffeine.newBuilder()
+                .expireAfterWrite(Duration.ofHours(1))
+                .maximumSize(10000)
+                .build();
+
+        this.invitePreviewPerIpCache = Caffeine.newBuilder()
+                .expireAfterWrite(Duration.ofHours(1))
+                .maximumSize(10000)
+                .build();
+
+        this.invitePreviewPerCodeCache = Caffeine.newBuilder()
                 .expireAfterWrite(Duration.ofHours(1))
                 .maximumSize(10000)
                 .build();
@@ -99,6 +115,50 @@ public class RateLimitingService {
         }
         
         hourlyCount.incrementAndGet();
+        return true;
+    }
+
+    /**
+     * Check if invite preview request is allowed.
+     * Enforces: 60 requests per hour per IP AND 100 requests per hour per code.
+     *
+     * @param ipAddress Client IP address
+     * @param inviteCode The invite code being previewed
+     * @return true if allowed, false if rate limit exceeded
+     */
+    public boolean isInvitePreviewAllowed(String ipAddress, String inviteCode) {
+        // Check IP limit: 60/hour
+        String ipKey = "preview_ip_" + ipAddress;
+        AtomicInteger ipCount = invitePreviewPerIpCache.getIfPresent(ipKey);
+        if (ipCount == null) {
+            ipCount = new AtomicInteger(0);
+            invitePreviewPerIpCache.put(ipKey, ipCount);
+        }
+
+        if (ipCount.get() >= 60) {
+            logger.info("Rate limit exceeded for invite preview (IP): {}", ipAddress);
+            publishRateLimitMetric("/groups/invite/preview");
+            return false;
+        }
+
+        // Check code limit: 100/hour
+        String codeKey = "preview_code_" + inviteCode;
+        AtomicInteger codeCount = invitePreviewPerCodeCache.getIfPresent(codeKey);
+        if (codeCount == null) {
+            codeCount = new AtomicInteger(0);
+            invitePreviewPerCodeCache.put(codeKey, codeCount);
+        }
+
+        if (codeCount.get() >= 100) {
+            logger.info("Rate limit exceeded for invite preview (code): {}", inviteCode);
+            publishRateLimitMetric("/groups/invite/preview");
+            return false;
+        }
+
+        // Increment both counters
+        ipCount.incrementAndGet();
+        codeCount.incrementAndGet();
+
         return true;
     }
 

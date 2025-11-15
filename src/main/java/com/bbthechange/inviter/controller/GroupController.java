@@ -2,6 +2,7 @@ package com.bbthechange.inviter.controller;
 
 import com.bbthechange.inviter.service.GroupService;
 import com.bbthechange.inviter.service.GroupFeedService;
+import com.bbthechange.inviter.service.RateLimitingService;
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.model.Group;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,6 +21,8 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Max;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 
 /**
  * REST controller for group management operations.
@@ -34,11 +37,13 @@ public class GroupController extends BaseController {
     
     private final GroupService groupService;
     private final GroupFeedService groupFeedService;
-    
+    private final RateLimitingService rateLimitingService;
+
     @Autowired
-    public GroupController(GroupService groupService, GroupFeedService groupFeedService) {
+    public GroupController(GroupService groupService, GroupFeedService groupFeedService, RateLimitingService rateLimitingService) {
         this.groupService = groupService;
         this.groupFeedService = groupFeedService;
+        this.rateLimitingService = rateLimitingService;
     }
     
     @PostMapping
@@ -217,13 +222,77 @@ public class GroupController extends BaseController {
             @RequestParam(defaultValue = "10") @Min(1) @Max(50) Integer limit,
             @RequestParam(required = false) String startToken,
             HttpServletRequest httpRequest) {
-        
+
         String userId = extractUserId(httpRequest);
         logger.info("Getting feed items for group {} with limit {} for user {}", groupId, limit, userId);
-        
+
         GroupFeedItemsResponse response = groupFeedService.getFeedItems(groupId, limit, startToken, userId);
         logger.debug("Retrieved {} feed items for group {}", response.getItems().size(), groupId);
-        
+
         return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/{groupId}/invite-code")
+    public ResponseEntity<InviteCodeResponse> generateInviteCode(
+            @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid group ID format") String groupId,
+            HttpServletRequest httpRequest) {
+
+        String userId = extractUserId(httpRequest);
+        logger.info("Generating invite code for group {} by user {}", groupId, userId);
+
+        InviteCodeResponse response = groupService.generateInviteCode(groupId, userId);
+        logger.info("Generated invite code for group {}", groupId);
+
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/invite/{inviteCode}")
+    public ResponseEntity<?> getGroupPreviewByInviteCode(
+            @PathVariable String inviteCode,
+            HttpServletRequest httpRequest) {
+
+        // Extract client IP address
+        String ipAddress = extractClientIp(httpRequest);
+
+        // Check rate limiting
+        if (!rateLimitingService.isInvitePreviewAllowed(ipAddress, inviteCode)) {
+            logger.warn("Rate limit exceeded for invite preview - IP: {}, Code: {}", ipAddress, inviteCode);
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("error", "Rate limit exceeded");
+            errorResponse.put("message", "Too many requests. Please try again later.");
+            return ResponseEntity.status(429).body(errorResponse);
+        }
+
+        logger.info("Getting group preview for invite code {}", inviteCode);
+        GroupPreviewDTO preview = groupService.getGroupPreviewByInviteCode(inviteCode);
+
+        return ResponseEntity.ok(preview);
+    }
+
+    /**
+     * Extract client IP address from request, handling X-Forwarded-For header for API Gateway.
+     */
+    private String extractClientIp(HttpServletRequest request) {
+        String xff = request.getHeader("X-Forwarded-For");
+        if (xff != null && !xff.isEmpty()) {
+            // X-Forwarded-For can be: "client, proxy1, proxy2"
+            // We want the first (original client)
+            return xff.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
+    }
+
+    @PostMapping("/invite/join")
+    public ResponseEntity<GroupDTO> joinGroupByInviteCode(
+            @Valid @RequestBody JoinGroupRequest request,
+            HttpServletRequest httpRequest) {
+
+        String userId = extractUserId(httpRequest);
+        logger.info("User {} joining group via invite code", userId);
+
+        GroupDTO group = groupService.joinGroupByInviteCode(request.getInviteCode(), userId);
+        logger.info("User {} successfully joined group {}", userId, group.getGroupId());
+
+        return ResponseEntity.ok(group);
     }
 }

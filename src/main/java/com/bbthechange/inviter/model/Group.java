@@ -23,7 +23,7 @@ public class Group extends BaseItem {
     private String mainImagePath;
     private String backgroundImagePath;
     private Instant lastHangoutModified;  // Track last time any hangout was created/updated/deleted
-    
+
     // Default constructor for DynamoDB
     public Group() {
         super();

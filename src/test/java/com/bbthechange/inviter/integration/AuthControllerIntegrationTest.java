@@ -99,11 +99,11 @@ public class AuthControllerIntegrationTest extends BaseIntegrationTest {
     class AuthenticationIntegrationTests {
 
         @Test
-        @DisplayName("Should login successfully with valid credentials")
+        @DisplayName("Should login successfully with valid credentials and return user profile")
         void login_Success_ValidCredentials() throws Exception {
             // Arrange - create user first
             String token = createUserAndGetToken("+1234567890", "testuser", "Test User", "password123");
-            
+
             LoginRequest loginRequest = new LoginRequest();
             loginRequest.setPhoneNumber("+1234567890");
             loginRequest.setPassword("password123");
@@ -114,21 +114,35 @@ public class AuthControllerIntegrationTest extends BaseIntegrationTest {
                     .content(objectMapper.writeValueAsString(loginRequest)))
                     .andExpect(status().isOk())
                     .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                    .andExpect(jsonPath("$.token").exists())
-                    .andExpect(jsonPath("$.expiresIn").value(86400))
+                    .andExpect(jsonPath("$.accessToken").exists())
+                    .andExpect(jsonPath("$.expiresIn").exists())
+                    .andExpect(jsonPath("$.tokenType").value("Bearer"))
+                    .andExpect(jsonPath("$.user").exists())
+                    .andExpect(jsonPath("$.user.id").exists())
+                    .andExpect(jsonPath("$.user.phoneNumber").value("+1234567890"))
+                    .andExpect(jsonPath("$.user.username").value("testuser"))
+                    .andExpect(jsonPath("$.user.displayName").value("Test User"))
                     .andReturn();
 
             // Verify token is returned and valid
             String responseBody = result.getResponse().getContentAsString();
             Map<String, Object> response = objectMapper.readValue(responseBody, new TypeReference<Map<String, Object>>() {});
-            String returnedToken = (String) response.get("token");
-            
+            String returnedToken = (String) response.get("accessToken");
+
             assertNotNull(returnedToken);
             assertFalse(returnedToken.isEmpty());
-            
+
             // Verify token can be used to extract user information
             String userId = jwtService.extractUserId(returnedToken);
             assertNotNull(userId);
+
+            // Verify user object is included in response
+            Map<String, Object> userObj = (Map<String, Object>) response.get("user");
+            assertNotNull(userObj);
+            assertEquals("+1234567890", userObj.get("phoneNumber"));
+            assertEquals("testuser", userObj.get("username"));
+            assertEquals("Test User", userObj.get("displayName"));
+            assertFalse(userObj.containsKey("password")); // Password field should not exist at all
         }
 
         @Test
@@ -146,7 +160,8 @@ public class AuthControllerIntegrationTest extends BaseIntegrationTest {
                     .andExpect(status().isUnauthorized())
                     .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                     .andExpect(jsonPath("$.error").value("Invalid credentials"))
-                    .andExpect(jsonPath("$.token").doesNotExist());
+                    .andExpect(jsonPath("$.accessToken").doesNotExist())
+                    .andExpect(jsonPath("$.user").doesNotExist());
         }
 
         @Test
@@ -154,7 +169,7 @@ public class AuthControllerIntegrationTest extends BaseIntegrationTest {
         void login_Unauthorized_WrongPassword() throws Exception {
             // Arrange - create user first
             createUserAndGetToken("+1234567890", "testuser", "Test User", "correctpassword");
-            
+
             LoginRequest loginRequest = new LoginRequest();
             loginRequest.setPhoneNumber("+1234567890");
             loginRequest.setPassword("wrongpassword");
@@ -166,7 +181,8 @@ public class AuthControllerIntegrationTest extends BaseIntegrationTest {
                     .andExpect(status().isUnauthorized())
                     .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                     .andExpect(jsonPath("$.error").value("Invalid credentials"))
-                    .andExpect(jsonPath("$.token").doesNotExist());
+                    .andExpect(jsonPath("$.accessToken").doesNotExist())
+                    .andExpect(jsonPath("$.user").doesNotExist());
         }
 
         @Test

@@ -101,7 +101,8 @@ public class DynamoDBTableInitializer implements ApplicationRunner {
                 requestBuilder.globalSecondaryIndices(
                     createGSI("UserGroupIndex"),
                     createGSI("EntityTimeIndex"),
-                    createGSI("TokenHashIndex")  // Add new GSI for refresh token lookups
+                    createGSI("TokenHashIndex"),  // Add new GSI for refresh token lookups
+                    createGSI("InviteCodeIndex")  // Add new GSI for group invite code lookups
                 );
                 break;
             // Events table has no GSIs

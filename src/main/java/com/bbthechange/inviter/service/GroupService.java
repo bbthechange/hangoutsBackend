@@ -92,4 +92,22 @@ public interface GroupService {
      * @throws NotFoundException if group does not exist
      */
     Group getGroupForEtagCheck(String groupId, String requestingUserId);
+
+    /**
+     * Generate a new invite code for a group (members only).
+     * Generates a unique code and returns it with a shareable URL.
+     */
+    InviteCodeResponse generateInviteCode(String groupId, String requestingUserId);
+
+    /**
+     * Get group preview information by invite code (public - no auth required).
+     * Returns basic group information for display before joining.
+     */
+    GroupPreviewDTO getGroupPreviewByInviteCode(String inviteCode);
+
+    /**
+     * Join a group using an invite code (authenticated users only).
+     * Validates the code and adds the user as a member.
+     */
+    GroupDTO joinGroupByInviteCode(String inviteCode, String userId);
 }

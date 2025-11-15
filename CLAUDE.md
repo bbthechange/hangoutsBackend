@@ -96,7 +96,7 @@ com.bbthechange.inviter/
 ### Authentication (Public)
 ```bash
 POST /auth/register    # Register new user
-POST /auth/login       # Get JWT token (24h expiration)
+POST /auth/login       # Get JWT tokens and user profile (eliminates need for /profile call)
 ```
 
 ### Events (JWT Required)
@@ -127,6 +127,48 @@ PUT /profile/password  # Change password
 GET  /images/predefined    # Public: Get predefined image options
 POST /images/upload-url    # JWT: Get presigned S3 upload URL
 ```
+
+## Login Response Format
+
+**Important:** The login endpoint returns both authentication tokens AND user profile data in a single response, eliminating the need for a separate `/profile` call.
+
+### Mobile Client (X-Client-Type: mobile)
+```json
+{
+  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refreshToken": "a1b2c3d4e5f6...",
+  "expiresIn": 3600,
+  "tokenType": "Bearer",
+  "user": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "phoneNumber": "+19285251044",
+    "username": "jeana",
+    "displayName": "Jeana",
+    "mainImagePath": "users/550e8400.../profile.jpg",
+    "accountStatus": "ACTIVE",
+    "creationDate": 1699564800000,
+    "isTestAccount": false
+  }
+}
+```
+
+### Web Client (default)
+```json
+{
+  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "expiresIn": 3600,
+  "tokenType": "Bearer",
+  "user": { /* same as mobile */ }
+}
+```
+*Note: Web clients receive refreshToken as HttpOnly cookie*
+
+### Design Rationale
+- **Performance**: Eliminates second DynamoDB read (user already fetched for auth)
+- **UX**: Reduces login latency from 2 network calls to 1
+- **Cost**: Saves 1 DynamoDB read per login (50% reduction)
+- **Security**: Password field never included in response (not even as null)
+- **Consistency**: User object matches `/profile` endpoint format
 
 ## Core Models
 

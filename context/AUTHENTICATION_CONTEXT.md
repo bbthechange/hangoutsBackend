@@ -38,9 +38,13 @@ The authentication system is based on JSON Web Tokens (JWT) with a refresh token
     *   A short-lived JWT **access token** (30 minutes).
     *   A long-lived, single-use **refresh token**.
 4.  The refresh token is hashed and stored in the `RefreshToken` DynamoDB table.
-5.  **Client-Specific Response:**
-    *   **Web Clients (default):** The access token is returned in the JSON body. The refresh token is sent in a secure, `HttpOnly` cookie.
-    *   **Mobile Clients (`X-Client-Type: mobile` header):** Both the access token and the refresh token are returned in the JSON body.
+5.  **Response Includes User Profile:** The login response includes the complete user profile object (with password set to null) to eliminate the need for a separate `/profile` API call. This optimization:
+    *   Reduces login flow from 2 network calls to 1
+    *   Saves 1 DynamoDB read per login (user already fetched during authentication)
+    *   Improves client performance and reduces backend costs
+6.  **Client-Specific Response:**
+    *   **Web Clients (default):** The access token and user object are returned in the JSON body. The refresh token is sent in a secure, `HttpOnly` cookie.
+    *   **Mobile Clients (`X-Client-Type: mobile` header):** The access token, refresh token, and user object are all returned in the JSON body.
 
 ### Authenticating API Requests
 
