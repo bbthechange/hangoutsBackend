@@ -14,10 +14,21 @@ java {
 	}
 }
 
+sourceSets {
+	stagingTest {
+		java { srcDir 'src/stagingTest/java' }
+		resources { srcDir 'src/stagingTest/resources' }
+		compileClasspath += main.output
+		runtimeClasspath += main.output
+	}
+}
+
 configurations {
 	compileOnly {
 		extendsFrom annotationProcessor
 	}
+	stagingTestImplementation.extendsFrom implementation
+	stagingTestRuntimeOnly.extendsFrom runtimeOnly
 }
 
 repositories {
@@ -59,9 +70,16 @@ dependencies {
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.security:spring-security-test'
 	testImplementation 'org.testcontainers:testcontainers:1.19.3'
-	testImplementation 'org.testcontainers:junit-jupiter:1.19.3' 
+	testImplementation 'org.testcontainers:junit-jupiter:1.19.3'
 	testImplementation 'org.testcontainers:localstack:1.19.3'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+	// Staging test dependencies
+	stagingTestImplementation 'io.rest-assured:rest-assured:5.4.0'
+	stagingTestImplementation 'io.rest-assured:json-path:5.4.0'
+	stagingTestImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+	stagingTestImplementation 'org.awaitility:awaitility:4.2.0'
+	stagingTestRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 tasks.named('test') {
@@ -109,5 +127,34 @@ jacocoTestCoverageVerification {
 				minimum = 0.70
 			}
 		}
+	}
+}
+
+// Staging test task
+task stagingTest(type: Test) {
+	description = 'Run integration tests against live staging environment'
+	group = 'verification'
+
+	testClassesDirs = sourceSets.stagingTest.output.classesDirs
+	classpath = sourceSets.stagingTest.runtimeClasspath
+
+	useJUnitPlatform()
+
+	// Start sequential - enable parallelization after stability proven
+	systemProperty 'junit.jupiter.execution.parallel.enabled', 'false'
+
+	systemProperty 'staging.url', System.getenv('STAGING_URL') ?:
+		'https://v7ihwy6uv9.execute-api.us-west-2.amazonaws.com/prod'
+	systemProperty 'staging.test.phone', System.getenv('STAGING_TEST_USER_PHONE') ?: '+15551111001'
+	systemProperty 'staging.test.password', System.getenv('STAGING_TEST_USER_PASSWORD') ?: 'StagingTest123'
+
+	failFast = System.getenv('STAGING_TEST_FAIL_FAST') != 'false'
+	timeout = Duration.ofMinutes(10)
+
+	testLogging {
+		events "passed", "skipped", "failed"
+		exceptionFormat "full"
+		showStandardStreams = false
+		showStackTraces = true
 	}
 }

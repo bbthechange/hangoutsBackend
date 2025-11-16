@@ -1,156 +1,432 @@
-# GitHub Actions CI/CD workflow for the Inviter Backend
-# Version 6: Explicitly create deployment zip package.
-#
-# This pipeline automates the building, testing, and deployment of the application
-# to staging and production environments on AWS Elastic Beanstalk.
-#
-name: Backend CI/CD (v6)
+name: Backend CI/CD with Live Staging Tests
 
 on:
-  # Triggers the workflow on push events to the "main" branch.
   push:
-    branches: [ "main", "workflows" ]
-  # Allows you to run this workflow manually from the Actions tab in GitHub.
+    branches: [ "main" ]
   workflow_dispatch:
+    inputs:
+      production_rollback_version:
+        description: 'Version to rollback production to'
+        required: false
+        type: string
+
+concurrency:
+  group: deployment-pipeline
+  cancel-in-progress: false
 
 jobs:
-  # =====================================================================================
-  # BUILD JOB: Compiles the code, runs unit tests, and packages the application.
-  # =====================================================================================
   build:
-    name: Build and Package
+    name: Build & Unit Tests
     runs-on: ubuntu-latest
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
           java-version: '21'
           distribution: 'temurin'
-
-      - name: Build with Gradle
-        run: ./gradlew build
-
-      - name: Rename artifact for deployment
-        run: mv build/libs/inviter-0.0.1-SNAPSHOT.jar build/libs/application.jar
-
-      - name: Upload deployment package
-        uses: actions/upload-artifact@v4
+      - run: ./gradlew test
+      - run: ./gradlew clean build -x test
+      - run: mv build/libs/inviter-0.0.1-SNAPSHOT.jar build/libs/application.jar
+      - uses: actions/upload-artifact@v4
         with:
           name: deployment-package
           path: .
 
-  # =====================================================================================
-  # DEPLOY-STAGING JOB: Deploys the application to the staging environment.
-  # =====================================================================================
   deploy-staging:
     name: Deploy to Staging
     needs: build
     runs-on: ubuntu-latest
-    environment:
-      name: staging
+    environment: staging
+    outputs:
+      version-label: v${{ github.run_number }}-${{ github.sha }}
+      health-check-status: ${{ steps.health.outcome }}
     steps:
-      - name: Download deployment package
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: deployment-package
           path: .
-
-      - name: Create deployment zip
-        run: zip -r deployment.zip . -x ".git/*" ".github/*"
-
-      - name: Deploy to Elastic Beanstalk Staging
-        uses: einaregilsson/beanstalk-deploy@v21
+      - run: zip -r deployment.zip . -x ".git/*" ".github/*"
+      - uses: einaregilsson/beanstalk-deploy@v21
         with:
           aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           application_name: ${{ secrets.EB_APP_NAME_STAGING }}
           environment_name: ${{ secrets.EB_ENV_NAME_STAGING }}
-          version_label: "v${{ github.run_number }}-${{ github.sha }}"
+          version_label: v${{ github.run_number }}-${{ github.sha }}
           region: ${{ secrets.AWS_REGION }}
           deployment_package: deployment.zip
-          wait_for_environment_recovery: 60
+          wait_for_environment_recovery: 30
 
-      - name: Verify Staging Health Check
+      - name: Wait for staging
+        run: sleep 30
+
+      - name: Health check
+        id: health
+        continue-on-error: true
         run: |
-          echo "Waiting for application to start..."
-          sleep 30 # Give the application more time to start up
-          
-          # Retry health check up to 3 times
-          for i in {1..3}; do
-            echo "Health check attempt $i..."
+          for i in {1..6}; do
             RESPONSE=$(curl -f -s ${{ secrets.STAGING_URL }}/health || echo "FAILED")
-            echo "Response: $RESPONSE"
-            
             if [ "$RESPONSE" = "OK" ]; then
-              echo "Staging health check passed!"
+              echo "✓ Health check passed"
               exit 0
             fi
-            
-            if [ $i -lt 3 ]; then
-              echo "Health check failed, retrying in 10 seconds..."
-              sleep 10
-            fi
+            [ $i -lt 6 ] && sleep 10
           done
-          
-          echo "Staging health check failed after 3 attempts."
+          echo "✗ Health check failed"
           exit 1
 
-  # =====================================================================================
-  # DEPLOY-PRODUCTION JOB: Deploys the application to the production environment.
-  # =====================================================================================
-  deploy-production:
-    name: Deploy to Production
+      - name: Fail job if health check failed
+        if: steps.health.outcome == 'failure'
+        run: |
+          echo "❌ Health check failed - failing job but rollback will have access to outcome"
+          exit 1
+
+  staging-tests:
+    name: Live Staging Tests
     needs: deploy-staging
     runs-on: ubuntu-latest
-    environment:
-      name: Prod
-    if: github.ref == 'refs/heads/main'
+    timeout-minutes: 10
+    environment: staging
     steps:
-      - name: Download deployment package
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: deployment-package
           path: .
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
 
-      - name: Create deployment zip
-        run: zip -r deployment.zip . -x ".git/*" ".github/*"
+      - name: Verify test account
+        env:
+          STAGING_URL: ${{ secrets.STAGING_URL }}
+          STAGING_TEST_USER_PHONE: ${{ secrets.STAGING_TEST_USER_PHONE }}
+          STAGING_TEST_USER_PASSWORD: ${{ secrets.STAGING_TEST_USER_PASSWORD }}
+        run: |
+          RESPONSE=$(curl -s -X POST "$STAGING_URL/auth/login" \
+            -H "Content-Type: application/json" \
+            -d "{\"phoneNumber\":\"$STAGING_TEST_USER_PHONE\",\"password\":\"$STAGING_TEST_USER_PASSWORD\"}" \
+            -w "%{http_code}" -o /tmp/login.json)
 
-      - name: Deploy to Elastic Beanstalk Production
-        uses: einaregilsson/beanstalk-deploy@v21
+          if [ "$RESPONSE" == "403" ]; then
+            echo "❌ Test account is UNVERIFIED - needs verification"
+            exit 1
+          elif [ "$RESPONSE" != "200" ]; then
+            echo "❌ Test account login failed (HTTP $RESPONSE)"
+            cat /tmp/login.json
+            exit 1
+          fi
+
+          # Verify account status
+          ACCOUNT_STATUS=$(jq -r '.accountStatus // "ACTIVE"' /tmp/login.json)
+          if [ "$ACCOUNT_STATUS" != "ACTIVE" ]; then
+            echo "❌ Test account status is $ACCOUNT_STATUS, expected ACTIVE"
+            exit 1
+          fi
+
+          echo "✓ Test account verified (status: $ACCOUNT_STATUS)"
+
+      - name: Run tests
+        env:
+          STAGING_URL: ${{ secrets.STAGING_URL }}
+          STAGING_TEST_USER_PHONE: ${{ secrets.STAGING_TEST_USER_PHONE }}
+          STAGING_TEST_USER_PASSWORD: ${{ secrets.STAGING_TEST_USER_PASSWORD }}
+        run: ./gradlew stagingTest --info
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: staging-test-results
+          path: |
+            build/reports/tests/stagingTest/
+            build/test-results/stagingTest/
+
+  rollback-staging:
+    name: Rollback Staging
+    needs: [deploy-staging, staging-tests]
+    if: |
+      always() &&
+      (needs.deploy-staging.outputs.health-check-status == 'failure' ||
+       (needs.deploy-staging.result == 'success' && needs.staging-tests.result == 'failure'))
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/download-artifact@v4
+        if: needs.staging-tests.result == 'failure'
+        continue-on-error: true
+        with:
+          name: staging-test-results
+          path: test-results
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Get previous version
+        id: get-previous
+        run: |
+          VERSIONS=$(aws elasticbeanstalk describe-application-versions \
+            --application-name ${{ secrets.EB_APP_NAME_STAGING }} \
+            --max-records 10 \
+            --query 'ApplicationVersions | sort_by(@, &DateCreated) | reverse(@)' \
+            --output json)
+
+          CURRENT="v${{ github.run_number }}-${{ github.sha }}"
+          PREVIOUS=$(echo "$VERSIONS" | jq -r \
+            --arg current "$CURRENT" \
+            '.[] | select(.VersionLabel != $current and .Status == "PROCESSED") | .VersionLabel' \
+            | head -1)
+
+          [ -z "$PREVIOUS" ] && echo "No previous version!" && exit 1
+          echo "previous_version=$PREVIOUS" >> $GITHUB_OUTPUT
+          echo "Rolling back to $PREVIOUS"
+
+      - name: Rollback
+        run: |
+          aws elasticbeanstalk update-environment \
+            --application-name ${{ secrets.EB_APP_NAME_STAGING }} \
+            --environment-name ${{ secrets.EB_ENV_NAME_STAGING }} \
+            --version-label ${{ steps.get-previous.outputs.previous_version }}
+
+      - name: Wait for rollback
+        run: |
+          for i in {1..12}; do
+            sleep 30
+            STATUS=$(aws elasticbeanstalk describe-environments \
+              --application-name ${{ secrets.EB_APP_NAME_STAGING }} \
+              --environment-names ${{ secrets.EB_ENV_NAME_STAGING }} \
+              --query 'Environments[0].Status' --output text)
+            HEALTH=$(aws elasticbeanstalk describe-environments \
+              --application-name ${{ secrets.EB_APP_NAME_STAGING }} \
+              --environment-names ${{ secrets.EB_ENV_NAME_STAGING }} \
+              --query 'Environments[0].Health' --output text)
+            [ "$STATUS" = "Ready" ] && [ "$HEALTH" = "Green" ] && exit 0
+          done
+          exit 1
+
+      - name: Extract test failure details
+        if: needs.staging-tests.result == 'failure'
+        id: test-failures
+        continue-on-error: true
+        run: |
+          FAILURES="View full test results in the uploaded artifact"
+
+          # Try to extract from XML if available
+          if [ -d "test-results" ]; then
+            XML_FAILURES=$(find test-results -name "*.xml" -exec grep -l "failures=" {} \; 2>/dev/null | head -5)
+            if [ -n "$XML_FAILURES" ]; then
+              FAILURES="Failed test files:\n$XML_FAILURES\n\nDownload 'staging-test-results' artifact for details"
+            fi
+          fi
+
+          echo "failures<<EOF" >> $GITHUB_OUTPUT
+          echo "$FAILURES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create incident issue
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const reason = '${{ needs.deploy-staging.outputs.health-check-status }}' === 'failure'
+              ? 'Health check failed after deployment'
+              : 'Integration tests failed';
+
+            const testDetails = '${{ needs.staging-tests.result }}' === 'failure'
+              ? '\n\n**Test Failures:**\n```\n${{ steps.test-failures.outputs.failures }}\n```'
+              : '';
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🚨 Staging Deployment Failed - Rolled Back',
+              body: `**Reason**: ${reason}
+              **Failed Version**: v${{ github.run_number }}-${{ github.sha }}
+              **Rolled Back To**: ${{ steps.get-previous.outputs.previous_version }}
+              **Author**: @${{ github.actor }}
+              **Commit**: ${{ github.event.head_commit.message }}
+              **Workflow**: ${context.payload.repository.html_url}/actions/runs/${context.runId}${testDetails}
+
+              Please investigate before redeploying.`,
+              labels: ['deployment-failure', 'staging', 'auto-rollback']
+            });
+
+  deploy-production:
+    name: Deploy to Production
+    needs: [deploy-staging, staging-tests]
+    runs-on: ubuntu-latest
+    environment: Prod
+    outputs:
+      version-label: v${{ github.run_number }}-${{ github.sha }}
+      smoke-test-status: ${{ steps.smoke.outcome }}
+    if: |
+      success() &&
+      github.ref == 'refs/heads/main' &&
+      needs.staging-tests.result == 'success' &&
+      github.event.inputs.production_rollback_version == ''
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: deployment-package
+          path: .
+      - run: zip -r deployment.zip . -x ".git/*" ".github/*"
+      - uses: einaregilsson/beanstalk-deploy@v21
         with:
           aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           application_name: ${{ secrets.EB_APP_NAME_PROD }}
           environment_name: ${{ secrets.EB_ENV_NAME_PROD }}
-          version_label: "v${{ github.run_number }}-${{ github.sha }}"
+          version_label: v${{ github.run_number }}-${{ github.sha }}
           region: ${{ secrets.AWS_REGION }}
           deployment_package: deployment.zip
-          wait_for_environment_recovery: 60
+          wait_for_environment_recovery: 30
 
-      - name: Verify Production Health Check
+      - name: Wait for production
+        run: sleep 30
+
+      - name: Health check
         run: |
-          echo "Waiting for application to start..."
-          sleep 30 # Give the application more time to start up
-          
-          # Retry health check up to 3 times
-          for i in {1..3}; do
-            echo "Health check attempt $i..."
+          for i in {1..6}; do
             RESPONSE=$(curl -f -s https://am6c8sp6kh.execute-api.us-west-2.amazonaws.com/prod/health || echo "FAILED")
-            echo "Response: $RESPONSE"
-            
-            if [ "$RESPONSE" = "OK" ]; then
-              echo "Production health check passed!"
-              exit 0
-            fi
-            
-            if [ $i -lt 3 ]; then
-              echo "Health check failed, retrying in 10 seconds..."
-              sleep 10
-            fi
+            [ "$RESPONSE" = "OK" ] && echo "✓ Passed" && exit 0
+            [ $i -lt 6 ] && sleep 10
           done
-          
-          echo "Production health check failed after 3 attempts."
+          exit 1
+
+      - name: Production smoke test
+        id: smoke
+        continue-on-error: true
+        env:
+          PROD_URL: https://am6c8sp6kh.execute-api.us-west-2.amazonaws.com/prod
+          PROD_TEST_USER_PHONE: ${{ secrets.PROD_TEST_USER_PHONE }}
+          PROD_TEST_USER_PASSWORD: ${{ secrets.PROD_TEST_USER_PASSWORD }}
+        run: |
+          TOKEN=$(curl -f -s -X POST "$PROD_URL/auth/login" \
+            -H "Content-Type: application/json" \
+            -d "{\"phoneNumber\":\"$PROD_TEST_USER_PHONE\",\"password\":\"$PROD_TEST_USER_PASSWORD\"}" \
+            | jq -r '.accessToken')
+
+          [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ] && echo "Auth failed" && exit 1
+
+          PROFILE=$(curl -f -s "$PROD_URL/profile" -H "Authorization: Bearer $TOKEN" | jq -r '.phoneNumber')
+          [ "$PROFILE" != "$PROD_TEST_USER_PHONE" ] && echo "Profile failed" && exit 1
+
+          echo "✓ Production smoke test passed"
+
+      - name: Fail job if smoke test failed
+        if: steps.smoke.outcome == 'failure'
+        run: |
+          echo "❌ Smoke test failed - failing job but rollback will have access to outcome"
+          exit 1
+
+  rollback-production:
+    name: Rollback Production
+    needs: deploy-production
+    if: |
+      always() &&
+      needs.deploy-production.result == 'failure'
+    runs-on: ubuntu-latest
+    environment: Prod
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Get previous version
+        id: get-previous
+        run: |
+          VERSIONS=$(aws elasticbeanstalk describe-application-versions \
+            --application-name ${{ secrets.EB_APP_NAME_PROD }} \
+            --max-records 10 \
+            --query 'ApplicationVersions | sort_by(@, &DateCreated) | reverse(@)' \
+            --output json)
+
+          CURRENT="v${{ github.run_number }}-${{ github.sha }}"
+          PREVIOUS=$(echo "$VERSIONS" | jq -r \
+            --arg current "$CURRENT" \
+            '.[] | select(.VersionLabel != $current and .Status == "PROCESSED") | .VersionLabel' \
+            | head -1)
+
+          [ -z "$PREVIOUS" ] && echo "No previous version!" && exit 1
+          echo "previous_version=$PREVIOUS" >> $GITHUB_OUTPUT
+          echo "Rolling back production to $PREVIOUS"
+
+      - name: Rollback
+        run: |
+          aws elasticbeanstalk update-environment \
+            --application-name ${{ secrets.EB_APP_NAME_PROD }} \
+            --environment-name ${{ secrets.EB_ENV_NAME_PROD }} \
+            --version-label ${{ steps.get-previous.outputs.previous_version }}
+
+      - name: Wait for rollback
+        run: |
+          for i in {1..12}; do
+            sleep 30
+            STATUS=$(aws elasticbeanstalk describe-environments \
+              --application-name ${{ secrets.EB_APP_NAME_PROD }} \
+              --environment-names ${{ secrets.EB_ENV_NAME_PROD }} \
+              --query 'Environments[0].Status' --output text)
+            HEALTH=$(aws elasticbeanstalk describe-environments \
+              --application-name ${{ secrets.EB_APP_NAME_PROD }} \
+              --environment-names ${{ secrets.EB_ENV_NAME_PROD }} \
+              --query 'Environments[0].Health' --output text)
+            [ "$STATUS" = "Ready" ] && [ "$HEALTH" = "Green" ] && exit 0
+          done
+          exit 1
+
+      - name: Create incident issue
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🚨 Production Deployment Failed - Rolled Back',
+              body: `**Reason**: Health check or smoke test failed
+              **Failed Version**: v${{ github.run_number }}-${{ github.sha }}
+              **Rolled Back To**: ${{ steps.get-previous.outputs.previous_version }}
+              **Author**: @${{ github.actor }}
+              **Commit**: ${{ github.event.head_commit.message }}
+              **Workflow**: ${context.payload.repository.html_url}/actions/runs/${context.runId}
+
+              **CRITICAL**: Production was automatically rolled back. Investigate immediately.`,
+              labels: ['deployment-failure', 'production', 'auto-rollback', 'critical']
+            });
+
+  manual-rollback-production:
+    name: Manual Production Rollback
+    runs-on: ubuntu-latest
+    environment: Prod
+    if: |
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.production_rollback_version != ''
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Rollback
+        run: |
+          aws elasticbeanstalk update-environment \
+            --application-name ${{ secrets.EB_APP_NAME_PROD }} \
+            --environment-name ${{ secrets.EB_ENV_NAME_PROD }} \
+            --version-label ${{ github.event.inputs.production_rollback_version }}
+
+      - name: Wait
+        run: |
+          for i in {1..12}; do
+            sleep 30
+            STATUS=$(aws elasticbeanstalk describe-environments \
+              --application-name ${{ secrets.EB_APP_NAME_PROD }} \
+              --environment-names ${{ secrets.EB_ENV_NAME_PROD }} \
+              --query 'Environments[0].Status' --output text)
+            [ "$STATUS" = "Ready" ] && exit 0
+          done
           exit 1

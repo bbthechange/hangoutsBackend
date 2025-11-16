@@ -44,7 +44,11 @@ public class TwilioSmsValidationService implements SmsValidationService {
             "+12223334444",
             "+13334445555",
             "+14445556666",
-            "+15556667777"
+            "+15556667777",
+            // Integ test accounts
+            "+15551111001",
+            "+15551111002",
+            "+15551111003"
     );
 
     /**
