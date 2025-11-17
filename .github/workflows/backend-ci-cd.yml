@@ -55,6 +55,7 @@ jobs:
           version_label: v${{ github.run_number }}-${{ github.sha }}
           region: ${{ secrets.AWS_REGION }}
           deployment_package: deployment.zip
+          use_existing_version_if_available: true
           wait_for_environment_recovery: 30
 
       - name: Wait for staging
@@ -125,6 +126,9 @@ jobs:
           fi
 
           echo "✓ Test account verified (status: $ACCOUNT_STATUS)"
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
 
       - name: Run tests
         env:
@@ -281,6 +285,7 @@ jobs:
           version_label: v${{ github.run_number }}-${{ github.sha }}
           region: ${{ secrets.AWS_REGION }}
           deployment_package: deployment.zip
+          use_existing_version_if_available: true
           wait_for_environment_recovery: 30
 
       - name: Wait for production
