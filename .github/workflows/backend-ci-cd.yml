@@ -14,6 +14,10 @@ concurrency:
   group: deployment-pipeline
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   build:
     name: Build & Unit Tests
@@ -40,7 +44,25 @@ jobs:
     outputs:
       version-label: v${{ github.run_number }}-${{ github.sha }}
       health-check-status: ${{ steps.health.outcome }}
+      previous-version: ${{ steps.capture-version.outputs.version }}
     steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Capture current deployed version
+        id: capture-version
+        run: |
+          CURRENT_VERSION=$(aws elasticbeanstalk describe-environments \
+            --environment-names ${{ secrets.EB_ENV_NAME_STAGING }} \
+            --query 'Environments[0].VersionLabel' \
+            --output text)
+
+          echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Currently deployed staging version: $CURRENT_VERSION"
+
       - uses: actions/download-artifact@v4
         with:
           name: deployment-package
@@ -168,31 +190,15 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Get previous version
-        id: get-previous
-        run: |
-          VERSIONS=$(aws elasticbeanstalk describe-application-versions \
-            --application-name ${{ secrets.EB_APP_NAME_STAGING }} \
-            --max-records 10 \
-            --query 'ApplicationVersions | sort_by(@, &DateCreated) | reverse(@)' \
-            --output json)
-
-          CURRENT="v${{ github.run_number }}-${{ github.sha }}"
-          PREVIOUS=$(echo "$VERSIONS" | jq -r \
-            --arg current "$CURRENT" \
-            '.[] | select(.VersionLabel != $current and .Status == "PROCESSED") | .VersionLabel' \
-            | head -1)
-
-          [ -z "$PREVIOUS" ] && echo "No previous version!" && exit 1
-          echo "previous_version=$PREVIOUS" >> $GITHUB_OUTPUT
-          echo "Rolling back to $PREVIOUS"
-
       - name: Rollback
         run: |
+          PREVIOUS="${{ needs.deploy-staging.outputs.previous-version }}"
+          echo "🔄 Rolling back staging to: $PREVIOUS"
+
           aws elasticbeanstalk update-environment \
             --application-name ${{ secrets.EB_APP_NAME_STAGING }} \
             --environment-name ${{ secrets.EB_ENV_NAME_STAGING }} \
-            --version-label ${{ steps.get-previous.outputs.previous_version }}
+            --version-label "$PREVIOUS"
 
       - name: Wait for rollback
         run: |
@@ -248,7 +254,7 @@ jobs:
               title: '🚨 Staging Deployment Failed - Rolled Back',
               body: `**Reason**: ${reason}
               **Failed Version**: v${{ github.run_number }}-${{ github.sha }}
-              **Rolled Back To**: ${{ steps.get-previous.outputs.previous_version }}
+              **Rolled Back To**: ${{ needs.deploy-staging.outputs.previous-version }}
               **Author**: @${{ github.actor }}
               **Commit**: ${{ github.event.head_commit.message }}
               **Workflow**: ${context.payload.repository.html_url}/actions/runs/${context.runId}${testDetails}
@@ -265,12 +271,30 @@ jobs:
     outputs:
       version-label: v${{ github.run_number }}-${{ github.sha }}
       smoke-test-status: ${{ steps.smoke.outcome }}
+      previous-version: ${{ steps.capture-version.outputs.version }}
     if: |
       success() &&
       github.ref == 'refs/heads/main' &&
       needs.staging-tests.result == 'success' &&
       github.event.inputs.production_rollback_version == ''
     steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Capture current deployed version
+        id: capture-version
+        run: |
+          CURRENT_VERSION=$(aws elasticbeanstalk describe-environments \
+            --environment-names ${{ secrets.EB_ENV_NAME_PROD }} \
+            --query 'Environments[0].VersionLabel' \
+            --output text)
+
+          echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Currently deployed version: $CURRENT_VERSION"
+
       - uses: actions/download-artifact@v4
         with:
           name: deployment-package
@@ -341,31 +365,15 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Get previous version
-        id: get-previous
-        run: |
-          VERSIONS=$(aws elasticbeanstalk describe-application-versions \
-            --application-name ${{ secrets.EB_APP_NAME_PROD }} \
-            --max-records 10 \
-            --query 'ApplicationVersions | sort_by(@, &DateCreated) | reverse(@)' \
-            --output json)
-
-          CURRENT="v${{ github.run_number }}-${{ github.sha }}"
-          PREVIOUS=$(echo "$VERSIONS" | jq -r \
-            --arg current "$CURRENT" \
-            '.[] | select(.VersionLabel != $current and .Status == "PROCESSED") | .VersionLabel' \
-            | head -1)
-
-          [ -z "$PREVIOUS" ] && echo "No previous version!" && exit 1
-          echo "previous_version=$PREVIOUS" >> $GITHUB_OUTPUT
-          echo "Rolling back production to $PREVIOUS"
-
       - name: Rollback
         run: |
+          PREVIOUS="${{ needs.deploy-production.outputs.previous-version }}"
+          echo "🔄 Rolling back production to: $PREVIOUS"
+
           aws elasticbeanstalk update-environment \
             --application-name ${{ secrets.EB_APP_NAME_PROD }} \
             --environment-name ${{ secrets.EB_ENV_NAME_PROD }} \
-            --version-label ${{ steps.get-previous.outputs.previous_version }}
+            --version-label "$PREVIOUS"
 
       - name: Wait for rollback
         run: |
@@ -388,13 +396,15 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            const previousVersion = '${{ needs.deploy-production.outputs.previous-version }}';
+
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
               title: '🚨 Production Deployment Failed - Rolled Back',
               body: `**Reason**: Health check or smoke test failed
               **Failed Version**: v${{ github.run_number }}-${{ github.sha }}
-              **Rolled Back To**: ${{ steps.get-previous.outputs.previous_version }}
+              **Rolled Back To**: ${previousVersion}
               **Author**: @${{ github.actor }}
               **Commit**: ${{ github.event.head_commit.message }}
               **Workflow**: ${context.payload.repository.html_url}/actions/runs/${context.runId}
