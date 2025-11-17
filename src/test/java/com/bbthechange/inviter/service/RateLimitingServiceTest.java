@@ -299,6 +299,163 @@ class RateLimitingServiceTest {
     }
 
     @Nested
+    @DisplayName("isInvitePreviewAllowed() Tests")
+    class InvitePreviewAllowedTests {
+
+        @Test
+        @DisplayName("Should allow first request for new IP and code")
+        void test_isInvitePreviewAllowed_FirstRequest_ReturnsTrue() {
+            // Arrange
+            String ip = "192.168.1.1";
+            String code = "abc123xy";
+
+            // Act
+            boolean allowed = rateLimitingService.isInvitePreviewAllowed(ip, code);
+
+            // Assert
+            assertTrue(allowed);
+        }
+
+        @Test
+        @DisplayName("Should allow requests under IP limit (59/60)")
+        void test_isInvitePreviewAllowed_UnderIpLimit_ReturnsTrue() {
+            // Arrange
+            String ip = "192.168.1.1";
+
+            // Act - Make 59 requests (under limit of 60)
+            for (int i = 0; i < 59; i++) {
+                rateLimitingService.isInvitePreviewAllowed(ip, "code" + i);
+            }
+            boolean allowed = rateLimitingService.isInvitePreviewAllowed(ip, "different-code");
+
+            // Assert
+            assertTrue(allowed);
+        }
+
+        @Test
+        @DisplayName("Should block request at IP limit (60/60)")
+        void test_isInvitePreviewAllowed_AtIpLimit_ReturnsFalse() {
+            // Arrange
+            String ip = "192.168.1.1";
+
+            // Act - Make 60 requests (at limit)
+            for (int i = 0; i < 60; i++) {
+                rateLimitingService.isInvitePreviewAllowed(ip, "code" + i);
+            }
+            boolean allowed = rateLimitingService.isInvitePreviewAllowed(ip, "another-code");
+
+            // Assert
+            assertFalse(allowed);
+        }
+
+        @Test
+        @DisplayName("Should allow requests under code limit (99/100)")
+        void test_isInvitePreviewAllowed_UnderCodeLimit_ReturnsTrue() {
+            // Arrange
+            String code = "abc123xy";
+
+            // Act - Make 99 requests from different IPs (under limit of 100)
+            for (int i = 0; i < 99; i++) {
+                rateLimitingService.isInvitePreviewAllowed("192.168.1." + i, code);
+            }
+            boolean allowed = rateLimitingService.isInvitePreviewAllowed("10.0.0.1", code);
+
+            // Assert
+            assertTrue(allowed);
+        }
+
+        @Test
+        @DisplayName("Should block request at code limit (100/100)")
+        void test_isInvitePreviewAllowed_AtCodeLimit_ReturnsFalse() {
+            // Arrange
+            String code = "abc123xy";
+
+            // Act - Make 100 requests from different IPs (at limit)
+            for (int i = 0; i < 100; i++) {
+                rateLimitingService.isInvitePreviewAllowed("192.168." + (i / 256) + "." + (i % 256), code);
+            }
+            boolean allowed = rateLimitingService.isInvitePreviewAllowed("10.0.0.1", code);
+
+            // Assert
+            assertFalse(allowed);
+        }
+
+        @Test
+        @DisplayName("Should allow different IPs to preview same code")
+        void test_isInvitePreviewAllowed_DifferentIpsCanPreviewSameCode() {
+            // Arrange
+            String code = "abc123xy";
+            String ip1 = "192.168.1.1";
+            String ip2 = "10.0.0.1";
+
+            // Act - IP1 hits its limit
+            for (int i = 0; i < 60; i++) {
+                rateLimitingService.isInvitePreviewAllowed(ip1, code + i);
+            }
+            boolean ip1Allowed = rateLimitingService.isInvitePreviewAllowed(ip1, code);
+            boolean ip2Allowed = rateLimitingService.isInvitePreviewAllowed(ip2, code);
+
+            // Assert
+            assertFalse(ip1Allowed);
+            assertTrue(ip2Allowed); // Different IP still allowed
+        }
+
+        @Test
+        @DisplayName("Should allow same IP to preview different codes")
+        void test_isInvitePreviewAllowed_SameIpCanPreviewDifferentCodes() {
+            // Arrange
+            String ip = "192.168.1.1";
+            String code1 = "abc123xy";
+            String code2 = "xyz789ab";
+
+            // Act - Code1 hits its limit
+            for (int i = 0; i < 100; i++) {
+                rateLimitingService.isInvitePreviewAllowed("10.0." + (i / 256) + "." + (i % 256), code1);
+            }
+            boolean code1Allowed = rateLimitingService.isInvitePreviewAllowed(ip, code1);
+            boolean code2Allowed = rateLimitingService.isInvitePreviewAllowed(ip, code2);
+
+            // Assert
+            assertFalse(code1Allowed);
+            assertTrue(code2Allowed); // Different code still allowed
+        }
+
+        @Test
+        @DisplayName("Should enforce both limits independently - IP limit blocks first")
+        void test_isInvitePreviewAllowed_BothLimitsEnforcedIndependently() {
+            // Arrange
+            String ip = "192.168.1.1";
+            String code = "abc123xy";
+
+            // Act - Hit IP limit with different codes
+            for (int i = 0; i < 60; i++) {
+                rateLimitingService.isInvitePreviewAllowed(ip, "code" + i);
+            }
+            boolean allowed = rateLimitingService.isInvitePreviewAllowed(ip, code);
+
+            // Assert - IP limit should block even if code is under limit
+            assertFalse(allowed);
+        }
+
+        @Test
+        @DisplayName("Should enforce both limits independently - code limit blocks when IP under limit")
+        void test_isInvitePreviewAllowed_CodeLimitBlocksEvenIfIpUnderLimit() {
+            // Arrange
+            String ip = "10.0.0.1";
+            String code = "abc123xy";
+
+            // Act - Hit code limit with different IPs
+            for (int i = 0; i < 100; i++) {
+                rateLimitingService.isInvitePreviewAllowed("192.168." + (i / 256) + "." + (i % 256), code);
+            }
+            boolean allowed = rateLimitingService.isInvitePreviewAllowed(ip, code);
+
+            // Assert - Code limit should block even if IP is under limit
+            assertFalse(allowed);
+        }
+    }
+
+    @Nested
     @DisplayName("Metric Publishing Tests")
     class MetricPublishingTests {
 
@@ -307,14 +464,14 @@ class RateLimitingServiceTest {
         void test_publishRateLimitMetric_LogsCorrectMessage() {
             // This test verifies that rate limiting triggers logging
             // Since publishRateLimitMetric is private, we test it indirectly
-            
+
             // Arrange
             String phoneNumber = "+15551234567";
-            
+
             // Act - Trigger rate limit
             rateLimitingService.isResendCodeAllowed(phoneNumber); // First request succeeds
             rateLimitingService.isResendCodeAllowed(phoneNumber); // Second request triggers rate limit
-            
+
             // Assert - Rate limit was triggered (verified by return value)
             // The metric publishing is tested indirectly through the rate limiting behavior
             // In a real implementation, we would verify the CloudWatch metric was published
