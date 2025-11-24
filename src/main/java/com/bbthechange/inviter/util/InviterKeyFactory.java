@@ -38,6 +38,8 @@ public final class InviterKeyFactory {
     public static final String INVITE_CODE_PREFIX = "INVITE_CODE";
     public static final String CODE_PREFIX = "CODE";
     public static final String CREATED_PREFIX = "CREATED";
+    public static final String PARTICIPATION_PREFIX = "PARTICIPATION";
+    public static final String RESERVEOFFER_PREFIX = "RESERVEOFFER";
 
     // Status constants
     public static final String STATUS_ACTIVE = "ACTIVE";
@@ -279,6 +281,26 @@ public final class InviterKeyFactory {
 
     public static boolean isPlace(String sortKey) {
         return sortKey != null && sortKey.startsWith(PLACE_PREFIX + DELIMITER);
+    }
+
+    // Participation Keys
+    public static String getParticipationSk(String participationId) {
+        validateId(participationId, "Participation");
+        return PARTICIPATION_PREFIX + DELIMITER + participationId;
+    }
+
+    public static boolean isParticipation(String sortKey) {
+        return sortKey != null && sortKey.startsWith(PARTICIPATION_PREFIX + DELIMITER);
+    }
+
+    // Reservation Offer Keys
+    public static String getReservationOfferSk(String offerId) {
+        validateId(offerId, "ReservationOffer");
+        return RESERVEOFFER_PREFIX + DELIMITER + offerId;
+    }
+
+    public static boolean isReservationOffer(String sortKey) {
+        return sortKey != null && sortKey.startsWith(RESERVEOFFER_PREFIX + DELIMITER);
     }
 
     // Invite Code Keys
