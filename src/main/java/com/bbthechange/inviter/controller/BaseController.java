@@ -174,6 +174,41 @@ public abstract class BaseController {
         return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
             .body(new ErrorResponse("NOT_IMPLEMENTED", e.getMessage()));
     }
+
+    @ExceptionHandler(CapacityExceededException.class)
+    public ResponseEntity<ErrorResponse> handleCapacityExceeded(CapacityExceededException e) {
+        logger.warn("Capacity exceeded: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+            .body(new ErrorResponse("CAPACITY_EXCEEDED", e.getMessage()));
+    }
+
+    @ExceptionHandler(IllegalOperationException.class)
+    public ResponseEntity<ErrorResponse> handleIllegalOperation(IllegalOperationException e) {
+        logger.warn("Illegal operation: {}", e.getMessage());
+        return ResponseEntity.badRequest()
+            .body(new ErrorResponse("ILLEGAL_OPERATION", e.getMessage()));
+    }
+
+    @ExceptionHandler(VersionConflictException.class)
+    public ResponseEntity<ErrorResponse> handleVersionConflict(VersionConflictException e) {
+        logger.warn("Version conflict: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+            .body(new ErrorResponse("VERSION_CONFLICT", e.getMessage()));
+    }
+
+    @ExceptionHandler(ReservationOfferNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleOfferNotFound(ReservationOfferNotFoundException e) {
+        logger.debug("Reservation offer not found: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+            .body(new ErrorResponse("OFFER_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(ParticipationNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleParticipationNotFound(ParticipationNotFoundException e) {
+        logger.debug("Participation not found: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+            .body(new ErrorResponse("PARTICIPATION_NOT_FOUND", e.getMessage()));
+    }
     
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGeneral(Exception e) {

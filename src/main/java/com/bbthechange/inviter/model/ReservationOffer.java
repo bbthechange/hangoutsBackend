@@ -36,7 +36,7 @@ public class ReservationOffer extends BaseItem {
         super();
         setItemType(InviterKeyFactory.RESERVEOFFER_PREFIX);
         this.claimedSpots = 0;
-        this.version = 0L;
+        // version is null for new items - DynamoDB Enhanced Client will set it to 1 on first save
         this.status = OfferStatus.COLLECTING;
     }
 
@@ -50,7 +50,7 @@ public class ReservationOffer extends BaseItem {
         this.userId = userId;
         this.type = type;
         this.claimedSpots = 0;
-        this.version = 0L;
+        // version is null for new items - DynamoDB Enhanced Client will set it to 1 on first save
         this.status = OfferStatus.COLLECTING;
 
         // Set keys using InviterKeyFactory
