@@ -1,5 +1,6 @@
 package com.bbthechange.inviter.model;
 
+import com.bbthechange.inviter.dto.ParticipationSummaryDTO;
 import com.bbthechange.inviter.dto.TimeInfo;
 import com.bbthechange.inviter.dto.Address;
 import com.bbthechange.inviter.util.InviterKeyFactory;
@@ -59,6 +60,12 @@ public class HangoutPointer extends BaseItem {
 
     // Complete attendance/interest level data (denormalized for single-query feed loading)
     private List<InterestLevel> interestLevels;
+
+    // Participation & Reservation Fields (denormalized for group feed efficiency)
+    private ParticipationSummaryDTO participationSummary;  // Grouped users + all offers
+    private String ticketLink;                             // From Hangout canonical
+    private Boolean ticketsRequired;                       // From Hangout canonical
+    private String discountCode;                           // From Hangout canonical
 
     // Default constructor for DynamoDB
     public HangoutPointer() {
@@ -346,6 +353,46 @@ public class HangoutPointer extends BaseItem {
 
     public void setInterestLevels(List<InterestLevel> interestLevels) {
         this.interestLevels = interestLevels != null ? interestLevels : new ArrayList<>();
+        touch();
+    }
+
+    // ============================================================================
+    // PARTICIPATION & RESERVATION FIELDS (Denormalized from canonical)
+    // ============================================================================
+
+    public ParticipationSummaryDTO getParticipationSummary() {
+        return participationSummary;
+    }
+
+    public void setParticipationSummary(ParticipationSummaryDTO participationSummary) {
+        this.participationSummary = participationSummary;
+        touch();
+    }
+
+    public String getTicketLink() {
+        return ticketLink;
+    }
+
+    public void setTicketLink(String ticketLink) {
+        this.ticketLink = ticketLink;
+        touch();
+    }
+
+    public Boolean getTicketsRequired() {
+        return ticketsRequired;
+    }
+
+    public void setTicketsRequired(Boolean ticketsRequired) {
+        this.ticketsRequired = ticketsRequired;
+        touch();
+    }
+
+    public String getDiscountCode() {
+        return discountCode;
+    }
+
+    public void setDiscountCode(String discountCode) {
+        this.discountCode = discountCode;
         touch();
     }
 }

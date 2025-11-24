@@ -124,7 +124,9 @@ class HangoutServiceEdgeCasesTest extends HangoutServiceTestBase {
                 List.of(vote),
                 List.of(interest),
                 List.of(),  // car riders
-                List.of()   // needs ride
+                List.of(),  // needs ride
+                List.of(),  // participations
+                List.of()   // reservation offers
             );
 
             when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
@@ -187,7 +189,7 @@ class HangoutServiceEdgeCasesTest extends HangoutServiceTestBase {
             hangout.setAssociatedGroups(List.of(groupId1, groupId2, groupId3));
 
             HangoutDetailData detailData = new HangoutDetailData(
-                hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
+                hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
             );
 
             when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));

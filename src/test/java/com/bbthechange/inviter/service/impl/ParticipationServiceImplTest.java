@@ -1,17 +1,15 @@
 package com.bbthechange.inviter.service.impl;
 
-import com.bbthechange.inviter.dto.CreateParticipationRequest;
-import com.bbthechange.inviter.dto.ParticipationDTO;
-import com.bbthechange.inviter.dto.UpdateParticipationRequest;
+import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.exception.ParticipationNotFoundException;
 import com.bbthechange.inviter.exception.UnauthorizedException;
 import com.bbthechange.inviter.exception.UserNotFoundException;
-import com.bbthechange.inviter.model.Participation;
-import com.bbthechange.inviter.model.ParticipationType;
-import com.bbthechange.inviter.model.User;
+import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.ParticipationRepository;
+import com.bbthechange.inviter.service.GroupTimestampService;
 import com.bbthechange.inviter.service.HangoutService;
 import com.bbthechange.inviter.service.UserService;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -24,6 +22,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -52,6 +51,12 @@ class ParticipationServiceImplTest {
 
     @Mock
     private UserService userService;
+
+    @Mock
+    private PointerUpdateService pointerUpdateService;
+
+    @Mock
+    private GroupTimestampService groupTimestampService;
 
     @InjectMocks
     private ParticipationServiceImpl participationService;
@@ -590,5 +595,369 @@ class ParticipationServiceImplTest {
         user.setDisplayName(displayName);
         user.setMainImagePath(imagePath);
         return user;
+    }
+
+    // ============================================================================
+    // POINTER SYNCHRONIZATION TESTS
+    // ============================================================================
+
+    @Nested
+    class PointerSynchronizationTests {
+
+        @Test
+        void createParticipation_UpdatesAllAssociatedGroupPointers() {
+            // Given
+            String groupId1 = "group1-1111-1111-1111-111111111111";
+            String groupId2 = "group2-2222-2222-2222-222222222222";
+
+            CreateParticipationRequest request = new CreateParticipationRequest(ParticipationType.TICKET_NEEDED);
+            User user = createUser(USER_ID, DISPLAY_NAME, IMAGE_PATH);
+
+            Participation savedParticipation = new Participation(HANGOUT_ID, PARTICIPATION_ID, USER_ID, ParticipationType.TICKET_NEEDED);
+
+            // Mock hangout with 2 associated groups
+            Hangout hangout = new Hangout();
+            hangout.setHangoutId(HANGOUT_ID);
+            hangout.setAssociatedGroups(Arrays.asList(groupId1, groupId2));
+            hangout.setTicketLink("https://tickets.example.com");
+            hangout.setTicketsRequired(true);
+            hangout.setDiscountCode("SAVE20");
+
+            HangoutDetailDTO detailDTO = new HangoutDetailDTO(
+                hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+                List.of(new ParticipationDTO(savedParticipation, DISPLAY_NAME, IMAGE_PATH)),
+                List.of()
+            );
+
+            doNothing().when(hangoutService).verifyUserCanAccessHangout(HANGOUT_ID, USER_ID);
+            when(userService.getUserById(UUID.fromString(USER_ID))).thenReturn(Optional.of(user));
+            when(participationRepository.save(any(Participation.class))).thenReturn(savedParticipation);
+            when(hangoutService.getHangoutDetail(HANGOUT_ID, USER_ID)).thenReturn(detailDTO);
+
+            // When
+            participationService.createParticipation(HANGOUT_ID, request, USER_ID);
+
+            // Then - verify pointer update called for both groups
+            verify(pointerUpdateService, times(2)).updatePointerWithRetry(
+                anyString(), eq(HANGOUT_ID), any(Consumer.class), anyString()
+            );
+            verify(groupTimestampService).updateGroupTimestamps(Arrays.asList(groupId1, groupId2));
+        }
+
+        @Test
+        void createParticipation_SetsTicketFieldsOnPointers() {
+            // Given
+            String groupId = "group1-1111-1111-1111-111111111111";
+
+            CreateParticipationRequest request = new CreateParticipationRequest(ParticipationType.TICKET_NEEDED);
+            User user = createUser(USER_ID, DISPLAY_NAME, IMAGE_PATH);
+
+            Participation savedParticipation = new Participation(HANGOUT_ID, PARTICIPATION_ID, USER_ID, ParticipationType.TICKET_NEEDED);
+
+            Hangout hangout = new Hangout();
+            hangout.setHangoutId(HANGOUT_ID);
+            hangout.setAssociatedGroups(List.of(groupId));
+            hangout.setTicketLink("https://tickets.example.com");
+            hangout.setTicketsRequired(true);
+            hangout.setDiscountCode("SAVE20");
+
+            HangoutDetailDTO detailDTO = new HangoutDetailDTO(
+                hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+                List.of(new ParticipationDTO(savedParticipation, DISPLAY_NAME, IMAGE_PATH)),
+                List.of()
+            );
+
+            doNothing().when(hangoutService).verifyUserCanAccessHangout(HANGOUT_ID, USER_ID);
+            when(userService.getUserById(UUID.fromString(USER_ID))).thenReturn(Optional.of(user));
+            when(participationRepository.save(any(Participation.class))).thenReturn(savedParticipation);
+            when(hangoutService.getHangoutDetail(HANGOUT_ID, USER_ID)).thenReturn(detailDTO);
+
+            // When
+            participationService.createParticipation(HANGOUT_ID, request, USER_ID);
+
+            // Then - capture the consumer and verify it sets ticket fields
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<Consumer<HangoutPointer>> captor = ArgumentCaptor.forClass(Consumer.class);
+            verify(pointerUpdateService).updatePointerWithRetry(
+                eq(groupId), eq(HANGOUT_ID), captor.capture(), anyString()
+            );
+
+            // Execute the captured consumer on a test pointer
+            HangoutPointer testPointer = new HangoutPointer();
+            captor.getValue().accept(testPointer);
+
+            // Verify ticket fields were set
+            assertThat(testPointer.getTicketLink()).isEqualTo("https://tickets.example.com");
+            assertThat(testPointer.getTicketsRequired()).isTrue();
+            assertThat(testPointer.getDiscountCode()).isEqualTo("SAVE20");
+        }
+
+        @Test
+        void createParticipation_SetsParticipationSummaryOnPointers() {
+            // Given
+            String groupId = "group1-1111-1111-1111-111111111111";
+
+            CreateParticipationRequest request = new CreateParticipationRequest(ParticipationType.TICKET_NEEDED);
+            User user = createUser(USER_ID, DISPLAY_NAME, IMAGE_PATH);
+
+            Participation savedParticipation = new Participation(HANGOUT_ID, PARTICIPATION_ID, USER_ID, ParticipationType.TICKET_NEEDED);
+
+            Hangout hangout = new Hangout();
+            hangout.setHangoutId(HANGOUT_ID);
+            hangout.setAssociatedGroups(List.of(groupId));
+
+            ParticipationDTO participationDTO = new ParticipationDTO(savedParticipation, DISPLAY_NAME, IMAGE_PATH);
+
+            HangoutDetailDTO detailDTO = new HangoutDetailDTO(
+                hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+                List.of(participationDTO),
+                List.of()
+            );
+
+            doNothing().when(hangoutService).verifyUserCanAccessHangout(HANGOUT_ID, USER_ID);
+            when(userService.getUserById(UUID.fromString(USER_ID))).thenReturn(Optional.of(user));
+            when(participationRepository.save(any(Participation.class))).thenReturn(savedParticipation);
+            when(hangoutService.getHangoutDetail(HANGOUT_ID, USER_ID)).thenReturn(detailDTO);
+
+            // When
+            participationService.createParticipation(HANGOUT_ID, request, USER_ID);
+
+            // Then - capture the consumer and verify it sets participation summary
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<Consumer<HangoutPointer>> captor = ArgumentCaptor.forClass(Consumer.class);
+            verify(pointerUpdateService).updatePointerWithRetry(
+                eq(groupId), eq(HANGOUT_ID), captor.capture(), anyString()
+            );
+
+            // Execute the captured consumer on a test pointer
+            HangoutPointer testPointer = new HangoutPointer();
+            captor.getValue().accept(testPointer);
+
+            // Verify participation summary was set
+            assertThat(testPointer.getParticipationSummary()).isNotNull();
+            assertThat(testPointer.getParticipationSummary().getUsersNeedingTickets()).hasSize(1);
+            assertThat(testPointer.getParticipationSummary().getUsersNeedingTickets().get(0).getDisplayName())
+                .isEqualTo(DISPLAY_NAME);
+        }
+
+        @Test
+        void createParticipation_WhenHangoutDetailThrowsException_LogsWarningAndContinues() {
+            // Given
+            CreateParticipationRequest request = new CreateParticipationRequest(ParticipationType.TICKET_NEEDED);
+            User user = createUser(USER_ID, DISPLAY_NAME, IMAGE_PATH);
+
+            Participation savedParticipation = new Participation(HANGOUT_ID, PARTICIPATION_ID, USER_ID, ParticipationType.TICKET_NEEDED);
+
+            doNothing().when(hangoutService).verifyUserCanAccessHangout(HANGOUT_ID, USER_ID);
+            when(userService.getUserById(UUID.fromString(USER_ID))).thenReturn(Optional.of(user));
+            when(participationRepository.save(any(Participation.class))).thenReturn(savedParticipation);
+            when(hangoutService.getHangoutDetail(HANGOUT_ID, USER_ID))
+                .thenThrow(new UnauthorizedException("Test exception"));
+
+            // When - should NOT throw, just log warning
+            ParticipationDTO result = participationService.createParticipation(HANGOUT_ID, request, USER_ID);
+
+            // Then - participation was still created successfully
+            assertThat(result).isNotNull();
+            assertThat(result.getType()).isEqualTo(ParticipationType.TICKET_NEEDED);
+
+            // Verify pointer/timestamp services were never called
+            verify(pointerUpdateService, never()).updatePointerWithRetry(any(), any(), any(), any());
+            verify(groupTimestampService, never()).updateGroupTimestamps(any());
+        }
+
+        @Test
+        void createParticipation_WithNoAssociatedGroups_SkipsPointerUpdates() {
+            // Given
+            CreateParticipationRequest request = new CreateParticipationRequest(ParticipationType.TICKET_NEEDED);
+            User user = createUser(USER_ID, DISPLAY_NAME, IMAGE_PATH);
+
+            Participation savedParticipation = new Participation(HANGOUT_ID, PARTICIPATION_ID, USER_ID, ParticipationType.TICKET_NEEDED);
+
+            Hangout hangout = new Hangout();
+            hangout.setHangoutId(HANGOUT_ID);
+            hangout.setAssociatedGroups(List.of());  // No associated groups
+
+            HangoutDetailDTO detailDTO = new HangoutDetailDTO(
+                hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+                List.of(new ParticipationDTO(savedParticipation, DISPLAY_NAME, IMAGE_PATH)),
+                List.of()
+            );
+
+            doNothing().when(hangoutService).verifyUserCanAccessHangout(HANGOUT_ID, USER_ID);
+            when(userService.getUserById(UUID.fromString(USER_ID))).thenReturn(Optional.of(user));
+            when(participationRepository.save(any(Participation.class))).thenReturn(savedParticipation);
+            when(hangoutService.getHangoutDetail(HANGOUT_ID, USER_ID)).thenReturn(detailDTO);
+
+            // When
+            participationService.createParticipation(HANGOUT_ID, request, USER_ID);
+
+            // Then - no pointer updates
+            verify(pointerUpdateService, never()).updatePointerWithRetry(any(), any(), any(), any());
+            verify(groupTimestampService, never()).updateGroupTimestamps(any());
+        }
+
+        @Test
+        void createParticipation_GroupsParticipationsByType() {
+            // Given
+            String groupId = "group1-1111-1111-1111-111111111111";
+
+            CreateParticipationRequest request = new CreateParticipationRequest(ParticipationType.TICKET_EXTRA);
+            User user = createUser(USER_ID, DISPLAY_NAME, IMAGE_PATH);
+            User user2 = createUser(USER_ID_2, DISPLAY_NAME_2, IMAGE_PATH_2);
+
+            Participation p1 = new Participation(HANGOUT_ID, UUID.randomUUID().toString(), USER_ID, ParticipationType.TICKET_NEEDED);
+            Participation p2 = new Participation(HANGOUT_ID, UUID.randomUUID().toString(), USER_ID_2, ParticipationType.TICKET_PURCHASED);
+            Participation p3 = new Participation(HANGOUT_ID, UUID.randomUUID().toString(), USER_ID, ParticipationType.CLAIMED_SPOT);
+            Participation p4 = new Participation(HANGOUT_ID, UUID.randomUUID().toString(), USER_ID, ParticipationType.TICKET_EXTRA);
+            Participation p5 = new Participation(HANGOUT_ID, UUID.randomUUID().toString(), USER_ID_2, ParticipationType.TICKET_EXTRA);
+
+            Participation savedParticipation = new Participation(HANGOUT_ID, PARTICIPATION_ID, USER_ID, ParticipationType.TICKET_EXTRA);
+
+            Hangout hangout = new Hangout();
+            hangout.setHangoutId(HANGOUT_ID);
+            hangout.setAssociatedGroups(List.of(groupId));
+
+            HangoutDetailDTO detailDTO = new HangoutDetailDTO(
+                hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+                Arrays.asList(
+                    new ParticipationDTO(p1, DISPLAY_NAME, IMAGE_PATH),
+                    new ParticipationDTO(p2, DISPLAY_NAME_2, IMAGE_PATH_2),
+                    new ParticipationDTO(p3, DISPLAY_NAME, IMAGE_PATH),
+                    new ParticipationDTO(p4, DISPLAY_NAME, IMAGE_PATH),
+                    new ParticipationDTO(p5, DISPLAY_NAME_2, IMAGE_PATH_2)
+                ),
+                List.of()
+            );
+
+            doNothing().when(hangoutService).verifyUserCanAccessHangout(HANGOUT_ID, USER_ID);
+            when(userService.getUserById(UUID.fromString(USER_ID))).thenReturn(Optional.of(user));
+            when(participationRepository.save(any(Participation.class))).thenReturn(savedParticipation);
+            when(hangoutService.getHangoutDetail(HANGOUT_ID, USER_ID)).thenReturn(detailDTO);
+
+            // When
+            participationService.createParticipation(HANGOUT_ID, request, USER_ID);
+
+            // Then - capture the consumer and verify grouping
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<Consumer<HangoutPointer>> captor = ArgumentCaptor.forClass(Consumer.class);
+            verify(pointerUpdateService).updatePointerWithRetry(
+                eq(groupId), eq(HANGOUT_ID), captor.capture(), anyString()
+            );
+
+            HangoutPointer testPointer = new HangoutPointer();
+            captor.getValue().accept(testPointer);
+
+            ParticipationSummaryDTO summary = testPointer.getParticipationSummary();
+            assertThat(summary.getUsersNeedingTickets()).hasSize(1);  // 1 TICKET_NEEDED
+            assertThat(summary.getUsersWithTickets()).hasSize(1);     // 1 TICKET_PURCHASED
+            assertThat(summary.getUsersWithClaimedSpots()).hasSize(1); // 1 CLAIMED_SPOT
+            assertThat(summary.getExtraTicketCount()).isEqualTo(2);   // 2 TICKET_EXTRA
+        }
+
+        @Test
+        void createParticipation_DeduplicatesUsersByUserId() {
+            // Given
+            String groupId = "group1-1111-1111-1111-111111111111";
+
+            CreateParticipationRequest request = new CreateParticipationRequest(ParticipationType.TICKET_NEEDED);
+            User user = createUser(USER_ID, DISPLAY_NAME, IMAGE_PATH);
+
+            // User has 2 TICKET_NEEDED participations (should appear once in list)
+            Participation p1 = new Participation(HANGOUT_ID, UUID.randomUUID().toString(), USER_ID, ParticipationType.TICKET_NEEDED);
+            Participation p2 = new Participation(HANGOUT_ID, UUID.randomUUID().toString(), USER_ID, ParticipationType.TICKET_NEEDED);
+            Participation p3 = new Participation(HANGOUT_ID, UUID.randomUUID().toString(), USER_ID_2, ParticipationType.TICKET_NEEDED);
+
+            Participation savedParticipation = new Participation(HANGOUT_ID, PARTICIPATION_ID, USER_ID, ParticipationType.TICKET_NEEDED);
+
+            Hangout hangout = new Hangout();
+            hangout.setHangoutId(HANGOUT_ID);
+            hangout.setAssociatedGroups(List.of(groupId));
+
+            User user2 = createUser(USER_ID_2, DISPLAY_NAME_2, IMAGE_PATH_2);
+
+            HangoutDetailDTO detailDTO = new HangoutDetailDTO(
+                hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+                Arrays.asList(
+                    new ParticipationDTO(p1, DISPLAY_NAME, IMAGE_PATH),
+                    new ParticipationDTO(p2, DISPLAY_NAME, IMAGE_PATH),
+                    new ParticipationDTO(p3, DISPLAY_NAME_2, IMAGE_PATH_2)
+                ),
+                List.of()
+            );
+
+            doNothing().when(hangoutService).verifyUserCanAccessHangout(HANGOUT_ID, USER_ID);
+            when(userService.getUserById(UUID.fromString(USER_ID))).thenReturn(Optional.of(user));
+            when(participationRepository.save(any(Participation.class))).thenReturn(savedParticipation);
+            when(hangoutService.getHangoutDetail(HANGOUT_ID, USER_ID)).thenReturn(detailDTO);
+
+            // When
+            participationService.createParticipation(HANGOUT_ID, request, USER_ID);
+
+            // Then - verify deduplication
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<Consumer<HangoutPointer>> captor = ArgumentCaptor.forClass(Consumer.class);
+            verify(pointerUpdateService).updatePointerWithRetry(
+                eq(groupId), eq(HANGOUT_ID), captor.capture(), anyString()
+            );
+
+            HangoutPointer testPointer = new HangoutPointer();
+            captor.getValue().accept(testPointer);
+
+            // 2 unique users, not 3 participations
+            assertThat(testPointer.getParticipationSummary().getUsersNeedingTickets()).hasSize(2);
+        }
+
+        @Test
+        void createParticipation_IncludesAllReservationOffers() {
+            // Given
+            String groupId = "group1-1111-1111-1111-111111111111";
+
+            CreateParticipationRequest request = new CreateParticipationRequest(ParticipationType.TICKET_NEEDED);
+            User user = createUser(USER_ID, DISPLAY_NAME, IMAGE_PATH);
+
+            Participation savedParticipation = new Participation(HANGOUT_ID, PARTICIPATION_ID, USER_ID, ParticipationType.TICKET_NEEDED);
+
+            Hangout hangout = new Hangout();
+            hangout.setHangoutId(HANGOUT_ID);
+            hangout.setAssociatedGroups(List.of(groupId));
+
+            ReservationOffer offer1 = new ReservationOffer(HANGOUT_ID, UUID.randomUUID().toString(), USER_ID, OfferType.TICKET);
+            offer1.setStatus(OfferStatus.COLLECTING);
+            ReservationOffer offer2 = new ReservationOffer(HANGOUT_ID, UUID.randomUUID().toString(), USER_ID_2, OfferType.RESERVATION);
+            offer2.setStatus(OfferStatus.COMPLETED);
+            ReservationOffer offer3 = new ReservationOffer(HANGOUT_ID, UUID.randomUUID().toString(), USER_ID, OfferType.TICKET);
+            offer3.setStatus(OfferStatus.CANCELLED);
+
+            HangoutDetailDTO detailDTO = new HangoutDetailDTO(
+                hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+                List.of(new ParticipationDTO(savedParticipation, DISPLAY_NAME, IMAGE_PATH)),
+                Arrays.asList(
+                    new ReservationOfferDTO(offer1, DISPLAY_NAME, IMAGE_PATH),
+                    new ReservationOfferDTO(offer2, DISPLAY_NAME_2, IMAGE_PATH_2),
+                    new ReservationOfferDTO(offer3, DISPLAY_NAME, IMAGE_PATH)
+                )
+            );
+
+            doNothing().when(hangoutService).verifyUserCanAccessHangout(HANGOUT_ID, USER_ID);
+            when(userService.getUserById(UUID.fromString(USER_ID))).thenReturn(Optional.of(user));
+            when(participationRepository.save(any(Participation.class))).thenReturn(savedParticipation);
+            when(hangoutService.getHangoutDetail(HANGOUT_ID, USER_ID)).thenReturn(detailDTO);
+
+            // When
+            participationService.createParticipation(HANGOUT_ID, request, USER_ID);
+
+            // Then - verify all offers are included (not filtered by status)
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<Consumer<HangoutPointer>> captor = ArgumentCaptor.forClass(Consumer.class);
+            verify(pointerUpdateService).updatePointerWithRetry(
+                eq(groupId), eq(HANGOUT_ID), captor.capture(), anyString()
+            );
+
+            HangoutPointer testPointer = new HangoutPointer();
+            captor.getValue().accept(testPointer);
+
+            assertThat(testPointer.getParticipationSummary().getReservationOffers()).hasSize(3);
+        }
     }
 }

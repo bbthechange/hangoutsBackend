@@ -44,7 +44,7 @@ class HangoutServiceLocationDescriptionUpdateTest extends HangoutServiceTestBase
             Hangout hangout = createTestHangout(eventId);
             hangout.setAssociatedGroups(List.of(groupId));
 
-            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
             when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
 
             GroupMembership membership = createTestMembership(groupId, userId, "Test Group");
@@ -80,7 +80,7 @@ class HangoutServiceLocationDescriptionUpdateTest extends HangoutServiceTestBase
             Hangout hangout = createTestHangout(eventId);
             hangout.setAssociatedGroups(List.of(groupId1, groupId2, groupId3));
 
-            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
             when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
 
             GroupMembership membership = createTestMembership(groupId1, userId, "Test Group");
@@ -109,7 +109,7 @@ class HangoutServiceLocationDescriptionUpdateTest extends HangoutServiceTestBase
             Hangout hangout = createTestHangout(eventId);
             hangout.setAssociatedGroups(List.of(groupId));
 
-            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
             when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
 
             // User is not in the group
@@ -133,7 +133,7 @@ class HangoutServiceLocationDescriptionUpdateTest extends HangoutServiceTestBase
             Address newLocation = new Address();
 
             // Return data with null hangout
-            HangoutDetailData data = new HangoutDetailData(null, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            HangoutDetailData data = new HangoutDetailData(null, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
             when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
 
             // When/Then
@@ -151,7 +151,7 @@ class HangoutServiceLocationDescriptionUpdateTest extends HangoutServiceTestBase
             Hangout hangout = createTestHangout(eventId);
             hangout.setAssociatedGroups(List.of(groupId));
 
-            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
             when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
 
             GroupMembership membership = createTestMembership(groupId, userId, "Test Group");
@@ -181,7 +181,7 @@ class HangoutServiceLocationDescriptionUpdateTest extends HangoutServiceTestBase
             Hangout hangout = createTestHangout(eventId);
             hangout.setAssociatedGroups(List.of(groupId));
 
-            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
             when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
 
             GroupMembership membership = createTestMembership(groupId, userId, "Test Group");
@@ -214,7 +214,7 @@ class HangoutServiceLocationDescriptionUpdateTest extends HangoutServiceTestBase
             Hangout hangout = createTestHangout(eventId);
             hangout.setAssociatedGroups(List.of(groupId));
 
-            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
             when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
 
             GroupMembership membership = createTestMembership(groupId, userId, "Test Group");
@@ -242,7 +242,7 @@ class HangoutServiceLocationDescriptionUpdateTest extends HangoutServiceTestBase
             Hangout hangout = createTestHangout(eventId);
             hangout.setAssociatedGroups(List.of(groupId));
 
-            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
             when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
 
             GroupMembership membership = createTestMembership(groupId, userId, "Test Group");
@@ -267,7 +267,7 @@ class HangoutServiceLocationDescriptionUpdateTest extends HangoutServiceTestBase
             Hangout hangout = createTestHangout(eventId);
             hangout.setAssociatedGroups(List.of(groupId));
 
-            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
             when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
 
             // User is not in the group
@@ -292,7 +292,7 @@ class HangoutServiceLocationDescriptionUpdateTest extends HangoutServiceTestBase
             Hangout hangout = createTestHangout(eventId);
             hangout.setAssociatedGroups(List.of(groupId));
 
-            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
             when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
 
             GroupMembership membership = createTestMembership(groupId, userId, "Test Group");
@@ -319,7 +319,7 @@ class HangoutServiceLocationDescriptionUpdateTest extends HangoutServiceTestBase
             Hangout hangout = createTestHangout(eventId);
             hangout.setAssociatedGroups(List.of(groupId));
 
-            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
             when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
 
             GroupMembership membership = createTestMembership(groupId, userId, "Test Group");
@@ -347,7 +347,7 @@ class HangoutServiceLocationDescriptionUpdateTest extends HangoutServiceTestBase
             Hangout hangout = createTestHangout(eventId);
             hangout.setAssociatedGroups(List.of(groupId));
 
-            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
             when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
 
             GroupMembership membership = createTestMembership(groupId, userId, "Test Group");

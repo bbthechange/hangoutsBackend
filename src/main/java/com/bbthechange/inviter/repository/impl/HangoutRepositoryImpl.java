@@ -48,6 +48,8 @@ public class HangoutRepositoryImpl implements HangoutRepository {
     private final TableSchema<HangoutAttribute> hangoutAttributeSchema;
     private final TableSchema<NeedsRide> needsRideSchema;
     private final TableSchema<EventSeries> eventSeriesSchema;
+    private final TableSchema<Participation> participationSchema;
+    private final TableSchema<ReservationOffer> reservationOfferSchema;
     private final QueryPerformanceTracker performanceTracker;
     private final EventRepository eventRepository; // For canonical Event records
     
@@ -71,6 +73,8 @@ public class HangoutRepositoryImpl implements HangoutRepository {
         this.hangoutAttributeSchema = TableSchema.fromBean(HangoutAttribute.class);
         this.needsRideSchema = TableSchema.fromBean(NeedsRide.class);
         this.eventSeriesSchema = TableSchema.fromBean(EventSeries.class);
+        this.participationSchema = TableSchema.fromBean(Participation.class);
+        this.reservationOfferSchema = TableSchema.fromBean(ReservationOffer.class);
         this.performanceTracker = performanceTracker;
         this.eventRepository = eventRepository;
     }
@@ -107,6 +111,10 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                     return hangoutPointerSchema.mapToItem(itemMap);
                 } else if (InviterKeyFactory.isSeriesPointer(sk)) {
                     return seriesPointerSchema.mapToItem(itemMap);
+                } else if (InviterKeyFactory.isParticipation(sk)) {
+                    return participationSchema.mapToItem(itemMap);
+                } else if (InviterKeyFactory.isReservationOffer(sk)) {
+                    return reservationOfferSchema.mapToItem(itemMap);
                 }
             }
             throw new IllegalStateException("Missing itemType discriminator and unable to determine type from SK");
@@ -138,6 +146,10 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                 return seriesPointerSchema.mapToItem(itemMap);
             case "EVENT_SERIES":
                 return eventSeriesSchema.mapToItem(itemMap);
+            case "PARTICIPATION":
+                return participationSchema.mapToItem(itemMap);
+            case "RESERVEOFFER":
+                return reservationOfferSchema.mapToItem(itemMap);
             default:
                 throw new IllegalArgumentException("Unknown item type: " + itemType);
         }
@@ -180,6 +192,8 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                 List<InterestLevel> attendance = new ArrayList<>();
                 List<CarRider> carRiders = new ArrayList<>();
                 List<NeedsRide> needsRideList = new ArrayList<>();
+                List<Participation> participations = new ArrayList<>();
+                List<ReservationOffer> reservationOffers = new ArrayList<>();
                 Optional<Hangout> hangoutOption = Optional.empty();
 
                 for (BaseItem item : allItems) {
@@ -200,6 +214,10 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                         carRiders.add((CarRider) item); // Safe - key pattern guarantees CarRider
                     } else if (InviterKeyFactory.isNeedsRideItem(sk)) {
                         needsRideList.add((NeedsRide) item); // Safe - key pattern guarantees NeedsRide
+                    } else if (InviterKeyFactory.isParticipation(sk)) {
+                        participations.add((Participation) item); // Safe - key pattern guarantees Participation
+                    } else if (InviterKeyFactory.isReservationOffer(sk)) {
+                        reservationOffers.add((ReservationOffer) item); // Safe - key pattern guarantees ReservationOffer
                     } else if (InviterKeyFactory.isMetadata(sk)) {
                         hangoutOption = Optional.of((Hangout) item);
                     }
@@ -208,7 +226,8 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                 Hangout hangout = hangoutOption
                         .orElseThrow(() -> new ResourceNotFoundException("Event not found: " + eventId));
 
-                return new HangoutDetailData(hangout, polls, pollOptions, cars, votes, attendance, carRiders, needsRideList);
+                return new HangoutDetailData(hangout, polls, pollOptions, cars, votes, attendance,
+                    carRiders, needsRideList, participations, reservationOffers);
 
             } catch (Exception e) {
                 logger.error("Failed to get event detail data for event {}", eventId, e);

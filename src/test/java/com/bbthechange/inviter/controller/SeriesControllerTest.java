@@ -425,15 +425,15 @@ class SeriesControllerTest {
         hangout2.setStartTimestamp(2000L);
         
         HangoutDetailDTO hangoutDetail1 = new HangoutDetailDTO(
-            hangout1, java.util.Collections.emptyList(), java.util.Collections.emptyList(), 
+            hangout1, java.util.Collections.emptyList(), java.util.Collections.emptyList(),
             java.util.Collections.emptyList(), java.util.Collections.emptyList(), java.util.Collections.emptyList(),
-            java.util.Collections.emptyList(), java.util.Collections.emptyList()
+            java.util.Collections.emptyList(), java.util.Collections.emptyList(), java.util.Collections.emptyList(), java.util.Collections.emptyList()
         );
-        
+
         HangoutDetailDTO hangoutDetail2 = new HangoutDetailDTO(
-            hangout2, java.util.Collections.emptyList(), java.util.Collections.emptyList(), 
+            hangout2, java.util.Collections.emptyList(), java.util.Collections.emptyList(),
             java.util.Collections.emptyList(), java.util.Collections.emptyList(), java.util.Collections.emptyList(),
-            java.util.Collections.emptyList(), java.util.Collections.emptyList()
+            java.util.Collections.emptyList(), java.util.Collections.emptyList(), java.util.Collections.emptyList(), java.util.Collections.emptyList()
         );
         
         java.util.List<HangoutDetailDTO> hangoutDetails = java.util.Arrays.asList(hangoutDetail1, hangoutDetail2);

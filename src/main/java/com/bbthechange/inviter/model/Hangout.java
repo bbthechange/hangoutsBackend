@@ -37,7 +37,12 @@ public class Hangout extends BaseItem {
     private Long startTimestamp; // Canonical UTC Unix timestamp (seconds since epoch) for start time
     private Long endTimestamp; // Canonical UTC Unix timestamp (seconds since epoch) for end time
     private String seriesId; // Link to EventSeries if this hangout is part of a multi-part event
-    
+
+    // Ticket-related fields
+    private String ticketLink;          // URL to ticket purchase page
+    private Boolean ticketsRequired;    // Are tickets mandatory?
+    private String discountCode;        // Optional discount code
+
     // Default constructor for DynamoDB
     public Hangout() {
         super();
@@ -235,6 +240,33 @@ public class Hangout extends BaseItem {
     
     public void setSeriesId(String seriesId) {
         this.seriesId = seriesId;
+        touch(); // Update timestamp
+    }
+
+    public String getTicketLink() {
+        return ticketLink;
+    }
+
+    public void setTicketLink(String ticketLink) {
+        this.ticketLink = ticketLink;
+        touch(); // Update timestamp
+    }
+
+    public Boolean getTicketsRequired() {
+        return ticketsRequired;
+    }
+
+    public void setTicketsRequired(Boolean ticketsRequired) {
+        this.ticketsRequired = ticketsRequired;
+        touch(); // Update timestamp
+    }
+
+    public String getDiscountCode() {
+        return discountCode;
+    }
+
+    public void setDiscountCode(String discountCode) {
+        this.discountCode = discountCode;
         touch(); // Update timestamp
     }
 }

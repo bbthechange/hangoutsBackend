@@ -74,7 +74,7 @@ class HangoutServiceGroupLastModifiedTest extends HangoutServiceTestBase {
             Hangout hangout = createTestHangout(hangoutId);
             hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of(groupId)));
 
-            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
             when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 
             // Mock authorization

@@ -18,4 +18,6 @@ public class HangoutDetailDTO {
     private List<InterestLevel> attendance;
     private List<CarRider> carRiders;
     private List<NeedsRideDTO> needsRide;
+    private List<ParticipationDTO> participations;
+    private List<ReservationOfferDTO> reservationOffers;
 }

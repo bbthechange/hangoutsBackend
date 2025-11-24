@@ -1129,15 +1129,15 @@ class EventSeriesServiceImplTest {
         List<Hangout> hangouts = Arrays.asList(hangout1, hangout2);
         
         HangoutDetailDTO hangoutDetail1 = new HangoutDetailDTO(
-            hangout1, Collections.emptyList(), Collections.emptyList(), 
+            hangout1, Collections.emptyList(), Collections.emptyList(),
             Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
-            Collections.emptyList(), Collections.emptyList()
+            Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList()
         );
-        
+
         HangoutDetailDTO hangoutDetail2 = new HangoutDetailDTO(
-            hangout2, Collections.emptyList(), Collections.emptyList(), 
+            hangout2, Collections.emptyList(), Collections.emptyList(),
             Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
-            Collections.emptyList(), Collections.emptyList()
+            Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList()
         );
         
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
@@ -1220,27 +1220,27 @@ class EventSeriesServiceImplTest {
         List<Hangout> hangouts = Arrays.asList(hangout1, hangout2, hangout3, hangout4);
         
         HangoutDetailDTO hangoutDetail1 = new HangoutDetailDTO(
-            hangout1, Collections.emptyList(), Collections.emptyList(), 
+            hangout1, Collections.emptyList(), Collections.emptyList(),
             Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
-            Collections.emptyList(), Collections.emptyList()
+            Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList()
         );
-        
+
         HangoutDetailDTO hangoutDetail2 = new HangoutDetailDTO(
-            hangout2, Collections.emptyList(), Collections.emptyList(), 
+            hangout2, Collections.emptyList(), Collections.emptyList(),
             Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
-            Collections.emptyList(), Collections.emptyList()
+            Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList()
         );
         
         HangoutDetailDTO hangoutDetail3 = new HangoutDetailDTO(
-            hangout3, Collections.emptyList(), Collections.emptyList(), 
+            hangout3, Collections.emptyList(), Collections.emptyList(),
             Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
-            Collections.emptyList(), Collections.emptyList()
+            Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList()
         );
         
         HangoutDetailDTO hangoutDetail4 = new HangoutDetailDTO(
-            hangout4, Collections.emptyList(), Collections.emptyList(), 
+            hangout4, Collections.emptyList(), Collections.emptyList(),
             Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
-            Collections.emptyList(), Collections.emptyList()
+            Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList()
         );
         
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
@@ -1386,15 +1386,15 @@ class EventSeriesServiceImplTest {
         List<Hangout> hangouts = Arrays.asList(hangout1, hangout2, hangout3);
         
         HangoutDetailDTO hangoutDetail1 = new HangoutDetailDTO(
-            hangout1, Collections.emptyList(), Collections.emptyList(), 
+            hangout1, Collections.emptyList(), Collections.emptyList(),
             Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
-            Collections.emptyList(), Collections.emptyList()
+            Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList()
         );
         
         HangoutDetailDTO hangoutDetail3 = new HangoutDetailDTO(
-            hangout3, Collections.emptyList(), Collections.emptyList(), 
+            hangout3, Collections.emptyList(), Collections.emptyList(),
             Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
-            Collections.emptyList(), Collections.emptyList()
+            Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList()
         );
         
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
@@ -1447,9 +1447,9 @@ class EventSeriesServiceImplTest {
             .build();
         
         HangoutDetailDTO hangoutDetail = new HangoutDetailDTO(
-            hangout, Collections.emptyList(), Collections.emptyList(), 
-            Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
-            Collections.emptyList(), Collections.emptyList()
+            hangout, Collections.emptyList(), Collections.emptyList(),
+            Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
+            Collections.emptyList(), Collections.emptyList(), Collections.emptyList()
         );
         
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
@@ -1497,15 +1497,15 @@ class EventSeriesServiceImplTest {
         List<Hangout> hangouts = Arrays.asList(hangout1, hangout2);
         
         HangoutDetailDTO hangoutDetail1 = new HangoutDetailDTO(
-            hangout1, Collections.emptyList(), Collections.emptyList(), 
+            hangout1, Collections.emptyList(), Collections.emptyList(),
             Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
-            Collections.emptyList(), Collections.emptyList()
+            Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList()
         );
-        
+
         HangoutDetailDTO hangoutDetail2 = new HangoutDetailDTO(
-            hangout2, Collections.emptyList(), Collections.emptyList(), 
+            hangout2, Collections.emptyList(), Collections.emptyList(),
             Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
-            Collections.emptyList(), Collections.emptyList()
+            Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList()
         );
         
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));

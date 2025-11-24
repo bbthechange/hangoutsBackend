@@ -41,7 +41,7 @@ class HangoutServiceGroupAssociationTest extends HangoutServiceTestBase {
         // Set up hangout so user can edit it (they're admin in one of the groups they want to associate)
         hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111")));
 
-        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
 
         // Mock fuzzy time service conversion
@@ -85,7 +85,7 @@ class HangoutServiceGroupAssociationTest extends HangoutServiceTestBase {
         // Set up hangout so user can edit it (they're admin in a different group)
         hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("22222222-2222-2222-2222-222222222222")));
 
-        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
 
         // User is admin in existing associated group (so they can edit hangout)
@@ -115,7 +115,7 @@ class HangoutServiceGroupAssociationTest extends HangoutServiceTestBase {
         Hangout hangout = createTestHangout(eventId);
         hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")));
 
-        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
 
         // Mock authorization - user is admin in group-1
@@ -148,7 +148,7 @@ class HangoutServiceGroupAssociationTest extends HangoutServiceTestBase {
         hangout.setEndTimestamp(1754571600L);
         hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("22222222-2222-2222-2222-222222222222")));
 
-        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
 
         // Mock fuzzy time service conversion
@@ -196,7 +196,7 @@ class HangoutServiceGroupAssociationTest extends HangoutServiceTestBase {
         InterestLevel interest2 = new InterestLevel(hangoutId, userId2, "User Two", "INTERESTED");
 
         HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(interest1, interest2), List.of(), List.of()
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(interest1, interest2), List.of(), List.of(), List.of(), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 

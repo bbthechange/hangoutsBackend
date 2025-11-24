@@ -247,6 +247,33 @@ public class HangoutServiceImpl implements HangoutService {
             .map(NeedsRideDTO::new)
             .collect(Collectors.toList());
 
+        // Convert participations and offers to DTOs with denormalized user info
+        List<ParticipationDTO> participationDTOs = hangoutDetail.getParticipations().stream()
+            .map(p -> {
+                User user = userService.getUserById(UUID.fromString(p.getUserId()))
+                    .orElse(null);
+                if (user == null) {
+                    logger.warn("User not found for participation: {}", p.getUserId());
+                    return null;
+                }
+                return new ParticipationDTO(p, user.getDisplayName(), user.getMainImagePath());
+            })
+            .filter(Objects::nonNull)
+            .collect(Collectors.toList());
+
+        List<ReservationOfferDTO> offerDTOs = hangoutDetail.getReservationOffers().stream()
+            .map(o -> {
+                User user = userService.getUserById(UUID.fromString(o.getUserId()))
+                    .orElse(null);
+                if (user == null) {
+                    logger.warn("User not found for offer: {}", o.getUserId());
+                    return null;
+                }
+                return new ReservationOfferDTO(o, user.getDisplayName(), user.getMainImagePath());
+            })
+            .filter(Objects::nonNull)
+            .collect(Collectors.toList());
+
         return new HangoutDetailDTO(
                 hangout,
             attributeDTOs, // Now includes actual attributes from single query
@@ -255,7 +282,9 @@ public class HangoutServiceImpl implements HangoutService {
             hangoutDetail.getVotes(),
             hangoutDetail.getAttendance(),
             hangoutDetail.getCarRiders(),
-            needsRideDTOs
+            needsRideDTOs,
+            participationDTOs,
+            offerDTOs
         );
     }
     

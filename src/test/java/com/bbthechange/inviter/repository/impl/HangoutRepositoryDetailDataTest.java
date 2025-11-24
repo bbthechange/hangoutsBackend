@@ -136,6 +136,92 @@ class HangoutRepositoryDetailDataTest extends HangoutRepositoryTestBase {
         assertThat(result.getCars()).isEmpty();
     }
 
+    @Test
+    void getHangoutDetailData_ParsesParticipationItems() {
+        // Given
+        String eventId = UUID.randomUUID().toString();
+        String participationId1 = UUID.randomUUID().toString();
+        String participationId2 = UUID.randomUUID().toString();
+
+        List<Map<String, AttributeValue>> mockItems = Arrays.asList(
+            createMockHangoutMetadataItem(eventId),
+            createMockParticipationItem(eventId, participationId1, userId, "TICKET_NEEDED"),
+            createMockParticipationItem(eventId, participationId2, userId, "TICKET_PURCHASED")
+        );
+
+        QueryResponse mockResponse = QueryResponse.builder()
+            .items(mockItems)
+            .build();
+
+        when(dynamoDbClient.query(any(QueryRequest.class))).thenReturn(mockResponse);
+
+        // When
+        HangoutDetailData result = repository.getHangoutDetailData(eventId);
+
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result.getHangout()).isNotNull();
+        assertThat(result.getParticipations()).hasSize(2);
+        assertThat(result.getParticipations().get(0).getParticipationId()).isEqualTo(participationId1);
+        assertThat(result.getParticipations().get(1).getParticipationId()).isEqualTo(participationId2);
+    }
+
+    @Test
+    void getHangoutDetailData_ParsesReservationOfferItems() {
+        // Given
+        String eventId = UUID.randomUUID().toString();
+        String offerId1 = UUID.randomUUID().toString();
+        String offerId2 = UUID.randomUUID().toString();
+
+        List<Map<String, AttributeValue>> mockItems = Arrays.asList(
+            createMockHangoutMetadataItem(eventId),
+            createMockReservationOfferItem(eventId, offerId1, userId, "TICKET"),
+            createMockReservationOfferItem(eventId, offerId2, userId, "RESERVATION")
+        );
+
+        QueryResponse mockResponse = QueryResponse.builder()
+            .items(mockItems)
+            .build();
+
+        when(dynamoDbClient.query(any(QueryRequest.class))).thenReturn(mockResponse);
+
+        // When
+        HangoutDetailData result = repository.getHangoutDetailData(eventId);
+
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result.getHangout()).isNotNull();
+        assertThat(result.getReservationOffers()).hasSize(2);
+        assertThat(result.getReservationOffers().get(0).getOfferId()).isEqualTo(offerId1);
+        assertThat(result.getReservationOffers().get(1).getOfferId()).isEqualTo(offerId2);
+    }
+
+    @Test
+    void getHangoutDetailData_ReturnsEmptyListsWhenNoParticipationsOrOffers() {
+        // Given
+        String eventId = UUID.randomUUID().toString();
+
+        List<Map<String, AttributeValue>> mockItems = Arrays.asList(
+            createMockHangoutMetadataItem(eventId)
+            // No participation or offer items
+        );
+
+        QueryResponse mockResponse = QueryResponse.builder()
+            .items(mockItems)
+            .build();
+
+        when(dynamoDbClient.query(any(QueryRequest.class))).thenReturn(mockResponse);
+
+        // When
+        HangoutDetailData result = repository.getHangoutDetailData(eventId);
+
+        // Then - empty lists (not null)
+        assertThat(result).isNotNull();
+        assertThat(result.getHangout()).isNotNull();
+        assertThat(result.getParticipations()).isNotNull().isEmpty();
+        assertThat(result.getReservationOffers()).isNotNull().isEmpty();
+    }
+
     // ============================================================================
     // HELPER METHODS
     // ============================================================================
@@ -229,6 +315,32 @@ class HangoutRepositoryDetailDataTest extends HangoutRepositoryTestBase {
         item.put("sk", AttributeValue.builder().s("UNKNOWN#invalid").build());
         item.put("itemType", AttributeValue.builder().s("UNKNOWN_TYPE").build());
         item.put("someField", AttributeValue.builder().s("someValue").build());
+        return item;
+    }
+
+    private Map<String, AttributeValue> createMockParticipationItem(String eventId, String participationId, String userId, String type) {
+        Map<String, AttributeValue> item = new HashMap<>();
+        item.put("pk", AttributeValue.builder().s("EVENT#" + eventId).build());
+        item.put("sk", AttributeValue.builder().s("PARTICIPATION#" + participationId).build());
+        item.put("itemType", AttributeValue.builder().s("PARTICIPATION").build());
+        item.put("hangoutId", AttributeValue.builder().s(eventId).build());
+        item.put("participationId", AttributeValue.builder().s(participationId).build());
+        item.put("userId", AttributeValue.builder().s(userId).build());
+        item.put("type", AttributeValue.builder().s(type).build());
+        return item;
+    }
+
+    private Map<String, AttributeValue> createMockReservationOfferItem(String eventId, String offerId, String userId, String type) {
+        Map<String, AttributeValue> item = new HashMap<>();
+        item.put("pk", AttributeValue.builder().s("EVENT#" + eventId).build());
+        item.put("sk", AttributeValue.builder().s("RESERVEOFFER#" + offerId).build());
+        item.put("itemType", AttributeValue.builder().s("RESERVEOFFER").build());
+        item.put("hangoutId", AttributeValue.builder().s(eventId).build());
+        item.put("offerId", AttributeValue.builder().s(offerId).build());
+        item.put("userId", AttributeValue.builder().s(userId).build());
+        item.put("type", AttributeValue.builder().s(type).build());
+        item.put("status", AttributeValue.builder().s("COLLECTING").build());
+        item.put("claimedSpots", AttributeValue.builder().n("0").build());
         return item;
     }
 }

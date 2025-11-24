@@ -9,6 +9,7 @@ import com.bbthechange.inviter.dto.Address;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -139,7 +140,7 @@ class HangoutServiceRetrievalTest extends HangoutServiceTestBase {
         List<NeedsRide> needsRideList = List.of(needsRide1, needsRide2);
 
         HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), needsRideList
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), needsRideList, List.of(), List.of()
         );
 
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
@@ -173,7 +174,7 @@ class HangoutServiceRetrievalTest extends HangoutServiceTestBase {
         hangout.setVisibility(EventVisibility.PUBLIC);
 
         HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
         );
 
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
@@ -206,7 +207,7 @@ class HangoutServiceRetrievalTest extends HangoutServiceTestBase {
         List<NeedsRide> needsRideList = List.of(needsRideWithNull);
 
         HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), needsRideList
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), needsRideList, List.of(), List.of()
         );
 
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
@@ -244,7 +245,7 @@ class HangoutServiceRetrievalTest extends HangoutServiceTestBase {
         List<NeedsRide> needsRideList = List.of(needsRide1, needsRide2, needsRide3);
 
         HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), needsRideList
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), needsRideList, List.of(), List.of()
         );
 
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
@@ -278,7 +279,7 @@ class HangoutServiceRetrievalTest extends HangoutServiceTestBase {
 
         // Return data with null hangout (simulating not found)
         HangoutDetailData data = new HangoutDetailData(
-            null, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
+            null, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
         );
 
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
@@ -310,7 +311,7 @@ class HangoutServiceRetrievalTest extends HangoutServiceTestBase {
         List<Vote> votes = List.of();
 
         HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), cars, votes, attendance, carRiders, needsRideList
+            hangout, List.of(), List.of(), cars, votes, attendance, carRiders, needsRideList, List.of(), List.of()
         );
 
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
@@ -347,7 +348,7 @@ class HangoutServiceRetrievalTest extends HangoutServiceTestBase {
         timeInput.setPeriodStart("1754557200"); // Unix timestamp for 2025-08-05T19:00:00Z
         hangout.setTimeInput(timeInput);
 
-        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 
         // When
@@ -394,5 +395,179 @@ class HangoutServiceRetrievalTest extends HangoutServiceTestBase {
         assertThat(summary.getTimeInfo()).isNotNull();
         assertThat(summary.getTimeInfo().getPeriodGranularity()).isEqualTo("evening");
         assertThat(summary.getTimeInfo().getPeriodStart()).isEqualTo("2025-08-05T19:00:00Z");
+    }
+
+    // ============================================================================
+    // PARTICIPATION & RESERVATION OFFER DENORMALIZATION TESTS
+    // ============================================================================
+
+    @Test
+    void getHangoutDetail_WithParticipations_DenormalizesUserInfo() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+        String user1Id = UUID.randomUUID().toString();
+        String user2Id = UUID.randomUUID().toString();
+        String requesterUserId = UUID.randomUUID().toString();
+
+        Hangout hangout = new Hangout();
+        hangout.setHangoutId(hangoutId);
+        hangout.setTitle("Test Hangout");
+        hangout.setVisibility(EventVisibility.PUBLIC);
+
+        Participation p1 = new Participation(hangoutId, UUID.randomUUID().toString(), user1Id, ParticipationType.TICKET_NEEDED);
+        Participation p2 = new Participation(hangoutId, UUID.randomUUID().toString(), user2Id, ParticipationType.TICKET_PURCHASED);
+
+        User user1 = new User();
+        user1.setId(UUID.fromString(user1Id));
+        user1.setDisplayName("Alice");
+        user1.setMainImagePath("alice.jpg");
+
+        User user2 = new User();
+        user2.setId(UUID.fromString(user2Id));
+        user2.setDisplayName("Bob");
+        user2.setMainImagePath("bob.jpg");
+
+        HangoutDetailData data = new HangoutDetailData(
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+            List.of(p1, p2), List.of()
+        );
+
+        when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
+        when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
+        when(userService.getUserById(UUID.fromString(user1Id))).thenReturn(Optional.of(user1));
+        when(userService.getUserById(UUID.fromString(user2Id))).thenReturn(Optional.of(user2));
+
+        // When
+        HangoutDetailDTO result = hangoutService.getHangoutDetail(hangoutId, requesterUserId);
+
+        // Then
+        assertThat(result.getParticipations()).hasSize(2);
+        assertThat(result.getParticipations().get(0).getDisplayName()).isEqualTo("Alice");
+        assertThat(result.getParticipations().get(0).getMainImagePath()).isEqualTo("alice.jpg");
+        assertThat(result.getParticipations().get(1).getDisplayName()).isEqualTo("Bob");
+        assertThat(result.getParticipations().get(1).getMainImagePath()).isEqualTo("bob.jpg");
+
+        verify(userService).getUserById(UUID.fromString(user1Id));
+        verify(userService).getUserById(UUID.fromString(user2Id));
+    }
+
+    @Test
+    void getHangoutDetail_WithReservationOffers_DenormalizesUserInfo() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+        String user1Id = UUID.randomUUID().toString();
+        String user2Id = UUID.randomUUID().toString();
+        String requesterUserId = UUID.randomUUID().toString();
+
+        Hangout hangout = new Hangout();
+        hangout.setHangoutId(hangoutId);
+        hangout.setTitle("Test Hangout");
+        hangout.setVisibility(EventVisibility.PUBLIC);
+
+        ReservationOffer offer1 = new ReservationOffer(hangoutId, UUID.randomUUID().toString(), user1Id, OfferType.TICKET);
+        ReservationOffer offer2 = new ReservationOffer(hangoutId, UUID.randomUUID().toString(), user2Id, OfferType.RESERVATION);
+
+        User user1 = new User();
+        user1.setId(UUID.fromString(user1Id));
+        user1.setDisplayName("Charlie");
+        user1.setMainImagePath("charlie.jpg");
+
+        User user2 = new User();
+        user2.setId(UUID.fromString(user2Id));
+        user2.setDisplayName("Diana");
+        user2.setMainImagePath("diana.jpg");
+
+        HangoutDetailData data = new HangoutDetailData(
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+            List.of(), List.of(offer1, offer2)
+        );
+
+        when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
+        when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
+        when(userService.getUserById(UUID.fromString(user1Id))).thenReturn(Optional.of(user1));
+        when(userService.getUserById(UUID.fromString(user2Id))).thenReturn(Optional.of(user2));
+
+        // When
+        HangoutDetailDTO result = hangoutService.getHangoutDetail(hangoutId, requesterUserId);
+
+        // Then
+        assertThat(result.getReservationOffers()).hasSize(2);
+        assertThat(result.getReservationOffers().get(0).getDisplayName()).isEqualTo("Charlie");
+        assertThat(result.getReservationOffers().get(0).getMainImagePath()).isEqualTo("charlie.jpg");
+        assertThat(result.getReservationOffers().get(1).getDisplayName()).isEqualTo("Diana");
+        assertThat(result.getReservationOffers().get(1).getMainImagePath()).isEqualTo("diana.jpg");
+
+        verify(userService).getUserById(UUID.fromString(user1Id));
+        verify(userService).getUserById(UUID.fromString(user2Id));
+    }
+
+    @Test
+    void getHangoutDetail_WithMissingUser_FiltersOutParticipation() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+        String user1Id = UUID.randomUUID().toString();
+        String user2Id = UUID.randomUUID().toString();
+        String requesterUserId = UUID.randomUUID().toString();
+
+        Hangout hangout = new Hangout();
+        hangout.setHangoutId(hangoutId);
+        hangout.setTitle("Test Hangout");
+        hangout.setVisibility(EventVisibility.PUBLIC);
+
+        Participation p1 = new Participation(hangoutId, UUID.randomUUID().toString(), user1Id, ParticipationType.TICKET_NEEDED);
+        Participation p2 = new Participation(hangoutId, UUID.randomUUID().toString(), user2Id, ParticipationType.TICKET_PURCHASED);
+
+        User user1 = new User();
+        user1.setId(UUID.fromString(user1Id));
+        user1.setDisplayName("Alice");
+        user1.setMainImagePath("alice.jpg");
+
+        HangoutDetailData data = new HangoutDetailData(
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+            List.of(p1, p2), List.of()
+        );
+
+        when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
+        when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
+        when(userService.getUserById(UUID.fromString(user1Id))).thenReturn(Optional.of(user1));
+        when(userService.getUserById(UUID.fromString(user2Id))).thenReturn(Optional.empty()); // User not found
+
+        // When
+        HangoutDetailDTO result = hangoutService.getHangoutDetail(hangoutId, requesterUserId);
+
+        // Then - only 1 participation (user2's was filtered out)
+        assertThat(result.getParticipations()).hasSize(1);
+        assertThat(result.getParticipations().get(0).getDisplayName()).isEqualTo("Alice");
+        assertThat(result.getParticipations().get(0).getUserId()).isEqualTo(user1Id);
+    }
+
+    @Test
+    void getHangoutDetail_WithEmptyParticipationsAndOffers_ReturnsEmptyLists() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+        String requesterUserId = UUID.randomUUID().toString();
+
+        Hangout hangout = new Hangout();
+        hangout.setHangoutId(hangoutId);
+        hangout.setTitle("Test Hangout");
+        hangout.setVisibility(EventVisibility.PUBLIC);
+
+        HangoutDetailData data = new HangoutDetailData(
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+            List.of(), List.of()  // Empty participations and offers
+        );
+
+        when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
+        when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
+
+        // When
+        HangoutDetailDTO result = hangoutService.getHangoutDetail(hangoutId, requesterUserId);
+
+        // Then - empty lists (not null)
+        assertThat(result.getParticipations()).isNotNull().isEmpty();
+        assertThat(result.getReservationOffers()).isNotNull().isEmpty();
+
+        // Verify user service was never called (no users to fetch)
+        verify(userService, never()).getUserById(any(UUID.class));
     }
 }

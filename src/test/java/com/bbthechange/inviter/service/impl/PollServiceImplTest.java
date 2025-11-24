@@ -71,7 +71,7 @@ class PollServiceImplTest {
 
         Hangout hangout = new Hangout();
         hangout.setHangoutId(eventId);
-        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null, null, null);
 
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
         when(authorizationService.canUserEditHangout(userId, hangout)).thenReturn(true);
@@ -93,7 +93,7 @@ class PollServiceImplTest {
         // Given
         CreatePollRequest request = new CreatePollRequest();
         Hangout hangout = new Hangout();
-        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null, null, null);
 
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
         when(authorizationService.canUserEditHangout(userId, hangout)).thenReturn(false);
@@ -112,7 +112,7 @@ class PollServiceImplTest {
 
         Hangout hangout = new Hangout();
         // Hangout ID is handled differently - using eventId as string in tests
-        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null, null, null);
 
         Poll poll = new Poll(eventId, "Test Poll", "Description", false);
         PollOption option = new PollOption(eventId, pollId, "Option Text");
@@ -143,7 +143,7 @@ class PollServiceImplTest {
 
         Hangout hangout = new Hangout();
         // Hangout ID is handled differently - using eventId as string in tests
-        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null, null, null);
 
         Poll poll = new Poll(eventId, "Test Poll", "Description", false);
         Vote existingVote = new Vote(eventId, pollId, oldOptionId, userId, "YES");
@@ -172,7 +172,7 @@ class PollServiceImplTest {
 
         Hangout hangout = new Hangout();
         // Hangout ID is handled differently - using eventId as string in tests
-        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null, null, null);
 
         Poll poll = new Poll(eventId, "Test Poll", "Description", true);
         String otherOptionId = UUID.randomUUID().toString();
@@ -198,7 +198,7 @@ class PollServiceImplTest {
         // Given
         Hangout hangout = new Hangout();
         // Hangout ID is handled differently - using eventId as string in tests
-        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null, null, null);
 
         Poll poll = new Poll(eventId, "Test Poll", "Description", false);
         PollOption option1 = new PollOption(eventId, poll.getPollId(), "Option 1");
@@ -228,7 +228,7 @@ class PollServiceImplTest {
 
         Hangout hangout = new Hangout();
         hangout.setHangoutId(eventId);
-        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null, null, null);
 
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
         when(authorizationService.canUserEditHangout(userId, hangout)).thenReturn(true);
@@ -248,7 +248,7 @@ class PollServiceImplTest {
         // Given
         Hangout hangout = new Hangout();
         // Hangout ID is handled differently - using eventId as string in tests
-        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null, null, null);
 
         Poll poll = new Poll(eventId, "Test Poll", "Description", false);
         PollOption option = new PollOption(eventId, pollId, "Option to delete");
@@ -271,7 +271,7 @@ class PollServiceImplTest {
         // Given
         Hangout hangout = new Hangout();
         // Hangout ID is handled differently - using eventId as string in tests
-        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null, null, null);
 
         Poll poll = new Poll(eventId, "Test Poll", "Description", false);
         List<BaseItem> pollData = Arrays.asList(poll);
@@ -291,7 +291,7 @@ class PollServiceImplTest {
         // Given
         Hangout hangout = new Hangout();
         // Hangout ID is handled differently - using eventId as string in tests
-        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null, null, null);
 
         Poll poll = new Poll(eventId, "Test Poll", "Description", false);
         Vote existingVote = new Vote(eventId, pollId, optionId, userId, "YES");
@@ -325,7 +325,7 @@ class PollServiceImplTest {
         Hangout hangout = new Hangout();
         hangout.setHangoutId(eventId);
         hangout.setAssociatedGroups(Arrays.asList(groupId1, groupId2));
-        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null, null, null);
 
         Poll newPoll = new Poll(eventId, "Test Poll", "Description", false);
         PollOption option1 = new PollOption(eventId, newPoll.getPollId(), "Option A");
@@ -372,7 +372,7 @@ class PollServiceImplTest {
         Hangout hangout = new Hangout();
         hangout.setHangoutId(eventId);
         hangout.setAssociatedGroups(Collections.emptyList());
-        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null, null, null);
 
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
         when(authorizationService.canUserEditHangout(userId, hangout)).thenReturn(true);
@@ -401,7 +401,7 @@ class PollServiceImplTest {
 
         Hangout hangout = new Hangout();
         hangout.setAssociatedGroups(Arrays.asList(groupId));
-        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null, null, null);
 
         Poll poll = new Poll(eventId, "Test Poll", "Description", true);
         PollOption option = new PollOption(eventId, pollId, "Option Text");
@@ -443,7 +443,7 @@ class PollServiceImplTest {
 
         Hangout hangout = new Hangout();
         hangout.setAssociatedGroups(Arrays.asList(groupId));
-        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null, null, null);
 
         Poll poll = new Poll(eventId, "Test Poll", "Description", true);
         PollOption option = new PollOption(eventId, pollId, "Option Text");
@@ -473,7 +473,7 @@ class PollServiceImplTest {
 
         Hangout hangout = new Hangout();
         hangout.setAssociatedGroups(Arrays.asList(groupId1, groupId2));
-        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null, null, null);
 
         Poll poll = new Poll(eventId, "Test Poll", "Description", false);
         Vote existingVote = new Vote(eventId, pollId, optionId, userId, "YES");
@@ -513,7 +513,7 @@ class PollServiceImplTest {
 
         Hangout hangout = new Hangout();
         hangout.setAssociatedGroups(Arrays.asList(groupId));
-        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null, null, null);
 
         Poll poll = new Poll(eventId, "Test Poll", "Description", false);
         List<BaseItem> pollData = Arrays.asList(poll);
@@ -539,7 +539,7 @@ class PollServiceImplTest {
 
         Hangout hangout = new Hangout();
         hangout.setAssociatedGroups(Arrays.asList(groupId1, groupId2, groupId3));
-        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null, null, null);
 
         // After deletion, only 1 poll remains
         Poll remainingPoll = new Poll(eventId, "Other Poll", "Description", false);
@@ -583,7 +583,7 @@ class PollServiceImplTest {
         Hangout hangout = new Hangout();
         hangout.setHangoutId(eventId);
         hangout.setAssociatedGroups(Arrays.asList(groupId));
-        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null, null, null);
 
         Poll poll = new Poll(eventId, "Test Poll", "Description", false);
         PollOption option1 = new PollOption(eventId, pollId, "Option 1");
@@ -619,7 +619,7 @@ class PollServiceImplTest {
 
         Hangout hangout = new Hangout();
         hangout.setAssociatedGroups(Arrays.asList(groupId1, groupId2));
-        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+        HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null, null, null);
 
         Poll poll = new Poll(eventId, "Test Poll", "Description", false);
         PollOption optionToDelete = new PollOption(eventId, pollId, "Option to delete");
@@ -677,7 +677,7 @@ class PollServiceImplTest {
             Hangout hangout = new Hangout();
             hangout.setHangoutId(eventId);
             hangout.setAssociatedGroups(Arrays.asList(groupId1, groupId2));
-            HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+            HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null, null, null);
 
             Poll newPoll = new Poll(eventId, "Test Poll", "Description", false);
             PollOption option1 = new PollOption(eventId, newPoll.getPollId(), "Option A");
@@ -725,7 +725,7 @@ class PollServiceImplTest {
             Hangout hangout = new Hangout();
             hangout.setHangoutId(eventId);
             hangout.setAssociatedGroups(Arrays.asList(groupId1, groupId2));
-            HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+            HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null, null, null);
 
             Poll newPoll = new Poll(eventId, "Test Poll", "Description", false);
             PollOption option1 = new PollOption(eventId, newPoll.getPollId(), "Option A");
@@ -772,7 +772,7 @@ class PollServiceImplTest {
             Hangout hangout = new Hangout();
             hangout.setHangoutId(eventId);
             hangout.setAssociatedGroups(Arrays.asList(groupId));
-            HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null);
+            HangoutDetailData hangoutData = new HangoutDetailData(hangout, null, null, null, null, null, null, null, null, null);
 
             Poll newPoll = new Poll(eventId, "Test Poll", "Description", false);
             PollOption option1 = new PollOption(eventId, newPoll.getPollId(), "Option A");

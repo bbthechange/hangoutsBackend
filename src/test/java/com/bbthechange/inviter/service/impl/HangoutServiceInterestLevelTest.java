@@ -39,7 +39,7 @@ class HangoutServiceInterestLevelTest extends HangoutServiceTestBase {
         hangout.setAssociatedGroups(List.of("11111111-1111-1111-1111-111111111111"));
 
         HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 
@@ -81,7 +81,7 @@ class HangoutServiceInterestLevelTest extends HangoutServiceTestBase {
         existingInterest.setStatus("GOING");
 
         HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(existingInterest), List.of(), List.of()
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(existingInterest), List.of(), List.of(), List.of(), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 
@@ -115,7 +115,7 @@ class HangoutServiceInterestLevelTest extends HangoutServiceTestBase {
         hangout.setVisibility(EventVisibility.PUBLIC);
 
         HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
         when(userService.getUserById(UUID.fromString(userId))).thenReturn(Optional.empty());
@@ -137,7 +137,7 @@ class HangoutServiceInterestLevelTest extends HangoutServiceTestBase {
         SetInterestRequest request = new SetInterestRequest("GOING", null);
 
         HangoutDetailData data = new HangoutDetailData(
-            null, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
+            null, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 
@@ -163,7 +163,7 @@ class HangoutServiceInterestLevelTest extends HangoutServiceTestBase {
         hangout.setAssociatedGroups(List.of("11111111-1111-1111-1111-111111111111"));
 
         HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
         when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.empty());
@@ -191,7 +191,7 @@ class HangoutServiceInterestLevelTest extends HangoutServiceTestBase {
         hangout.setAssociatedGroups(List.of("11111111-1111-1111-1111-111111111111"));
 
         HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 
@@ -236,10 +236,10 @@ class HangoutServiceInterestLevelTest extends HangoutServiceTestBase {
 
         // Mock getHangoutDetailData to return updated attendance after save
         HangoutDetailData initialData = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
         );
         HangoutDetailData updatedData = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(newInterest), List.of(), List.of()
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(newInterest), List.of(), List.of(), List.of(), List.of()
         );
 
         when(hangoutRepository.getHangoutDetailData(hangoutId))
@@ -272,7 +272,7 @@ class HangoutServiceInterestLevelTest extends HangoutServiceTestBase {
         hangout.setAssociatedGroups(null); // No associated groups
 
         HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 
@@ -305,7 +305,7 @@ class HangoutServiceInterestLevelTest extends HangoutServiceTestBase {
         existingInterest.setStatus("GOING");
 
         HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(existingInterest), List.of(), List.of()
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(existingInterest), List.of(), List.of(), List.of(), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 
@@ -333,7 +333,7 @@ class HangoutServiceInterestLevelTest extends HangoutServiceTestBase {
 
         // No existing interest level for this user
         HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 
@@ -355,7 +355,7 @@ class HangoutServiceInterestLevelTest extends HangoutServiceTestBase {
         String userId = "87654321-4321-4321-4321-210987654321";
 
         HangoutDetailData data = new HangoutDetailData(
-            null, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
+            null, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 
@@ -379,7 +379,7 @@ class HangoutServiceInterestLevelTest extends HangoutServiceTestBase {
         hangout.setAssociatedGroups(List.of("11111111-1111-1111-1111-111111111111"));
 
         HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
         when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.empty());
@@ -414,10 +414,10 @@ class HangoutServiceInterestLevelTest extends HangoutServiceTestBase {
 
         // Mock getHangoutDetailData to return attendance before and after deletion
         HangoutDetailData initialData = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(existingInterest, otherInterest), List.of(), List.of()
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(existingInterest, otherInterest), List.of(), List.of(), List.of(), List.of()
         );
         HangoutDetailData updatedData = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(otherInterest), List.of(), List.of()
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(otherInterest), List.of(), List.of(), List.of(), List.of()
         );
 
         when(hangoutRepository.getHangoutDetailData(hangoutId))
@@ -450,7 +450,7 @@ class HangoutServiceInterestLevelTest extends HangoutServiceTestBase {
         existingInterest.setStatus("GOING");
 
         HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(existingInterest), List.of(), List.of()
+            hangout, List.of(), List.of(), List.of(), List.of(), List.of(existingInterest), List.of(), List.of(), List.of(), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 

@@ -3,6 +3,7 @@ package com.bbthechange.inviter.dto;
 import com.bbthechange.inviter.model.OfferStatus;
 import com.bbthechange.inviter.model.OfferType;
 import com.bbthechange.inviter.model.ReservationOffer;
+import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -11,6 +12,7 @@ import java.time.Instant;
  * DTO for reservation offer responses with denormalized user information.
  * Used in API responses and HangoutPointer denormalization.
  */
+@DynamoDbBean
 public class ReservationOfferDTO {
 
     private String offerId;
