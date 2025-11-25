@@ -2,6 +2,7 @@ package com.bbthechange.inviter.service.impl;
 
 import com.bbthechange.inviter.dto.CreateHangoutRequest;
 import com.bbthechange.inviter.dto.HangoutDetailData;
+import com.bbthechange.inviter.dto.UserSummaryDTO;
 import com.bbthechange.inviter.exception.UnauthorizedException;
 import com.bbthechange.inviter.exception.ValidationException;
 import com.bbthechange.inviter.model.*;
@@ -319,9 +320,9 @@ class HangoutServiceEdgeCasesTest extends HangoutServiceTestBase {
             GroupMembership membership = createTestMembership(groupId, userId, "Test Group");
             when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.of(membership));
 
-            User user = createTestUser(userId);
+            UserSummaryDTO user = createTestUser(userId);
             user.setDisplayName("John Doe");
-            when(userService.getUserById(UUID.fromString(userId))).thenReturn(Optional.of(user));
+            when(userService.getUserSummary(UUID.fromString(userId))).thenReturn(Optional.of(user));
 
             Hangout savedHangout = createTestHangout("hangout-1");
             when(hangoutRepository.createHangoutWithAttributes(any(), any(), any(), any(), any())).thenReturn(savedHangout);
@@ -331,35 +332,6 @@ class HangoutServiceEdgeCasesTest extends HangoutServiceTestBase {
 
             // Then - Notification service should be called with display name
             verify(notificationService).notifyNewHangout(any(Hangout.class), eq(userId), eq("John Doe"));
-        }
-
-        @Test
-        void createHangout_WithUserWithoutDisplayName_UsesUsername() {
-            // Given
-            String userId = "87654321-4321-4321-4321-210987654321";
-            String groupId = "11111111-1111-1111-1111-111111111111";
-
-            CreateHangoutRequest request = new CreateHangoutRequest();
-            request.setTitle("Test Hangout");
-            request.setVisibility(EventVisibility.INVITE_ONLY);
-            request.setAssociatedGroups(List.of(groupId));
-
-            GroupMembership membership = createTestMembership(groupId, userId, "Test Group");
-            when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.of(membership));
-
-            User user = createTestUser(userId);
-            user.setDisplayName(null); // No display name
-            user.setUsername("johndoe");
-            when(userService.getUserById(UUID.fromString(userId))).thenReturn(Optional.of(user));
-
-            Hangout savedHangout = createTestHangout("hangout-1");
-            when(hangoutRepository.createHangoutWithAttributes(any(), any(), any(), any(), any())).thenReturn(savedHangout);
-
-            // When
-            hangoutService.createHangout(request, userId);
-
-            // Then - Should fall back to username
-            verify(notificationService).notifyNewHangout(any(Hangout.class), eq(userId), eq("johndoe"));
         }
 
         @Test
@@ -377,7 +349,7 @@ class HangoutServiceEdgeCasesTest extends HangoutServiceTestBase {
             when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.of(membership));
 
             // User not found
-            when(userService.getUserById(UUID.fromString(userId))).thenReturn(Optional.empty());
+            when(userService.getUserSummary(UUID.fromString(userId))).thenReturn(Optional.empty());
 
             Hangout savedHangout = createTestHangout("hangout-1");
             when(hangoutRepository.createHangoutWithAttributes(any(), any(), any(), any(), any())).thenReturn(savedHangout);
@@ -404,7 +376,7 @@ class HangoutServiceEdgeCasesTest extends HangoutServiceTestBase {
             when(groupRepository.findMembership(groupId, userId)).thenReturn(Optional.of(membership));
 
             // UserService throws exception
-            when(userService.getUserById(UUID.fromString(userId))).thenThrow(new RuntimeException("Service unavailable"));
+            when(userService.getUserSummary(UUID.fromString(userId))).thenThrow(new RuntimeException("Service unavailable"));
 
             Hangout savedHangout = createTestHangout("hangout-1");
             when(hangoutRepository.createHangoutWithAttributes(any(), any(), any(), any(), any())).thenReturn(savedHangout);

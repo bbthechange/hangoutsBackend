@@ -2,6 +2,7 @@ package com.bbthechange.inviter.service.impl;
 
 import com.bbthechange.inviter.dto.HangoutDetailData;
 import com.bbthechange.inviter.dto.SetInterestRequest;
+import com.bbthechange.inviter.dto.UserSummaryDTO;
 import com.bbthechange.inviter.exception.ResourceNotFoundException;
 import com.bbthechange.inviter.exception.UnauthorizedException;
 import com.bbthechange.inviter.model.*;
@@ -43,8 +44,8 @@ class HangoutServiceInterestLevelTest extends HangoutServiceTestBase {
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 
-        User user = createTestUser(userId);
-        when(userService.getUserById(UUID.fromString(userId))).thenReturn(Optional.of(user));
+        UserSummaryDTO user = createTestUser(userId);
+        when(userService.getUserSummary(UUID.fromString(userId))).thenReturn(Optional.of(user));
 
         InterestLevel mockInterest = createTestInterestLevel();
         when(hangoutRepository.saveInterestLevel(any(InterestLevel.class))).thenReturn(mockInterest);
@@ -85,8 +86,8 @@ class HangoutServiceInterestLevelTest extends HangoutServiceTestBase {
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 
-        User user = createTestUser(userId);
-        when(userService.getUserById(UUID.fromString(userId))).thenReturn(Optional.of(user));
+        UserSummaryDTO user = createTestUser(userId);
+        when(userService.getUserSummary(UUID.fromString(userId))).thenReturn(Optional.of(user));
 
         InterestLevel mockInterest2 = createTestInterestLevel();
         when(hangoutRepository.saveInterestLevel(any(InterestLevel.class))).thenReturn(mockInterest2);
@@ -118,7 +119,7 @@ class HangoutServiceInterestLevelTest extends HangoutServiceTestBase {
             hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
-        when(userService.getUserById(UUID.fromString(userId))).thenReturn(Optional.empty());
+        when(userService.getUserSummary(UUID.fromString(userId))).thenReturn(Optional.empty());
 
         // When/Then
         assertThatThrownBy(() -> hangoutService.setUserInterest(hangoutId, request, userId))
@@ -195,9 +196,9 @@ class HangoutServiceInterestLevelTest extends HangoutServiceTestBase {
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 
-        User user = createTestUser(userId);
+        UserSummaryDTO user = createTestUser(userId);
         user.setMainImagePath(userImagePath); // User has a profile image
-        when(userService.getUserById(UUID.fromString(userId))).thenReturn(Optional.of(user));
+        when(userService.getUserSummary(UUID.fromString(userId))).thenReturn(Optional.of(user));
 
         InterestLevel mockInterest = createTestInterestLevel();
         when(hangoutRepository.saveInterestLevel(any(InterestLevel.class))).thenReturn(mockInterest);
@@ -246,8 +247,8 @@ class HangoutServiceInterestLevelTest extends HangoutServiceTestBase {
             .thenReturn(initialData)  // First call for authorization/initial check
             .thenReturn(updatedData); // Second call after save to get updated interest levels
 
-        User user = createTestUser(userId);
-        when(userService.getUserById(UUID.fromString(userId))).thenReturn(Optional.of(user));
+        UserSummaryDTO user = createTestUser(userId);
+        when(userService.getUserSummary(UUID.fromString(userId))).thenReturn(Optional.of(user));
 
         when(hangoutRepository.saveInterestLevel(any(InterestLevel.class))).thenReturn(newInterest);
         doNothing().when(groupRepository).atomicallyUpdateParticipantCount(anyString(), anyString(), anyInt());
@@ -276,8 +277,8 @@ class HangoutServiceInterestLevelTest extends HangoutServiceTestBase {
         );
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 
-        User user = createTestUser(userId);
-        when(userService.getUserById(UUID.fromString(userId))).thenReturn(Optional.of(user));
+        UserSummaryDTO user = createTestUser(userId);
+        when(userService.getUserSummary(UUID.fromString(userId))).thenReturn(Optional.of(user));
 
         InterestLevel mockInterest = createTestInterestLevel();
         when(hangoutRepository.saveInterestLevel(any(InterestLevel.class))).thenReturn(mockInterest);

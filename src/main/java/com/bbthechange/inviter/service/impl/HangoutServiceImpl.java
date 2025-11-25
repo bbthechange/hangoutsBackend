@@ -828,12 +828,12 @@ public class HangoutServiceImpl implements HangoutService {
         }
 
         // Get user for denormalization
-        Optional<User> userOpt = userService.getUserById(UUID.fromString(requestingUserId));
+        Optional<UserSummaryDTO> userOpt = userService.getUserSummary(UUID.fromString(requestingUserId));
         if (userOpt.isEmpty()) {
             throw new ResourceNotFoundException("User not found");
         }
-        User user = userOpt.get();
-        String displayName = user.getDisplayName() != null ? user.getDisplayName() : user.getUsername();
+        UserSummaryDTO user = userOpt.get();
+        String displayName = user.getDisplayName();
 
         // Create/update InterestLevel
         InterestLevel interestLevel = new InterestLevel(hangoutId, requestingUserId, displayName, request.getStatus());
@@ -1061,10 +1061,10 @@ public class HangoutServiceImpl implements HangoutService {
      */
     private String getCreatorDisplayName(String userId) {
         try {
-            Optional<User> userOpt = userService.getUserById(UUID.fromString(userId));
+            Optional<UserSummaryDTO> userOpt = userService.getUserSummary(UUID.fromString(userId));
             if (userOpt.isPresent()) {
-                User user = userOpt.get();
-                return user.getDisplayName() != null ? user.getDisplayName() : user.getUsername();
+                UserSummaryDTO user = userOpt.get();
+                return user.getDisplayName();
             }
         } catch (Exception e) {
             logger.warn("Failed to get display name for user {}: {}", userId, e.getMessage());

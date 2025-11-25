@@ -10,6 +10,7 @@ import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.exception.*;
 import com.bbthechange.inviter.service.InviteService;
+import com.bbthechange.inviter.service.UserService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,6 +48,7 @@ public class GroupServiceImpl implements GroupService {
     private final GroupRepository groupRepository;
     private final HangoutRepository hangoutRepository;
     private final UserRepository userRepository;
+    private final UserService userService;
     private final InviteService inviteService;
     private final S3Service s3Service;
     private final InviteCodeRepository inviteCodeRepository;
@@ -54,12 +56,13 @@ public class GroupServiceImpl implements GroupService {
 
     @Autowired
     public GroupServiceImpl(GroupRepository groupRepository, HangoutRepository hangoutRepository,
-                           UserRepository userRepository, InviteService inviteService, S3Service s3Service,
+                           UserRepository userRepository, UserService userService, InviteService inviteService, S3Service s3Service,
                            InviteCodeRepository inviteCodeRepository,
                            @Value("${app.base-url}") String appBaseUrl) {
         this.groupRepository = groupRepository;
         this.hangoutRepository = hangoutRepository;
         this.userRepository = userRepository;
+        this.userService = userService;
         this.inviteService = inviteService;
         this.s3Service = s3Service;
         this.inviteCodeRepository = inviteCodeRepository;
@@ -316,7 +319,7 @@ public class GroupServiceImpl implements GroupService {
         return memberships.stream()
             .map(membership -> {
                 // Get user details for current display name and profile image
-                User user = userRepository.findById(UUID.fromString(membership.getUserId()))
+                UserSummaryDTO user = userService.getUserSummary(UUID.fromString(membership.getUserId()))
                     .orElse(null);
                 String userName = user != null ? user.getDisplayName() : "Unknown User";
                 String mainImagePath = user != null ? user.getMainImagePath() : null;

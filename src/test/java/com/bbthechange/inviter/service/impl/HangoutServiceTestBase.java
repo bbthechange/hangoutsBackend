@@ -150,10 +150,10 @@ abstract class HangoutServiceTestBase {
         return interest;
     }
 
-    protected User createTestUser(String userId) {
-        User user = new User();
+    protected UserSummaryDTO createTestUser(String userId) {
+        UserSummaryDTO user = new UserSummaryDTO();
         user.setDisplayName("John Doe");
-        user.setUsername("johndoe");
+//        user.setUsername("johndoe");
         return user;
     }
 
