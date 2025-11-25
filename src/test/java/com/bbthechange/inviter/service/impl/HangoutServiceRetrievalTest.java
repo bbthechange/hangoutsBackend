@@ -1,11 +1,7 @@
 package com.bbthechange.inviter.service.impl;
 
-import com.bbthechange.inviter.dto.HangoutDetailDTO;
-import com.bbthechange.inviter.dto.HangoutDetailData;
-import com.bbthechange.inviter.dto.HangoutSummaryDTO;
-import com.bbthechange.inviter.dto.TimeInfo;
+import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.model.*;
-import com.bbthechange.inviter.dto.Address;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -417,12 +413,13 @@ class HangoutServiceRetrievalTest extends HangoutServiceTestBase {
         Participation p1 = new Participation(hangoutId, UUID.randomUUID().toString(), user1Id, ParticipationType.TICKET_NEEDED);
         Participation p2 = new Participation(hangoutId, UUID.randomUUID().toString(), user2Id, ParticipationType.TICKET_PURCHASED);
 
-        User user1 = new User();
+        UserSummaryDTO user1 = new UserSummaryDTO();
         user1.setId(UUID.fromString(user1Id));
         user1.setDisplayName("Alice");
         user1.setMainImagePath("alice.jpg");
+        when(userService.getUserSummary(UUID.fromString(user1Id))).thenReturn(Optional.of(user1));
 
-        User user2 = new User();
+        UserSummaryDTO user2 = new UserSummaryDTO();
         user2.setId(UUID.fromString(user2Id));
         user2.setDisplayName("Bob");
         user2.setMainImagePath("bob.jpg");
@@ -434,8 +431,8 @@ class HangoutServiceRetrievalTest extends HangoutServiceTestBase {
 
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
         when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
-        when(userService.getUserById(UUID.fromString(user1Id))).thenReturn(Optional.of(user1));
-        when(userService.getUserById(UUID.fromString(user2Id))).thenReturn(Optional.of(user2));
+        when(userService.getUserSummary(UUID.fromString(user1Id))).thenReturn(Optional.of(user1));
+        when(userService.getUserSummary(UUID.fromString(user2Id))).thenReturn(Optional.of(user2));
 
         // When
         HangoutDetailDTO result = hangoutService.getHangoutDetail(hangoutId, requesterUserId);
@@ -447,8 +444,8 @@ class HangoutServiceRetrievalTest extends HangoutServiceTestBase {
         assertThat(result.getParticipations().get(1).getDisplayName()).isEqualTo("Bob");
         assertThat(result.getParticipations().get(1).getMainImagePath()).isEqualTo("bob.jpg");
 
-        verify(userService).getUserById(UUID.fromString(user1Id));
-        verify(userService).getUserById(UUID.fromString(user2Id));
+        verify(userService).getUserSummary(UUID.fromString(user1Id));
+        verify(userService).getUserSummary(UUID.fromString(user2Id));
     }
 
     @Test
@@ -467,12 +464,12 @@ class HangoutServiceRetrievalTest extends HangoutServiceTestBase {
         ReservationOffer offer1 = new ReservationOffer(hangoutId, UUID.randomUUID().toString(), user1Id, OfferType.TICKET);
         ReservationOffer offer2 = new ReservationOffer(hangoutId, UUID.randomUUID().toString(), user2Id, OfferType.RESERVATION);
 
-        User user1 = new User();
+        UserSummaryDTO user1 = new UserSummaryDTO();
         user1.setId(UUID.fromString(user1Id));
         user1.setDisplayName("Charlie");
         user1.setMainImagePath("charlie.jpg");
 
-        User user2 = new User();
+        UserSummaryDTO user2 = new UserSummaryDTO();
         user2.setId(UUID.fromString(user2Id));
         user2.setDisplayName("Diana");
         user2.setMainImagePath("diana.jpg");
@@ -484,8 +481,8 @@ class HangoutServiceRetrievalTest extends HangoutServiceTestBase {
 
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
         when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
-        when(userService.getUserById(UUID.fromString(user1Id))).thenReturn(Optional.of(user1));
-        when(userService.getUserById(UUID.fromString(user2Id))).thenReturn(Optional.of(user2));
+        when(userService.getUserSummary(UUID.fromString(user1Id))).thenReturn(Optional.of(user1));
+        when(userService.getUserSummary(UUID.fromString(user2Id))).thenReturn(Optional.of(user2));
 
         // When
         HangoutDetailDTO result = hangoutService.getHangoutDetail(hangoutId, requesterUserId);
@@ -497,8 +494,8 @@ class HangoutServiceRetrievalTest extends HangoutServiceTestBase {
         assertThat(result.getReservationOffers().get(1).getDisplayName()).isEqualTo("Diana");
         assertThat(result.getReservationOffers().get(1).getMainImagePath()).isEqualTo("diana.jpg");
 
-        verify(userService).getUserById(UUID.fromString(user1Id));
-        verify(userService).getUserById(UUID.fromString(user2Id));
+        verify(userService).getUserSummary(UUID.fromString(user1Id));
+        verify(userService).getUserSummary(UUID.fromString(user2Id));
     }
 
     @Test
@@ -517,7 +514,7 @@ class HangoutServiceRetrievalTest extends HangoutServiceTestBase {
         Participation p1 = new Participation(hangoutId, UUID.randomUUID().toString(), user1Id, ParticipationType.TICKET_NEEDED);
         Participation p2 = new Participation(hangoutId, UUID.randomUUID().toString(), user2Id, ParticipationType.TICKET_PURCHASED);
 
-        User user1 = new User();
+        UserSummaryDTO user1 = new UserSummaryDTO();
         user1.setId(UUID.fromString(user1Id));
         user1.setDisplayName("Alice");
         user1.setMainImagePath("alice.jpg");
@@ -529,8 +526,8 @@ class HangoutServiceRetrievalTest extends HangoutServiceTestBase {
 
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
         when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
-        when(userService.getUserById(UUID.fromString(user1Id))).thenReturn(Optional.of(user1));
-        when(userService.getUserById(UUID.fromString(user2Id))).thenReturn(Optional.empty()); // User not found
+        when(userService.getUserSummary(UUID.fromString(user1Id))).thenReturn(Optional.of(user1));
+        when(userService.getUserSummary(UUID.fromString(user2Id))).thenReturn(Optional.empty()); // User not found
 
         // When
         HangoutDetailDTO result = hangoutService.getHangoutDetail(hangoutId, requesterUserId);

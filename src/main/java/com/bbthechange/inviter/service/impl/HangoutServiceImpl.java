@@ -250,7 +250,7 @@ public class HangoutServiceImpl implements HangoutService {
         // Convert participations and offers to DTOs with denormalized user info
         List<ParticipationDTO> participationDTOs = hangoutDetail.getParticipations().stream()
             .map(p -> {
-                User user = userService.getUserById(UUID.fromString(p.getUserId()))
+                UserSummaryDTO user = userService.getUserSummary(UUID.fromString(p.getUserId()))
                     .orElse(null);
                 if (user == null) {
                     logger.warn("User not found for participation: {}", p.getUserId());
@@ -263,7 +263,7 @@ public class HangoutServiceImpl implements HangoutService {
 
         List<ReservationOfferDTO> offerDTOs = hangoutDetail.getReservationOffers().stream()
             .map(o -> {
-                User user = userService.getUserById(UUID.fromString(o.getUserId()))
+                UserSummaryDTO user = userService.getUserSummary(UUID.fromString(o.getUserId()))
                     .orElse(null);
                 if (user == null) {
                     logger.warn("User not found for offer: {}", o.getUserId());

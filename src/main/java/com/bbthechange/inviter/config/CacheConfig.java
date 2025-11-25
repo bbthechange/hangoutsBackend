@@ -23,19 +23,14 @@ public class CacheConfig {
     /**
      * Configures the Caffeine-based cache manager with the "friendlyNames" cache.
      *
-     * Cache Settings:
-     * - TTL: 15 minutes (expireAfterWrite)
-     * - Max Size: 10,000 entries (~5MB memory footprint)
-     * - Metrics: Enabled for monitoring via Spring Boot Actuator
-     *
      * @return CacheManager configured with Caffeine cache specifications
      */
     @Bean
     public CacheManager cacheManager() {
         CaffeineCacheManager cacheManager = new CaffeineCacheManager("friendlyNames");
         cacheManager.setCaffeine(Caffeine.newBuilder()
-                .expireAfterWrite(15, TimeUnit.MINUTES)
-                .maximumSize(10000)
+                .expireAfterWrite(60, TimeUnit.MINUTES)
+                .maximumSize(10000) // 10,000 entries (~5MB memory footprint)
                 .recordStats());
         return cacheManager;
     }
