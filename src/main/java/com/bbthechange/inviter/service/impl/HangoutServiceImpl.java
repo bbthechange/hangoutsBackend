@@ -344,6 +344,22 @@ public class HangoutServiceImpl implements HangoutService {
             needsPointerUpdate = true;
         }
 
+        // Ticket coordination fields
+        if (request.getTicketLink() != null && !request.getTicketLink().equals(hangout.getTicketLink())) {
+            hangout.setTicketLink(request.getTicketLink());
+            needsPointerUpdate = true;
+        }
+
+        if (request.getTicketsRequired() != null && !request.getTicketsRequired().equals(hangout.getTicketsRequired())) {
+            hangout.setTicketsRequired(request.getTicketsRequired());
+            needsPointerUpdate = true;
+        }
+
+        if (request.getDiscountCode() != null && !request.getDiscountCode().equals(hangout.getDiscountCode())) {
+            hangout.setDiscountCode(request.getDiscountCode());
+            needsPointerUpdate = true;
+        }
+
         // Save canonical record
         hangoutRepository.createHangout(hangout); // Using createHangout as it's a putItem
 
@@ -665,6 +681,11 @@ public class HangoutServiceImpl implements HangoutService {
                 pointer.setTimeInput(hangout.getTimeInput());
                 pointer.setStartTimestamp(hangout.getStartTimestamp());
                 pointer.setEndTimestamp(hangout.getEndTimestamp());
+
+                // Update ticket coordination fields
+                pointer.setTicketLink(hangout.getTicketLink());
+                pointer.setTicketsRequired(hangout.getTicketsRequired());
+                pointer.setDiscountCode(hangout.getDiscountCode());
             }, "basic fields");
         }
     }

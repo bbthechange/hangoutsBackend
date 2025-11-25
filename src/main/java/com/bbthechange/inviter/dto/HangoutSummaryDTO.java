@@ -45,6 +45,12 @@ public class HangoutSummaryDTO implements FeedItem {
     // Interest level / attendance data
     private List<InterestLevel> interestLevels;
 
+    // Ticket/participation coordination fields
+    private ParticipationSummaryDTO participationSummary;
+    private String ticketLink;
+    private Boolean ticketsRequired;
+    private String discountCode;
+
     /**
      * Create HangoutSummaryDTO from HangoutPointer with transformed nested data.
      *
@@ -97,6 +103,12 @@ public class HangoutSummaryDTO implements FeedItem {
 
         // Interest levels
         this.interestLevels = pointer.getInterestLevels();
+
+        // Ticket/participation coordination fields (denormalized from pointer)
+        this.participationSummary = pointer.getParticipationSummary();
+        this.ticketLink = pointer.getTicketLink();
+        this.ticketsRequired = pointer.getTicketsRequired();
+        this.discountCode = pointer.getDiscountCode();
     }
     
     public String getHangoutId() {
@@ -259,5 +271,39 @@ public class HangoutSummaryDTO implements FeedItem {
 
     public void setInterestLevels(List<InterestLevel> interestLevels) {
         this.interestLevels = interestLevels;
+    }
+
+    // Ticket/participation coordination getters/setters
+
+    public ParticipationSummaryDTO getParticipationSummary() {
+        return participationSummary;
+    }
+
+    public void setParticipationSummary(ParticipationSummaryDTO participationSummary) {
+        this.participationSummary = participationSummary;
+    }
+
+    public String getTicketLink() {
+        return ticketLink;
+    }
+
+    public void setTicketLink(String ticketLink) {
+        this.ticketLink = ticketLink;
+    }
+
+    public Boolean getTicketsRequired() {
+        return ticketsRequired;
+    }
+
+    public void setTicketsRequired(Boolean ticketsRequired) {
+        this.ticketsRequired = ticketsRequired;
+    }
+
+    public String getDiscountCode() {
+        return discountCode;
+    }
+
+    public void setDiscountCode(String discountCode) {
+        this.discountCode = discountCode;
     }
 }

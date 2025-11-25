@@ -12,4 +12,9 @@ public class UpdateHangoutRequest {
     private EventVisibility visibility;
     private String mainImagePath;
     private boolean carpoolEnabled;
+
+    // Ticket/participation coordination fields
+    private String ticketLink;
+    private Boolean ticketsRequired;
+    private String discountCode;
 }
