@@ -5,11 +5,14 @@ import com.bbthechange.inviter.model.Event;
 import com.bbthechange.inviter.model.Invite;
 import com.bbthechange.inviter.model.User;
 import com.bbthechange.inviter.dto.UpdateProfileRequest;
+import com.bbthechange.inviter.dto.UserSummaryDTO;
 import com.bbthechange.inviter.repository.EventRepository;
 import com.bbthechange.inviter.repository.InviteRepository;
 import com.bbthechange.inviter.repository.UserRepository;
 import com.bbthechange.inviter.repository.GroupRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,6 +48,7 @@ public class UserService {
     @Autowired
     private S3Service s3Service;
 
+    @CacheEvict(value = "friendlyNames", key = "#userId.toString()")
     public User updateProfile(UUID userId, UpdateProfileRequest request) {
         Optional<User> userOpt = userRepository.findById(userId);
         if (userOpt.isEmpty()) {
@@ -122,7 +126,26 @@ public class UserService {
     public Optional<User> getUserById(UUID userId) {
         return userRepository.findById(userId);
     }
+
+    /**
+     * Retrieves a lightweight user summary with caching enabled.
+     * Returns only display-related fields (id, displayName, mainImagePath).
+     * Cache key is the userId string.
+     *
+     * @param userId The user's unique identifier
+     * @return Optional containing UserSummaryDTO if user exists, empty otherwise
+     */
+    @Cacheable(value = "friendlyNames", key = "#userId.toString()")
+    public Optional<UserSummaryDTO> getUserSummary(UUID userId) {
+        return userRepository.findById(userId)
+                .map(user -> new UserSummaryDTO(
+                    user.getId(),
+                    user.getDisplayName(),
+                    user.getMainImagePath()
+                ));
+    }
     
+    @CacheEvict(value = "friendlyNames", key = "#userId.toString()")
     public void deleteUser(UUID userId) {
         Optional<User> userOpt = userRepository.findById(userId);
         if (userOpt.isEmpty()) {
