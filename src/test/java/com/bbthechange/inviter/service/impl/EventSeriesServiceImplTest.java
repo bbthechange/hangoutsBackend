@@ -2550,4 +2550,508 @@ class EventSeriesServiceImplTest {
         // Then
         assertThat(result).isEqualTo(1000L);
     }
+
+    // ============================================================================
+    // GROUP TIMESTAMP UPDATE TESTS - ETag Invalidation
+    // ============================================================================
+    // These tests verify that groupTimestampService.updateGroupTimestamps() is called
+    // correctly after operations that modify feed data for ETag invalidation.
+
+    @Test
+    void convertToSeriesWithNewMember_Success_UpdatesGroupTimestamps() {
+        // Given
+        String existingHangoutId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        CreateHangoutRequest newMemberRequest = new CreateHangoutRequest();
+        newMemberRequest.setTitle("New Member Hangout");
+        String group1Id = UUID.randomUUID().toString();
+        String group2Id = UUID.randomUUID().toString();
+        newMemberRequest.setAssociatedGroups(Arrays.asList(group1Id, group2Id));
+
+        Hangout existingHangout = HangoutTestBuilder.aHangout()
+            .withId(existingHangoutId)
+            .withTitle("Movie Night")
+            .withGroups(group1Id, group2Id)
+            .build();
+
+        List<HangoutPointer> existingPointers = Arrays.asList(
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(group1Id)
+                .forHangout(existingHangoutId)
+                .build(),
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(group2Id)
+                .forHangout(existingHangoutId)
+                .build()
+        );
+
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+
+        Hangout newHangout = HangoutTestBuilder.aHangout()
+            .withTitle("New Member Hangout")
+            .withGroups(group1Id, group2Id)
+            .build();
+
+        when(hangoutRepository.findHangoutById(existingHangoutId))
+            .thenReturn(Optional.of(existingHangout));
+        when(hangoutRepository.findPointersForHangout(existingHangout))
+            .thenReturn(existingPointers);
+        when(userRepository.findById(userId))
+            .thenReturn(Optional.of(user));
+        when(hangoutService.hangoutFromHangoutRequest(newMemberRequest, userId))
+            .thenReturn(newHangout);
+
+        // When
+        eventSeriesService.convertToSeriesWithNewMember(existingHangoutId, newMemberRequest, userId);
+
+        // Then
+        ArgumentCaptor<List<String>> groupsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(groupTimestampService, times(1)).updateGroupTimestamps(groupsCaptor.capture());
+        assertThat(groupsCaptor.getValue()).containsExactlyInAnyOrder(group1Id, group2Id);
+    }
+
+    @Test
+    void createHangoutInExistingSeries_Success_UpdatesGroupTimestamps() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        CreateHangoutRequest newMemberRequest = new CreateHangoutRequest();
+        newMemberRequest.setTitle("New Event");
+        String group1Id = UUID.randomUUID().toString();
+        String group2Id = UUID.randomUUID().toString();
+        newMemberRequest.setAssociatedGroups(Arrays.asList(group1Id, group2Id));
+
+        EventSeries existingSeries = new EventSeries();
+        existingSeries.setSeriesId(seriesId);
+        String existingHangoutId = UUID.randomUUID().toString();
+        existingSeries.setHangoutIds(new ArrayList<>(Arrays.asList(existingHangoutId)));
+
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+
+        Hangout newHangout = new Hangout();
+        newHangout.setHangoutId(UUID.randomUUID().toString());
+        newHangout.setTitle("New Event");
+        newHangout.setAssociatedGroups(Arrays.asList(group1Id, group2Id));
+        newHangout.setStartTimestamp(System.currentTimeMillis() / 1000);
+
+        when(eventSeriesRepository.findById(seriesId))
+            .thenReturn(Optional.of(existingSeries));
+        when(userRepository.findById(userId))
+            .thenReturn(Optional.of(user));
+        when(hangoutService.hangoutFromHangoutRequest(newMemberRequest, userId))
+            .thenReturn(newHangout);
+
+        // When
+        eventSeriesService.createHangoutInExistingSeries(seriesId, newMemberRequest, userId);
+
+        // Then
+        ArgumentCaptor<List<String>> groupsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(groupTimestampService, times(1)).updateGroupTimestamps(groupsCaptor.capture());
+        assertThat(groupsCaptor.getValue()).containsExactlyInAnyOrder(group1Id, group2Id);
+    }
+
+    @Test
+    void unlinkHangoutFromSeries_Success_UpdatesGroupTimestamps() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String hangoutId = UUID.randomUUID().toString();
+        String anotherHangoutId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setHangoutIds(new ArrayList<>(Arrays.asList(hangoutId, anotherHangoutId)));
+        series.setVersion(1L);
+
+        Hangout hangout = HangoutTestBuilder.aHangout()
+            .withId(hangoutId)
+            .withSeriesId(seriesId)
+            .build();
+
+        String group1Id = UUID.randomUUID().toString();
+        String group2Id = UUID.randomUUID().toString();
+
+        List<HangoutPointer> hangoutPointers = Arrays.asList(
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(group1Id)
+                .forHangout(hangoutId)
+                .withSeriesId(seriesId)
+                .build(),
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(group2Id)
+                .forHangout(hangoutId)
+                .withSeriesId(seriesId)
+                .build()
+        );
+
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(hangoutRepository.findPointersForHangout(hangout)).thenReturn(hangoutPointers);
+
+        // When
+        eventSeriesService.unlinkHangoutFromSeries(seriesId, hangoutId, userId);
+
+        // Then
+        ArgumentCaptor<List<String>> groupsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(groupTimestampService, times(1)).updateGroupTimestamps(groupsCaptor.capture());
+        assertThat(groupsCaptor.getValue()).containsExactlyInAnyOrder(group1Id, group2Id);
+    }
+
+    @Test
+    void unlinkHangoutFromSeries_WithLastHangout_UpdatesGroupTimestamps() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String hangoutId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setHangoutIds(new ArrayList<>(Arrays.asList(hangoutId))); // Only one hangout
+
+        Hangout hangout = HangoutTestBuilder.aHangout()
+            .withId(hangoutId)
+            .withSeriesId(seriesId)
+            .build();
+
+        String groupId = UUID.randomUUID().toString();
+
+        List<HangoutPointer> hangoutPointers = Arrays.asList(
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(groupId)
+                .forHangout(hangoutId)
+                .withSeriesId(seriesId)
+                .build()
+        );
+
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(hangoutRepository.findPointersForHangout(hangout)).thenReturn(hangoutPointers);
+
+        // When
+        eventSeriesService.unlinkHangoutFromSeries(seriesId, hangoutId, userId);
+
+        // Then - Even with series deletion, timestamps should still be updated
+        ArgumentCaptor<List<String>> groupsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(groupTimestampService, times(1)).updateGroupTimestamps(groupsCaptor.capture());
+        assertThat(groupsCaptor.getValue()).containsExactly(groupId);
+    }
+
+    @Test
+    void updateSeriesAfterHangoutModification_Success_UpdatesGroupTimestamps() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+        String seriesId = UUID.randomUUID().toString();
+        String groupId = UUID.randomUUID().toString();
+
+        Hangout hangout = HangoutTestBuilder.aHangout()
+            .withId(hangoutId)
+            .withSeriesId(seriesId)
+            .build();
+
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setGroupId(groupId);
+        series.setVersion(1L);
+
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+
+        // When
+        eventSeriesService.updateSeriesAfterHangoutModification(hangoutId);
+
+        // Then
+        ArgumentCaptor<List<String>> groupsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(groupTimestampService, times(1)).updateGroupTimestamps(groupsCaptor.capture());
+        assertThat(groupsCaptor.getValue()).containsExactly(groupId);
+    }
+
+    @Test
+    void removeHangoutFromSeries_Success_UpdatesGroupTimestamps() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+        String seriesId = UUID.randomUUID().toString();
+        String anotherHangoutId = UUID.randomUUID().toString();
+
+        Hangout hangout = HangoutTestBuilder.aHangout()
+            .withId(hangoutId)
+            .withSeriesId(seriesId)
+            .build();
+
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setHangoutIds(new ArrayList<>(Arrays.asList(hangoutId, anotherHangoutId)));
+        series.setVersion(1L);
+
+        String group1Id = UUID.randomUUID().toString();
+        String group2Id = UUID.randomUUID().toString();
+
+        List<HangoutPointer> hangoutPointers = Arrays.asList(
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(group1Id)
+                .forHangout(hangoutId)
+                .build(),
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(group2Id)
+                .forHangout(hangoutId)
+                .build()
+        );
+
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(hangoutRepository.findPointersForHangout(hangout)).thenReturn(hangoutPointers);
+
+        // When
+        eventSeriesService.removeHangoutFromSeries(hangoutId);
+
+        // Then
+        ArgumentCaptor<List<String>> groupsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(groupTimestampService, times(1)).updateGroupTimestamps(groupsCaptor.capture());
+        assertThat(groupsCaptor.getValue()).containsExactlyInAnyOrder(group1Id, group2Id);
+    }
+
+    @Test
+    void updateSeries_WithChanges_UpdatesGroupTimestamps() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        String groupId = UUID.randomUUID().toString();
+
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setSeriesTitle("Old Title");
+        series.setVersion(1L);
+        series.setGroupId(groupId);
+        series.setHangoutIds(Arrays.asList("hangout1"));
+
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+
+        UpdateSeriesRequest request = new UpdateSeriesRequest();
+        request.setVersion(1L);
+        request.setSeriesTitle("New Title"); // Has actual change
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(hangoutRepository.findHangoutById("hangout1")).thenReturn(Optional.of(new Hangout()));
+        when(hangoutRepository.findPointersForHangout(any())).thenReturn(Collections.emptyList());
+
+        // When
+        eventSeriesService.updateSeries(seriesId, request, userId);
+
+        // Then
+        ArgumentCaptor<List<String>> groupsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(groupTimestampService, times(1)).updateGroupTimestamps(groupsCaptor.capture());
+        assertThat(groupsCaptor.getValue()).containsExactly(groupId);
+    }
+
+    @Test
+    void updateSeries_WithNoChanges_DoesNotUpdateGroupTimestamps() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        String groupId = UUID.randomUUID().toString();
+
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setSeriesTitle("Title");
+        series.setVersion(1L);
+        series.setGroupId(groupId);
+        series.setHangoutIds(Arrays.asList("hangout1"));
+
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+
+        UpdateSeriesRequest request = new UpdateSeriesRequest();
+        request.setVersion(1L);
+        // No updates set - all fields are null, hasUpdates() returns false
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+
+        // When
+        eventSeriesService.updateSeries(seriesId, request, userId);
+
+        // Then - groupTimestampService should NOT be called
+        verify(groupTimestampService, never()).updateGroupTimestamps(any());
+    }
+
+    @Test
+    void deleteEntireSeries_Success_UpdatesGroupTimestamps() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        String hangout1Id = UUID.randomUUID().toString();
+        String hangout2Id = UUID.randomUUID().toString();
+        String group1Id = UUID.randomUUID().toString();
+        String group2Id = UUID.randomUUID().toString();
+        String group3Id = UUID.randomUUID().toString();
+
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setGroupId(group1Id);
+        series.setHangoutIds(Arrays.asList(hangout1Id, hangout2Id));
+
+        Hangout hangout1 = HangoutTestBuilder.aHangout()
+            .withId(hangout1Id)
+            .withSeriesId(seriesId)
+            .build();
+
+        Hangout hangout2 = HangoutTestBuilder.aHangout()
+            .withId(hangout2Id)
+            .withSeriesId(seriesId)
+            .build();
+
+        // Hangout1 has pointers to group1 and group2
+        List<HangoutPointer> hangout1Pointers = Arrays.asList(
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(group1Id)
+                .forHangout(hangout1Id)
+                .withSeriesId(seriesId)
+                .build(),
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(group2Id)
+                .forHangout(hangout1Id)
+                .withSeriesId(seriesId)
+                .build()
+        );
+
+        // Hangout2 has pointer to group3 (and group1 for overlap testing)
+        List<HangoutPointer> hangout2Pointers = Arrays.asList(
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(group1Id)
+                .forHangout(hangout2Id)
+                .withSeriesId(seriesId)
+                .build(),
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(group3Id)
+                .forHangout(hangout2Id)
+                .withSeriesId(seriesId)
+                .build()
+        );
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(hangoutRepository.findHangoutById(hangout1Id)).thenReturn(Optional.of(hangout1));
+        when(hangoutRepository.findHangoutById(hangout2Id)).thenReturn(Optional.of(hangout2));
+        when(hangoutRepository.findPointersForHangout(hangout1)).thenReturn(hangout1Pointers);
+        when(hangoutRepository.findPointersForHangout(hangout2)).thenReturn(hangout2Pointers);
+
+        // When
+        eventSeriesService.deleteEntireSeries(seriesId, userId);
+
+        // Then - should update all distinct groups from all pointers
+        ArgumentCaptor<List<String>> groupsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(groupTimestampService, times(1)).updateGroupTimestamps(groupsCaptor.capture());
+        // Should contain group1, group2, group3 (distinct from all hangout pointers)
+        assertThat(groupsCaptor.getValue()).containsExactlyInAnyOrder(group1Id, group2Id, group3Id);
+    }
+
+    @Test
+    void convertToSeriesWithNewMember_WhenRepositoryFails_DoesNotUpdateGroupTimestamps() {
+        // Given
+        String existingHangoutId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        CreateHangoutRequest newMemberRequest = new CreateHangoutRequest();
+        String groupId = UUID.randomUUID().toString();
+        newMemberRequest.setAssociatedGroups(Arrays.asList(groupId));
+
+        Hangout existingHangout = HangoutTestBuilder.aHangout()
+            .withId(existingHangoutId)
+            .withGroups(groupId)
+            .build();
+
+        List<HangoutPointer> existingPointers = Arrays.asList(
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(groupId)
+                .forHangout(existingHangoutId)
+                .build()
+        );
+
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+
+        Hangout newHangout = HangoutTestBuilder.aHangout()
+            .withGroups(groupId)
+            .build();
+
+        when(hangoutRepository.findHangoutById(existingHangoutId))
+            .thenReturn(Optional.of(existingHangout));
+        when(hangoutRepository.findPointersForHangout(existingHangout))
+            .thenReturn(existingPointers);
+        when(userRepository.findById(userId))
+            .thenReturn(Optional.of(user));
+        when(hangoutService.hangoutFromHangoutRequest(newMemberRequest, userId))
+            .thenReturn(newHangout);
+
+        RuntimeException originalException = new RuntimeException("Transaction failed");
+        doThrow(originalException).when(seriesTransactionRepository)
+            .createSeriesWithNewPart(any(), any(), any(), any(), any(), any());
+
+        // When & Then
+        assertThatThrownBy(() -> eventSeriesService.convertToSeriesWithNewMember(
+            existingHangoutId, newMemberRequest, userId))
+            .isInstanceOf(RepositoryException.class);
+
+        // Verify groupTimestampService is NEVER called on failure
+        verify(groupTimestampService, never()).updateGroupTimestamps(any());
+    }
+
+    @Test
+    void deleteEntireSeries_WhenRepositoryFails_DoesNotUpdateGroupTimestamps() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        String hangoutId = UUID.randomUUID().toString();
+        String groupId = UUID.randomUUID().toString();
+
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+
+        EventSeries series = new EventSeries();
+        series.setSeriesId(seriesId);
+        series.setGroupId(groupId);
+        series.setHangoutIds(Arrays.asList(hangoutId));
+
+        Hangout hangout = HangoutTestBuilder.aHangout()
+            .withId(hangoutId)
+            .withSeriesId(seriesId)
+            .build();
+
+        List<HangoutPointer> hangoutPointers = Arrays.asList(
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(groupId)
+                .forHangout(hangoutId)
+                .withSeriesId(seriesId)
+                .build()
+        );
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        when(hangoutRepository.findPointersForHangout(hangout)).thenReturn(hangoutPointers);
+
+        RuntimeException originalException = new RuntimeException("Transaction failed");
+        doThrow(originalException).when(seriesTransactionRepository)
+            .deleteEntireSeriesWithAllHangouts(any(), any(), any(), any());
+
+        // When & Then
+        assertThatThrownBy(() -> eventSeriesService.deleteEntireSeries(seriesId, userId))
+            .isInstanceOf(RepositoryException.class);
+
+        // Verify groupTimestampService is NEVER called on failure
+        verify(groupTimestampService, never()).updateGroupTimestamps(any());
+    }
 }
