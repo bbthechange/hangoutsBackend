@@ -2,6 +2,9 @@ package com.bbthechange.inviter.dto;
 
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.util.HangoutDataTransformer;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -11,8 +14,23 @@ import java.util.stream.Collectors;
  * Data Transfer Object for Hangout summary information in group feeds.
  * Represents a standalone hangout event in the feed.
  * Contains transformed, nested data from HangoutPointer for easy client consumption.
+ *
+ * <p>Primary usage is via the transformation constructor:
+ * <pre>
+ * HangoutSummaryDTO dto = new HangoutSummaryDTO(pointer, requestingUserId);
+ * </pre>
+ *
+ * <p>A builder is also available for direct construction:
+ * <pre>
+ * HangoutSummaryDTO.builder()
+ *     .withHangoutId(id)
+ *     .withTitle(title)
+ *     .build();
+ * </pre>
+ * All list fields default to empty lists if not specified.
  */
-// TODO @Data?
+@Builder(setterPrefix = "with", toBuilder = true)
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class HangoutSummaryDTO implements FeedItem {
 
     private String hangoutId;
@@ -22,6 +40,7 @@ public class HangoutSummaryDTO implements FeedItem {
     private Address location;
     private int participantCount;
     private String mainImagePath; // Denormalized image path from HangoutPointer
+    @Builder.Default
     private String type = "hangout"; // Type discriminator for client-side handling
 
     // Additional basic fields
@@ -33,17 +52,22 @@ public class HangoutSummaryDTO implements FeedItem {
     private String seriesId;
 
     // Transformed poll data (nested with vote counts and user voting status)
-    private List<PollWithOptionsDTO> polls;
+    @Builder.Default
+    private List<PollWithOptionsDTO> polls = List.of();
 
     // Transformed carpool data (nested with riders)
-    private List<CarWithRidersDTO> cars;
-    private List<NeedsRideDTO> needsRide;
+    @Builder.Default
+    private List<CarWithRidersDTO> cars = List.of();
+    @Builder.Default
+    private List<NeedsRideDTO> needsRide = List.of();
 
     // Attribute data
-    private List<HangoutAttributeDTO> attributes;
+    @Builder.Default
+    private List<HangoutAttributeDTO> attributes = List.of();
 
     // Interest level / attendance data
-    private List<InterestLevel> interestLevels;
+    @Builder.Default
+    private List<InterestLevel> interestLevels = List.of();
 
     // Ticket/participation coordination fields
     private ParticipationSummaryDTO participationSummary;

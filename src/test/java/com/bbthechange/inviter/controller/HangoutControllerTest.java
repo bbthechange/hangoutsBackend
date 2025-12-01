@@ -136,7 +136,7 @@ class HangoutControllerTest {
             Hangout hangout = new Hangout();
             hangout.setHangoutId(testHangoutId);
             hangout.setTitle("Test Hangout");
-            HangoutDetailDTO mockDetail = new HangoutDetailDTO(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            HangoutDetailDTO mockDetail = HangoutDetailDTO.builder().withHangout(hangout).build();
             
             when(hangoutService.getHangoutDetail(eq(testHangoutId), eq(testUserId)))
                     .thenReturn(mockDetail);
