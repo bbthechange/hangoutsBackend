@@ -20,6 +20,7 @@ import com.bbthechange.inviter.exception.RepositoryException;
 import com.bbthechange.inviter.exception.ValidationException;
 import com.bbthechange.inviter.service.HangoutService;
 import com.bbthechange.inviter.service.FuzzyTimeService;
+import com.bbthechange.inviter.service.GroupTimestampService;
 import com.bbthechange.inviter.util.InviterKeyFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -48,6 +49,7 @@ public class EventSeriesServiceImpl implements EventSeriesService {
     private final HangoutService hangoutService;
     private final GroupRepository groupRepository;
     private final FuzzyTimeService fuzzyTimeService;
+    private final GroupTimestampService groupTimestampService;
     
     @Autowired
     public EventSeriesServiceImpl(
@@ -57,7 +59,8 @@ public class EventSeriesServiceImpl implements EventSeriesService {
             UserRepository userRepository,
             HangoutService hangoutService,
             GroupRepository groupRepository,
-            FuzzyTimeService fuzzyTimeService) {
+            FuzzyTimeService fuzzyTimeService,
+            GroupTimestampService groupTimestampService) {
         this.hangoutRepository = hangoutRepository;
         this.eventSeriesRepository = eventSeriesRepository;
         this.seriesTransactionRepository = seriesTransactionRepository;
@@ -65,6 +68,7 @@ public class EventSeriesServiceImpl implements EventSeriesService {
         this.hangoutService = hangoutService;
         this.groupRepository = groupRepository;
         this.fuzzyTimeService = fuzzyTimeService;
+        this.groupTimestampService = groupTimestampService;
     }
     
     @Override
@@ -220,16 +224,23 @@ public class EventSeriesServiceImpl implements EventSeriesService {
             );
             
             logger.info("Successfully created series {} from hangout {}", seriesId, existingHangoutId);
-            
-            // 4. Return Value
+
+            // 4. Update group timestamps for ETag invalidation
+            List<String> affectedGroups = existingPointers.stream()
+                .map(HangoutPointer::getGroupId)
+                .distinct()
+                .toList();
+            groupTimestampService.updateGroupTimestamps(affectedGroups);
+
+            // 5. Return Value
             return newSeries;
-            
+
         } catch (Exception e) {
             logger.error("Failed to create series from hangout {}", existingHangoutId, e);
             throw new RepositoryException("Failed to create series atomically", e);
         }
     }
-    
+
     @Override
     public EventSeries createHangoutInExistingSeries(
             String seriesId, 
@@ -349,16 +360,19 @@ public class EventSeriesServiceImpl implements EventSeriesService {
             );
             
             logger.info("Successfully added hangout {} to series {}", newHangout.getHangoutId(), seriesId);
-            
-            // 4. Return Value
+
+            // 4. Update group timestamps for ETag invalidation
+            groupTimestampService.updateGroupTimestamps(newHangout.getAssociatedGroups());
+
+            // 5. Return Value
             return series;
-            
+
         } catch (Exception e) {
             logger.error("Failed to add hangout to series {}", seriesId, e);
             throw new RepositoryException("Failed to add hangout to series atomically", e);
         }
     }
-    
+
     @Override
     public void unlinkHangoutFromSeries(String seriesId, String hangoutId, String userId) {
         logger.info("Unlinking hangout {} from series {} by user {}", hangoutId, seriesId, userId);
@@ -417,12 +431,19 @@ public class EventSeriesServiceImpl implements EventSeriesService {
                     series, hangout, hangoutPointers, updatedSeriesPointers);
                 logger.info("Successfully unlinked hangout {} from series {}", hangoutId, seriesId);
             }
+
+            // Update group timestamps for ETag invalidation
+            List<String> affectedGroups = hangoutPointers.stream()
+                .map(HangoutPointer::getGroupId)
+                .distinct()
+                .toList();
+            groupTimestampService.updateGroupTimestamps(affectedGroups);
         } catch (Exception e) {
             logger.error("Failed to unlink hangout {} from series {}", hangoutId, seriesId, e);
             throw new RepositoryException("Failed to unlink hangout from series atomically", e);
         }
     }
-    
+
     @Override
     public void updateSeriesAfterHangoutModification(String hangoutId) {
         logger.info("Updating series after modification of hangout {}", hangoutId);
@@ -460,12 +481,17 @@ public class EventSeriesServiceImpl implements EventSeriesService {
         try {
             seriesTransactionRepository.updateSeriesAfterHangoutChange(series, updatedSeriesPointers);
             logger.info("Successfully updated series {} after hangout {} modification", seriesId, hangoutId);
+
+            // Update group timestamps for ETag invalidation
+            if (series.getGroupId() != null) {
+                groupTimestampService.updateGroupTimestamps(List.of(series.getGroupId()));
+            }
         } catch (Exception e) {
             logger.error("Failed to update series {} after hangout {} modification", seriesId, hangoutId, e);
             throw new RepositoryException("Failed to update series after hangout modification", e);
         }
     }
-    
+
     @Override
     public void removeHangoutFromSeries(String hangoutId) {
         logger.info("Removing hangout {} from its series", hangoutId);
@@ -518,12 +544,19 @@ public class EventSeriesServiceImpl implements EventSeriesService {
                     series, hangout, hangoutPointers, updatedSeriesPointers);
                 logger.info("Successfully removed hangout {} from series {}", hangoutId, seriesId);
             }
+
+            // Update group timestamps for ETag invalidation
+            List<String> affectedGroups = hangoutPointers.stream()
+                .map(HangoutPointer::getGroupId)
+                .distinct()
+                .toList();
+            groupTimestampService.updateGroupTimestamps(affectedGroups);
         } catch (Exception e) {
             logger.error("Failed to remove hangout {} from series {}", hangoutId, seriesId, e);
             throw new RepositoryException("Failed to remove hangout from series atomically", e);
         }
     }
-    
+
     // Helper Methods
     
     private void updateSeriesTimestamps(EventSeries series) {
@@ -747,14 +780,20 @@ public class EventSeriesServiceImpl implements EventSeriesService {
             }
             
             logger.info("Successfully updated series {}", seriesId);
+
+            // Update group timestamps for ETag invalidation
+            if (series.getGroupId() != null) {
+                groupTimestampService.updateGroupTimestamps(List.of(series.getGroupId()));
+            }
+
             return series;
-            
+
         } catch (Exception e) {
             logger.error("Failed to update series {}", seriesId, e);
             throw new RepositoryException("Failed to update series", e);
         }
     }
-    
+
     @Override
     public void deleteEntireSeries(String seriesId, String userId) {
         logger.info("Deleting entire series {} by user {}", seriesId, userId);
@@ -811,15 +850,22 @@ public class EventSeriesServiceImpl implements EventSeriesService {
                 seriesPointersToDelete
             );
             
-            logger.info("Successfully deleted entire series {} with {} hangouts", 
+            logger.info("Successfully deleted entire series {} with {} hangouts",
                 seriesId, hangoutsToDelete.size());
-            
+
+            // Update group timestamps for ETag invalidation
+            List<String> affectedGroups = pointersToDelete.stream()
+                .map(HangoutPointer::getGroupId)
+                .distinct()
+                .toList();
+            groupTimestampService.updateGroupTimestamps(affectedGroups);
+
         } catch (Exception e) {
             logger.error("Failed to delete entire series {}", seriesId, e);
             throw new RepositoryException("Failed to delete entire series atomically", e);
         }
     }
-    
+
     /**
      * Calculate the latest timestamp from a list of hangouts.
      * This considers both startTimestamp and endTimestamp.

@@ -120,6 +120,18 @@ Cache-Control: no-cache, must-revalidate
 - Update hangout attribute
 - Delete hangout attribute
 
+#### Event Series Changes
+**Service**: `EventSeriesServiceImpl`
+**Methods**: Each operation calls `groupTimestampService.updateGroupTimestamps(affectedGroups)` after successful persistence
+
+- Convert hangout to series with new member (`convertToSeriesWithNewMember()`)
+- Add hangout to existing series (`createHangoutInExistingSeries()`)
+- Unlink hangout from series (`unlinkHangoutFromSeries()`)
+- Update series after hangout modification (`updateSeriesAfterHangoutModification()`)
+- Remove hangout from series (`removeHangoutFromSeries()`)
+- Update series metadata (title, description) (`updateSeries()`)
+- Delete entire series (`deleteEntireSeries()`)
+
 ---
 
 ## Implementation Pattern

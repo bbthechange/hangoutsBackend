@@ -18,6 +18,8 @@ import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.SeriesTransactionRepository;
 import com.bbthechange.inviter.repository.UserRepository;
+import com.bbthechange.inviter.service.FuzzyTimeService;
+import com.bbthechange.inviter.service.GroupTimestampService;
 import com.bbthechange.inviter.service.HangoutService;
 import com.bbthechange.inviter.testutil.HangoutPointerTestBuilder;
 import com.bbthechange.inviter.testutil.HangoutTestBuilder;
@@ -62,7 +64,13 @@ class EventSeriesServiceImplTest {
     
     @Mock
     private GroupRepository groupRepository;
-    
+
+    @Mock
+    private FuzzyTimeService fuzzyTimeService;
+
+    @Mock
+    private GroupTimestampService groupTimestampService;
+
     @InjectMocks
     private EventSeriesServiceImpl eventSeriesService;
 
