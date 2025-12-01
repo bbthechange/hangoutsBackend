@@ -424,17 +424,9 @@ class SeriesControllerTest {
         hangout2.setTitle("Second Hangout");
         hangout2.setStartTimestamp(2000L);
         
-        HangoutDetailDTO hangoutDetail1 = new HangoutDetailDTO(
-            hangout1, java.util.Collections.emptyList(), java.util.Collections.emptyList(),
-            java.util.Collections.emptyList(), java.util.Collections.emptyList(), java.util.Collections.emptyList(),
-            java.util.Collections.emptyList(), java.util.Collections.emptyList(), java.util.Collections.emptyList(), java.util.Collections.emptyList()
-        );
+        HangoutDetailDTO hangoutDetail1 = HangoutDetailDTO.builder().withHangout(hangout1).build();
 
-        HangoutDetailDTO hangoutDetail2 = new HangoutDetailDTO(
-            hangout2, java.util.Collections.emptyList(), java.util.Collections.emptyList(),
-            java.util.Collections.emptyList(), java.util.Collections.emptyList(), java.util.Collections.emptyList(),
-            java.util.Collections.emptyList(), java.util.Collections.emptyList(), java.util.Collections.emptyList(), java.util.Collections.emptyList()
-        );
+        HangoutDetailDTO hangoutDetail2 = HangoutDetailDTO.builder().withHangout(hangout2).build();
         
         java.util.List<HangoutDetailDTO> hangoutDetails = java.util.Arrays.asList(hangoutDetail1, hangoutDetail2);
         

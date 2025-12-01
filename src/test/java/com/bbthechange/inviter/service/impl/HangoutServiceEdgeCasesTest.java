@@ -117,18 +117,13 @@ class HangoutServiceEdgeCasesTest extends HangoutServiceTestBase {
             attribute.setPk("HANGOUT#" + hangoutId);
             attribute.setSk("ATTR#attr-123");
 
-            HangoutDetailData detailData = new HangoutDetailData(
-                hangout,
-                List.of(poll),
-                List.of(),  // poll options
-                List.of(car),
-                List.of(vote),
-                List.of(interest),
-                List.of(),  // car riders
-                List.of(),  // needs ride
-                List.of(),  // participations
-                List.of()   // reservation offers
-            );
+            HangoutDetailData detailData = HangoutDetailData.builder()
+                .withHangout(hangout)
+                .withPolls(List.of(poll))
+                .withCars(List.of(car))
+                .withVotes(List.of(vote))
+                .withAttendance(List.of(interest))
+                .build();
 
             when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
             when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(detailData);
@@ -189,9 +184,7 @@ class HangoutServiceEdgeCasesTest extends HangoutServiceTestBase {
             Hangout hangout = createTestHangout(hangoutId);
             hangout.setAssociatedGroups(List.of(groupId1, groupId2, groupId3));
 
-            HangoutDetailData detailData = new HangoutDetailData(
-                hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
-            );
+            HangoutDetailData detailData = HangoutDetailData.builder().withHangout(hangout).build();
 
             when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
             when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(detailData);

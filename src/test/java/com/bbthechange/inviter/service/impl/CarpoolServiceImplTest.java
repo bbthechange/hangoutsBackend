@@ -65,7 +65,7 @@ class CarpoolServiceImplTest {
         hangout.setHangoutId(eventId);
         hangout.setTitle("Test Hangout");
         
-        hangoutData = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        hangoutData = HangoutDetailData.builder().withHangout(hangout).build();
     }
 
     // ============================================================================
@@ -101,7 +101,7 @@ class CarpoolServiceImplTest {
     @Test
     void getNeedsRideRequests_WithNonExistentEvent_ThrowsEventNotFoundException() {
         // Given
-        HangoutDetailData emptyData = new HangoutDetailData(null, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData emptyData = HangoutDetailData.builder().build();
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(emptyData);
 
         // When/Then
@@ -173,7 +173,7 @@ class CarpoolServiceImplTest {
         // Given
         NeedsRideRequest request = new NeedsRideRequest("Need a ride from downtown");
         CarRider existingRider = new CarRider(eventId, driverId, userId, "Test User");
-        HangoutDetailData dataWithRider = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(existingRider), List.of(), List.of(), List.of());
+        HangoutDetailData dataWithRider = HangoutDetailData.builder().withHangout(hangout).withCarRiders(List.of(existingRider)).build();
         
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(dataWithRider);
         when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
@@ -233,7 +233,7 @@ class CarpoolServiceImplTest {
     void createNeedsRideRequest_WithNonExistentEvent_ThrowsEventNotFoundException() {
         // Given
         NeedsRideRequest request = new NeedsRideRequest("Need a ride");
-        HangoutDetailData emptyData = new HangoutDetailData(null, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData emptyData = HangoutDetailData.builder().build();
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(emptyData);
 
         // When/Then
@@ -278,7 +278,7 @@ class CarpoolServiceImplTest {
     @Test
     void deleteNeedsRideRequest_WithNonExistentEvent_ThrowsEventNotFoundException() {
         // Given
-        HangoutDetailData emptyData = new HangoutDetailData(null, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData emptyData = HangoutDetailData.builder().build();
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(emptyData);
 
         // When/Then
@@ -313,7 +313,7 @@ class CarpoolServiceImplTest {
         Car car = new Car(eventId, driverId, "Test Driver", 4);
         car.setNotes("Going to event");
         car.setAvailableSeats(2);
-        HangoutDetailData dataWithCar = new HangoutDetailData(hangout, List.of(), List.of(), List.of(car), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData dataWithCar = HangoutDetailData.builder().withHangout(hangout).withCars(List.of(car)).build();
         
         User user = new User();
         user.setDisplayName("Test User");
@@ -345,7 +345,7 @@ class CarpoolServiceImplTest {
         Car car = new Car(eventId, driverId, "Test Driver", 4);
         car.setNotes("Going to event");
         car.setAvailableSeats(2);
-        HangoutDetailData dataWithCar = new HangoutDetailData(hangout, List.of(), List.of(), List.of(car), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData dataWithCar = HangoutDetailData.builder().withHangout(hangout).withCars(List.of(car)).build();
         
         User user = new User();
         user.setDisplayName("Test User");
@@ -376,7 +376,7 @@ class CarpoolServiceImplTest {
         Car car = new Car(eventId, driverId, "Test Driver", 4);
         car.setNotes("Going to event");
         car.setAvailableSeats(0); // No available seats
-        HangoutDetailData dataWithCar = new HangoutDetailData(hangout, List.of(), List.of(), List.of(car), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData dataWithCar = HangoutDetailData.builder().withHangout(hangout).withCars(List.of(car)).build();
         
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(dataWithCar);
         when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
@@ -397,7 +397,7 @@ class CarpoolServiceImplTest {
         car.setNotes("Going to event");
         car.setAvailableSeats(2);
         CarRider existingRider = new CarRider(eventId, driverId, userId, "Test User");
-        HangoutDetailData dataWithCarAndRider = new HangoutDetailData(hangout, List.of(), List.of(), List.of(car), List.of(), List.of(), List.of(existingRider), List.of(), List.of(), List.of());
+        HangoutDetailData dataWithCarAndRider = HangoutDetailData.builder().withHangout(hangout).withCars(List.of(car)).withCarRiders(List.of(existingRider)).build();
         
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(dataWithCarAndRider);
         when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
@@ -424,13 +424,13 @@ class CarpoolServiceImplTest {
         driver.setDisplayName("Test Driver");
 
         hangout.setAssociatedGroups(Arrays.asList(groupId1, groupId2));
-        hangoutData = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        hangoutData = HangoutDetailData.builder().withHangout(hangout).build();
 
         Car newCar = new Car(eventId, userId, "Test Driver", 4);
         newCar.setNotes("Meet at parking lot A");
         newCar.setAvailableSeats(4);
 
-        HangoutDetailData dataWithCar = new HangoutDetailData(hangout, List.of(), List.of(), List.of(newCar), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData dataWithCar = HangoutDetailData.builder().withHangout(hangout).withCars(List.of(newCar)).build();
 
         HangoutPointer pointer1 = HangoutPointerTestBuilder.aPointer()
             .forGroup(groupId1)
@@ -466,7 +466,7 @@ class CarpoolServiceImplTest {
         driver.setDisplayName("Test Driver");
 
         hangout.setAssociatedGroups(Collections.emptyList());
-        hangoutData = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        hangoutData = HangoutDetailData.builder().withHangout(hangout).build();
 
         Car newCar = new Car(eventId, userId, "Test Driver", 4);
 
@@ -492,7 +492,7 @@ class CarpoolServiceImplTest {
 
         Car car = new Car(eventId, driverId, "Test Driver", 4);
         car.setAvailableSeats(2);
-        HangoutDetailData dataWithCar = new HangoutDetailData(hangout, List.of(), List.of(), List.of(car), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData dataWithCar = HangoutDetailData.builder().withHangout(hangout).withCars(List.of(car)).build();
 
         User user = new User();
         user.setDisplayName("Test User");
@@ -500,7 +500,7 @@ class CarpoolServiceImplTest {
         CarRider newRider = new CarRider(eventId, driverId, userId, "Test User");
 
         hangout.setAssociatedGroups(Arrays.asList(groupId));
-        HangoutDetailData updatedData = new HangoutDetailData(hangout, List.of(), List.of(), List.of(car), List.of(), List.of(), List.of(newRider), List.of(), List.of(), List.of());
+        HangoutDetailData updatedData = HangoutDetailData.builder().withHangout(hangout).withCars(List.of(car)).withCarRiders(List.of(newRider)).build();
 
         HangoutPointer pointer = HangoutPointerTestBuilder.aPointer()
             .forGroup(groupId)
@@ -532,7 +532,7 @@ class CarpoolServiceImplTest {
         Car car = new Car(eventId, driverId, "Test Driver", 4);
         car.setAvailableSeats(2);
         NeedsRide needsRide = new NeedsRide(eventId, userId, "Need a ride");
-        HangoutDetailData dataWithCarAndNeedsRide = new HangoutDetailData(hangout, List.of(), List.of(), List.of(car), List.of(), List.of(), List.of(), List.of(needsRide), List.of(), List.of());
+        HangoutDetailData dataWithCarAndNeedsRide = HangoutDetailData.builder().withHangout(hangout).withCars(List.of(car)).withNeedsRide(List.of(needsRide)).build();
 
         User user = new User();
         user.setDisplayName("Test User");
@@ -541,7 +541,7 @@ class CarpoolServiceImplTest {
 
         hangout.setAssociatedGroups(Arrays.asList(groupId));
         // After reservation, needsRide is removed
-        HangoutDetailData updatedData = new HangoutDetailData(hangout, List.of(), List.of(), List.of(car), List.of(), List.of(), List.of(newRider), List.of(), List.of(), List.of());
+        HangoutDetailData updatedData = HangoutDetailData.builder().withHangout(hangout).withCars(List.of(car)).withCarRiders(List.of(newRider)).build();
 
         HangoutPointer pointer = HangoutPointerTestBuilder.aPointer()
             .forGroup(groupId)
@@ -575,11 +575,11 @@ class CarpoolServiceImplTest {
         Car car = new Car(eventId, driverId, "Test Driver", 4);
         car.setAvailableSeats(2);
         CarRider existingRider = new CarRider(eventId, driverId, userId, "Test User");
-        HangoutDetailData dataWithCarAndRider = new HangoutDetailData(hangout, List.of(), List.of(), List.of(car), List.of(), List.of(), List.of(existingRider), List.of(), List.of(), List.of());
+        HangoutDetailData dataWithCarAndRider = HangoutDetailData.builder().withHangout(hangout).withCars(List.of(car)).withCarRiders(List.of(existingRider)).build();
 
         hangout.setAssociatedGroups(Arrays.asList(groupId1, groupId2, groupId3));
         // After release, rider is removed
-        HangoutDetailData updatedData = new HangoutDetailData(hangout, List.of(), List.of(), List.of(car), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData updatedData = HangoutDetailData.builder().withHangout(hangout).withCars(List.of(car)).build();
 
         HangoutPointer pointer1 = HangoutPointerTestBuilder.aPointer()
             .forGroup(groupId1)
@@ -617,7 +617,7 @@ class CarpoolServiceImplTest {
 
         Car car = new Car(eventId, userId, "Test Driver", 4);
         car.setAvailableSeats(2);
-        HangoutDetailData dataWithCar = new HangoutDetailData(hangout, List.of(), List.of(), List.of(car), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData dataWithCar = HangoutDetailData.builder().withHangout(hangout).withCars(List.of(car)).build();
 
         UpdateCarRequest request = new UpdateCarRequest(6, "Updated notes");
 
@@ -625,7 +625,7 @@ class CarpoolServiceImplTest {
         Car updatedCar = new Car(eventId, userId, "Test Driver", 6);
         updatedCar.setAvailableSeats(4);
         updatedCar.setNotes("Updated notes");
-        HangoutDetailData updatedData = new HangoutDetailData(hangout, List.of(), List.of(), List.of(updatedCar), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData updatedData = HangoutDetailData.builder().withHangout(hangout).withCars(List.of(updatedCar)).build();
 
         HangoutPointer pointer = HangoutPointerTestBuilder.aPointer()
             .forGroup(groupId)
@@ -655,7 +655,7 @@ class CarpoolServiceImplTest {
         Car car = new Car(eventId, userId, "Test Driver", 4);
         car.setAvailableSeats(4);
         car.setNotes("Meet at parking lot A");
-        HangoutDetailData dataWithCar = new HangoutDetailData(hangout, List.of(), List.of(), List.of(car), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData dataWithCar = HangoutDetailData.builder().withHangout(hangout).withCars(List.of(car)).build();
 
         UpdateCarRequest request = new UpdateCarRequest(4, "Meet at parking lot B");
 
@@ -663,7 +663,7 @@ class CarpoolServiceImplTest {
         Car updatedCar = new Car(eventId, userId, "Test Driver", 4);
         updatedCar.setAvailableSeats(4);
         updatedCar.setNotes("Meet at parking lot B");
-        HangoutDetailData updatedData = new HangoutDetailData(hangout, List.of(), List.of(), List.of(updatedCar), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData updatedData = HangoutDetailData.builder().withHangout(hangout).withCars(List.of(updatedCar)).build();
 
         HangoutPointer pointer1 = HangoutPointerTestBuilder.aPointer()
             .forGroup(groupId1)
@@ -703,14 +703,15 @@ class CarpoolServiceImplTest {
         CarRider rider1 = new CarRider(eventId, userId, rider1Id, "Rider 1");
         CarRider rider2 = new CarRider(eventId, userId, rider2Id, "Rider 2");
         CarRider rider3 = new CarRider(eventId, userId, rider3Id, "Rider 3");
-        HangoutDetailData dataWithCarAndRiders = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(car), List.of(), List.of(),
-            List.of(rider1, rider2, rider3), List.of(), List.of(), List.of()
-        );
+        HangoutDetailData dataWithCarAndRiders = HangoutDetailData.builder()
+            .withHangout(hangout)
+            .withCars(List.of(car))
+            .withCarRiders(List.of(rider1, rider2, rider3))
+            .build();
 
         hangout.setAssociatedGroups(Arrays.asList(groupId1, groupId2));
         // After cancellation, car and riders are removed
-        HangoutDetailData updatedData = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData updatedData = HangoutDetailData.builder().withHangout(hangout).build();
 
         HangoutPointer pointer1 = HangoutPointerTestBuilder.aPointer()
             .forGroup(groupId1)
@@ -742,11 +743,11 @@ class CarpoolServiceImplTest {
 
         Car car = new Car(eventId, userId, "Test Driver", 4);
         car.setAvailableSeats(4);
-        HangoutDetailData dataWithCar = new HangoutDetailData(hangout, List.of(), List.of(), List.of(car), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData dataWithCar = HangoutDetailData.builder().withHangout(hangout).withCars(List.of(car)).build();
 
         hangout.setAssociatedGroups(Arrays.asList(groupId));
         // After cancellation, car is removed
-        HangoutDetailData updatedData = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData updatedData = HangoutDetailData.builder().withHangout(hangout).build();
 
         HangoutPointer pointer = HangoutPointerTestBuilder.aPointer()
             .forGroup(groupId)
@@ -777,7 +778,7 @@ class CarpoolServiceImplTest {
         NeedsRide needsRide = new NeedsRide(eventId, userId, request.getNotes());
 
         hangout.setAssociatedGroups(Arrays.asList(groupId1, groupId2, groupId3));
-        HangoutDetailData updatedData = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(needsRide), List.of(), List.of());
+        HangoutDetailData updatedData = HangoutDetailData.builder().withHangout(hangout).withNeedsRide(List.of(needsRide)).build();
 
         HangoutPointer pointer1 = HangoutPointerTestBuilder.aPointer()
             .forGroup(groupId1)
@@ -818,7 +819,7 @@ class CarpoolServiceImplTest {
         NeedsRide needsRide = new NeedsRide(eventId, userId, request.getNotes());
 
         hangout.setAssociatedGroups(Arrays.asList(groupId1, groupId2));
-        HangoutDetailData updatedData = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(needsRide), List.of(), List.of());
+        HangoutDetailData updatedData = HangoutDetailData.builder().withHangout(hangout).withNeedsRide(List.of(needsRide)).build();
 
         HangoutPointer pointer1 = HangoutPointerTestBuilder.aPointer()
             .forGroup(groupId1)
@@ -851,11 +852,11 @@ class CarpoolServiceImplTest {
         String groupId2 = UUID.randomUUID().toString();
 
         NeedsRide needsRide = new NeedsRide(eventId, userId, "Need a ride");
-        HangoutDetailData dataWithNeedsRide = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(needsRide), List.of(), List.of());
+        HangoutDetailData dataWithNeedsRide = HangoutDetailData.builder().withHangout(hangout).withNeedsRide(List.of(needsRide)).build();
 
         hangout.setAssociatedGroups(Arrays.asList(groupId1, groupId2));
         // After deletion, needsRide is removed
-        HangoutDetailData updatedData = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData updatedData = HangoutDetailData.builder().withHangout(hangout).build();
 
         HangoutPointer pointer1 = HangoutPointerTestBuilder.aPointer()
             .forGroup(groupId1)
@@ -886,7 +887,7 @@ class CarpoolServiceImplTest {
         String groupId = UUID.randomUUID().toString();
 
         hangout.setAssociatedGroups(Arrays.asList(groupId));
-        HangoutDetailData emptyData = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData emptyData = HangoutDetailData.builder().withHangout(hangout).build();
 
         HangoutPointer pointer = HangoutPointerTestBuilder.aPointer()
             .forGroup(groupId)
@@ -925,13 +926,13 @@ class CarpoolServiceImplTest {
             driver.setDisplayName("Test Driver");
 
             hangout.setAssociatedGroups(Arrays.asList(groupId1, groupId2, groupId3));
-            hangoutData = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            hangoutData = HangoutDetailData.builder().withHangout(hangout).build();
 
             Car newCar = new Car(eventId, userId, "Test Driver", 4);
             newCar.setNotes("Meet at parking lot A");
             newCar.setAvailableSeats(4);
 
-            HangoutDetailData dataWithCar = new HangoutDetailData(hangout, List.of(), List.of(), List.of(newCar), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            HangoutDetailData dataWithCar = HangoutDetailData.builder().withHangout(hangout).withCars(List.of(newCar)).build();
 
             HangoutPointer pointer1 = HangoutPointerTestBuilder.aPointer()
                 .forGroup(groupId1)
@@ -973,13 +974,13 @@ class CarpoolServiceImplTest {
             driver.setDisplayName("Test Driver");
 
             hangout.setAssociatedGroups(Arrays.asList(groupId));
-            hangoutData = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            hangoutData = HangoutDetailData.builder().withHangout(hangout).build();
 
             Car newCar = new Car(eventId, userId, "Test Driver", 4);
             newCar.setNotes("Meet at parking lot A");
             newCar.setAvailableSeats(4);
 
-            HangoutDetailData dataWithCar = new HangoutDetailData(hangout, List.of(), List.of(), List.of(newCar), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            HangoutDetailData dataWithCar = HangoutDetailData.builder().withHangout(hangout).withCars(List.of(newCar)).build();
 
             HangoutPointer pointer = HangoutPointerTestBuilder.aPointer()
                 .forGroup(groupId)
@@ -1011,13 +1012,13 @@ class CarpoolServiceImplTest {
             driver.setDisplayName("Test Driver");
 
             hangout.setAssociatedGroups(Arrays.asList(groupId));
-            hangoutData = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            hangoutData = HangoutDetailData.builder().withHangout(hangout).build();
 
             Car newCar = new Car(eventId, userId, "Test Driver", 4);
             newCar.setNotes("Meet at parking lot A");
             newCar.setAvailableSeats(4);
 
-            HangoutDetailData dataWithCar = new HangoutDetailData(hangout, List.of(), List.of(), List.of(newCar), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            HangoutDetailData dataWithCar = HangoutDetailData.builder().withHangout(hangout).withCars(List.of(newCar)).build();
 
             HangoutPointer pointer = HangoutPointerTestBuilder.aPointer()
                 .forGroup(groupId)

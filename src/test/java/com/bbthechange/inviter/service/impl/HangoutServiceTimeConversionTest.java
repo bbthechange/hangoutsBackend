@@ -41,7 +41,7 @@ class HangoutServiceTimeConversionTest extends HangoutServiceTestBase {
             timeInput.setEndTime("2025-08-05T21:00:00-07:00");
             hangout.setTimeInput(timeInput);
 
-            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            HangoutDetailData data = HangoutDetailData.builder().withHangout(hangout).build();
             when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
             when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
 
@@ -71,7 +71,7 @@ class HangoutServiceTimeConversionTest extends HangoutServiceTestBase {
             timeInput.setEndTime("1754571600");
             hangout.setTimeInput(timeInput);
 
-            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            HangoutDetailData data = HangoutDetailData.builder().withHangout(hangout).build();
             when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
             when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
 
@@ -100,7 +100,7 @@ class HangoutServiceTimeConversionTest extends HangoutServiceTestBase {
             timeInput.setStartTime("invalid-time-format");
             hangout.setTimeInput(timeInput);
 
-            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            HangoutDetailData data = HangoutDetailData.builder().withHangout(hangout).build();
             when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
             when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
 
@@ -126,7 +126,7 @@ class HangoutServiceTimeConversionTest extends HangoutServiceTestBase {
             timeInput.setStartTime(null);
             hangout.setTimeInput(timeInput);
 
-            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            HangoutDetailData data = HangoutDetailData.builder().withHangout(hangout).build();
             when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
             when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
 
@@ -153,7 +153,7 @@ class HangoutServiceTimeConversionTest extends HangoutServiceTestBase {
             timeInput.setEndTime("2025-08-05T21:00:00Z");
             hangout.setTimeInput(timeInput);
 
-            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            HangoutDetailData data = HangoutDetailData.builder().withHangout(hangout).build();
             when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
             when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
 
@@ -185,7 +185,7 @@ class HangoutServiceTimeConversionTest extends HangoutServiceTestBase {
             timeInput.setPeriodStart("2025-08-05T19:00:00Z");
             hangout.setTimeInput(timeInput);
 
-            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            HangoutDetailData data = HangoutDetailData.builder().withHangout(hangout).build();
             when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
             when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
 
@@ -215,7 +215,7 @@ class HangoutServiceTimeConversionTest extends HangoutServiceTestBase {
             timeInput.setEndTime("2025-08-05T21:00:00Z");
             hangout.setTimeInput(timeInput);
 
-            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            HangoutDetailData data = HangoutDetailData.builder().withHangout(hangout).build();
             when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
             when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
 
@@ -240,7 +240,7 @@ class HangoutServiceTimeConversionTest extends HangoutServiceTestBase {
             hangout.setVisibility(EventVisibility.PUBLIC);
             hangout.setTimeInput(null);
 
-            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            HangoutDetailData data = HangoutDetailData.builder().withHangout(hangout).build();
             when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
             when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
 
@@ -266,7 +266,7 @@ class HangoutServiceTimeConversionTest extends HangoutServiceTestBase {
             timeInput.setPeriodStart("1754557200"); // Unix timestamp
             hangout.setTimeInput(timeInput);
 
-            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            HangoutDetailData data = HangoutDetailData.builder().withHangout(hangout).build();
             when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
             when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
 
@@ -293,7 +293,7 @@ class HangoutServiceTimeConversionTest extends HangoutServiceTestBase {
             timeInput.setStartTime("2025-08-05T19:00:00Z");
             hangout.setTimeInput(timeInput);
 
-            HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            HangoutDetailData data = HangoutDetailData.builder().withHangout(hangout).build();
             when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
             when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
 

@@ -135,9 +135,10 @@ class HangoutServiceRetrievalTest extends HangoutServiceTestBase {
         NeedsRide needsRide2 = new NeedsRide(hangoutId, requesterUserId, "Need a ride from airport");
         List<NeedsRide> needsRideList = List.of(needsRide1, needsRide2);
 
-        HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), needsRideList, List.of(), List.of()
-        );
+        HangoutDetailData data = HangoutDetailData.builder()
+            .withHangout(hangout)
+            .withNeedsRide(needsRideList)
+            .build();
 
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
         when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
@@ -169,9 +170,7 @@ class HangoutServiceRetrievalTest extends HangoutServiceTestBase {
         hangout.setTitle("Test Hangout");
         hangout.setVisibility(EventVisibility.PUBLIC);
 
-        HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
-        );
+        HangoutDetailData data = HangoutDetailData.builder().withHangout(hangout).build();
 
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
         when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
@@ -202,9 +201,10 @@ class HangoutServiceRetrievalTest extends HangoutServiceTestBase {
         NeedsRide needsRideWithNull = new NeedsRide(hangoutId, userId, null);
         List<NeedsRide> needsRideList = List.of(needsRideWithNull);
 
-        HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), needsRideList, List.of(), List.of()
-        );
+        HangoutDetailData data = HangoutDetailData.builder()
+            .withHangout(hangout)
+            .withNeedsRide(needsRideList)
+            .build();
 
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
         when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
@@ -240,9 +240,10 @@ class HangoutServiceRetrievalTest extends HangoutServiceTestBase {
         NeedsRide needsRide3 = new NeedsRide(hangoutId, user3Id, "");
         List<NeedsRide> needsRideList = List.of(needsRide1, needsRide2, needsRide3);
 
-        HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), needsRideList, List.of(), List.of()
-        );
+        HangoutDetailData data = HangoutDetailData.builder()
+            .withHangout(hangout)
+            .withNeedsRide(needsRideList)
+            .build();
 
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
         when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
@@ -274,9 +275,7 @@ class HangoutServiceRetrievalTest extends HangoutServiceTestBase {
         String requesterUserId = UUID.randomUUID().toString();
 
         // Return data with null hangout (simulating not found)
-        HangoutDetailData data = new HangoutDetailData(
-            null, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
-        );
+        HangoutDetailData data = HangoutDetailData.builder().withHangout(null).build();
 
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 
@@ -306,9 +305,14 @@ class HangoutServiceRetrievalTest extends HangoutServiceTestBase {
         List<InterestLevel> attendance = List.of();
         List<Vote> votes = List.of();
 
-        HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), cars, votes, attendance, carRiders, needsRideList, List.of(), List.of()
-        );
+        HangoutDetailData data = HangoutDetailData.builder()
+            .withHangout(hangout)
+            .withCars(cars)
+            .withVotes(votes)
+            .withAttendance(attendance)
+            .withCarRiders(carRiders)
+            .withNeedsRide(needsRideList)
+            .build();
 
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
         when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
@@ -344,7 +348,7 @@ class HangoutServiceRetrievalTest extends HangoutServiceTestBase {
         timeInput.setPeriodStart("1754557200"); // Unix timestamp for 2025-08-05T19:00:00Z
         hangout.setTimeInput(timeInput);
 
-        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData data = HangoutDetailData.builder().withHangout(hangout).build();
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 
         // When
@@ -424,10 +428,10 @@ class HangoutServiceRetrievalTest extends HangoutServiceTestBase {
         user2.setDisplayName("Bob");
         user2.setMainImagePath("bob.jpg");
 
-        HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-            List.of(p1, p2), List.of()
-        );
+        HangoutDetailData data = HangoutDetailData.builder()
+            .withHangout(hangout)
+            .withParticipations(List.of(p1, p2))
+            .build();
 
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
         when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
@@ -474,10 +478,10 @@ class HangoutServiceRetrievalTest extends HangoutServiceTestBase {
         user2.setDisplayName("Diana");
         user2.setMainImagePath("diana.jpg");
 
-        HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-            List.of(), List.of(offer1, offer2)
-        );
+        HangoutDetailData data = HangoutDetailData.builder()
+            .withHangout(hangout)
+            .withReservationOffers(List.of(offer1, offer2))
+            .build();
 
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
         when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
@@ -519,10 +523,10 @@ class HangoutServiceRetrievalTest extends HangoutServiceTestBase {
         user1.setDisplayName("Alice");
         user1.setMainImagePath("alice.jpg");
 
-        HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-            List.of(p1, p2), List.of()
-        );
+        HangoutDetailData data = HangoutDetailData.builder()
+            .withHangout(hangout)
+            .withParticipations(List.of(p1, p2))
+            .build();
 
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
         when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
@@ -549,10 +553,9 @@ class HangoutServiceRetrievalTest extends HangoutServiceTestBase {
         hangout.setTitle("Test Hangout");
         hangout.setVisibility(EventVisibility.PUBLIC);
 
-        HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-            List.of(), List.of()  // Empty participations and offers
-        );
+        HangoutDetailData data = HangoutDetailData.builder()
+            .withHangout(hangout)
+            .build();  // Empty participations and offers (builder defaults)
 
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
         when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());

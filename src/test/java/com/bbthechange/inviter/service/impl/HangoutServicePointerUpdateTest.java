@@ -39,9 +39,10 @@ class HangoutServicePointerUpdateTest extends HangoutServiceTestBase {
         InterestLevel interest1 = new InterestLevel(hangoutId, userId1, "User One", "GOING");
         InterestLevel interest2 = new InterestLevel(hangoutId, userId2, "User Two", "INTERESTED");
 
-        HangoutDetailData data = new HangoutDetailData(
-            hangout, List.of(), List.of(), List.of(), List.of(), List.of(interest1, interest2), List.of(), List.of(), List.of(), List.of()
-        );
+        HangoutDetailData data = HangoutDetailData.builder()
+            .withHangout(hangout)
+            .withAttendance(List.of(interest1, interest2))
+            .build();
         when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
         when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());

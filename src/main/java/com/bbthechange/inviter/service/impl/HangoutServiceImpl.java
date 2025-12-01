@@ -274,18 +274,18 @@ public class HangoutServiceImpl implements HangoutService {
             .filter(Objects::nonNull)
             .collect(Collectors.toList());
 
-        return new HangoutDetailDTO(
-                hangout,
-            attributeDTOs, // Now includes actual attributes from single query
-            pollsWithOptions,
-            hangoutDetail.getCars(),
-            hangoutDetail.getVotes(),
-            hangoutDetail.getAttendance(),
-            hangoutDetail.getCarRiders(),
-            needsRideDTOs,
-            participationDTOs,
-            offerDTOs
-        );
+        return HangoutDetailDTO.builder()
+                .withHangout(hangout)
+                .withAttributes(attributeDTOs)
+                .withPolls(pollsWithOptions)
+                .withCars(hangoutDetail.getCars())
+                .withVotes(hangoutDetail.getVotes())
+                .withAttendance(hangoutDetail.getAttendance())
+                .withCarRiders(hangoutDetail.getCarRiders())
+                .withNeedsRide(needsRideDTOs)
+                .withParticipations(participationDTOs)
+                .withReservationOffers(offerDTOs)
+                .build();
     }
     
     @Override

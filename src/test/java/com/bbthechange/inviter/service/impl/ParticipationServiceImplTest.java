@@ -623,11 +623,10 @@ class ParticipationServiceImplTest {
             hangout.setTicketsRequired(true);
             hangout.setDiscountCode("SAVE20");
 
-            HangoutDetailDTO detailDTO = new HangoutDetailDTO(
-                hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-                List.of(new ParticipationDTO(savedParticipation, DISPLAY_NAME, IMAGE_PATH)),
-                List.of()
-            );
+            HangoutDetailDTO detailDTO = HangoutDetailDTO.builder()
+                .withHangout(hangout)
+                .withParticipations(List.of(new ParticipationDTO(savedParticipation, DISPLAY_NAME, IMAGE_PATH)))
+                .build();
 
             doNothing().when(hangoutService).verifyUserCanAccessHangout(HANGOUT_ID, USER_ID);
             when(userService.getUserById(UUID.fromString(USER_ID))).thenReturn(Optional.of(user));
@@ -661,11 +660,10 @@ class ParticipationServiceImplTest {
             hangout.setTicketsRequired(true);
             hangout.setDiscountCode("SAVE20");
 
-            HangoutDetailDTO detailDTO = new HangoutDetailDTO(
-                hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-                List.of(new ParticipationDTO(savedParticipation, DISPLAY_NAME, IMAGE_PATH)),
-                List.of()
-            );
+            HangoutDetailDTO detailDTO = HangoutDetailDTO.builder()
+                .withHangout(hangout)
+                .withParticipations(List.of(new ParticipationDTO(savedParticipation, DISPLAY_NAME, IMAGE_PATH)))
+                .build();
 
             doNothing().when(hangoutService).verifyUserCanAccessHangout(HANGOUT_ID, USER_ID);
             when(userService.getUserById(UUID.fromString(USER_ID))).thenReturn(Optional.of(user));
@@ -708,11 +706,10 @@ class ParticipationServiceImplTest {
 
             ParticipationDTO participationDTO = new ParticipationDTO(savedParticipation, DISPLAY_NAME, IMAGE_PATH);
 
-            HangoutDetailDTO detailDTO = new HangoutDetailDTO(
-                hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-                List.of(participationDTO),
-                List.of()
-            );
+            HangoutDetailDTO detailDTO = HangoutDetailDTO.builder()
+                .withHangout(hangout)
+                .withParticipations(List.of(participationDTO))
+                .build();
 
             doNothing().when(hangoutService).verifyUserCanAccessHangout(HANGOUT_ID, USER_ID);
             when(userService.getUserById(UUID.fromString(USER_ID))).thenReturn(Optional.of(user));
@@ -778,11 +775,10 @@ class ParticipationServiceImplTest {
             hangout.setHangoutId(HANGOUT_ID);
             hangout.setAssociatedGroups(List.of());  // No associated groups
 
-            HangoutDetailDTO detailDTO = new HangoutDetailDTO(
-                hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-                List.of(new ParticipationDTO(savedParticipation, DISPLAY_NAME, IMAGE_PATH)),
-                List.of()
-            );
+            HangoutDetailDTO detailDTO = HangoutDetailDTO.builder()
+                .withHangout(hangout)
+                .withParticipations(List.of(new ParticipationDTO(savedParticipation, DISPLAY_NAME, IMAGE_PATH)))
+                .build();
 
             doNothing().when(hangoutService).verifyUserCanAccessHangout(HANGOUT_ID, USER_ID);
             when(userService.getUserById(UUID.fromString(USER_ID))).thenReturn(Optional.of(user));
@@ -818,17 +814,16 @@ class ParticipationServiceImplTest {
             hangout.setHangoutId(HANGOUT_ID);
             hangout.setAssociatedGroups(List.of(groupId));
 
-            HangoutDetailDTO detailDTO = new HangoutDetailDTO(
-                hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-                Arrays.asList(
+            HangoutDetailDTO detailDTO = HangoutDetailDTO.builder()
+                .withHangout(hangout)
+                .withParticipations(Arrays.asList(
                     new ParticipationDTO(p1, DISPLAY_NAME, IMAGE_PATH),
                     new ParticipationDTO(p2, DISPLAY_NAME_2, IMAGE_PATH_2),
                     new ParticipationDTO(p3, DISPLAY_NAME, IMAGE_PATH),
                     new ParticipationDTO(p4, DISPLAY_NAME, IMAGE_PATH),
                     new ParticipationDTO(p5, DISPLAY_NAME_2, IMAGE_PATH_2)
-                ),
-                List.of()
-            );
+                ))
+                .build();
 
             doNothing().when(hangoutService).verifyUserCanAccessHangout(HANGOUT_ID, USER_ID);
             when(userService.getUserById(UUID.fromString(USER_ID))).thenReturn(Optional.of(user));
@@ -876,15 +871,14 @@ class ParticipationServiceImplTest {
 
             User user2 = createUser(USER_ID_2, DISPLAY_NAME_2, IMAGE_PATH_2);
 
-            HangoutDetailDTO detailDTO = new HangoutDetailDTO(
-                hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-                Arrays.asList(
+            HangoutDetailDTO detailDTO = HangoutDetailDTO.builder()
+                .withHangout(hangout)
+                .withParticipations(Arrays.asList(
                     new ParticipationDTO(p1, DISPLAY_NAME, IMAGE_PATH),
                     new ParticipationDTO(p2, DISPLAY_NAME, IMAGE_PATH),
                     new ParticipationDTO(p3, DISPLAY_NAME_2, IMAGE_PATH_2)
-                ),
-                List.of()
-            );
+                ))
+                .build();
 
             doNothing().when(hangoutService).verifyUserCanAccessHangout(HANGOUT_ID, USER_ID);
             when(userService.getUserById(UUID.fromString(USER_ID))).thenReturn(Optional.of(user));
@@ -929,15 +923,15 @@ class ParticipationServiceImplTest {
             ReservationOffer offer3 = new ReservationOffer(HANGOUT_ID, UUID.randomUUID().toString(), USER_ID, OfferType.TICKET);
             offer3.setStatus(OfferStatus.CANCELLED);
 
-            HangoutDetailDTO detailDTO = new HangoutDetailDTO(
-                hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-                List.of(new ParticipationDTO(savedParticipation, DISPLAY_NAME, IMAGE_PATH)),
-                Arrays.asList(
+            HangoutDetailDTO detailDTO = HangoutDetailDTO.builder()
+                .withHangout(hangout)
+                .withParticipations(List.of(new ParticipationDTO(savedParticipation, DISPLAY_NAME, IMAGE_PATH)))
+                .withReservationOffers(Arrays.asList(
                     new ReservationOfferDTO(offer1, DISPLAY_NAME, IMAGE_PATH),
                     new ReservationOfferDTO(offer2, DISPLAY_NAME_2, IMAGE_PATH_2),
                     new ReservationOfferDTO(offer3, DISPLAY_NAME, IMAGE_PATH)
-                )
-            );
+                ))
+                .build();
 
             doNothing().when(hangoutService).verifyUserCanAccessHangout(HANGOUT_ID, USER_ID);
             when(userService.getUserById(UUID.fromString(USER_ID))).thenReturn(Optional.of(user));

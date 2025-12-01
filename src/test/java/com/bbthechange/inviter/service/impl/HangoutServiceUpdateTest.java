@@ -37,7 +37,7 @@ class HangoutServiceUpdateTest extends HangoutServiceTestBase {
         Hangout hangout = createTestHangout(eventId);
         hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")));
 
-        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData data = HangoutDetailData.builder().withHangout(hangout).build();
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(data);
 
         // Mock authorization - user is admin in group-1
@@ -423,7 +423,7 @@ class HangoutServiceUpdateTest extends HangoutServiceTestBase {
         Hangout hangout = createTestHangout(hangoutId);
         hangout.setAssociatedGroups(new java.util.ArrayList<>(List.of(groupId)));
 
-        HangoutDetailData data = new HangoutDetailData(hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        HangoutDetailData data = HangoutDetailData.builder().withHangout(hangout).build();
         when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
 
         // Mock authorization

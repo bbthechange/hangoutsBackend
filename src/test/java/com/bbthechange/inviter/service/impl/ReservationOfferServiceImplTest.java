@@ -876,11 +876,10 @@ class ReservationOfferServiceImplTest {
             hangout.setTicketsRequired(true);
             hangout.setDiscountCode("SAVE20");
 
-            HangoutDetailDTO detailDTO = new HangoutDetailDTO(
-                hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-                List.of(),
-                List.of(new ReservationOfferDTO(savedOffer, testUser.getDisplayName(), testUser.getMainImagePath()))
-            );
+            HangoutDetailDTO detailDTO = HangoutDetailDTO.builder()
+                .withHangout(hangout)
+                .withReservationOffers(List.of(new ReservationOfferDTO(savedOffer, testUser.getDisplayName(), testUser.getMainImagePath())))
+                .build();
 
             when(userService.getUserById(UUID.fromString(userId))).thenReturn(Optional.of(testUser));
             when(offerRepository.save(any(ReservationOffer.class))).thenReturn(savedOffer);
@@ -911,11 +910,10 @@ class ReservationOfferServiceImplTest {
             hangout.setTicketsRequired(true);
             hangout.setDiscountCode("SAVE20");
 
-            HangoutDetailDTO detailDTO = new HangoutDetailDTO(
-                hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-                List.of(),
-                List.of(new ReservationOfferDTO(savedOffer, testUser.getDisplayName(), testUser.getMainImagePath()))
-            );
+            HangoutDetailDTO detailDTO = HangoutDetailDTO.builder()
+                .withHangout(hangout)
+                .withReservationOffers(List.of(new ReservationOfferDTO(savedOffer, testUser.getDisplayName(), testUser.getMainImagePath())))
+                .build();
 
             when(userService.getUserById(UUID.fromString(userId))).thenReturn(Optional.of(testUser));
             when(offerRepository.save(any(ReservationOffer.class))).thenReturn(savedOffer);
@@ -951,11 +949,10 @@ class ReservationOfferServiceImplTest {
             hangout.setHangoutId(hangoutId);
             hangout.setAssociatedGroups(List.of(GROUP_ID_1));
 
-            HangoutDetailDTO detailDTO = new HangoutDetailDTO(
-                hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-                List.of(),
-                List.of(new ReservationOfferDTO(savedOffer, testUser.getDisplayName(), testUser.getMainImagePath()))
-            );
+            HangoutDetailDTO detailDTO = HangoutDetailDTO.builder()
+                .withHangout(hangout)
+                .withReservationOffers(List.of(new ReservationOfferDTO(savedOffer, testUser.getDisplayName(), testUser.getMainImagePath())))
+                .build();
 
             when(userService.getUserById(UUID.fromString(userId))).thenReturn(Optional.of(testUser));
             when(offerRepository.save(any(ReservationOffer.class))).thenReturn(savedOffer);
@@ -1014,11 +1011,10 @@ class ReservationOfferServiceImplTest {
             hangout.setHangoutId(hangoutId);
             hangout.setAssociatedGroups(List.of()); // No associated groups
 
-            HangoutDetailDTO detailDTO = new HangoutDetailDTO(
-                hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-                List.of(),
-                List.of(new ReservationOfferDTO(savedOffer, testUser.getDisplayName(), testUser.getMainImagePath()))
-            );
+            HangoutDetailDTO detailDTO = HangoutDetailDTO.builder()
+                .withHangout(hangout)
+                .withReservationOffers(List.of(new ReservationOfferDTO(savedOffer, testUser.getDisplayName(), testUser.getMainImagePath())))
+                .build();
 
             when(userService.getUserById(UUID.fromString(userId))).thenReturn(Optional.of(testUser));
             when(offerRepository.save(any(ReservationOffer.class))).thenReturn(savedOffer);
@@ -1051,17 +1047,17 @@ class ReservationOfferServiceImplTest {
             hangout.setHangoutId(hangoutId);
             hangout.setAssociatedGroups(List.of(GROUP_ID_1));
 
-            HangoutDetailDTO detailDTO = new HangoutDetailDTO(
-                hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-                Arrays.asList(
+            HangoutDetailDTO detailDTO = HangoutDetailDTO.builder()
+                .withHangout(hangout)
+                .withParticipations(Arrays.asList(
                     new ParticipationDTO(p1, "User1", "img1.jpg"),
                     new ParticipationDTO(p2, "User2", "img2.jpg"),
                     new ParticipationDTO(p3, "User1", "img1.jpg"),
                     new ParticipationDTO(p4, "User1", "img1.jpg"),
                     new ParticipationDTO(p5, "User2", "img2.jpg")
-                ),
-                List.of(new ReservationOfferDTO(savedOffer, testUser.getDisplayName(), testUser.getMainImagePath()))
-            );
+                ))
+                .withReservationOffers(List.of(new ReservationOfferDTO(savedOffer, testUser.getDisplayName(), testUser.getMainImagePath())))
+                .build();
 
             when(userService.getUserById(UUID.fromString(userId))).thenReturn(Optional.of(testUser));
             when(offerRepository.save(any(ReservationOffer.class))).thenReturn(savedOffer);
@@ -1108,15 +1104,14 @@ class ReservationOfferServiceImplTest {
             hangout.setHangoutId(hangoutId);
             hangout.setAssociatedGroups(List.of(GROUP_ID_1));
 
-            HangoutDetailDTO detailDTO = new HangoutDetailDTO(
-                hangout, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-                List.of(),
-                Arrays.asList(
+            HangoutDetailDTO detailDTO = HangoutDetailDTO.builder()
+                .withHangout(hangout)
+                .withReservationOffers(Arrays.asList(
                     new ReservationOfferDTO(offer1, "User1", "img1.jpg"),
                     new ReservationOfferDTO(offer2, "User2", "img2.jpg"),
                     new ReservationOfferDTO(offer3, "User1", "img1.jpg")
-                )
-            );
+                ))
+                .build();
 
             when(userService.getUserById(UUID.fromString(userId))).thenReturn(Optional.of(testUser));
             when(offerRepository.save(any(ReservationOffer.class))).thenReturn(savedOffer);
