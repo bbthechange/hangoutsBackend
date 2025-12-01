@@ -82,6 +82,9 @@ public class HangoutSummaryDTO implements FeedItem {
      * @param requestingUserId User ID for calculating poll voting status
      */
     public HangoutSummaryDTO(HangoutPointer pointer, String requestingUserId) {
+        // Type discriminator (must be set explicitly since @Builder.Default only applies to builder)
+        this.type = "hangout";
+
         // Basic fields
         this.hangoutId = pointer.getHangoutId();
         this.title = pointer.getTitle();
