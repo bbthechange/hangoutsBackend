@@ -277,6 +277,8 @@ Adds a new hangout to an existing series.
 
 Removes a hangout from a series without deleting the hangout. The hangout remains as a standalone event.
 
+**Important**: If you unlink the **last remaining hangout** from a series, the series is automatically deleted (since a series cannot exist without hangouts). The hangout itself is preserved as a standalone event.
+
 #### Authorization
 - Requesting user must be a member of the series
 
@@ -289,9 +291,16 @@ Removes a hangout from a series without deleting the hangout. The hangout remain
 #### Success Response (204 No Content)
 No response body.
 
+#### Special Behavior
+| Scenario | Result |
+|----------|--------|
+| Unlink hangout (series has 2+ remaining) | Hangout becomes standalone, series continues |
+| Unlink last hangout | Hangout becomes standalone, **series is deleted** |
+
 #### Error Responses
 | Status | Description |
 |--------|-------------|
+| 400 Bad Request | Hangout is not part of the specified series |
 | 403 Forbidden | User not authorized to modify this series |
 | 404 Not Found | Series or hangout not found |
 | 500 Internal Server Error | Server error or database error |
@@ -480,6 +489,18 @@ All error responses follow this general structure:
 
 ---
 
+## Series Deletion Options Summary
+
+| Goal | Method | Series Deleted? | Hangouts Deleted? |
+|------|--------|-----------------|-------------------|
+| Delete everything | `DELETE /series/{id}` | Yes | Yes (all) |
+| Remove one hangout, keep it | `DELETE /series/{id}/hangouts/{hid}` | No* | No |
+| Dissolve series, keep all hangouts | Unlink each hangout individually | Yes (auto)* | No |
+
+\* When you unlink the last hangout, the series is automatically deleted.
+
+---
+
 ## Example Workflows
 
 ### Creating a Multi-Part Event Series
@@ -496,7 +517,22 @@ All error responses follow this general structure:
 3. Update series via `PUT /series/{seriesId}` with version number
 4. If update fails with 400, refresh the series (someone else updated it)
 
-### Removing a Hangout
+### Removing a Hangout (Keep as Standalone)
 
-1. To remove without deleting: `DELETE /series/{seriesId}/hangouts/{hangoutId}`
-2. To delete entire series: `DELETE /series/{seriesId}` (deletes all hangouts)
+1. Call `DELETE /series/{seriesId}/hangouts/{hangoutId}`
+2. The hangout remains accessible via the Hangout API
+3. If this was the last hangout, the series is automatically deleted
+
+### Dissolving a Series (Keep All Hangouts)
+
+To convert all hangouts back to standalone events:
+
+1. Get series detail via `GET /series/{seriesId}` to get all `hangoutIds`
+2. For each hangout except one, call `DELETE /series/{seriesId}/hangouts/{hangoutId}`
+3. The final unlink automatically deletes the (now empty) series
+4. All hangouts remain accessible as standalone events
+
+### Deleting Everything
+
+1. Call `DELETE /series/{seriesId}`
+2. The series AND all its hangouts are permanently deleted
