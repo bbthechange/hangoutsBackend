@@ -17,4 +17,9 @@ public class CreateHangoutRequest {
     private List<CreateAttributeRequest> attributes;
     private boolean carpoolEnabled;
     private List<CreatePollRequest> polls; // Polls to create with the hangout
+
+    // Ticket-related fields
+    private String ticketLink;          // URL to ticket purchase page
+    private Boolean ticketsRequired;    // Are tickets mandatory?
+    private String discountCode;        // Optional discount code
 }

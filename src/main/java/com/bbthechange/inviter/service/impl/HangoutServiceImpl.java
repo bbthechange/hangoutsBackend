@@ -89,6 +89,11 @@ public class HangoutServiceImpl implements HangoutService {
                 pointer.setVisibility(hangout.getVisibility());
                 pointer.setCarpoolEnabled(hangout.isCarpoolEnabled());
 
+                // Denormalize ticket-related fields
+                pointer.setTicketLink(hangout.getTicketLink());
+                pointer.setTicketsRequired(hangout.getTicketsRequired());
+                pointer.setDiscountCode(hangout.getDiscountCode());
+
                 // NEW: Initialize empty collections (already done in constructor, but explicit here)
                 // polls, pollOptions, votes, cars, carRiders, needsRide are initialized in HangoutPointer()
 
@@ -207,6 +212,11 @@ public class HangoutServiceImpl implements HangoutService {
             hangout.setEndTimestamp(timeResult.endTimestamp);
         }
         hangout.setCarpoolEnabled(request.isCarpoolEnabled());
+
+        // Set ticket-related fields
+        hangout.setTicketLink(request.getTicketLink());
+        hangout.setTicketsRequired(request.getTicketsRequired());
+        hangout.setDiscountCode(request.getDiscountCode());
 
         // Verify user is in all specified groups
         if (request.getAssociatedGroups() != null) {
