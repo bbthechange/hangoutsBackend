@@ -31,6 +31,7 @@ import com.bbthechange.inviter.util.PaginatedResult;
 import com.bbthechange.inviter.util.GroupFeedPaginationToken;
 import com.bbthechange.inviter.util.RepositoryTokenData;
 import com.bbthechange.inviter.util.InviteCodeGenerator;
+import com.bbthechange.inviter.util.HangoutDataTransformer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 
@@ -53,6 +54,9 @@ public class GroupServiceImpl implements GroupService {
     private final S3Service s3Service;
     private final InviteCodeRepository inviteCodeRepository;
     private final String appBaseUrl;
+
+    @Value("${inviter.attendance.backward-compat-interested:true}")
+    private boolean attendanceBackwardCompatEnabled;
 
     @Autowired
     public GroupServiceImpl(GroupRepository groupRepository, HangoutRepository hangoutRepository,
@@ -604,6 +608,9 @@ public class GroupServiceImpl implements GroupService {
                 // Only include standalone hangouts (not already part of a series)
                 if (!hangoutIdsInSeries.contains(hangoutPointer.getHangoutId())) {
                     HangoutSummaryDTO hangoutDTO = new HangoutSummaryDTO(hangoutPointer, requestingUserId);
+                    // Apply backward compatibility transformation for interest levels
+                    hangoutDTO.setInterestLevels(HangoutDataTransformer.transformAttendanceForBackwardCompatibility(
+                            hangoutDTO.getInterestLevels(), attendanceBackwardCompatEnabled));
                     feedItems.add(hangoutDTO);
                 }
                 // If it's part of a series, ignore it (already included in SeriesSummaryDTO)
@@ -638,6 +645,9 @@ public class GroupServiceImpl implements GroupService {
         if (seriesPointer.getParts() != null) {
             for (HangoutPointer part : seriesPointer.getParts()) {
                 HangoutSummaryDTO partDTO = new HangoutSummaryDTO(part, requestingUserId);
+                // Apply backward compatibility transformation for interest levels
+                partDTO.setInterestLevels(HangoutDataTransformer.transformAttendanceForBackwardCompatibility(
+                        partDTO.getInterestLevels(), attendanceBackwardCompatEnabled));
                 parts.add(partDTO);
             }
         }

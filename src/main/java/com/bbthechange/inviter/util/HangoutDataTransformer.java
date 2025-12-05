@@ -3,6 +3,7 @@ package com.bbthechange.inviter.util;
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.model.*;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -107,5 +108,43 @@ public class HangoutDataTransformer {
         return needsRideList.stream()
                 .map(NeedsRideDTO::new)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Transform attendance data for backward compatibility with older app versions.
+     *
+     * Older app versions only understand "INTERESTED" status. When a user sets "GOING",
+     * old clients won't show them in the participant list. This method adds a synthetic
+     * "INTERESTED" entry for each "GOING" entry so old clients still display the user.
+     *
+     * New clients can deduplicate by userId or display based on the more specific status.
+     *
+     * @param attendance List of InterestLevel entries
+     * @param enabled Whether backward compatibility is enabled (for easy rollback)
+     * @return Transformed list with synthetic INTERESTED entries for GOING users
+     */
+    public static List<InterestLevel> transformAttendanceForBackwardCompatibility(
+            List<InterestLevel> attendance, boolean enabled) {
+
+        if (!enabled || attendance == null || attendance.isEmpty()) {
+            return attendance;
+        }
+
+        List<InterestLevel> result = new ArrayList<>(attendance);
+
+        for (InterestLevel level : attendance) {
+            if ("GOING".equals(level.getStatus())) {
+                InterestLevel syntheticInterested = new InterestLevel();
+                syntheticInterested.setEventId(level.getEventId());
+                syntheticInterested.setUserId(level.getUserId());
+                syntheticInterested.setUserName(level.getUserName());
+                syntheticInterested.setStatus("INTERESTED");
+                syntheticInterested.setMainImagePath(level.getMainImagePath());
+                syntheticInterested.setNotes(level.getNotes());
+                result.add(syntheticInterested);
+            }
+        }
+
+        return result;
     }
 }

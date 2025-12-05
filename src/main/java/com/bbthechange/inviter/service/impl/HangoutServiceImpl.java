@@ -12,9 +12,11 @@ import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.exception.*;
+import com.bbthechange.inviter.util.HangoutDataTransformer;
 import com.bbthechange.inviter.exception.RepositoryException;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,6 +44,9 @@ public class HangoutServiceImpl implements HangoutService {
     private final PointerUpdateService pointerUpdateService;
     private final S3Service s3Service;
     private final GroupTimestampService groupTimestampService;
+
+    @Value("${inviter.attendance.backward-compat-interested:true}")
+    private boolean attendanceBackwardCompatEnabled;
 
     @Autowired
     public HangoutServiceImpl(HangoutRepository hangoutRepository, GroupRepository groupRepository,
@@ -284,13 +289,17 @@ public class HangoutServiceImpl implements HangoutService {
             .filter(Objects::nonNull)
             .collect(Collectors.toList());
 
+        // Apply backward compatibility transformation for attendance
+        List<InterestLevel> attendance = HangoutDataTransformer.transformAttendanceForBackwardCompatibility(
+                hangoutDetail.getAttendance(), attendanceBackwardCompatEnabled);
+
         return HangoutDetailDTO.builder()
                 .withHangout(hangout)
                 .withAttributes(attributeDTOs)
                 .withPolls(pollsWithOptions)
                 .withCars(hangoutDetail.getCars())
                 .withVotes(hangoutDetail.getVotes())
-                .withAttendance(hangoutDetail.getAttendance())
+                .withAttendance(attendance)
                 .withCarRiders(hangoutDetail.getCarRiders())
                 .withNeedsRide(needsRideDTOs)
                 .withParticipations(participationDTOs)
@@ -779,6 +788,11 @@ public class HangoutServiceImpl implements HangoutService {
             TimeInfo timeInfo = formatTimeInfoForResponse(pointer.getTimeInput());
             summary.setTimeInfo(timeInfo);
         }
+
+        // Apply backward compatibility transformation for interest levels
+        List<InterestLevel> transformedInterestLevels = HangoutDataTransformer.transformAttendanceForBackwardCompatibility(
+                summary.getInterestLevels(), attendanceBackwardCompatEnabled);
+        summary.setInterestLevels(transformedInterestLevels);
 
         return summary;
     }

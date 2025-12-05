@@ -472,4 +472,192 @@ class HangoutDataTransformerTest {
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getNotes()).isEqualTo("");
     }
+
+    // ============================================================================
+    // transformAttendanceForBackwardCompatibility() tests
+    // ============================================================================
+
+    @Test
+    void transformAttendanceForBackwardCompatibility_WhenDisabled_ReturnsOriginalList() {
+        // Given
+        String eventId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+
+        InterestLevel goingLevel = new InterestLevel(eventId, userId, "Alice", "GOING");
+        List<InterestLevel> attendance = List.of(goingLevel);
+
+        // When - disabled
+        List<InterestLevel> result = HangoutDataTransformer.transformAttendanceForBackwardCompatibility(
+                attendance, false);
+
+        // Then - should return original list without synthetic entries
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getStatus()).isEqualTo("GOING");
+    }
+
+    @Test
+    void transformAttendanceForBackwardCompatibility_WhenEnabled_AddsSyntheticInterestedForGoing() {
+        // Given
+        String eventId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+
+        InterestLevel goingLevel = new InterestLevel(eventId, userId, "Alice", "GOING");
+        goingLevel.setMainImagePath("users/alice/profile.jpg");
+        goingLevel.setNotes("So excited!");
+        List<InterestLevel> attendance = new ArrayList<>();
+        attendance.add(goingLevel);
+
+        // When - enabled
+        List<InterestLevel> result = HangoutDataTransformer.transformAttendanceForBackwardCompatibility(
+                attendance, true);
+
+        // Then - should have original GOING plus synthetic INTERESTED
+        assertThat(result).hasSize(2);
+
+        // Verify original GOING entry is preserved
+        InterestLevel going = result.stream()
+                .filter(l -> "GOING".equals(l.getStatus()))
+                .findFirst().orElseThrow();
+        assertThat(going.getUserId()).isEqualTo(userId);
+        assertThat(going.getUserName()).isEqualTo("Alice");
+
+        // Verify synthetic INTERESTED entry is added
+        InterestLevel interested = result.stream()
+                .filter(l -> "INTERESTED".equals(l.getStatus()))
+                .findFirst().orElseThrow();
+        assertThat(interested.getUserId()).isEqualTo(userId);
+        assertThat(interested.getUserName()).isEqualTo("Alice");
+        assertThat(interested.getMainImagePath()).isEqualTo("users/alice/profile.jpg");
+        assertThat(interested.getNotes()).isEqualTo("So excited!");
+        assertThat(interested.getEventId()).isEqualTo(eventId);
+    }
+
+    @Test
+    void transformAttendanceForBackwardCompatibility_WithInterestedStatus_DoesNotAddDuplicate() {
+        // Given - user is already INTERESTED (not GOING)
+        String eventId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+
+        InterestLevel interestedLevel = new InterestLevel(eventId, userId, "Bob", "INTERESTED");
+        List<InterestLevel> attendance = List.of(interestedLevel);
+
+        // When
+        List<InterestLevel> result = HangoutDataTransformer.transformAttendanceForBackwardCompatibility(
+                attendance, true);
+
+        // Then - no additional entries should be added
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getStatus()).isEqualTo("INTERESTED");
+    }
+
+    @Test
+    void transformAttendanceForBackwardCompatibility_WithNotGoingStatus_DoesNotAddInterested() {
+        // Given - user set NOT_GOING
+        String eventId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+
+        InterestLevel notGoingLevel = new InterestLevel(eventId, userId, "Carol", "NOT_GOING");
+        List<InterestLevel> attendance = List.of(notGoingLevel);
+
+        // When
+        List<InterestLevel> result = HangoutDataTransformer.transformAttendanceForBackwardCompatibility(
+                attendance, true);
+
+        // Then - no additional entries should be added for NOT_GOING
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getStatus()).isEqualTo("NOT_GOING");
+    }
+
+    @Test
+    void transformAttendanceForBackwardCompatibility_WithMixedStatuses_OnlyAddsForGoing() {
+        // Given - multiple users with different statuses
+        String eventId = UUID.randomUUID().toString();
+        String goingUserId = UUID.randomUUID().toString();
+        String interestedUserId = UUID.randomUUID().toString();
+        String notGoingUserId = UUID.randomUUID().toString();
+
+        InterestLevel going = new InterestLevel(eventId, goingUserId, "Alice", "GOING");
+        InterestLevel interested = new InterestLevel(eventId, interestedUserId, "Bob", "INTERESTED");
+        InterestLevel notGoing = new InterestLevel(eventId, notGoingUserId, "Carol", "NOT_GOING");
+
+        List<InterestLevel> attendance = new ArrayList<>();
+        attendance.add(going);
+        attendance.add(interested);
+        attendance.add(notGoing);
+
+        // When
+        List<InterestLevel> result = HangoutDataTransformer.transformAttendanceForBackwardCompatibility(
+                attendance, true);
+
+        // Then - should have 4 entries: original 3 + 1 synthetic INTERESTED for GOING user
+        assertThat(result).hasSize(4);
+
+        // Count statuses
+        long goingCount = result.stream().filter(l -> "GOING".equals(l.getStatus())).count();
+        long interestedCount = result.stream().filter(l -> "INTERESTED".equals(l.getStatus())).count();
+        long notGoingCount = result.stream().filter(l -> "NOT_GOING".equals(l.getStatus())).count();
+
+        assertThat(goingCount).isEqualTo(1);
+        assertThat(interestedCount).isEqualTo(2); // Original Bob + synthetic for Alice
+        assertThat(notGoingCount).isEqualTo(1);
+
+        // Verify Alice (GOING) has a synthetic INTERESTED entry
+        List<InterestLevel> aliceEntries = result.stream()
+                .filter(l -> l.getUserId().equals(goingUserId))
+                .toList();
+        assertThat(aliceEntries).hasSize(2);
+        assertThat(aliceEntries).extracting(InterestLevel::getStatus)
+                .containsExactlyInAnyOrder("GOING", "INTERESTED");
+    }
+
+    @Test
+    void transformAttendanceForBackwardCompatibility_WithNullList_ReturnsNull() {
+        // When
+        List<InterestLevel> result = HangoutDataTransformer.transformAttendanceForBackwardCompatibility(
+                null, true);
+
+        // Then
+        assertThat(result).isNull();
+    }
+
+    @Test
+    void transformAttendanceForBackwardCompatibility_WithEmptyList_ReturnsEmptyList() {
+        // Given
+        List<InterestLevel> attendance = new ArrayList<>();
+
+        // When
+        List<InterestLevel> result = HangoutDataTransformer.transformAttendanceForBackwardCompatibility(
+                attendance, true);
+
+        // Then
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void transformAttendanceForBackwardCompatibility_WithMultipleGoingUsers_AddsSyntheticForEach() {
+        // Given - multiple GOING users
+        String eventId = UUID.randomUUID().toString();
+        String user1Id = UUID.randomUUID().toString();
+        String user2Id = UUID.randomUUID().toString();
+
+        InterestLevel going1 = new InterestLevel(eventId, user1Id, "Alice", "GOING");
+        InterestLevel going2 = new InterestLevel(eventId, user2Id, "Bob", "GOING");
+
+        List<InterestLevel> attendance = new ArrayList<>();
+        attendance.add(going1);
+        attendance.add(going2);
+
+        // When
+        List<InterestLevel> result = HangoutDataTransformer.transformAttendanceForBackwardCompatibility(
+                attendance, true);
+
+        // Then - should have 4 entries: 2 GOING + 2 synthetic INTERESTED
+        assertThat(result).hasSize(4);
+
+        long goingCount = result.stream().filter(l -> "GOING".equals(l.getStatus())).count();
+        long interestedCount = result.stream().filter(l -> "INTERESTED".equals(l.getStatus())).count();
+
+        assertThat(goingCount).isEqualTo(2);
+        assertThat(interestedCount).isEqualTo(2);
+    }
 }
