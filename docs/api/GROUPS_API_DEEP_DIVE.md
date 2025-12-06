@@ -543,6 +543,25 @@ Controller (HTTP) → Service (Business Logic) → Repository (DynamoDB)
 - Parallel queries reduce latency for current/future feed
 - Denormalized HangoutPointer contains all display data (no hangout canonical lookups)
 
+**ETag Invalidation (CRITICAL for new features):**
+- Any operation that modifies feed data MUST update `Group.lastHangoutModified`
+- Use `GroupTimestampService.updateGroupTimestamps(groupIds)` after pointer updates
+- Operations that invalidate ETags:
+  - Hangout CRUD (create, update, delete, attributes)
+  - Poll operations (create, vote, delete)
+  - Carpool operations (driver/passenger changes)
+  - Interest level changes (RSVP status)
+- See `GROUP_FEED_ETAG_CONTEXT.md` for complete implementation patterns
+
+**Security Note:**
+- Membership verification happens BEFORE 304 response
+- Prevents ex-members from monitoring group activity via ETag changes
+
+**Cache-Control Headers:**
+- Returns `Cache-Control: no-cache, must-revalidate`
+- Forces clients to revalidate with server (zero staleness)
+- Still efficient due to 304 responses when unchanged
+
 ---
 
 ### 11. Get Group Feed Items (Polymorphic)
@@ -1120,6 +1139,12 @@ String mainImagePath;   // Null for private groups
 
 **ETag Format:** `"{groupId}-{lastHangoutModified.millis}"`
 
+**When Adding New Feed-Affecting Operations:**
+1. Update canonical record (Hangout, Poll, Carpool, etc.)
+2. Update pointer records (HangoutPointer)
+3. Call `groupTimestampService.updateGroupTimestamps(associatedGroups)`
+4. **If you skip step 3, ETags won't invalidate → stale data bugs**
+
 ### 3. Parallel Queries
 **Where:** Get Group Feed (current/future events)
 **Implementation:** CompletableFuture for future + in-progress queries
@@ -1379,6 +1404,10 @@ List<GroupMembership> getAllMemberships(String groupId) {
 10. **Update group name with 100+ members** → Test transaction batching
 11. **Concurrent group deletion** → Test transaction isolation
 12. **Invalid UUID format in path** → 400
+13. **Poll vote doesn't invalidate ETag** → Test ETag changes after poll operations
+14. **Interest level change doesn't invalidate ETag** → Test RSVP invalidates cache
+15. **Carpool change doesn't invalidate ETag** → Test ride coordination invalidates cache
+16. **Attribute update doesn't invalidate ETag** → Test hangout updates invalidate cache
 
 ---
 
@@ -1388,6 +1417,7 @@ List<GroupMembership> getAllMemberships(String groupId) {
 - `DYNAMODB_DESIGN_GUIDE.md` - **Critical patterns for database operations** (READ THIS!)
 
 **Then read:**
+- `context/GROUP_FEED_ETAG_CONTEXT.md` - ETag implementation patterns for group feed
 - `DATABASE_ARCHITECTURE_CRITICAL.md` - Single-table design patterns
 - `context/GROUP_CRUD_CONTEXT.md` - Business requirements
 - `context/ATTRIBUTE_ADDITION_GUIDE.md` - Adding new fields to User/Group/Hangout

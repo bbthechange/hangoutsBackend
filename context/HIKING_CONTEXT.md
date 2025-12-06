@@ -288,23 +288,45 @@ GET /hiking/trails/suggest?latitude=47.7511&longitude=-121.7380&radiusKm=15&diff
 
 ### Error Handling
 
-**Strategy**: Graceful degradation
-- OSM query fails → Return empty list, log error
-- Elevation API fails → Return trails without elevation
+**Current Implementation**:
+- OSM query fails → Throw `ExternalServiceException`, return 503 Service Unavailable
+- Elevation API fails → Return trails without elevation (graceful degradation)
 - Invalid coordinates → Return 400 Bad Request
+- Missing location for name search → Return 400 Bad Request with clear error message
+
+**Error Response Format**:
+```json
+{
+  "error": "Trail search service temporarily unavailable",
+  "message": "Overpass API is currently unavailable. Please try again later.",
+  "suggestion": "Please try again in a few moments"
+}
+```
 
 **Logging**: All external API calls logged at INFO level with timing
 
 ### Performance Optimization
 
-**Current**:
-- Coordinate sampling reduces Open-Elevation API calls (20 samples max)
-- 100ms delay between elevation batches for rate limiting
+**Current Optimizations** (as of 2025-01-10):
+- ✅ **Bounding Box Queries**: Replaced `around:50000` with efficient `bbox` filter
+- ✅ **Quadtile Sorting**: Using `out geom qt` for server-side optimization
+- ✅ **Location Required for Name Search**: Prevents expensive global searches
+- ✅ **Explicit Timeouts**: 15-second timeout for Overpass queries
+- ✅ **Coordinate Sampling**: Reduces Open-Elevation API calls (20 samples max)
+- ✅ **Rate Limiting**: 100ms delay between elevation batches
+
+**Known Performance Issues**:
+- ⚠️ **Single-Query Approach**: Currently using Method A (reliability 3/5) instead of recommended Method B (reliability 5/5)
+  - Returns full geometry for ALL matching trails in one query
+  - Can timeout when many trails found in area
+  - Sends large payloads client may not use
+  - See "Recommended: Two-Step Query Pattern" below
 
 **Future Improvements**:
-1. **Caching Layer**: DynamoDB table for frequently searched trails
-2. **Async Processing**: Enrich elevation data asynchronously
-3. **CDN**: Cache static trail data at edge locations
+1. **Two-Step Query Pattern** (High Priority - see implementation guide below)
+2. **Caching Layer**: DynamoDB table for frequently searched trails
+3. **Async Processing**: Enrich elevation data asynchronously
+4. **CDN**: Cache static trail data at edge locations
 
 ### Testing Strategy
 
@@ -326,15 +348,22 @@ GET /hiking/trails/suggest?latitude=47.7511&longitude=-121.7380&radiusKm=15&diff
 
 ### Known Issues
 
-1. **`getTrailById()` Not Implemented**
+1. **Single-Query Approach (High Priority)**
+   - **Problem**: Using Method A (reliability 3/5) instead of Method B (5/5)
+   - **Impact**: Timeouts when many trails found, large unnecessary payloads
+   - **Solution**: Implement two-step query pattern (see implementation guide below)
+   - **Reference**: `/projectDocs/openStreetMapsApiHiking.txt` (Section IV, Table 2)
+
+2. **`getTrailById()` Not Implemented**
    - Requires caching layer to avoid re-searching
    - Currently returns null with warning log
+   - Would be solved by two-step approach (Step 2 fetches by ID)
 
-2. **No Trail Recommendations**
+3. **No Trail Recommendations**
    - No API provides "trails people liked"
    - Future: Build user review/rating system (see STATE_TRAILS_API_RESEARCH.md)
 
-3. **OSM Data Completeness Varies**
+4. **OSM Data Completeness Varies**
    - Some regions have excellent data, others sparse
    - Mitigated by data quality scoring
 
@@ -379,6 +408,277 @@ public List<Trail> recommendTrails(String userId) {
     // Social: trails friends have liked
 }
 ```
+
+## Recommended: Two-Step Query Pattern Implementation
+
+### Overview
+
+**Current Approach**: Method A - Single Query (Reliability 3/5)
+```
+Client → [Search + Geometry in one query] → Server returns ALL trails with full geometry → Potential timeout
+```
+
+**Recommended Approach**: Method B - Two-Step Lookup (Reliability 5/5)
+```
+Step 1: Client → [Search for trail IDs + metadata only] → Server returns trail summaries (fast, small)
+Step 2: Client picks trail → [Get geometry for specific trail ID] → Server returns coordinates for 1 trail
+```
+
+### Why Two-Step is Better
+
+| Aspect | Single Query (Current) | Two-Step (Recommended) |
+|--------|----------------------|----------------------|
+| **Reliability** | 3/5 - Timeouts common | 5/5 - Distributed load |
+| **Initial Response** | Slow (megabytes of geometry) | Fast (kilobytes of metadata) |
+| **Data Transfer** | ALL trails with geometry | Only selected trail geometry |
+| **User Experience** | Waits for all data upfront | See list immediately, load details on demand |
+| **Overpass Load** | One massive query | Two small queries |
+| **Timeout Risk** | High (complex query) | Low (simple queries) |
+
+### Implementation Guide
+
+#### Step 1: Modify OverpassApiClient
+
+Add new methods for metadata-only queries:
+
+```java
+/**
+ * Search for trail metadata WITHOUT geometry (fast, small payload).
+ * Returns trail IDs, names, tags, bounding boxes - NO coordinates.
+ */
+public List<HikingTrailSummary> searchTrailSummaries(String trailName, Location location, Integer radiusMeters) {
+    String query = buildMetadataOnlyQuery(trailName, location, radiusMeters);
+    // POST to Overpass API
+    // Parse response into HikingTrailSummary (lightweight DTO)
+}
+
+private String buildMetadataOnlyQuery(String trailName, Location location, Integer radiusMeters) {
+    double radiusKm = radiusMeters != null ? radiusMeters / 1000.0 : 50.0;
+    BoundingBox bbox = calculateBoundingBox(location, radiusKm);
+
+    // Use 'out body;' instead of 'out geom qt;'
+    // Returns: id, type, tags, bounds - NO geometry!
+    return String.format(
+        "[out:json][timeout:10][bbox:%.6f,%.6f,%.6f,%.6f];" +
+        "(" +
+        "  way[\"route\"=\"hiking\"][\"name\"~\"%s\",i];" +
+        "  relation[\"route\"=\"hiking\"][\"name\"~\"%s\",i];" +
+        ");" +
+        "out body;",  // ← Key change: 'body' not 'geom'
+        bbox.south, bbox.west, bbox.north, bbox.east,
+        trailName, trailName
+    );
+}
+
+/**
+ * Get full geometry for a specific trail by OSM ID (fast, targeted).
+ */
+public HikingTrail getTrailGeometry(String osmType, String osmId) {
+    String query = buildGeometryQuery(osmType, osmId);
+    // POST to Overpass API
+    // Parse response into HikingTrail with full geometry
+}
+
+private String buildGeometryQuery(String osmType, String osmId) {
+    // Query specific element by ID, recurse to get all member nodes
+    // Use 'out skel qt;' for skeleton geometry only
+    return String.format(
+        "[out:json][timeout:10];" +
+        "%s(%s);" +
+        "(._; >>);",  // Recurse down to get all member ways/nodes
+        "out skel qt;",  // ← Skeleton geometry with quadtile sorting
+        osmType, osmId
+    );
+}
+```
+
+#### Step 2: Create HikingTrailSummary DTO
+
+```java
+package com.bbthechange.inviter.dto;
+
+/**
+ * Lightweight trail summary without geometry (for list views).
+ * Used in Step 1 of two-step query pattern.
+ */
+public class HikingTrailSummary {
+    private String id;                    // "osm-way-123456"
+    private String name;
+    private Location location;            // Approximate center (from bounds)
+    private String difficulty;
+    private String region;
+    private Double approximateDistanceKm; // From OSM tags if available
+    private String source;                // "OSM"
+    private String externalId;            // "way/123456"
+    private DataQuality quality;
+
+    // NO geometry field - that's the point!
+
+    // Getters, setters, constructors
+}
+```
+
+#### Step 3: Update HikingService
+
+```java
+/**
+ * Step 1: Search for trail summaries (metadata only, no geometry).
+ */
+public List<HikingTrailSummary> searchTrailSummaries(String name, Location location,
+                                                      boolean includeElevation) {
+    if (location == null) {
+        throw new IllegalArgumentException("Location required for trail search");
+    }
+
+    List<HikingTrailSummary> summaries = overpassClient.searchTrailSummaries(name, location, 50000);
+
+    // Sort by proximity
+    return sortSummariesByProximity(summaries, location);
+}
+
+/**
+ * Step 2: Get full trail details including geometry by ID.
+ * This replaces the current getTrailById() stub.
+ */
+public HikingTrail getTrailById(String trailId, boolean includeElevation) {
+    // Parse trailId: "osm-way-123456" → type="way", id="123456"
+    String[] parts = trailId.split("-");
+    String osmType = parts[1];  // "way" or "relation"
+    String osmId = parts[2];     // "123456"
+
+    // Fetch geometry from Overpass
+    HikingTrail trail = overpassClient.getTrailGeometry(osmType, osmId);
+
+    if (trail == null) {
+        return null;
+    }
+
+    // Optionally enrich with elevation
+    if (includeElevation && trail.getGeometry() != null) {
+        trail = elevationClient.enrichTrailWithElevation(trail);
+    }
+
+    return trail;
+}
+```
+
+#### Step 4: Update HikingController API
+
+```java
+/**
+ * NEW: Step 1 endpoint - Get trail summaries (list view).
+ */
+@GetMapping("/trails/search/summaries")
+@Operation(summary = "Search trail summaries",
+          description = "Get lightweight trail summaries without geometry for list view")
+public ResponseEntity<List<HikingTrailSummary>> searchTrailSummaries(
+        @RequestParam String name,
+        @RequestParam Double latitude,
+        @RequestParam Double longitude
+) {
+    Location location = new Location(latitude, longitude);
+    List<HikingTrailSummary> summaries = hikingService.searchTrailSummaries(name, location, false);
+    return ResponseEntity.ok(summaries);
+}
+
+/**
+ * UPDATED: Step 2 endpoint - Get full trail details by ID.
+ * This now actually works instead of returning null!
+ */
+@GetMapping("/trails/{trailId}")
+@Operation(summary = "Get trail details",
+          description = "Get full trail details including geometry and optional elevation")
+public ResponseEntity<HikingTrail> getTrailById(
+        @PathVariable String trailId,
+        @RequestParam(required = false, defaultValue = "false") boolean includeElevation
+) {
+    HikingTrail trail = hikingService.getTrailById(trailId, includeElevation);
+
+    if (trail == null) {
+        return ResponseEntity.notFound().build();
+    }
+
+    return ResponseEntity.ok(trail);
+}
+```
+
+#### Step 5: Update Frontend Flow
+
+**Old Flow** (single query):
+```javascript
+// Search returns everything at once (slow, large)
+const trails = await fetch('/hiking/trails/search?name=Wonderland&lat=46.8&lng=-121.7');
+// trails[0] has full geometry with 200+ coordinates
+showTrailList(trails);  // Client got data it doesn't use yet
+```
+
+**New Flow** (two-step):
+```javascript
+// Step 1: Get summaries (fast, small)
+const summaries = await fetch('/hiking/trails/search/summaries?name=Wonderland&lat=46.8&lng=-121.7');
+// summaries[0] has NO geometry, just metadata
+showTrailList(summaries);  // Renders immediately
+
+// Step 2: User clicks a trail
+async function onTrailSelected(trailId) {
+    const fullTrail = await fetch(`/hiking/trails/${trailId}?includeElevation=true`);
+    // Now fetch geometry + elevation for just this one trail
+    showTrailDetails(fullTrail);  // Render map with geometry
+}
+```
+
+### Migration Strategy
+
+1. **Phase 1**: Implement two-step endpoints alongside existing endpoints
+2. **Phase 2**: Update frontend to use new two-step flow
+3. **Phase 3**: Monitor performance improvements
+4. **Phase 4**: Deprecate old single-query endpoints (or keep for backwards compatibility)
+
+### Expected Performance Improvements
+
+| Metric | Current (Single Query) | Two-Step | Improvement |
+|--------|----------------------|----------|-------------|
+| Initial Search Response Time | 5-15 seconds | 1-3 seconds | 3-5x faster |
+| Initial Response Size | 500KB - 2MB | 5-20KB | 25-100x smaller |
+| Timeout Rate | 30-50% | <5% | 6-10x more reliable |
+| Detail View Response Time | 0 (already loaded) | 2-5 seconds | Slightly slower, but acceptable |
+| Total Data Transfer (user views 3 trails) | 2MB | 60KB | 33x less bandwidth |
+
+### Overpass QL Output Modes Reference
+
+| Output Mode | Returns | Use Case | Performance |
+|------------|---------|----------|-------------|
+| `out;` | Tags only, no geometry | Legacy, avoid | Medium |
+| `out body;` | Tags + bounds, NO geometry | **Step 1: Summaries** ✅ | Fast |
+| `out geom;` | Tags + geometry | Current single-query | Slow |
+| `out geom qt;` | Tags + geometry + quadtile sort | Current with optimization | Medium |
+| `out skel qt;` | Geometry only, NO tags | **Step 2: Geometry** ✅ | Fast |
+
+### Testing the Two-Step Approach
+
+**Step 1 Test**:
+```bash
+# Should return trail summaries WITHOUT geometry (small, fast)
+curl "http://localhost:8080/hiking/trails/search/summaries?name=Wonderland&latitude=46.8523&longitude=-121.7603"
+
+# Response should be ~5-20KB, not megabytes
+```
+
+**Step 2 Test**:
+```bash
+# Should return full trail WITH geometry for specific ID
+curl "http://localhost:8080/hiking/trails/osm-way-123456?includeElevation=true"
+
+# Response should have geometry array
+```
+
+### References
+
+- **Analysis Document**: `/projectDocs/openStreetMapsApiHiking.txt`
+  - Section IV: "Strategy 1: Fast Retrieval by Known Trail Name"
+  - Table 2: Performance Comparison of Query Strategies
+- **Overpass API Docs**: https://wiki.openstreetmap.org/wiki/Overpass_API/Overpass_QL
+- **Output Modes**: https://wiki.openstreetmap.org/wiki/Overpass_API/Overpass_API_by_Example
 
 ## Integration with Hangouts
 
@@ -519,10 +819,34 @@ Per CLAUDE.md MANDATORY TESTING requirement:
 
 ## Changelog
 
-- **2025-01-10**: Initial implementation - OSM + Open-Elevation integration
-- **Future**: Add caching layer (DynamoDB)
-- **Future**: Add user review/rating system
-- **Future**: Integrate USGS and state APIs
+### 2025-01-10: Initial Implementation
+- ✅ Implemented OpenStreetMap Overpass API integration
+- ✅ Implemented Open-Elevation API for elevation data
+- ✅ Created HikingController, HikingService, OverpassApiClient, OpenElevationClient
+- ✅ Added trail search by name and location
+- ✅ Added trail suggestions with filters
+- ✅ Implemented data quality scoring
+- ⚠️ Used single-query approach (Method A, reliability 3/5)
+
+### 2025-01-10: Performance Optimizations
+- ✅ Replaced `around` filters with efficient `bbox` (bounding box) queries
+- ✅ Added quadtile sorting (`qt`) for server-side performance
+- ✅ Made location required for name searches (prevents global queries)
+- ✅ Added proper error handling (503 for API failures, 400 for bad requests)
+- ✅ Added `ExternalServiceException` for Overpass API failures
+- ✅ Set explicit 15-second timeouts for Overpass queries
+- ✅ Added controller exception handlers for user-friendly error responses
+
+### Pending Work
+- ⬜ **High Priority**: Implement two-step query pattern (Method B, reliability 5/5)
+  - See "Recommended: Two-Step Query Pattern Implementation" section above
+  - Expected improvements: 3-5x faster, 25-100x smaller payloads, <5% timeout rate
+- ⬜ Add caching layer (DynamoDB table for frequently searched trails)
+- ⬜ Add user review/rating system
+- ⬜ Integrate USGS National Digital Trails API
+- ⬜ Integrate state-level trail APIs (WA, CA, TX, TN)
+- ⬜ Add async elevation enrichment
+- ⬜ Write unit tests (see TEST_PLAN_HIKING_*.md files)
 
 ---
 
