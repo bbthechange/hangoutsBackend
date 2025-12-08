@@ -65,16 +65,19 @@ public class FuzzyTimeServiceImpl implements FuzzyTimeService {
             // endTime is optional for hangouts - only validate if provided
             if (endTimeStr != null && !endTimeStr.trim().isEmpty()) {
                 endTimestamp = parseIso8601ToUnixTimestamp(endTimeStr);
-                
+
                 if (endTimestamp <= startTimestamp) {
                     throw new IllegalArgumentException("endTime must be after startTime");
                 }
-                
-                logger.debug("Converted exact time: {} -> {}, {} -> {}", 
+
+                logger.debug("Converted exact time: {} -> {}, {} -> {}",
                     startTimeStr, startTimestamp, endTimeStr, endTimestamp);
             } else {
-                logger.debug("Converted exact time (start only): {} -> {}", 
-                    startTimeStr, startTimestamp);
+                // Default to 2 hours after start when no end time specified
+                // This ensures events show as "in progress" and display correctly in calendar feeds
+                endTimestamp = startTimestamp + (2 * 60 * 60);
+                logger.debug("Converted exact time (start only, defaulting end to +2h): {} -> {} to {}",
+                    startTimeStr, startTimestamp, endTimestamp);
             }
             
             return new TimeConversionResult(startTimestamp, endTimestamp);

@@ -191,15 +191,16 @@ class FuzzyTimeServiceImplTest {
     }
 
     @Test
-    @DisplayName("Should handle exact time with only startTime (for hangouts)")
+    @DisplayName("Should handle exact time with only startTime - defaults end to +2 hours")
     void shouldHandleExactTimeWithOnlyStartTime() {
         TimeInfo timeInfo = new TimeInfo(null, null, "2025-08-05T19:15:00Z", null);
 
         FuzzyTimeService.TimeConversionResult result = fuzzyTimeService.convert(timeInfo);
 
         // 2025-08-05T19:15:00Z = Unix timestamp 1754421300
+        // endTimestamp defaults to startTimestamp + 2 hours (7200 seconds)
         assertEquals(1754421300L, result.startTimestamp);
-        assertNull(result.endTimestamp); // endTime is optional for hangouts
+        assertEquals(1754421300L + 7200L, result.endTimestamp);
     }
 
     @Test
@@ -236,27 +237,29 @@ class FuzzyTimeServiceImplTest {
     }
 
     @Test
-    @DisplayName("Should handle null endTime (for hangouts)")
+    @DisplayName("Should handle null endTime - defaults end to +2 hours")
     void shouldHandleNullEndTime() {
         TimeInfo timeInfo = new TimeInfo(null, null, "2025-08-05T19:15:00Z", null);
 
         FuzzyTimeService.TimeConversionResult result = fuzzyTimeService.convert(timeInfo);
 
         // 2025-08-05T19:15:00Z = Unix timestamp 1754421300
+        // endTimestamp defaults to startTimestamp + 2 hours (7200 seconds)
         assertEquals(1754421300L, result.startTimestamp);
-        assertNull(result.endTimestamp); // endTime is optional for hangouts
+        assertEquals(1754421300L + 7200L, result.endTimestamp);
     }
 
     @Test
-    @DisplayName("Should handle empty endTime (for hangouts)")
+    @DisplayName("Should handle empty endTime - defaults end to +2 hours")
     void shouldHandleEmptyEndTime() {
         TimeInfo timeInfo = new TimeInfo(null, null, "2025-08-05T19:15:00Z", "   ");
 
         FuzzyTimeService.TimeConversionResult result = fuzzyTimeService.convert(timeInfo);
 
         // 2025-08-05T19:15:00Z = Unix timestamp 1754421300
+        // empty endTime is treated as null, so defaults to startTimestamp + 2 hours
         assertEquals(1754421300L, result.startTimestamp);
-        assertNull(result.endTimestamp); // empty endTime is treated as null for hangouts
+        assertEquals(1754421300L + 7200L, result.endTimestamp);
     }
 
     @Test
