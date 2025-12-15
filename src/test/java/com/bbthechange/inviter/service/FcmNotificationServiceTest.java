@@ -1,0 +1,177 @@
+package com.bbthechange.inviter.service;
+
+import com.google.firebase.FirebaseApp;
+import com.google.firebase.messaging.FirebaseMessaging;
+import com.google.firebase.messaging.FirebaseMessagingException;
+import com.google.firebase.messaging.Message;
+import com.google.firebase.messaging.MessagingErrorCode;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.MockedStatic;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class FcmNotificationServiceTest {
+
+    @Mock
+    private FirebaseApp firebaseApp;
+
+    @Mock
+    private FirebaseMessaging firebaseMessaging;
+
+    @Mock
+    private NotificationTextGenerator textGenerator;
+
+    @Mock
+    private DeviceService deviceService;
+
+    private FcmNotificationService fcmNotificationService;
+
+    private static final String TEST_DEVICE_TOKEN = "fcm_test_token_1234567890abcdef";
+    private static final String TEST_HANGOUT_ID = "hangout-123";
+    private static final String TEST_GROUP_ID = "group-456";
+    private static final String TEST_HANGOUT_TITLE = "Pizza Night";
+    private static final String TEST_GROUP_NAME = "Friends";
+    private static final String TEST_CREATOR_NAME = "John";
+    private static final String TEST_NOTIFICATION_BODY = "John created 'Pizza Night' in Friends";
+
+    @BeforeEach
+    void setUp() {
+        fcmNotificationService = new FcmNotificationService(firebaseApp, textGenerator, deviceService);
+    }
+
+    @Test
+    void sendNewHangoutNotification_FirebaseNotConfigured_SkipsNotification() {
+        // Arrange
+        FcmNotificationService serviceWithoutFirebase = new FcmNotificationService(null, textGenerator, deviceService);
+
+        // Act
+        serviceWithoutFirebase.sendNewHangoutNotification(
+                TEST_DEVICE_TOKEN, TEST_HANGOUT_ID, TEST_GROUP_ID,
+                TEST_HANGOUT_TITLE, TEST_GROUP_NAME, TEST_CREATOR_NAME);
+
+        // Assert - should not throw and should not interact with dependencies
+        verifyNoInteractions(textGenerator);
+        verifyNoInteractions(deviceService);
+    }
+
+    @Test
+    void sendNewHangoutNotification_Success_SendsNotification() throws FirebaseMessagingException {
+        // Arrange
+        when(textGenerator.getNewHangoutBody(TEST_CREATOR_NAME, TEST_HANGOUT_TITLE, TEST_GROUP_NAME))
+                .thenReturn(TEST_NOTIFICATION_BODY);
+
+        try (MockedStatic<FirebaseMessaging> mockedStatic = mockStatic(FirebaseMessaging.class)) {
+            mockedStatic.when(() -> FirebaseMessaging.getInstance(firebaseApp)).thenReturn(firebaseMessaging);
+            when(firebaseMessaging.send(any(Message.class))).thenReturn("message-id-123");
+
+            // Act
+            fcmNotificationService.sendNewHangoutNotification(
+                    TEST_DEVICE_TOKEN, TEST_HANGOUT_ID, TEST_GROUP_ID,
+                    TEST_HANGOUT_TITLE, TEST_GROUP_NAME, TEST_CREATOR_NAME);
+
+            // Assert
+            verify(textGenerator).getNewHangoutBody(TEST_CREATOR_NAME, TEST_HANGOUT_TITLE, TEST_GROUP_NAME);
+            verify(firebaseMessaging).send(any(Message.class));
+            verifyNoInteractions(deviceService); // No error, so no device cleanup
+        }
+    }
+
+    @Test
+    void sendNewHangoutNotification_UnregisteredToken_DeletesDevice() throws FirebaseMessagingException {
+        // Arrange
+        when(textGenerator.getNewHangoutBody(TEST_CREATOR_NAME, TEST_HANGOUT_TITLE, TEST_GROUP_NAME))
+                .thenReturn(TEST_NOTIFICATION_BODY);
+
+        FirebaseMessagingException unregisteredException = mock(FirebaseMessagingException.class);
+        when(unregisteredException.getMessagingErrorCode()).thenReturn(MessagingErrorCode.UNREGISTERED);
+
+        try (MockedStatic<FirebaseMessaging> mockedStatic = mockStatic(FirebaseMessaging.class)) {
+            mockedStatic.when(() -> FirebaseMessaging.getInstance(firebaseApp)).thenReturn(firebaseMessaging);
+            when(firebaseMessaging.send(any(Message.class))).thenThrow(unregisteredException);
+
+            // Act
+            fcmNotificationService.sendNewHangoutNotification(
+                    TEST_DEVICE_TOKEN, TEST_HANGOUT_ID, TEST_GROUP_ID,
+                    TEST_HANGOUT_TITLE, TEST_GROUP_NAME, TEST_CREATOR_NAME);
+
+            // Assert - device should be deleted
+            verify(deviceService).deleteDevice(TEST_DEVICE_TOKEN);
+        }
+    }
+
+    @Test
+    void sendNewHangoutNotification_InvalidArgument_DoesNotDeleteDevice() throws FirebaseMessagingException {
+        // Arrange
+        when(textGenerator.getNewHangoutBody(TEST_CREATOR_NAME, TEST_HANGOUT_TITLE, TEST_GROUP_NAME))
+                .thenReturn(TEST_NOTIFICATION_BODY);
+
+        FirebaseMessagingException invalidArgumentException = mock(FirebaseMessagingException.class);
+        when(invalidArgumentException.getMessagingErrorCode()).thenReturn(MessagingErrorCode.INVALID_ARGUMENT);
+        when(invalidArgumentException.getMessage()).thenReturn("Invalid argument");
+
+        try (MockedStatic<FirebaseMessaging> mockedStatic = mockStatic(FirebaseMessaging.class)) {
+            mockedStatic.when(() -> FirebaseMessaging.getInstance(firebaseApp)).thenReturn(firebaseMessaging);
+            when(firebaseMessaging.send(any(Message.class))).thenThrow(invalidArgumentException);
+
+            // Act
+            fcmNotificationService.sendNewHangoutNotification(
+                    TEST_DEVICE_TOKEN, TEST_HANGOUT_ID, TEST_GROUP_ID,
+                    TEST_HANGOUT_TITLE, TEST_GROUP_NAME, TEST_CREATOR_NAME);
+
+            // Assert - device should NOT be deleted (could be any invalid argument, not necessarily token)
+            verifyNoInteractions(deviceService);
+        }
+    }
+
+    @Test
+    void sendNewHangoutNotification_QuotaExceeded_LogsWarningOnly() throws FirebaseMessagingException {
+        // Arrange
+        when(textGenerator.getNewHangoutBody(TEST_CREATOR_NAME, TEST_HANGOUT_TITLE, TEST_GROUP_NAME))
+                .thenReturn(TEST_NOTIFICATION_BODY);
+
+        FirebaseMessagingException quotaException = mock(FirebaseMessagingException.class);
+        when(quotaException.getMessagingErrorCode()).thenReturn(MessagingErrorCode.QUOTA_EXCEEDED);
+
+        try (MockedStatic<FirebaseMessaging> mockedStatic = mockStatic(FirebaseMessaging.class)) {
+            mockedStatic.when(() -> FirebaseMessaging.getInstance(firebaseApp)).thenReturn(firebaseMessaging);
+            when(firebaseMessaging.send(any(Message.class))).thenThrow(quotaException);
+
+            // Act
+            fcmNotificationService.sendNewHangoutNotification(
+                    TEST_DEVICE_TOKEN, TEST_HANGOUT_ID, TEST_GROUP_ID,
+                    TEST_HANGOUT_TITLE, TEST_GROUP_NAME, TEST_CREATOR_NAME);
+
+            // Assert - should not delete device for transient error
+            verifyNoInteractions(deviceService);
+        }
+    }
+
+    @Test
+    void sendNewHangoutNotification_ServiceUnavailable_LogsWarningOnly() throws FirebaseMessagingException {
+        // Arrange
+        when(textGenerator.getNewHangoutBody(TEST_CREATOR_NAME, TEST_HANGOUT_TITLE, TEST_GROUP_NAME))
+                .thenReturn(TEST_NOTIFICATION_BODY);
+
+        FirebaseMessagingException unavailableException = mock(FirebaseMessagingException.class);
+        when(unavailableException.getMessagingErrorCode()).thenReturn(MessagingErrorCode.UNAVAILABLE);
+
+        try (MockedStatic<FirebaseMessaging> mockedStatic = mockStatic(FirebaseMessaging.class)) {
+            mockedStatic.when(() -> FirebaseMessaging.getInstance(firebaseApp)).thenReturn(firebaseMessaging);
+            when(firebaseMessaging.send(any(Message.class))).thenThrow(unavailableException);
+
+            // Act
+            fcmNotificationService.sendNewHangoutNotification(
+                    TEST_DEVICE_TOKEN, TEST_HANGOUT_ID, TEST_GROUP_ID,
+                    TEST_HANGOUT_TITLE, TEST_GROUP_NAME, TEST_CREATOR_NAME);
+
+            // Assert - should not delete device for transient error
+            verifyNoInteractions(deviceService);
+        }
+    }
+}

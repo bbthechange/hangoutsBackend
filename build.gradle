@@ -54,6 +54,7 @@ dependencies {
 	implementation 'software.amazon.awssdk:ssm:2.28.29'
 	implementation 'com.twilio.sdk:twilio:11.0.0'
 	implementation 'com.eatthepath:pushy:0.15.4'
+	implementation 'com.google.firebase:firebase-admin:9.2.0'
 	// AWS X-Ray tracing
 	implementation 'com.amazonaws:aws-xray-recorder-sdk-spring:2.15.1'
 	implementation 'com.amazonaws:aws-xray-recorder-sdk-aws-sdk-v2:2.15.1'

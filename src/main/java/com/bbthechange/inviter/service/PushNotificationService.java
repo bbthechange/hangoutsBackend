@@ -21,6 +21,9 @@ public class PushNotificationService {
     @Autowired(required = false)
     private ApnsClient apnsClient;
 
+    @Autowired
+    private NotificationTextGenerator textGenerator;
+
     @Value("${apns.bundle-id:}")
     private String bundleId;
 
@@ -108,12 +111,8 @@ public class PushNotificationService {
 
         try {
             SimpleApnsPayloadBuilder payloadBuilder = new SimpleApnsPayloadBuilder();
-            payloadBuilder.setAlertTitle("New Hangout");
-
-            String alertBody = creatorName != null && !creatorName.trim().isEmpty() && !"Unknown".equals(creatorName)
-                ? String.format("%s created '%s' in %s", creatorName, hangoutTitle, groupName)
-                : String.format("New hangout '%s' in %s", hangoutTitle, groupName);
-            payloadBuilder.setAlertBody(alertBody);
+            payloadBuilder.setAlertTitle(NotificationTextGenerator.NEW_HANGOUT_TITLE);
+            payloadBuilder.setAlertBody(textGenerator.getNewHangoutBody(creatorName, hangoutTitle, groupName));
             payloadBuilder.setBadgeNumber(1);
             payloadBuilder.setSound("default");
             payloadBuilder.addCustomProperty("type", "new_hangout");

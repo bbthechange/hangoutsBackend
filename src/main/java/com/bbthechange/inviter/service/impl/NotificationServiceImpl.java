@@ -6,6 +6,7 @@ import com.bbthechange.inviter.model.GroupMembership;
 import com.bbthechange.inviter.model.Hangout;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.service.DeviceService;
+import com.bbthechange.inviter.service.FcmNotificationService;
 import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.PushNotificationService;
 import org.slf4j.Logger;
@@ -27,14 +28,17 @@ public class NotificationServiceImpl implements NotificationService {
     private final GroupRepository groupRepository;
     private final DeviceService deviceService;
     private final PushNotificationService pushNotificationService;
+    private final FcmNotificationService fcmNotificationService;
 
     @Autowired
     public NotificationServiceImpl(GroupRepository groupRepository,
                                    DeviceService deviceService,
-                                   PushNotificationService pushNotificationService) {
+                                   PushNotificationService pushNotificationService,
+                                   FcmNotificationService fcmNotificationService) {
         this.groupRepository = groupRepository;
         this.deviceService = deviceService;
         this.pushNotificationService = pushNotificationService;
+        this.fcmNotificationService = fcmNotificationService;
     }
 
     @Override
@@ -126,14 +130,14 @@ public class NotificationServiceImpl implements NotificationService {
 
             boolean anySent = false;
 
+            // Use first group for notification context (all groups share same hangout)
+            String primaryGroupId = groupIds.get(0);
+            String groupName = getGroupName(primaryGroupId);
+
             // Send notification to each device
             for (Device device : devices) {
-                if (device.getPlatform() == Device.Platform.IOS) {
-                    try {
-                        // Use first group for notification context (all groups share same hangout)
-                        String primaryGroupId = groupIds.get(0);
-                        String groupName = getGroupName(primaryGroupId);
-
+                try {
+                    if (device.getPlatform() == Device.Platform.IOS) {
                         pushNotificationService.sendNewHangoutNotification(
                             device.getToken(),
                             hangoutId,
@@ -143,13 +147,22 @@ public class NotificationServiceImpl implements NotificationService {
                             creatorName
                         );
                         anySent = true;
-                    } catch (Exception e) {
-                        logger.error("Failed to send notification to device {}: {}",
-                            device.getToken().substring(0, Math.min(8, device.getToken().length())),
-                            e.getMessage());
+                    } else if (device.getPlatform() == Device.Platform.ANDROID) {
+                        fcmNotificationService.sendNewHangoutNotification(
+                            device.getToken(),
+                            hangoutId,
+                            primaryGroupId,
+                            hangoutTitle,
+                            groupName,
+                            creatorName
+                        );
+                        anySent = true;
                     }
+                } catch (Exception e) {
+                    logger.error("Failed to send notification to device {}: {}",
+                        device.getToken().substring(0, Math.min(8, device.getToken().length())),
+                        e.getMessage());
                 }
-                // Future: Add Android support here
             }
 
             return anySent;

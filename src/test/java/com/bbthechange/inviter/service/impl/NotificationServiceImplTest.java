@@ -3,6 +3,7 @@ package com.bbthechange.inviter.service.impl;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.service.DeviceService;
+import com.bbthechange.inviter.service.FcmNotificationService;
 import com.bbthechange.inviter.service.PushNotificationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,6 +28,9 @@ class NotificationServiceImplTest {
 
     @Mock(lenient = true)
     private PushNotificationService pushNotificationService;
+
+    @Mock(lenient = true)
+    private FcmNotificationService fcmNotificationService;
 
     @InjectMocks
     private NotificationServiceImpl notificationService;
@@ -309,6 +313,85 @@ class NotificationServiceImplTest {
         // Then: Should still send to second user
         verify(pushNotificationService, times(2)).sendNewHangoutNotification(
             anyString(), anyString(), anyString(), anyString(), anyString(), anyString()
+        );
+    }
+
+    @Test
+    void notifyNewHangout_WithAndroidDevice_SendsViaFcm() {
+        // Given: User has Android device
+        String userId = "00000000-0000-0000-0000-000000000002";
+        String creatorId = "00000000-0000-0000-0000-000000000001";
+        String hangoutId = "00000000-0000-0000-0000-000000000100";
+        String groupId = "00000000-0000-0000-0000-000000000201";
+        List<String> groupIds = Arrays.asList(groupId);
+
+        testHangout.setAssociatedGroups(groupIds);
+
+        GroupMembership membership = new GroupMembership(groupId, userId, "Test Group");
+        when(groupRepository.findMembersByGroupId(groupId)).thenReturn(Arrays.asList(membership));
+        when(groupRepository.findById(groupId)).thenReturn(Optional.of(testGroup));
+
+        // User has Android device
+        Device androidDevice = new Device("android-token-123", UUID.fromString(userId), Device.Platform.ANDROID);
+        when(deviceService.getActiveDevicesForUser(UUID.fromString(userId))).thenReturn(Arrays.asList(androidDevice));
+
+        // When
+        notificationService.notifyNewHangout(testHangout, creatorId, "Creator Name");
+
+        // Then: Should send via FCM, not APNs
+        verify(fcmNotificationService, times(1)).sendNewHangoutNotification(
+            eq("android-token-123"),
+            eq(hangoutId),
+            eq(groupId),
+            eq("Test Hangout"),
+            eq("Test Group"),
+            eq("Creator Name")
+        );
+        verify(pushNotificationService, never()).sendNewHangoutNotification(
+            anyString(), anyString(), anyString(), anyString(), anyString(), anyString()
+        );
+    }
+
+    @Test
+    void notifyNewHangout_WithMixedDevices_SendsToBothPlatforms() {
+        // Given: User has both iOS and Android devices
+        String userId = "00000000-0000-0000-0000-000000000002";
+        String creatorId = "00000000-0000-0000-0000-000000000001";
+        String hangoutId = "00000000-0000-0000-0000-000000000100";
+        String groupId = "00000000-0000-0000-0000-000000000201";
+        List<String> groupIds = Arrays.asList(groupId);
+
+        testHangout.setAssociatedGroups(groupIds);
+
+        GroupMembership membership = new GroupMembership(groupId, userId, "Test Group");
+        when(groupRepository.findMembersByGroupId(groupId)).thenReturn(Arrays.asList(membership));
+        when(groupRepository.findById(groupId)).thenReturn(Optional.of(testGroup));
+
+        // User has both iOS and Android devices
+        Device iosDevice = new Device("ios-token-123", UUID.fromString(userId), Device.Platform.IOS);
+        Device androidDevice = new Device("android-token-456", UUID.fromString(userId), Device.Platform.ANDROID);
+        when(deviceService.getActiveDevicesForUser(UUID.fromString(userId)))
+            .thenReturn(Arrays.asList(iosDevice, androidDevice));
+
+        // When
+        notificationService.notifyNewHangout(testHangout, creatorId, "Creator Name");
+
+        // Then: Should send to both platforms
+        verify(pushNotificationService, times(1)).sendNewHangoutNotification(
+            eq("ios-token-123"),
+            eq(hangoutId),
+            eq(groupId),
+            eq("Test Hangout"),
+            eq("Test Group"),
+            eq("Creator Name")
+        );
+        verify(fcmNotificationService, times(1)).sendNewHangoutNotification(
+            eq("android-token-456"),
+            eq(hangoutId),
+            eq(groupId),
+            eq("Test Hangout"),
+            eq("Test Group"),
+            eq("Creator Name")
         );
     }
 }
