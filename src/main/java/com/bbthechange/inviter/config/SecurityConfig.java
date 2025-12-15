@@ -54,6 +54,8 @@ public class SecurityConfig {
             "http://localhost:3000", // Local development (AngularJS)
             "http://localhost:4200", // Local development (Angular 19)
             "http://localhost:8080", // Swagger UI
+            "http://localhost",      // Capacitor Android WebView
+            "https://localhost",     // Capacitor Android WebView (HTTPS)
             "https://d3lm7si4v7xvcj.cloudfront.net", // Production CloudFront domain (legacy)
             "https://d1713f2ygzp5es.cloudfront.net", // Production CloudFront domain (current)
             "https://d3e93y6prxzuq0.cloudfront.net", // Staging CloudFront domain
