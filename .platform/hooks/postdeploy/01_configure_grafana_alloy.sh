@@ -3,16 +3,25 @@ set -e
 
 echo "Configuring Grafana Alloy..."
 
-# Get Grafana Cloud credentials from EB environment variables
-GRAFANA_URL=$(/opt/elasticbeanstalk/bin/get-config environment -k GRAFANA_REMOTE_WRITE_URL || echo "")
-GRAFANA_USER=$(/opt/elasticbeanstalk/bin/get-config environment -k GRAFANA_REMOTE_WRITE_USER || echo "")
-GRAFANA_PASS=$(/opt/elasticbeanstalk/bin/get-config environment -k GRAFANA_REMOTE_WRITE_PASSWORD || echo "")
+# Determine environment from EB or default to production
 ENVIRONMENT=$(/opt/elasticbeanstalk/bin/get-config environment -k ENVIRONMENT || echo "production")
+
+# Get Grafana Cloud credentials from AWS Parameter Store
+# Parameters should be stored at:
+#   /inviter/grafana/remote-write-url
+#   /inviter/grafana/remote-write-user
+#   /inviter/grafana/remote-write-password (SecureString)
+GRAFANA_URL=$(aws ssm get-parameter --name "/inviter/grafana/remote-write-url" --query 'Parameter.Value' --output text 2>/dev/null || echo "")
+GRAFANA_USER=$(aws ssm get-parameter --name "/inviter/grafana/remote-write-user" --query 'Parameter.Value' --output text 2>/dev/null || echo "")
+GRAFANA_PASS=$(aws ssm get-parameter --name "/inviter/grafana/remote-write-password" --with-decryption --query 'Parameter.Value' --output text 2>/dev/null || echo "")
 
 # Skip configuration if credentials are not set
 if [ -z "$GRAFANA_URL" ] || [ -z "$GRAFANA_USER" ] || [ -z "$GRAFANA_PASS" ]; then
     echo "Grafana Cloud credentials not configured. Skipping Alloy configuration."
-    echo "Set GRAFANA_REMOTE_WRITE_URL, GRAFANA_REMOTE_WRITE_USER, and GRAFANA_REMOTE_WRITE_PASSWORD in EB environment."
+    echo "Create these parameters in AWS Parameter Store:"
+    echo "  /inviter/grafana/remote-write-url"
+    echo "  /inviter/grafana/remote-write-user"
+    echo "  /inviter/grafana/remote-write-password (SecureString)"
     exit 0
 fi
 
