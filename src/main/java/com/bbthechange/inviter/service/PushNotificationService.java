@@ -5,12 +5,14 @@ import com.eatthepath.pushy.apns.PushNotificationResponse;
 import com.eatthepath.pushy.apns.util.SimpleApnsPayloadBuilder;
 import com.eatthepath.pushy.apns.util.SimpleApnsPushNotification;
 import com.eatthepath.pushy.apns.util.TokenUtil;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 
 @Service
@@ -23,6 +25,9 @@ public class PushNotificationService {
 
     @Autowired
     private NotificationTextGenerator textGenerator;
+
+    @Autowired
+    private MeterRegistry meterRegistry;
 
     @Value("${apns.bundle-id:}")
     private String bundleId;
@@ -53,16 +58,28 @@ public class PushNotificationService {
 
             if (response.isAccepted()) {
                 logger.info("Push notification sent successfully to device: {}", deviceToken.substring(0, 8) + "...");
+                meterRegistry.counter("apns_notification_total", "status", "success", "type", "invite").increment();
             } else {
-                logger.error("Push notification failed for device: {}. Reason: {}", 
-                    deviceToken.substring(0, 8) + "...", response.getRejectionReason());
+                Optional<String> rejectionReason = response.getRejectionReason();
+                String reason = rejectionReason.orElse("unknown");
+                logger.error("Push notification failed for device: {}. Reason: {}",
+                    deviceToken.substring(0, 8) + "...", reason);
+                meterRegistry.counter("apns_notification_total",
+                        "status", "rejected", "type", "invite",
+                        "reason", reason, "category", categorizeApnsRejection(reason)).increment();
             }
 
         } catch (ExecutionException | InterruptedException e) {
             logger.error("Error sending push notification to device: {}", deviceToken.substring(0, 8) + "...", e);
+            meterRegistry.counter("apns_notification_total",
+                    "status", "error", "type", "invite",
+                    "error_type", "execution", "category", "transient").increment();
             Thread.currentThread().interrupt();
         } catch (Exception e) {
             logger.error("Unexpected error sending push notification", e);
+            meterRegistry.counter("apns_notification_total",
+                    "status", "error", "type", "invite",
+                    "error_type", "unexpected", "category", "unexpected").increment();
         }
     }
 
@@ -89,16 +106,28 @@ public class PushNotificationService {
 
             if (response.isAccepted()) {
                 logger.info("Event update notification sent successfully to device: {}", deviceToken.substring(0, 8) + "...");
+                meterRegistry.counter("apns_notification_total", "status", "success", "type", "event_update").increment();
             } else {
+                Optional<String> rejectionReason = response.getRejectionReason();
+                String reason = rejectionReason.orElse("unknown");
                 logger.error("Event update notification failed for device: {}. Reason: {}",
-                    deviceToken.substring(0, 8) + "...", response.getRejectionReason());
+                    deviceToken.substring(0, 8) + "...", reason);
+                meterRegistry.counter("apns_notification_total",
+                        "status", "rejected", "type", "event_update",
+                        "reason", reason, "category", categorizeApnsRejection(reason)).increment();
             }
 
         } catch (ExecutionException | InterruptedException e) {
             logger.error("Error sending event update notification to device: {}", deviceToken.substring(0, 8) + "...", e);
+            meterRegistry.counter("apns_notification_total",
+                    "status", "error", "type", "event_update",
+                    "error_type", "execution", "category", "transient").increment();
             Thread.currentThread().interrupt();
         } catch (Exception e) {
             logger.error("Unexpected error sending event update notification", e);
+            meterRegistry.counter("apns_notification_total",
+                    "status", "error", "type", "event_update",
+                    "error_type", "unexpected", "category", "unexpected").increment();
         }
     }
 
@@ -128,16 +157,42 @@ public class PushNotificationService {
 
             if (response.isAccepted()) {
                 logger.info("New hangout notification sent successfully to device: {}", deviceToken.substring(0, 8) + "...");
+                meterRegistry.counter("apns_notification_total", "status", "success", "type", "new_hangout").increment();
             } else {
+                Optional<String> rejectionReason = response.getRejectionReason();
+                String reason = rejectionReason.orElse("unknown");
                 logger.error("New hangout notification failed for device: {}. Reason: {}",
-                    deviceToken.substring(0, 8) + "...", response.getRejectionReason());
+                    deviceToken.substring(0, 8) + "...", reason);
+                meterRegistry.counter("apns_notification_total",
+                        "status", "rejected", "type", "new_hangout",
+                        "reason", reason, "category", categorizeApnsRejection(reason)).increment();
             }
 
         } catch (ExecutionException | InterruptedException e) {
             logger.error("Error sending new hangout notification to device: {}", deviceToken.substring(0, 8) + "...", e);
+            meterRegistry.counter("apns_notification_total",
+                    "status", "error", "type", "new_hangout",
+                    "error_type", "execution", "category", "transient").increment();
             Thread.currentThread().interrupt();
         } catch (Exception e) {
             logger.error("Unexpected error sending new hangout notification", e);
+            meterRegistry.counter("apns_notification_total",
+                    "status", "error", "type", "new_hangout",
+                    "error_type", "unexpected", "category", "unexpected").increment();
         }
+    }
+
+    /**
+     * Categorize APNs rejection reason as expected or unexpected.
+     * Expected: User/device issues (app uninstalled, token expired)
+     * Unexpected: Configuration issues on our side
+     */
+    private String categorizeApnsRejection(String reason) {
+        if (reason == null) return "unexpected";
+        return switch (reason) {
+            case "BadDeviceToken", "Unregistered", "DeviceTokenNotForTopic",
+                 "ExpiredToken", "InvalidToken" -> "expected";
+            default -> "unexpected";
+        };
     }
 }

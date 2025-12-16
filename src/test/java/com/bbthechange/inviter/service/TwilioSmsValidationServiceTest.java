@@ -6,6 +6,8 @@ import com.twilio.rest.verify.v2.service.Verification;
 import com.twilio.rest.verify.v2.service.VerificationCheck;
 import com.twilio.rest.verify.v2.service.VerificationCreator;
 import com.twilio.rest.verify.v2.service.VerificationCheckCreator;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -15,8 +17,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -34,6 +38,12 @@ class TwilioSmsValidationServiceTest {
     @Mock
     private VerificationCheck mockCheck;
 
+    @Mock
+    private MeterRegistry meterRegistry;
+
+    @Mock
+    private Counter counter;
+
     private TwilioSmsValidationService service;
 
     private static final String TEST_ACCOUNT_SID = "test-account-sid";
@@ -46,10 +56,12 @@ class TwilioSmsValidationServiceTest {
         // that gets called in the constructor. Instead, we initialize the service in each test
         // within a MockedStatic<Twilio> block, or we accept that Twilio.init() will be called
         // with test credentials (which is harmless as long as we don't make actual API calls).
+        lenient().when(meterRegistry.counter(anyString(), any(String[].class))).thenReturn(counter);
         service = new TwilioSmsValidationService(
                 TEST_ACCOUNT_SID,
                 TEST_AUTH_TOKEN,
-                TEST_VERIFY_SERVICE_SID
+                TEST_VERIFY_SERVICE_SID,
+                meterRegistry
         );
     }
 

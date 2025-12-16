@@ -2,6 +2,7 @@ package com.bbthechange.inviter.service;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -14,6 +15,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class RateLimitingService {
 
     private static final Logger logger = LoggerFactory.getLogger(RateLimitingService.class);
+
+    private final MeterRegistry meterRegistry;
 
     // For /auth/resend-code: 1 request per 60 seconds
     private final Cache<String, Instant> resendCodePerMinuteCache;
@@ -36,7 +39,9 @@ public class RateLimitingService {
     // For /auth/verify-reset-code: 10 requests per hour per phone
     private final Cache<String, AtomicInteger> passwordResetVerifyCache;
 
-    public RateLimitingService() {
+    public RateLimitingService(MeterRegistry meterRegistry) {
+        this.meterRegistry = meterRegistry;
+
         // Cache for 1 minute rate limit - stores last request time
         this.resendCodePerMinuteCache = Caffeine.newBuilder()
                 .expireAfterWrite(Duration.ofSeconds(60))
@@ -221,14 +226,10 @@ public class RateLimitingService {
     }
 
     /**
-     * Publish CloudWatch metric when rate limit is exceeded.
-     * TODO: Implement actual CloudWatch integration
+     * Publish metric when rate limit is exceeded.
      */
     private void publishRateLimitMetric(String endpoint) {
-        // For now, just log the metric
-        // In production, this would publish to CloudWatch with:
-        // Metric Name: RateLimitExceeded
-        // Dimensions: endpoint={endpoint}
-        logger.warn("CloudWatch Metric: RateLimitExceeded, Dimension: endpoint={}", endpoint);
+        meterRegistry.counter("rate_limit_exceeded_total", "endpoint", endpoint).increment();
+        logger.warn("Rate limit exceeded for endpoint: {}", endpoint);
     }
 }

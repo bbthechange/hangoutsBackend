@@ -5,6 +5,7 @@ import com.bbthechange.inviter.service.AwsSmsValidationService;
 import com.bbthechange.inviter.service.SmsNotificationService;
 import com.bbthechange.inviter.service.SmsValidationService;
 import com.bbthechange.inviter.service.TwilioSmsValidationService;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -70,7 +71,8 @@ public class SmsValidationConfig {
             @Value("${twilio.auth-token-parameter-name:}") String authTokenParameterName,
             @Value("${twilio.auth-token:}") String authTokenDirect,
             @Value("${twilio.verify-service-sid-parameter-name:}") String serviceSidParameterName,
-            @Value("${twilio.verify-service-sid:}") String serviceSidDirect) {
+            @Value("${twilio.verify-service-sid:}") String serviceSidDirect,
+            MeterRegistry meterRegistry) {
 
         logger.info("Configuring Twilio Verify SMS validation service");
 
@@ -104,7 +106,7 @@ public class SmsValidationConfig {
             verifyServiceSid = serviceSidDirect;
         }
 
-        return new TwilioSmsValidationService(accountSid, authToken, verifyServiceSid);
+        return new TwilioSmsValidationService(accountSid, authToken, verifyServiceSid, meterRegistry);
     }
 
     /**

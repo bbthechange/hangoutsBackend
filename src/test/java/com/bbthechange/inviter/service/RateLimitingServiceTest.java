@@ -1,13 +1,20 @@
 package com.bbthechange.inviter.service;
 
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for RateLimitingService
@@ -23,11 +30,18 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("RateLimitingService Tests")
 class RateLimitingServiceTest {
 
+    @Mock
+    private MeterRegistry meterRegistry;
+
+    @Mock
+    private Counter counter;
+
     private RateLimitingService rateLimitingService;
 
     @BeforeEach
     void setUp() {
-        rateLimitingService = new RateLimitingService();
+        lenient().when(meterRegistry.counter(anyString(), any(String[].class))).thenReturn(counter);
+        rateLimitingService = new RateLimitingService(meterRegistry);
     }
 
     @Nested
@@ -52,8 +66,8 @@ class RateLimitingServiceTest {
         @DisplayName("Should initialize multiple service instances independently")
         void test_Constructor_MultipleInstances_Independent() {
             // Arrange & Act
-            RateLimitingService service1 = new RateLimitingService();
-            RateLimitingService service2 = new RateLimitingService();
+            RateLimitingService service1 = new RateLimitingService(meterRegistry);
+            RateLimitingService service2 = new RateLimitingService(meterRegistry);
             
             String testPhone = "+15551234567";
             

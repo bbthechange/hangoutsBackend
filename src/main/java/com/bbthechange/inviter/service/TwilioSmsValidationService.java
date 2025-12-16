@@ -4,6 +4,7 @@ import com.twilio.Twilio;
 import com.twilio.exception.ApiException;
 import com.twilio.rest.verify.v2.service.Verification;
 import com.twilio.rest.verify.v2.service.VerificationCheck;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -58,12 +59,15 @@ public class TwilioSmsValidationService implements SmsValidationService {
     private static final String TEST_VERIFICATION_CODE = "123456";
 
     private final String verifyServiceSid;
+    private final MeterRegistry meterRegistry;
 
     public TwilioSmsValidationService(
             @Value("${twilio.account-sid}") String accountSid,
             @Value("${twilio.auth-token}") String authToken,
-            @Value("${twilio.verify-service-sid}") String verifyServiceSid) {
+            @Value("${twilio.verify-service-sid}") String verifyServiceSid,
+            MeterRegistry meterRegistry) {
         this.verifyServiceSid = verifyServiceSid;
+        this.meterRegistry = meterRegistry;
         Twilio.init(accountSid, authToken);
         logger.info("Twilio Verify client initialized for service SID: {}", verifyServiceSid);
     }
@@ -74,6 +78,7 @@ public class TwilioSmsValidationService implements SmsValidationService {
         if (TEST_PHONE_NUMBERS.contains(phoneNumber)) {
             logger.info("[TEST MODE] Verification code for test number {}: {}", phoneNumber, TEST_VERIFICATION_CODE);
             logger.info("[TEST MODE] Use code '{}' to verify this test account", TEST_VERIFICATION_CODE);
+            meterRegistry.counter("sms_verification_send_total", "status", "success").increment();
             return;
         }
 
@@ -86,13 +91,18 @@ public class TwilioSmsValidationService implements SmsValidationService {
                     .create();
             logger.info("Started Twilio verification for {}: SID {}, status {}",
                        phoneNumber, verification.getSid(), verification.getStatus());
+            meterRegistry.counter("sms_verification_send_total", "status", "success").increment();
         } catch (ApiException e) {
             logger.error("Failed to start Twilio verification for {}: {} (code: {})",
                         phoneNumber, e.getMessage(), e.getCode(), e);
+            meterRegistry.counter("sms_verification_send_total",
+                    "status", "error", "category", "unexpected").increment();
             throw new RuntimeException("Failed to send verification code via Twilio: " + e.getMessage(), e);
         } catch (Exception e) {
             logger.error("Unexpected error starting Twilio verification for {}: {}",
                         phoneNumber, e.getMessage(), e);
+            meterRegistry.counter("sms_verification_send_total",
+                    "status", "error", "category", "unexpected").increment();
             throw new RuntimeException("Failed to send verification code via Twilio", e);
         }
     }
@@ -116,10 +126,13 @@ public class TwilioSmsValidationService implements SmsValidationService {
             logger.info("Twilio verification check for {} status: {}", phoneNumber, verificationCheck.getStatus());
 
             if (approved) {
+                meterRegistry.counter("sms_verification_check_total", "result", "success").increment();
                 return VerificationResult.success();
             } else {
                 // Status could be "pending" (wrong code but not expired) or other states
                 logger.info("Twilio verification failed for {} with status: {}", phoneNumber, verificationCheck.getStatus());
+                meterRegistry.counter("sms_verification_check_total",
+                        "result", "invalid_code", "category", "expected").increment();
                 return VerificationResult.invalidCode();
             }
         } catch (ApiException e) {
@@ -129,18 +142,26 @@ public class TwilioSmsValidationService implements SmsValidationService {
 
             if (statusCode == 404) {
                 logger.info("Twilio verification not found or expired for {}: {}", phoneNumber, e.getMessage());
+                meterRegistry.counter("sms_verification_check_total",
+                        "result", "code_expired", "category", "expected").increment();
                 return VerificationResult.codeExpired();
             } else if (statusCode == 429) {
                 logger.warn("Too many verification attempts for {}: {}", phoneNumber, e.getMessage());
+                meterRegistry.counter("sms_verification_check_total",
+                        "result", "rate_limited", "category", "expected").increment();
                 return VerificationResult.codeExpired();
             } else {
                 logger.warn("Failed to check Twilio verification for {}: {} (code: {})",
                            phoneNumber, e.getMessage(), statusCode, e);
+                meterRegistry.counter("sms_verification_check_total",
+                        "result", "api_error", "category", "unexpected").increment();
                 return VerificationResult.invalidCode();
             }
         } catch (Exception e) {
             logger.error("Unexpected error checking Twilio verification for {}: {}",
                         phoneNumber, e.getMessage(), e);
+            meterRegistry.counter("sms_verification_check_total",
+                    "result", "api_error", "category", "unexpected").increment();
             return VerificationResult.invalidCode();
         }
     }
@@ -156,10 +177,13 @@ public class TwilioSmsValidationService implements SmsValidationService {
 
         if (TEST_VERIFICATION_CODE.equals(code)) {
             logger.info("[TEST MODE] Verification successful for test number {}", phoneNumber);
+            meterRegistry.counter("sms_verification_check_total", "result", "success").increment();
             return VerificationResult.success();
         } else {
             logger.info("[TEST MODE] Invalid code for test number {}: expected {}, got {}",
                        phoneNumber, TEST_VERIFICATION_CODE, code);
+            meterRegistry.counter("sms_verification_check_total",
+                    "result", "invalid_code", "category", "expected").increment();
             return VerificationResult.invalidCode();
         }
     }

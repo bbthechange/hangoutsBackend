@@ -6,6 +6,7 @@ import com.google.firebase.messaging.FirebaseMessagingException;
 import com.google.firebase.messaging.Message;
 import com.google.firebase.messaging.MessagingErrorCode;
 import com.google.firebase.messaging.Notification;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,15 +30,18 @@ public class FcmNotificationService {
     private final FirebaseApp firebaseApp;
     private final NotificationTextGenerator textGenerator;
     private final DeviceService deviceService;
+    private final MeterRegistry meterRegistry;
 
     @Autowired
     public FcmNotificationService(
             @Autowired(required = false) FirebaseApp firebaseApp,
             NotificationTextGenerator textGenerator,
-            DeviceService deviceService) {
+            DeviceService deviceService,
+            MeterRegistry meterRegistry) {
         this.firebaseApp = firebaseApp;
         this.textGenerator = textGenerator;
         this.deviceService = deviceService;
+        this.meterRegistry = meterRegistry;
     }
 
     public void sendNewHangoutNotification(String deviceToken, String hangoutId, String groupId,
@@ -64,6 +68,7 @@ public class FcmNotificationService {
             String messageId = FirebaseMessaging.getInstance(firebaseApp).send(message);
             logger.info("New hangout notification sent successfully to device: {}, messageId: {}",
                     tokenPrefix, messageId);
+            meterRegistry.counter("fcm_notification_total", "status", "success").increment();
 
         } catch (FirebaseMessagingException e) {
             handleFcmError(e, deviceToken, tokenPrefix);
@@ -75,24 +80,40 @@ public class FcmNotificationService {
      */
     private void handleFcmError(FirebaseMessagingException e, String deviceToken, String tokenPrefix) {
         MessagingErrorCode errorCode = e.getMessagingErrorCode();
+        String category;
 
         if (errorCode == MessagingErrorCode.UNREGISTERED) {
             // Token is invalid (expired, app uninstalled) - remove device from database
+            category = "expected";
             logger.warn("FCM token unregistered, removing device: {}", tokenPrefix);
             try {
                 deviceService.deleteDevice(deviceToken);
             } catch (Exception deleteEx) {
                 logger.error("Failed to delete unregistered device {}: {}", tokenPrefix, deleteEx.getMessage());
             }
-        } else if (errorCode == MessagingErrorCode.INVALID_ARGUMENT) {
-            logger.error("FCM invalid argument error for device {}: {}", tokenPrefix, e.getMessage());
-        } else if (errorCode == MessagingErrorCode.QUOTA_EXCEEDED) {
-            logger.warn("FCM quota exceeded for device: {}. Message not sent.", tokenPrefix);
-        } else if (errorCode == MessagingErrorCode.UNAVAILABLE || errorCode == MessagingErrorCode.INTERNAL) {
-            logger.warn("FCM service temporarily unavailable ({}). Device: {}", errorCode, tokenPrefix);
+        } else if (errorCode == MessagingErrorCode.QUOTA_EXCEEDED ||
+                   errorCode == MessagingErrorCode.UNAVAILABLE ||
+                   errorCode == MessagingErrorCode.INTERNAL) {
+            category = "transient";
+            if (errorCode == MessagingErrorCode.QUOTA_EXCEEDED) {
+                logger.warn("FCM quota exceeded for device: {}. Message not sent.", tokenPrefix);
+            } else {
+                logger.warn("FCM service temporarily unavailable ({}). Device: {}", errorCode, tokenPrefix);
+            }
         } else {
-            logger.error("FCM error sending to device {}: {} - {}",
-                    tokenPrefix, errorCode, e.getMessage());
+            category = "unexpected";
+            if (errorCode == MessagingErrorCode.INVALID_ARGUMENT) {
+                logger.error("FCM invalid argument error for device {}: {}", tokenPrefix, e.getMessage());
+            } else {
+                logger.error("FCM error sending to device {}: {} - {}",
+                        tokenPrefix, errorCode, e.getMessage());
+            }
         }
+
+        meterRegistry.counter("fcm_notification_total",
+                "status", "error",
+                "error_code", errorCode != null ? errorCode.name() : "unknown",
+                "category", category
+        ).increment();
     }
 }

@@ -4,6 +4,8 @@ import com.eatthepath.pushy.apns.ApnsClient;
 import com.eatthepath.pushy.apns.PushNotificationResponse;
 import com.eatthepath.pushy.apns.util.SimpleApnsPushNotification;
 import com.eatthepath.pushy.apns.util.concurrent.PushNotificationFuture;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -16,6 +18,8 @@ import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -30,6 +34,15 @@ class PushNotificationServiceTest {
     @Mock
     private PushNotificationResponse<SimpleApnsPushNotification> pushNotificationResponse;
 
+    @Mock
+    private NotificationTextGenerator textGenerator;
+
+    @Mock
+    private MeterRegistry meterRegistry;
+
+    @Mock
+    private Counter counter;
+
     @InjectMocks
     private PushNotificationService pushNotificationService;
 
@@ -41,6 +54,7 @@ class PushNotificationServiceTest {
 
     @BeforeEach
     void setUp() {
+        lenient().when(meterRegistry.counter(anyString(), any(String[].class))).thenReturn(counter);
         ReflectionTestUtils.setField(pushNotificationService, "bundleId", TEST_BUNDLE_ID);
     }
 

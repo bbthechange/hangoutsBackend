@@ -5,6 +5,8 @@ import com.google.firebase.messaging.FirebaseMessaging;
 import com.google.firebase.messaging.FirebaseMessagingException;
 import com.google.firebase.messaging.Message;
 import com.google.firebase.messaging.MessagingErrorCode;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -13,6 +15,8 @@ import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -30,6 +34,12 @@ class FcmNotificationServiceTest {
     @Mock
     private DeviceService deviceService;
 
+    @Mock
+    private MeterRegistry meterRegistry;
+
+    @Mock
+    private Counter counter;
+
     private FcmNotificationService fcmNotificationService;
 
     private static final String TEST_DEVICE_TOKEN = "fcm_test_token_1234567890abcdef";
@@ -42,13 +52,14 @@ class FcmNotificationServiceTest {
 
     @BeforeEach
     void setUp() {
-        fcmNotificationService = new FcmNotificationService(firebaseApp, textGenerator, deviceService);
+        lenient().when(meterRegistry.counter(anyString(), any(String[].class))).thenReturn(counter);
+        fcmNotificationService = new FcmNotificationService(firebaseApp, textGenerator, deviceService, meterRegistry);
     }
 
     @Test
     void sendNewHangoutNotification_FirebaseNotConfigured_SkipsNotification() {
         // Arrange
-        FcmNotificationService serviceWithoutFirebase = new FcmNotificationService(null, textGenerator, deviceService);
+        FcmNotificationService serviceWithoutFirebase = new FcmNotificationService(null, textGenerator, deviceService, meterRegistry);
 
         // Act
         serviceWithoutFirebase.sendNewHangoutNotification(
