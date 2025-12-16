@@ -11,13 +11,10 @@ import java.util.Arrays;
 
 @Service
 public class RefreshTokenCookieService {
-    
-    @Value("${app.cookie.secure:true}")
-    private boolean cookieSecure;
-    
+
     @Value("${app.cookie.domain:}")
     private String cookieDomain;
-    
+
     @Value("${spring.profiles.active:prod}")
     private String activeProfile;
     
@@ -28,20 +25,21 @@ public class RefreshTokenCookieService {
         ResponseCookie.ResponseCookieBuilder cookieBuilder = ResponseCookie.from("refreshToken", refreshToken)
             .httpOnly(true)                           // Prevent XSS access
             .path("/auth")                            // Limit scope to auth endpoints
-            .maxAge(Duration.ofDays(30))              // 30 days
-            .sameSite("Lax");                         // CSRF protection
-            
+            .maxAge(Duration.ofDays(30));             // 30 days
+
         // Environment-specific settings
         if ("dev".equals(activeProfile) || "test".equals(activeProfile)) {
             cookieBuilder.secure(false);              // Allow HTTP in development
+            cookieBuilder.sameSite("Lax");            // Same-origin in dev, Lax is fine
         } else {
             cookieBuilder.secure(true);               // HTTPS only in production
+            cookieBuilder.sameSite("None");           // Cross-origin requires None (CORS protects against CSRF)
         }
-        
+
         if (!cookieDomain.isEmpty()) {
             cookieBuilder.domain(cookieDomain);       // Set domain for production
         }
-        
+
         return cookieBuilder.build();
     }
     
@@ -49,13 +47,20 @@ public class RefreshTokenCookieService {
      * Create cookie that clears the refresh token (for logout)
      */
     public ResponseCookie clearRefreshTokenCookie() {
-        return ResponseCookie.from("refreshToken", "")
+        ResponseCookie.ResponseCookieBuilder cookieBuilder = ResponseCookie.from("refreshToken", "")
             .httpOnly(true)
             .path("/auth")
-            .maxAge(0)                                // Immediate expiration
-            .secure(cookieSecure)
-            .sameSite("Lax")
-            .build();
+            .maxAge(0);                               // Immediate expiration
+
+        if ("dev".equals(activeProfile) || "test".equals(activeProfile)) {
+            cookieBuilder.secure(false);
+            cookieBuilder.sameSite("Lax");
+        } else {
+            cookieBuilder.secure(true);
+            cookieBuilder.sameSite("None");
+        }
+
+        return cookieBuilder.build();
     }
     
     /**

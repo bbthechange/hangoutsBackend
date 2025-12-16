@@ -24,7 +24,6 @@ class RefreshTokenCookieServiceTest {
     @BeforeEach
     void setUp() {
         cookieService = new RefreshTokenCookieService();
-        ReflectionTestUtils.setField(cookieService, "cookieSecure", true);
         ReflectionTestUtils.setField(cookieService, "cookieDomain", "");
         ReflectionTestUtils.setField(cookieService, "activeProfile", "prod");
     }
@@ -33,17 +32,17 @@ class RefreshTokenCookieServiceTest {
     void createRefreshTokenCookie_InProduction_ShouldReturnSecureCookie() {
         // Given
         String refreshToken = "test-refresh-token";
-        
+
         // When
         ResponseCookie cookie = cookieService.createRefreshTokenCookie(refreshToken);
-        
+
         // Then
         assertThat(cookie.getName()).isEqualTo("refreshToken");
         assertThat(cookie.getValue()).isEqualTo(refreshToken);
         assertThat(cookie.isHttpOnly()).isTrue();
         assertThat(cookie.isSecure()).isTrue();
         assertThat(cookie.getPath()).isEqualTo("/auth");
-        assertThat(cookie.getSameSite()).isEqualTo("Lax");
+        assertThat(cookie.getSameSite()).isEqualTo("None"); // Cross-origin requires None
         assertThat(cookie.getMaxAge().getSeconds()).isEqualTo(30 * 24 * 60 * 60); // 30 days
     }
     
@@ -82,14 +81,15 @@ class RefreshTokenCookieServiceTest {
     void clearRefreshTokenCookie_ShouldReturnExpiredCookie() {
         // When
         ResponseCookie cookie = cookieService.clearRefreshTokenCookie();
-        
+
         // Then
         assertThat(cookie.getName()).isEqualTo("refreshToken");
         assertThat(cookie.getValue()).isEmpty();
         assertThat(cookie.isHttpOnly()).isTrue();
         assertThat(cookie.getPath()).isEqualTo("/auth");
         assertThat(cookie.getMaxAge().getSeconds()).isEqualTo(0); // Immediate expiration
-        assertThat(cookie.getSameSite()).isEqualTo("Lax");
+        assertThat(cookie.getSameSite()).isEqualTo("None"); // Cross-origin requires None in prod
+        assertThat(cookie.isSecure()).isTrue(); // Must be secure with SameSite=None
     }
     
     @Test
