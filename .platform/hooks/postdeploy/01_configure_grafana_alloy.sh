@@ -1,0 +1,50 @@
+#!/bin/bash
+set -e
+
+echo "Configuring Grafana Alloy..."
+
+# Get Grafana Cloud credentials from EB environment variables
+GRAFANA_URL=$(/opt/elasticbeanstalk/bin/get-config environment -k GRAFANA_REMOTE_WRITE_URL || echo "")
+GRAFANA_USER=$(/opt/elasticbeanstalk/bin/get-config environment -k GRAFANA_REMOTE_WRITE_USER || echo "")
+GRAFANA_PASS=$(/opt/elasticbeanstalk/bin/get-config environment -k GRAFANA_REMOTE_WRITE_PASSWORD || echo "")
+ENVIRONMENT=$(/opt/elasticbeanstalk/bin/get-config environment -k ENVIRONMENT || echo "production")
+
+# Skip configuration if credentials are not set
+if [ -z "$GRAFANA_URL" ] || [ -z "$GRAFANA_USER" ] || [ -z "$GRAFANA_PASS" ]; then
+    echo "Grafana Cloud credentials not configured. Skipping Alloy configuration."
+    echo "Set GRAFANA_REMOTE_WRITE_URL, GRAFANA_REMOTE_WRITE_USER, and GRAFANA_REMOTE_WRITE_PASSWORD in EB environment."
+    exit 0
+fi
+
+# Create Alloy config directory
+mkdir -p /etc/alloy
+
+# Write Alloy configuration
+cat > /etc/alloy/config.alloy << EOF
+prometheus.scrape "spring_boot" {
+    targets = [{"__address__" = "localhost:5000"}]
+    forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+    scrape_interval = "15s"
+    metrics_path = "/actuator/prometheus"
+}
+
+prometheus.remote_write "grafana_cloud" {
+    endpoint {
+        url = "${GRAFANA_URL}"
+        basic_auth {
+            username = "${GRAFANA_USER}"
+            password = "${GRAFANA_PASS}"
+        }
+    }
+    external_labels = {
+        environment = "${ENVIRONMENT}",
+        application = "inviter-backend",
+    }
+}
+EOF
+
+# Enable and start/restart Alloy service
+systemctl enable alloy
+systemctl restart alloy
+
+echo "Grafana Alloy configured and started for environment: ${ENVIRONMENT}"

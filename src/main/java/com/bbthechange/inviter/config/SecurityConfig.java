@@ -12,6 +12,8 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import org.springframework.security.authorization.AuthorizationDecision;
+
 import java.util.Arrays;
 
 @Configuration
@@ -40,6 +42,8 @@ public class SecurityConfig {
                 .requestMatchers("/calendar/feed/**").permitAll() // Allow public calendar feed access
                 .requestMatchers("/groups/invite/**").permitAll() // Allow public group invite preview
                 .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
+                .requestMatchers("/actuator/prometheus").access((authentication, context) ->
+                    new AuthorizationDecision("127.0.0.1".equals(context.getRequest().getRemoteAddr())))
                 .anyRequest().authenticated()
             )
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
