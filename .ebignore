@@ -27,7 +27,9 @@ src/test/
 *.svg
 *.json
 *.p8
+# Exclude shell scripts except platform hooks
 *.sh
+!.platform/hooks/**/*.sh
 
 # Keep only essential deployment files
 # application.jar (copied from build/libs/)
