@@ -27,9 +27,14 @@ src/test/
 *.svg
 *.json
 *.p8
-# Exclude shell scripts except platform hooks
-*.sh
-!.platform/hooks/**/*.sh
+# Exclude root-level shell scripts (but keep .platform/hooks/*.sh)
+# NOTE: .ebignore doesn't support ! negation patterns like .gitignore
+# So we exclude specific scripts instead of *.sh
+deploy*.sh
+run*.sh
+setup*.sh
+build*.sh
+test*.sh
 
 # Keep only essential deployment files
 # application.jar (copied from build/libs/)
