@@ -128,3 +128,50 @@ jvm_memory_used_bytes{area="heap"}
 ### Hook not executing
 - Ensure `.ebignore` includes `!.platform/hooks/**/*.sh`
 - Check EB engine log for "The dir .platform/hooks/* does not exist"
+
+### rate() showing phantom traffic (ghost requests)
+
+**Problem**: `rate()` shows non-zero values even when the counter isn't increasing.
+
+**Root Cause**: Multiple EC2 instances reporting metrics with the same `instance` label.
+
+When Elastic Beanstalk scales or deploys, each instance reports as `localhost:5000`.
+Grafana Cloud merges these into a single series, causing counter values to interleave
+(e.g., 15 → 7 → 8), which Prometheus interprets as "counter resets" and compensates.
+
+**Solution**: Each instance must have a unique `instance` or `instance_id` label.
+The Alloy config now includes the EC2 Instance ID:
+
+```
+INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+targets = [{"__address__" = "localhost:5000", "instance" = "${INSTANCE_ID}"}]
+external_labels = { instance_id = "${INSTANCE_ID}", ... }
+```
+
+**Verification**:
+```promql
+# Check for multiple instance_id values (good - should see distinct IDs)
+count by (instance_id) (http_server_requests_seconds_count{environment="production"})
+
+# Check for resets (should be low after fix)
+resets(http_server_requests_seconds_count{uri="/path", environment="production"}[1h])
+```
+
+### rate() vs increase() best practices
+
+For per-minute call counts (non-cumulative), use:
+```promql
+# Per-second rate (what rate() returns)
+rate(http_server_requests_seconds_count{...}[5m])
+
+# Per-minute rate (multiply by 60)
+rate(http_server_requests_seconds_count{...}[5m]) * 60
+
+# Total increase over time window (for discrete counts)
+increase(http_server_requests_seconds_count{...}[1m])
+```
+
+**Key Points**:
+- `rate([5m])` requires at least 4x the scrape interval (15s * 4 = 60s minimum)
+- For accurate graphs, use Grafana's `$__rate_interval` variable instead of hardcoded windows
+- Never use `irate()` for dashboards - it's too noisy; use for alerting only

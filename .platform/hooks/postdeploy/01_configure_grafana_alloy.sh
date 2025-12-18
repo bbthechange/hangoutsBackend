@@ -10,8 +10,23 @@ ENVIRONMENT=$(/opt/elasticbeanstalk/bin/get-config environment -k ENVIRONMENT ||
 # This is CRITICAL - without this, multiple EB instances will report metrics
 # with the same "localhost:5000" instance label, causing counter values to
 # be interleaved and rate() to show phantom traffic due to false "resets"
-INSTANCE_ID=$(curl -s --connect-timeout 2 http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null || hostname)
+#
+# Use IMDSv2 (token-based) as EC2 instances created after Dec 2023 require it
+# See: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/configuring-instance-metadata-service.html
+IMDS_TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 300" --connect-timeout 2 2>/dev/null || echo "")
+if [ -n "$IMDS_TOKEN" ]; then
+    INSTANCE_ID=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" http://169.254.169.254/latest/meta-data/instance-id --connect-timeout 2 2>/dev/null || hostname)
+else
+    # Fallback to IMDSv1 for older instances, then hostname
+    INSTANCE_ID=$(curl -s --connect-timeout 2 http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null || hostname)
+fi
 echo "Instance ID: ${INSTANCE_ID}"
+
+# Validate we got an instance ID (not empty)
+if [ -z "$INSTANCE_ID" ]; then
+    INSTANCE_ID=$(hostname)
+    echo "Warning: Could not get EC2 instance ID, falling back to hostname: ${INSTANCE_ID}"
+fi
 
 # Get Grafana Cloud credentials from AWS Parameter Store
 # Parameters should be stored at:
