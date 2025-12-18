@@ -6,6 +6,13 @@ echo "Configuring Grafana Alloy..."
 # Determine environment from EB or default to production
 ENVIRONMENT=$(/opt/elasticbeanstalk/bin/get-config environment -k ENVIRONMENT || echo "production")
 
+# Get unique instance identifier (EC2 Instance ID)
+# This is CRITICAL - without this, multiple EB instances will report metrics
+# with the same "localhost:5000" instance label, causing counter values to
+# be interleaved and rate() to show phantom traffic due to false "resets"
+INSTANCE_ID=$(curl -s --connect-timeout 2 http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null || hostname)
+echo "Instance ID: ${INSTANCE_ID}"
+
 # Get Grafana Cloud credentials from AWS Parameter Store
 # Parameters should be stored at:
 #   /inviter/grafana/remote-write-url
@@ -31,7 +38,7 @@ mkdir -p /etc/alloy
 # Write Alloy configuration
 cat > /etc/alloy/config.alloy << EOF
 prometheus.scrape "spring_boot" {
-    targets = [{"__address__" = "localhost:5000"}]
+    targets = [{"__address__" = "localhost:5000", "instance" = "${INSTANCE_ID}"}]
     forward_to = [prometheus.remote_write.grafana_cloud.receiver]
     scrape_interval = "15s"
     metrics_path = "/actuator/prometheus"
@@ -48,6 +55,7 @@ prometheus.remote_write "grafana_cloud" {
     external_labels = {
         environment = "${ENVIRONMENT}",
         application = "inviter-backend",
+        instance_id = "${INSTANCE_ID}",
     }
 }
 EOF
