@@ -101,21 +101,64 @@ curl http://localhost:8080/actuator/prometheus | head -50
 ```
 
 ## Grafana Cloud
-- **Dashboard**: Create queries using PromQL
+- **URL**: https://unmediahangouts.grafana.net/
+- **Prometheus datasource**: `grafanacloud-prom`
 - **Free tier**: 10,000 metric series, 14-day retention
 - **Scrape interval**: 15 seconds
 
+### Dashboard Variable: $aggregation_interval
+
+All dashboard queries should use `[$aggregation_interval]` instead of hardcoded time windows.
+This allows adjusting the aggregation period (1m, 5m, 15m, 1h) from a dropdown.
+
+**Setup** (already configured in main dashboard):
+1. Dashboard Settings → Variables → Add variable
+2. Configure:
+   - **Name**: `aggregation_interval`
+   - **Type**: Custom
+   - **Values**: `1m,5m,15m,1h`
+   - **Label**: "Aggregation"
+3. In each panel's Query options, set **Min interval**: `$aggregation_interval`
+
 ### Example PromQL Queries
+
+All queries use `[$aggregation_interval]` for consistent, adjustable time windows.
+
 ```promql
+# Request count for specific endpoint (use increase() + round() for discrete counts)
+round(sum(increase(http_server_requests_seconds_count{
+  method="GET",
+  uri="/groups/{groupId}/feed",
+  environment="production"
+}[$aggregation_interval])))
+
+# Average latency for endpoint
+sum(rate(http_server_requests_seconds_sum{uri="/groups/{groupId}/feed"}[$aggregation_interval]))
+/ sum(rate(http_server_requests_seconds_count{uri="/groups/{groupId}/feed"}[$aggregation_interval]))
+
+# Success rate (2xx responses)
+sum(increase(http_server_requests_seconds_count{uri="/groups/{groupId}/feed", status=~"2.."}[$aggregation_interval]))
+/ sum(increase(http_server_requests_seconds_count{uri="/groups/{groupId}/feed"}[$aggregation_interval])) * 100
+
+# HTTP request count by status (all endpoints)
+round(sum(increase(http_server_requests_seconds_count{environment="production"}[$aggregation_interval])) by (status))
+
 # DynamoDB query duration p99
-histogram_quantile(0.99, rate(dynamodb_query_duration_seconds_bucket[5m]))
+histogram_quantile(0.99, rate(dynamodb_query_duration_seconds_bucket[$aggregation_interval]))
 
-# HTTP request rate by status
-sum(rate(http_server_requests_seconds_count[5m])) by (status)
-
-# JVM memory usage
+# JVM memory usage (instant, no window needed)
 jvm_memory_used_bytes{area="heap"}
 ```
+
+### rate() vs increase()
+
+| Function | Returns | Use for |
+|----------|---------|---------|
+| `rate()` | Per-second average | Throughput, latency calculations |
+| `increase()` | Total count in window | Request counts, discrete events |
+
+**Note**: `increase()` does boundary interpolation, so counts may be approximate (e.g., 5.33 instead of 7).
+Use `round()` to get integer values. For exact counts, check logs.
 
 ## Troubleshooting
 
@@ -139,39 +182,37 @@ When Elastic Beanstalk scales or deploys, each instance reports as `localhost:50
 Grafana Cloud merges these into a single series, causing counter values to interleave
 (e.g., 15 → 7 → 8), which Prometheus interprets as "counter resets" and compensates.
 
-**Solution**: Each instance must have a unique `instance` or `instance_id` label.
-The Alloy config now includes the EC2 Instance ID:
+**Solution** (implemented Dec 2025): Each instance now has a unique `instance` and
+`instance_id` label using the EC2 Instance ID. The Alloy config uses IMDSv2 token-based
+authentication (required for EC2 instances created after Dec 2023):
 
-```
-INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+```bash
+# Get IMDSv2 token first (required for modern EC2)
+IMDS_TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" \
+  -H "X-aws-ec2-metadata-token-ttl-seconds: 300")
+
+# Use token to get instance ID
+INSTANCE_ID=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" \
+  http://169.254.169.254/latest/meta-data/instance-id)
+
+# Applied to Alloy config
 targets = [{"__address__" = "localhost:5000", "instance" = "${INSTANCE_ID}"}]
 external_labels = { instance_id = "${INSTANCE_ID}", ... }
 ```
 
 **Verification**:
 ```promql
-# Check for multiple instance_id values (good - should see distinct IDs)
-count by (instance_id) (http_server_requests_seconds_count{environment="production"})
+# Check for multiple instance_id values (should see distinct EC2 IDs like i-0abc123...)
+count by (instance_id) (up{environment="production"})
 
-# Check for resets (should be low after fix)
-resets(http_server_requests_seconds_count{uri="/path", environment="production"}[1h])
+# Check for resets (should be 0 or very low)
+sum(resets(http_server_requests_seconds_count{uri="/path", environment="production"}[1h]))
 ```
 
 ### rate() vs increase() best practices
 
-For per-minute call counts (non-cumulative), use:
-```promql
-# Per-second rate (what rate() returns)
-rate(http_server_requests_seconds_count{...}[5m])
-
-# Per-minute rate (multiply by 60)
-rate(http_server_requests_seconds_count{...}[5m]) * 60
-
-# Total increase over time window (for discrete counts)
-increase(http_server_requests_seconds_count{...}[1m])
-```
-
 **Key Points**:
-- `rate([5m])` requires at least 4x the scrape interval (15s * 4 = 60s minimum)
-- For accurate graphs, use Grafana's `$__rate_interval` variable instead of hardcoded windows
+- Always use `[$aggregation_interval]` in queries (see Dashboard Variable section above)
+- Minimum reliable window is 4x scrape interval (15s × 4 = 60s), so 1m is the minimum option
+- Use `increase()` for request counts, `rate()` for latency calculations
 - Never use `irate()` for dashboards - it's too noisy; use for alerting only
