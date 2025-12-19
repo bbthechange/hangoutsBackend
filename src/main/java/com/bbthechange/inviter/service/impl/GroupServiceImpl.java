@@ -10,6 +10,7 @@ import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.exception.*;
 import com.bbthechange.inviter.service.InviteService;
+import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.UserService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -51,6 +52,7 @@ public class GroupServiceImpl implements GroupService {
     private final UserRepository userRepository;
     private final UserService userService;
     private final InviteService inviteService;
+    private final NotificationService notificationService;
     private final S3Service s3Service;
     private final InviteCodeRepository inviteCodeRepository;
     private final String appBaseUrl;
@@ -60,7 +62,8 @@ public class GroupServiceImpl implements GroupService {
 
     @Autowired
     public GroupServiceImpl(GroupRepository groupRepository, HangoutRepository hangoutRepository,
-                           UserRepository userRepository, UserService userService, InviteService inviteService, S3Service s3Service,
+                           UserRepository userRepository, UserService userService, InviteService inviteService,
+                           NotificationService notificationService, S3Service s3Service,
                            InviteCodeRepository inviteCodeRepository,
                            @Value("${app.base-url}") String appBaseUrl) {
         this.groupRepository = groupRepository;
@@ -68,6 +71,7 @@ public class GroupServiceImpl implements GroupService {
         this.userRepository = userRepository;
         this.userService = userService;
         this.inviteService = inviteService;
+        this.notificationService = notificationService;
         this.s3Service = s3Service;
         this.inviteCodeRepository = inviteCodeRepository;
         this.appBaseUrl = appBaseUrl;
@@ -270,6 +274,10 @@ public class GroupServiceImpl implements GroupService {
         membership.setUserMainImagePath(userToAdd.getMainImagePath());
 
         groupRepository.addMember(membership);
+
+        // Send notification to the added user
+        notificationService.notifyGroupMemberAdded(groupId, group.getGroupName(), finalUserId, addedBy);
+
         logger.info("Added member {} to group {} by {}", userId, groupId, addedBy);
     }
     

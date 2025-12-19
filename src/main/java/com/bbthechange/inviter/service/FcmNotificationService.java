@@ -75,6 +75,36 @@ public class FcmNotificationService {
         }
     }
 
+    public void sendGroupMemberAddedNotification(String deviceToken, String groupId,
+                                                  String groupName, String adderName) {
+        if (firebaseApp == null) {
+            logger.info("FCM not configured - skipping push notification for group member added to '{}'", groupName);
+            return;
+        }
+
+        String tokenPrefix = deviceToken.substring(0, Math.min(8, deviceToken.length())) + "...";
+
+        try {
+            Message message = Message.builder()
+                    .setToken(deviceToken)
+                    .setNotification(Notification.builder()
+                            .setTitle(NotificationTextGenerator.GROUP_MEMBER_ADDED_TITLE)
+                            .setBody(textGenerator.getGroupMemberAddedBody(adderName, groupName))
+                            .build())
+                    .putData("type", "group_member_added")
+                    .putData("groupId", groupId)
+                    .build();
+
+            String messageId = FirebaseMessaging.getInstance(firebaseApp).send(message);
+            logger.info("Group member added notification sent successfully to device: {}, messageId: {}",
+                    tokenPrefix, messageId);
+            meterRegistry.counter("fcm_notification_total", "status", "success", "type", "group_member_added").increment();
+
+        } catch (FirebaseMessagingException e) {
+            handleFcmError(e, deviceToken, tokenPrefix);
+        }
+    }
+
     /**
      * Handle FCM errors and clean up invalid tokens.
      */

@@ -12,6 +12,7 @@ import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.InviteCodeRepository;
 import com.bbthechange.inviter.repository.UserRepository;
 import com.bbthechange.inviter.service.InviteService;
+import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.S3Service;
 import com.bbthechange.inviter.service.UserService;
 import org.junit.jupiter.api.BeforeEach;
@@ -57,6 +58,9 @@ class GroupServiceInviteCodeTest {
     private InviteService inviteService;
 
     @Mock
+    private NotificationService notificationService;
+
+    @Mock
     private S3Service s3Service;
 
     @Mock
@@ -72,6 +76,7 @@ class GroupServiceInviteCodeTest {
             userRepository,
             userService,
             inviteService,
+            notificationService,
             s3Service,
             inviteCodeRepository,
             APP_BASE_URL

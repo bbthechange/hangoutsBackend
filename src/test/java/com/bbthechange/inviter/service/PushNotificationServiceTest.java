@@ -51,6 +51,9 @@ class PushNotificationServiceTest {
     private static final String TEST_EVENT_TITLE = "Test Event";
     private static final String TEST_HOST_NAME = "Test Host";
     private static final String TEST_UPDATE_MESSAGE = "Event has been updated";
+    private static final String TEST_GROUP_ID = "group-123";
+    private static final String TEST_GROUP_NAME = "Friends Group";
+    private static final String TEST_ADDER_NAME = "John";
 
     @BeforeEach
     void setUp() {
@@ -126,7 +129,7 @@ class PushNotificationServiceTest {
     void testSendEventUpdateNotification_Success_SendsNotification() throws ExecutionException, InterruptedException {
         // Arrange
         ReflectionTestUtils.setField(pushNotificationService, "apnsClient", apnsClient);
-        
+
         when(apnsClient.sendNotification(any(SimpleApnsPushNotification.class))).thenReturn(pushNotificationFuture);
         when(pushNotificationFuture.get()).thenReturn(pushNotificationResponse);
         when(pushNotificationResponse.isAccepted()).thenReturn(true);
@@ -137,5 +140,85 @@ class PushNotificationServiceTest {
         // Assert
         verify(apnsClient).sendNotification(any(SimpleApnsPushNotification.class));
         verify(pushNotificationResponse).isAccepted();
+    }
+
+    // ========== sendGroupMemberAddedNotification Tests ==========
+
+    @Test
+    void sendGroupMemberAddedNotification_WhenApnsClientNull_SkipsWithoutError() {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", null);
+
+        // When
+        pushNotificationService.sendGroupMemberAddedNotification(
+                TEST_DEVICE_TOKEN, TEST_GROUP_ID, TEST_GROUP_NAME, TEST_ADDER_NAME);
+
+        // Then - should not throw exception and should skip notification
+        verifyNoInteractions(apnsClient);
+        verifyNoInteractions(meterRegistry); // No metrics emitted when skipping
+    }
+
+    @Test
+    void sendGroupMemberAddedNotification_WhenAccepted_IncrementsSuccessMetric() throws ExecutionException, InterruptedException {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", apnsClient);
+        when(textGenerator.getGroupMemberAddedBody(TEST_ADDER_NAME, TEST_GROUP_NAME))
+                .thenReturn("John added you to the group Friends Group");
+        when(apnsClient.sendNotification(any(SimpleApnsPushNotification.class))).thenReturn(pushNotificationFuture);
+        when(pushNotificationFuture.get()).thenReturn(pushNotificationResponse);
+        when(pushNotificationResponse.isAccepted()).thenReturn(true);
+
+        // When
+        pushNotificationService.sendGroupMemberAddedNotification(
+                TEST_DEVICE_TOKEN, TEST_GROUP_ID, TEST_GROUP_NAME, TEST_ADDER_NAME);
+
+        // Then
+        verify(apnsClient).sendNotification(any(SimpleApnsPushNotification.class));
+        verify(pushNotificationResponse).isAccepted();
+        verify(meterRegistry).counter("apns_notification_total", "status", "success", "type", "group_member_added");
+    }
+
+    @Test
+    void sendGroupMemberAddedNotification_WhenRejected_IncrementsRejectedMetric() throws ExecutionException, InterruptedException {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", apnsClient);
+        when(textGenerator.getGroupMemberAddedBody(TEST_ADDER_NAME, TEST_GROUP_NAME))
+                .thenReturn("John added you to the group Friends Group");
+        when(apnsClient.sendNotification(any(SimpleApnsPushNotification.class))).thenReturn(pushNotificationFuture);
+        when(pushNotificationFuture.get()).thenReturn(pushNotificationResponse);
+        when(pushNotificationResponse.isAccepted()).thenReturn(false);
+        when(pushNotificationResponse.getRejectionReason()).thenReturn(Optional.of("BadDeviceToken"));
+
+        // When
+        pushNotificationService.sendGroupMemberAddedNotification(
+                TEST_DEVICE_TOKEN, TEST_GROUP_ID, TEST_GROUP_NAME, TEST_ADDER_NAME);
+
+        // Then
+        verify(apnsClient).sendNotification(any(SimpleApnsPushNotification.class));
+        verify(pushNotificationResponse).isAccepted();
+        verify(pushNotificationResponse).getRejectionReason();
+        verify(meterRegistry).counter("apns_notification_total",
+                "status", "rejected", "type", "group_member_added",
+                "reason", "BadDeviceToken", "category", "expected");
+    }
+
+    @Test
+    void sendGroupMemberAddedNotification_WhenExecutionException_IncrementsErrorMetric() throws ExecutionException, InterruptedException {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", apnsClient);
+        when(textGenerator.getGroupMemberAddedBody(TEST_ADDER_NAME, TEST_GROUP_NAME))
+                .thenReturn("John added you to the group Friends Group");
+        when(apnsClient.sendNotification(any(SimpleApnsPushNotification.class))).thenReturn(pushNotificationFuture);
+        when(pushNotificationFuture.get()).thenThrow(new ExecutionException("Network error", new RuntimeException()));
+
+        // When - should not throw exception
+        pushNotificationService.sendGroupMemberAddedNotification(
+                TEST_DEVICE_TOKEN, TEST_GROUP_ID, TEST_GROUP_NAME, TEST_ADDER_NAME);
+
+        // Then
+        verify(apnsClient).sendNotification(any(SimpleApnsPushNotification.class));
+        verify(meterRegistry).counter("apns_notification_total",
+                "status", "error", "type", "group_member_added",
+                "error_type", "execution", "category", "transient");
     }
 }

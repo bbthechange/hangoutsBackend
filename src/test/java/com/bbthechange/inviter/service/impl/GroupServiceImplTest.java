@@ -8,6 +8,8 @@ import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.exception.*;
 import com.bbthechange.inviter.service.InviteService;
+import com.bbthechange.inviter.service.NotificationService;
+import com.bbthechange.inviter.service.UserService;
 import com.bbthechange.inviter.util.PaginatedResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -45,6 +47,12 @@ class GroupServiceImplTest {
 
     @Mock
     private InviteService inviteService;
+
+    @Mock
+    private NotificationService notificationService;
+
+    @Mock
+    private UserService userService;
 
     @Mock
     private com.bbthechange.inviter.service.S3Service s3Service;
@@ -1443,4 +1451,34 @@ class GroupServiceImplTest {
         assertThat(membership.getGroupMainImagePath()).isEqualTo("/group-image.jpg");
         assertThat(membership.getGroupBackgroundImagePath()).isEqualTo("/group-bg.jpg");
     }
+
+    // ================= Notification Service Integration Tests =================
+
+    @Test
+    void addMember_Success_CallsNotificationService() {
+        // Given
+        String newUserId = "11111111-1111-1111-1111-111111111111";
+        String addedBy = "22222222-2222-2222-2222-222222222222";
+        String groupName = "Test Group";
+
+        Group group = createTestGroup(groupName, true, GROUP_ID);
+        User userToAdd = new User();
+        userToAdd.setId(UUID.fromString(newUserId));
+
+        when(groupRepository.findById(GROUP_ID)).thenReturn(Optional.of(group));
+        when(groupRepository.isUserMemberOfGroup(GROUP_ID, newUserId)).thenReturn(false);
+        when(userRepository.findById(UUID.fromString(newUserId))).thenReturn(Optional.of(userToAdd));
+
+        // When
+        groupService.addMember(GROUP_ID, newUserId, null, addedBy);
+
+        // Then: notificationService.notifyGroupMemberAdded is called with correct parameters
+        verify(notificationService).notifyGroupMemberAdded(
+            eq(GROUP_ID),
+            eq(groupName),
+            eq(newUserId),
+            eq(addedBy)
+        );
+    }
+
 }

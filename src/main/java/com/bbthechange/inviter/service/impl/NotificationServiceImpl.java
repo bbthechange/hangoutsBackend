@@ -5,10 +5,13 @@ import com.bbthechange.inviter.model.Group;
 import com.bbthechange.inviter.model.GroupMembership;
 import com.bbthechange.inviter.model.Hangout;
 import com.bbthechange.inviter.repository.GroupRepository;
+import com.bbthechange.inviter.dto.UserSummaryDTO;
 import com.bbthechange.inviter.service.DeviceService;
 import com.bbthechange.inviter.service.FcmNotificationService;
 import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.PushNotificationService;
+import com.bbthechange.inviter.service.UserService;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,16 +32,22 @@ public class NotificationServiceImpl implements NotificationService {
     private final DeviceService deviceService;
     private final PushNotificationService pushNotificationService;
     private final FcmNotificationService fcmNotificationService;
+    private final UserService userService;
+    private final MeterRegistry meterRegistry;
 
     @Autowired
     public NotificationServiceImpl(GroupRepository groupRepository,
                                    DeviceService deviceService,
                                    PushNotificationService pushNotificationService,
-                                   FcmNotificationService fcmNotificationService) {
+                                   FcmNotificationService fcmNotificationService,
+                                   UserService userService,
+                                   MeterRegistry meterRegistry) {
         this.groupRepository = groupRepository;
         this.deviceService = deviceService;
         this.pushNotificationService = pushNotificationService;
         this.fcmNotificationService = fcmNotificationService;
+        this.userService = userService;
+        this.meterRegistry = meterRegistry;
     }
 
     @Override
@@ -186,5 +195,104 @@ public class NotificationServiceImpl implements NotificationService {
             logger.warn("Failed to get group name for {}: {}", groupId, e.getMessage());
         }
         return "Unknown Group";
+    }
+
+    @Override
+    public void notifyGroupMemberAdded(String groupId, String groupName, String addedUserId, String adderUserId) {
+        // Skip notification for self-join
+        if (addedUserId.equals(adderUserId)) {
+            logger.debug("Skipping group member added notification - user {} added themselves to group {}",
+                    addedUserId, groupId);
+            return;
+        }
+
+        String adderName = getAdderDisplayName(adderUserId);
+        boolean sent = sendGroupMemberAddedNotificationToUser(addedUserId, groupId, groupName, adderName);
+
+        if (sent) {
+            logger.info("Group member added notification sent for user {} added to group {} by {}",
+                    addedUserId, groupId, adderUserId);
+        } else {
+            logger.debug("No devices found for user {} to send group member added notification", addedUserId);
+        }
+    }
+
+    /**
+     * Get the display name for the user who added the member.
+     * Falls back to "Unknown" if user cannot be found.
+     */
+    private String getAdderDisplayName(String adderUserId) {
+        try {
+            Optional<UserSummaryDTO> userOpt = userService.getUserSummary(UUID.fromString(adderUserId));
+            if (userOpt.isPresent() && userOpt.get().getDisplayName() != null) {
+                return userOpt.get().getDisplayName();
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to get display name for adder {}: {}", adderUserId, e.getMessage());
+            meterRegistry.counter("group_member_added_notification_total",
+                    "status", "error", "error_type", "adder_lookup_failed").increment();
+        }
+        return "Unknown";
+    }
+
+    /**
+     * Send group member added notification to all active devices for the added user.
+     * Returns true if at least one notification was sent.
+     */
+    private boolean sendGroupMemberAddedNotificationToUser(String userId, String groupId,
+                                                            String groupName, String adderName) {
+        try {
+            List<Device> devices = deviceService.getActiveDevicesForUser(UUID.fromString(userId));
+
+            if (devices.isEmpty()) {
+                logger.debug("No active devices for user {}", userId);
+                meterRegistry.counter("group_member_added_notification_total",
+                        "status", "skipped", "reason", "no_devices").increment();
+                return false;
+            }
+
+            boolean anySent = false;
+
+            for (Device device : devices) {
+                try {
+                    if (device.getPlatform() == Device.Platform.IOS) {
+                        pushNotificationService.sendGroupMemberAddedNotification(
+                            device.getToken(),
+                            groupId,
+                            groupName,
+                            adderName
+                        );
+                        anySent = true;
+                    } else if (device.getPlatform() == Device.Platform.ANDROID) {
+                        fcmNotificationService.sendGroupMemberAddedNotification(
+                            device.getToken(),
+                            groupId,
+                            groupName,
+                            adderName
+                        );
+                        anySent = true;
+                    }
+                } catch (Exception e) {
+                    logger.error("Failed to send group member added notification to device {}: {}",
+                        device.getToken().substring(0, Math.min(8, device.getToken().length())),
+                        e.getMessage());
+                    meterRegistry.counter("group_member_added_notification_total",
+                            "status", "error", "error_type", "device_send_failed").increment();
+                }
+            }
+
+            if (anySent) {
+                meterRegistry.counter("group_member_added_notification_total",
+                        "status", "success").increment();
+            }
+
+            return anySent;
+
+        } catch (Exception e) {
+            logger.warn("Failed to send group member added notifications to user {}: {}", userId, e.getMessage());
+            meterRegistry.counter("group_member_added_notification_total",
+                    "status", "error", "error_type", "device_lookup_failed").increment();
+            return false;
+        }
     }
 }

@@ -1,11 +1,16 @@
 package com.bbthechange.inviter.service.impl;
 
+import com.bbthechange.inviter.dto.UserSummaryDTO;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.service.DeviceService;
 import com.bbthechange.inviter.service.FcmNotificationService;
 import com.bbthechange.inviter.service.PushNotificationService;
+import com.bbthechange.inviter.service.UserService;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -31,6 +36,15 @@ class NotificationServiceImplTest {
 
     @Mock(lenient = true)
     private FcmNotificationService fcmNotificationService;
+
+    @Mock(lenient = true)
+    private UserService userService;
+
+    @Mock(lenient = true)
+    private MeterRegistry meterRegistry;
+
+    @Mock(lenient = true)
+    private Counter mockCounter;
 
     @InjectMocks
     private NotificationServiceImpl notificationService;
@@ -393,5 +407,188 @@ class NotificationServiceImplTest {
             eq("Test Group"),
             eq("Creator Name")
         );
+    }
+
+    // ================= Group Member Added Notification Tests =================
+
+    @Nested
+    class NotifyGroupMemberAddedTests {
+
+        private static final String GROUP_ID = "00000000-0000-0000-0000-000000000201";
+        private static final String GROUP_NAME = "Test Group";
+        private static final String ADDED_USER_ID = "00000000-0000-0000-0000-000000000002";
+        private static final String ADDER_USER_ID = "00000000-0000-0000-0000-000000000001";
+        private static final String ADDER_NAME = "John Adder";
+
+        private Device createDevice(String token, Device.Platform platform) {
+            Device device = new Device();
+            device.setToken(token);
+            device.setPlatform(platform);
+            device.setActive(true);
+            return device;
+        }
+
+        @Test
+        void notifyGroupMemberAdded_WhenSelfJoin_SkipsNotification() {
+            // Given: User adds themselves to the group (self-join)
+            String userId = ADDED_USER_ID;
+
+            // When
+            notificationService.notifyGroupMemberAdded(GROUP_ID, GROUP_NAME, userId, userId);
+
+            // Then: No notifications sent
+            verify(pushNotificationService, never()).sendGroupMemberAddedNotification(
+                anyString(), anyString(), anyString(), anyString());
+            verify(fcmNotificationService, never()).sendGroupMemberAddedNotification(
+                anyString(), anyString(), anyString(), anyString());
+            verify(deviceService, never()).getActiveDevicesForUser(any());
+            verify(userService, never()).getUserSummary(any());
+        }
+
+        @Test
+        void notifyGroupMemberAdded_WithIosDevice_SendsViaPushNotificationService() {
+            // Given: User has iOS device and adder has a display name
+            Device iosDevice = createDevice("ios-token-123", Device.Platform.IOS);
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(ADDED_USER_ID)))
+                .thenReturn(List.of(iosDevice));
+
+            UserSummaryDTO adderSummary = new UserSummaryDTO(
+                UUID.fromString(ADDER_USER_ID), ADDER_NAME, null);
+            when(userService.getUserSummary(UUID.fromString(ADDER_USER_ID)))
+                .thenReturn(Optional.of(adderSummary));
+
+            when(meterRegistry.counter(anyString(), any(String[].class))).thenReturn(mockCounter);
+
+            // When
+            notificationService.notifyGroupMemberAdded(GROUP_ID, GROUP_NAME, ADDED_USER_ID, ADDER_USER_ID);
+
+            // Then: Notification sent via push notification service
+            verify(pushNotificationService).sendGroupMemberAddedNotification(
+                eq("ios-token-123"),
+                eq(GROUP_ID),
+                eq(GROUP_NAME),
+                eq(ADDER_NAME)
+            );
+            verify(fcmNotificationService, never()).sendGroupMemberAddedNotification(
+                anyString(), anyString(), anyString(), anyString());
+        }
+
+        @Test
+        void notifyGroupMemberAdded_WithAndroidDevice_SendsViaFcmNotificationService() {
+            // Given: User has Android device
+            Device androidDevice = createDevice("android-token-456", Device.Platform.ANDROID);
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(ADDED_USER_ID)))
+                .thenReturn(List.of(androidDevice));
+
+            UserSummaryDTO adderSummary = new UserSummaryDTO(
+                UUID.fromString(ADDER_USER_ID), ADDER_NAME, null);
+            when(userService.getUserSummary(UUID.fromString(ADDER_USER_ID)))
+                .thenReturn(Optional.of(adderSummary));
+
+            when(meterRegistry.counter(anyString(), any(String[].class))).thenReturn(mockCounter);
+
+            // When
+            notificationService.notifyGroupMemberAdded(GROUP_ID, GROUP_NAME, ADDED_USER_ID, ADDER_USER_ID);
+
+            // Then: Notification sent via FCM
+            verify(fcmNotificationService).sendGroupMemberAddedNotification(
+                eq("android-token-456"),
+                eq(GROUP_ID),
+                eq(GROUP_NAME),
+                eq(ADDER_NAME)
+            );
+            verify(pushNotificationService, never()).sendGroupMemberAddedNotification(
+                anyString(), anyString(), anyString(), anyString());
+        }
+
+        @Test
+        void notifyGroupMemberAdded_WithNoDevices_IncrementsSkippedMetric() {
+            // Given: User has no active devices
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(ADDED_USER_ID)))
+                .thenReturn(List.of());
+
+            UserSummaryDTO adderSummary = new UserSummaryDTO(
+                UUID.fromString(ADDER_USER_ID), ADDER_NAME, null);
+            when(userService.getUserSummary(UUID.fromString(ADDER_USER_ID)))
+                .thenReturn(Optional.of(adderSummary));
+
+            when(meterRegistry.counter(eq("group_member_added_notification_total"),
+                eq("status"), eq("skipped"), eq("reason"), eq("no_devices")))
+                .thenReturn(mockCounter);
+
+            // When
+            notificationService.notifyGroupMemberAdded(GROUP_ID, GROUP_NAME, ADDED_USER_ID, ADDER_USER_ID);
+
+            // Then: Skipped metric incremented with reason="no_devices"
+            verify(meterRegistry).counter("group_member_added_notification_total",
+                "status", "skipped", "reason", "no_devices");
+            verify(mockCounter).increment();
+            verify(pushNotificationService, never()).sendGroupMemberAddedNotification(
+                anyString(), anyString(), anyString(), anyString());
+            verify(fcmNotificationService, never()).sendGroupMemberAddedNotification(
+                anyString(), anyString(), anyString(), anyString());
+        }
+
+        @Test
+        void notifyGroupMemberAdded_WhenAdderLookupFails_UsesUnknownAndIncrementsErrorMetric() {
+            // Given: User has iOS device, but adder lookup throws exception
+            Device iosDevice = createDevice("ios-token-123", Device.Platform.IOS);
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(ADDED_USER_ID)))
+                .thenReturn(List.of(iosDevice));
+
+            when(userService.getUserSummary(UUID.fromString(ADDER_USER_ID)))
+                .thenThrow(new RuntimeException("Database error"));
+
+            when(meterRegistry.counter(anyString(), any(String[].class))).thenReturn(mockCounter);
+
+            // When
+            notificationService.notifyGroupMemberAdded(GROUP_ID, GROUP_NAME, ADDED_USER_ID, ADDER_USER_ID);
+
+            // Then: "Unknown" used as adder name, error metric incremented
+            verify(meterRegistry).counter("group_member_added_notification_total",
+                "status", "error", "error_type", "adder_lookup_failed");
+            verify(pushNotificationService).sendGroupMemberAddedNotification(
+                eq("ios-token-123"),
+                eq(GROUP_ID),
+                eq(GROUP_NAME),
+                eq("Unknown")
+            );
+        }
+
+        @Test
+        void notifyGroupMemberAdded_WhenDeviceSendFails_ContinuesToNextDevice() {
+            // Given: User has multiple devices, first one fails
+            Device iosDevice = createDevice("ios-token-fail", Device.Platform.IOS);
+            Device androidDevice = createDevice("android-token-success", Device.Platform.ANDROID);
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(ADDED_USER_ID)))
+                .thenReturn(List.of(iosDevice, androidDevice));
+
+            UserSummaryDTO adderSummary = new UserSummaryDTO(
+                UUID.fromString(ADDER_USER_ID), ADDER_NAME, null);
+            when(userService.getUserSummary(UUID.fromString(ADDER_USER_ID)))
+                .thenReturn(Optional.of(adderSummary));
+
+            // iOS notification fails
+            doThrow(new RuntimeException("APNS error"))
+                .when(pushNotificationService).sendGroupMemberAddedNotification(
+                    eq("ios-token-fail"), anyString(), anyString(), anyString());
+
+            when(meterRegistry.counter(anyString(), any(String[].class))).thenReturn(mockCounter);
+
+            // When
+            notificationService.notifyGroupMemberAdded(GROUP_ID, GROUP_NAME, ADDED_USER_ID, ADDER_USER_ID);
+
+            // Then: Both services attempted, Android notification sent successfully
+            verify(pushNotificationService).sendGroupMemberAddedNotification(
+                eq("ios-token-fail"), eq(GROUP_ID), eq(GROUP_NAME), eq(ADDER_NAME));
+            verify(fcmNotificationService).sendGroupMemberAddedNotification(
+                eq("android-token-success"), eq(GROUP_ID), eq(GROUP_NAME), eq(ADDER_NAME));
+            // Error metric incremented for failed device
+            verify(meterRegistry).counter("group_member_added_notification_total",
+                "status", "error", "error_type", "device_send_failed");
+            // Success metric also incremented since at least one succeeded
+            verify(meterRegistry).counter("group_member_added_notification_total",
+                "status", "success");
+        }
     }
 }

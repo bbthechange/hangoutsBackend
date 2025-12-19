@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 public class NotificationTextGenerator {
 
     public static final String NEW_HANGOUT_TITLE = "New Hangout";
+    public static final String GROUP_MEMBER_ADDED_TITLE = "Added to Group";
 
     /**
      * Generate body text for new hangout notification.
@@ -23,5 +24,18 @@ public class NotificationTextGenerator {
             return String.format("%s created '%s' in %s", creatorName, hangoutTitle, groupName);
         }
         return String.format("New hangout '%s' in %s", hangoutTitle, groupName);
+    }
+
+    /**
+     * Generate body text for group member added notification.
+     * @param adderName Name of user who added the member
+     * @param groupName Name of the group
+     * @return Notification body text
+     */
+    public String getGroupMemberAddedBody(String adderName, String groupName) {
+        if (adderName != null && !adderName.trim().isEmpty() && !"Unknown".equals(adderName)) {
+            return String.format("%s added you to the group %s", adderName, groupName);
+        }
+        return String.format("You were added to the group %s", groupName);
     }
 }

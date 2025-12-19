@@ -20,6 +20,17 @@ public interface NotificationService {
      */
     void notifyNewHangout(com.bbthechange.inviter.model.Hangout hangout, String creatorUserId, String creatorName);
 
+    /**
+     * Notify a user that they have been added to a group.
+     * Skips notification if the user added themselves (self-join).
+     *
+     * @param groupId The ID of the group
+     * @param groupName The name of the group
+     * @param addedUserId The user who was added (will be notified)
+     * @param adderUserId The user who added them (used for message)
+     */
+    void notifyGroupMemberAdded(String groupId, String groupName, String addedUserId, String adderUserId);
+
     // Future methods (not implementing yet):
     // void notifyUpcomingHangout(String hangoutId, List<String> interestedUserIds);
     // void notifyHangoutUpdated(String hangoutId, String updatedByUserId,

@@ -4,16 +4,18 @@
 
 ## 1. Overview
 
-The notification system is responsible for sending push and SMS messages to users for events like new hangouts or direct invites. The primary focus is on push notifications to mobile devices (currently iOS only), with SMS being used for auxiliary purposes like phone number verification.
+The notification system is responsible for sending push and SMS messages to users for events like new hangouts, group membership changes, or direct invites. Push notifications are sent to mobile devices on both iOS (via APNs) and Android (via FCM), with SMS being used for auxiliary purposes like phone number verification.
 
-The system is designed to be extensible, with a clear separation between the high-level orchestration service (`NotificationService`) and the specific delivery channel services (`PushNotificationService`, `SmsNotificationService`).
+The system is designed to be extensible, with a clear separation between the high-level orchestration service (`NotificationService`) and the specific delivery channel services (`PushNotificationService`, `FcmNotificationService`, `SmsNotificationService`).
 
 ## 2. Key Files & Classes
 
 | File | Purpose |
 | :--- | :--- |
 | `NotificationServiceImpl.java` | The main orchestration service. It determines *who* to notify and calls the appropriate channel-specific service. |
-| `PushNotificationService.java` | Handles the construction and sending of push notifications to Apple Push Notification Service (APNs). |
+| `PushNotificationService.java` | Handles the construction and sending of push notifications to Apple Push Notification Service (APNs) for iOS devices. |
+| `FcmNotificationService.java` | Handles the construction and sending of push notifications to Firebase Cloud Messaging (FCM) for Android devices. |
+| `NotificationTextGenerator.java` | Centralizes notification text generation to ensure consistency across iOS and Android platforms. |
 | `SmsNotificationService.java` | Handles sending SMS messages via AWS SNS, primarily for phone verification. |
 | `DeviceController.java` | Exposes REST endpoints for `/devices` to register and unregister device tokens. |
 | `DeviceService.java` | Manages the persistence of device tokens in the `Devices` DynamoDB table. |
@@ -39,6 +41,20 @@ This is the most common notification flow.
 3.  **Device Lookup:** It iterates through the set of user IDs. For each user, it calls `DeviceService.getActiveDevicesForUser()`, which queries the `UserIndex` GSI on the `Devices` table to get a list of their active device tokens.
 4.  **Push Delivery:** For each active device, it calls `PushNotificationService.sendNewHangoutNotification()`.
 5.  **APNs Communication:** The `PushNotificationService` builds the JSON payload required by Apple and uses the configured `ApnsClient` to send the push notification.
+
+### Sending a "Group Member Added" Notification
+
+This notification is sent when a user is added to a group by another user.
+
+1.  **Trigger:** `GroupServiceImpl.addMember()` calls `NotificationServiceImpl.notifyGroupMemberAdded()` after successfully adding a member.
+2.  **Self-Join Check:** If the adder and added user are the same (self-join to a public group), the notification is skipped.
+3.  **Adder Name Lookup:** `NotificationServiceImpl` looks up the adder's display name via `UserService.getUserSummary()` (cached). Falls back to "Unknown" on failure.
+4.  **Device Lookup:** It calls `DeviceService.getActiveDevicesForUser()` to get all active devices for the added user.
+5.  **Platform Routing:** For each device:
+    *   **iOS:** Calls `PushNotificationService.sendGroupMemberAddedNotification()`
+    *   **Android:** Calls `FcmNotificationService.sendGroupMemberAddedNotification()`
+6.  **Message Format:** `"{adder name} added you to the group {group name}"` (or fallback: `"You were added to the group {group name}"`)
+7.  **Fire-and-Forget:** Notification failures do not break the member addition operation.
 
 ### SMS Verification
 

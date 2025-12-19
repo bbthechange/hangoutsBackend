@@ -49,6 +49,8 @@ class FcmNotificationServiceTest {
     private static final String TEST_GROUP_NAME = "Friends";
     private static final String TEST_CREATOR_NAME = "John";
     private static final String TEST_NOTIFICATION_BODY = "John created 'Pizza Night' in Friends";
+    private static final String TEST_ADDER_NAME = "Jane";
+    private static final String TEST_GROUP_MEMBER_ADDED_BODY = "Jane added you to the group Friends";
 
     @BeforeEach
     void setUp() {
@@ -183,6 +185,71 @@ class FcmNotificationServiceTest {
 
             // Assert - should not delete device for transient error
             verifyNoInteractions(deviceService);
+        }
+    }
+
+    // ========== sendGroupMemberAddedNotification Tests ==========
+
+    @Test
+    void sendGroupMemberAddedNotification_WhenFirebaseAppNull_SkipsWithoutError() {
+        // Given
+        FcmNotificationService serviceWithoutFirebase = new FcmNotificationService(
+                null, textGenerator, deviceService, meterRegistry);
+
+        // When
+        serviceWithoutFirebase.sendGroupMemberAddedNotification(
+                TEST_DEVICE_TOKEN, TEST_GROUP_ID, TEST_GROUP_NAME, TEST_ADDER_NAME);
+
+        // Then - should not throw and should not interact with dependencies
+        verifyNoInteractions(textGenerator);
+        verifyNoInteractions(deviceService);
+    }
+
+    @Test
+    void sendGroupMemberAddedNotification_WhenSuccess_IncrementsSuccessMetric() throws FirebaseMessagingException {
+        // Given
+        when(textGenerator.getGroupMemberAddedBody(TEST_ADDER_NAME, TEST_GROUP_NAME))
+                .thenReturn(TEST_GROUP_MEMBER_ADDED_BODY);
+
+        try (MockedStatic<FirebaseMessaging> mockedStatic = mockStatic(FirebaseMessaging.class)) {
+            mockedStatic.when(() -> FirebaseMessaging.getInstance(firebaseApp)).thenReturn(firebaseMessaging);
+            when(firebaseMessaging.send(any(Message.class))).thenReturn("message-id-456");
+
+            // When
+            fcmNotificationService.sendGroupMemberAddedNotification(
+                    TEST_DEVICE_TOKEN, TEST_GROUP_ID, TEST_GROUP_NAME, TEST_ADDER_NAME);
+
+            // Then
+            verify(textGenerator).getGroupMemberAddedBody(TEST_ADDER_NAME, TEST_GROUP_NAME);
+            verify(firebaseMessaging).send(any(Message.class));
+            verify(meterRegistry).counter("fcm_notification_total", "status", "success", "type", "group_member_added");
+            verifyNoInteractions(deviceService); // No error, so no device cleanup
+        }
+    }
+
+    @Test
+    void sendGroupMemberAddedNotification_WhenUnregistered_DeletesDeviceAndIncrementsMetric() throws FirebaseMessagingException {
+        // Given
+        when(textGenerator.getGroupMemberAddedBody(TEST_ADDER_NAME, TEST_GROUP_NAME))
+                .thenReturn(TEST_GROUP_MEMBER_ADDED_BODY);
+
+        FirebaseMessagingException unregisteredException = mock(FirebaseMessagingException.class);
+        when(unregisteredException.getMessagingErrorCode()).thenReturn(MessagingErrorCode.UNREGISTERED);
+
+        try (MockedStatic<FirebaseMessaging> mockedStatic = mockStatic(FirebaseMessaging.class)) {
+            mockedStatic.when(() -> FirebaseMessaging.getInstance(firebaseApp)).thenReturn(firebaseMessaging);
+            when(firebaseMessaging.send(any(Message.class))).thenThrow(unregisteredException);
+
+            // When
+            fcmNotificationService.sendGroupMemberAddedNotification(
+                    TEST_DEVICE_TOKEN, TEST_GROUP_ID, TEST_GROUP_NAME, TEST_ADDER_NAME);
+
+            // Then - device should be deleted and error metric incremented
+            verify(deviceService).deleteDevice(TEST_DEVICE_TOKEN);
+            verify(meterRegistry).counter("fcm_notification_total",
+                    "status", "error",
+                    "error_code", "UNREGISTERED",
+                    "category", "expected");
         }
     }
 }
