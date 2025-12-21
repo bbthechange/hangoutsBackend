@@ -25,6 +25,7 @@ import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedExce
 
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.Objects;
 
 /**
  * Implementation of HangoutService with pointer update patterns.
@@ -321,6 +322,10 @@ public class HangoutServiceImpl implements HangoutService {
         boolean needsPointerUpdate = false;
         String oldMainImagePath = null;
 
+        // Track specific changes for notifications
+        boolean timeChanged = false;
+        boolean locationChanged = false;
+
         // Update canonical record fields
         if (request.getTitle() != null && !request.getTitle().equals(hangout.getTitle())) {
             hangout.setTitle(request.getTitle());
@@ -333,6 +338,10 @@ public class HangoutServiceImpl implements HangoutService {
         }
 
         if (request.getTimeInfo() != null) {
+            // Check if time actually changed for notification purposes
+            if (!isTimeInfoEqual(hangout.getTimeInput(), request.getTimeInfo())) {
+                timeChanged = true;
+            }
             hangout.setTimeInput(request.getTimeInfo());
 
             // Convert timeInput to canonical timestamps
@@ -343,6 +352,10 @@ public class HangoutServiceImpl implements HangoutService {
         }
 
         if (request.getLocation() != null) {
+            // Check if location actually changed for notification purposes
+            if (!Objects.equals(hangout.getLocation(), request.getLocation())) {
+                locationChanged = true;
+            }
             hangout.setLocation(request.getLocation());
             needsPointerUpdate = true;
         }
@@ -405,6 +418,25 @@ public class HangoutServiceImpl implements HangoutService {
         if (oldMainImagePath != null) {
             s3Service.deleteImageAsync(oldMainImagePath);
             logger.info("Initiated async deletion of old hangout image: {}", oldMainImagePath);
+        }
+
+        // Send notifications for time/location changes to interested users
+        if (timeChanged || locationChanged) {
+            try {
+                String changeType = (timeChanged && locationChanged) ? "time_and_location"
+                                   : timeChanged ? "time" : "location";
+                HangoutDetailData detailData = hangoutRepository.getHangoutDetailData(hangoutId);
+                Set<String> interestedUserIds = detailData.getAttendance().stream()
+                    .filter(level -> "GOING".equals(level.getStatus()) || "INTERESTED".equals(level.getStatus()))
+                    .map(InterestLevel::getUserId)
+                    .collect(Collectors.toSet());
+
+                notificationService.notifyHangoutUpdated(hangoutId, hangout.getTitle(),
+                    hangout.getAssociatedGroups(), changeType, requestingUserId, interestedUserIds);
+            } catch (Exception e) {
+                logger.warn("Failed to send hangout update notifications for {}: {}", hangoutId, e.getMessage());
+                // Continue execution - notifications shouldn't break the update
+            }
         }
 
         logger.info("Updated hangout {} by user {}", hangoutId, requestingUserId);
@@ -829,7 +861,7 @@ public class HangoutServiceImpl implements HangoutService {
         if (timeString == null) {
             return null;
         }
-        
+
         try {
             // Check if it's already in ISO format (contains 'T' and timezone info)
             if (timeString.contains("T")) {
@@ -849,6 +881,21 @@ public class HangoutServiceImpl implements HangoutService {
             // Return as-is if parsing fails
             return timeString;
         }
+    }
+
+    /**
+     * Compare two TimeInfo objects for equality of START time fields only.
+     * End time changes do not trigger notifications.
+     * Returns true if both are null or have equal start time fields.
+     */
+    private boolean isTimeInfoEqual(TimeInfo existing, TimeInfo updated) {
+        if (existing == null && updated == null) return true;
+        if (existing == null || updated == null) return false;
+
+        // Only compare start time fields - end time changes don't warrant notifications
+        return Objects.equals(existing.getPeriodGranularity(), updated.getPeriodGranularity())
+            && Objects.equals(existing.getPeriodStart(), updated.getPeriodStart())
+            && Objects.equals(existing.getStartTime(), updated.getStartTime());
     }
 
     @Override

@@ -69,4 +69,54 @@ class NotificationTextGeneratorTest {
         // Then
         assertThat(result).isEqualTo("You were added to the group Friends Group");
     }
+
+    // ========== Hangout Updated Tests ==========
+
+    @Test
+    void getHangoutUpdatedBody_TimeChange_ReturnsTimeChangedMessage() {
+        // Given
+        String hangoutTitle = "Movie Night";
+
+        // When
+        String result = textGenerator.getHangoutUpdatedBody(hangoutTitle, "time");
+
+        // Then
+        assertThat(result).isEqualTo("Time changed for 'Movie Night'");
+    }
+
+    @Test
+    void getHangoutUpdatedBody_LocationChange_ReturnsLocationChangedMessage() {
+        // Given
+        String hangoutTitle = "Movie Night";
+
+        // When
+        String result = textGenerator.getHangoutUpdatedBody(hangoutTitle, "location");
+
+        // Then
+        assertThat(result).isEqualTo("Location changed for 'Movie Night'");
+    }
+
+    @Test
+    void getHangoutUpdatedBody_TimeAndLocationChange_ReturnsCombinedMessage() {
+        // Given
+        String hangoutTitle = "Movie Night";
+
+        // When
+        String result = textGenerator.getHangoutUpdatedBody(hangoutTitle, "time_and_location");
+
+        // Then
+        assertThat(result).isEqualTo("Time and location changed for 'Movie Night'");
+    }
+
+    @Test
+    void getHangoutUpdatedBody_UnknownChangeType_ReturnsGenericMessage() {
+        // Given
+        String hangoutTitle = "Movie Night";
+
+        // When
+        String result = textGenerator.getHangoutUpdatedBody(hangoutTitle, "unknown");
+
+        // Then
+        assertThat(result).isEqualTo("'Movie Night' was updated");
+    }
 }

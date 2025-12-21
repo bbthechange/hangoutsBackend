@@ -56,6 +56,24 @@ This notification is sent when a user is added to a group by another user.
 6.  **Message Format:** `"{adder name} added you to the group {group name}"` (or fallback: `"You were added to the group {group name}"`)
 7.  **Fire-and-Forget:** Notification failures do not break the member addition operation.
 
+### Sending a "Hangout Updated" Notification (Time/Location Changes)
+
+This notification is sent when a hangout's time or location changes, notifying users who have indicated they're "GOING" or "INTERESTED".
+
+1.  **Trigger:** `HangoutServiceImpl.updateHangout()` detects time and/or location changes by comparing old vs new values.
+2.  **Change Detection:** Uses `isTimeInfoEqual()` helper for TimeInfo comparison, and `Objects.equals()` for Address (which has Lombok's `@Data`).
+3.  **User Targeting:** Only users with GOING or INTERESTED status receive notifications. The user who made the change is excluded.
+4.  **Attendance Lookup:** Fetches `HangoutDetailData.getAttendance()` and filters by status.
+5.  **Device Lookup:** It calls `DeviceService.getActiveDevicesForUser()` for each interested user.
+6.  **Platform Routing:** For each device:
+    *   **iOS:** Calls `PushNotificationService.sendHangoutUpdatedNotification()`
+    *   **Android:** Calls `FcmNotificationService.sendHangoutUpdatedNotification()`
+7.  **Message Format:**
+    *   Time only: `"Time changed for '{hangout title}'"`
+    *   Location only: `"Location changed for '{hangout title}'"`
+    *   Both: `"Time and location changed for '{hangout title}'"`
+8.  **Fire-and-Forget:** Notification failures do not break the hangout update operation.
+
 ### SMS Verification
 
 1.  **Trigger:** A service (e.g., `AuthService`, not detailed here) calls `SmsNotificationService.sendVerificationCode()` with a phone number and a code.

@@ -11,6 +11,7 @@ public class NotificationTextGenerator {
 
     public static final String NEW_HANGOUT_TITLE = "New Hangout";
     public static final String GROUP_MEMBER_ADDED_TITLE = "Added to Group";
+    public static final String HANGOUT_UPDATED_TITLE = "Hangout Updated";
 
     /**
      * Generate body text for new hangout notification.
@@ -37,5 +38,20 @@ public class NotificationTextGenerator {
             return String.format("%s added you to the group %s", adderName, groupName);
         }
         return String.format("You were added to the group %s", groupName);
+    }
+
+    /**
+     * Generate body text for hangout update notification.
+     * @param hangoutTitle Title of the hangout
+     * @param changeType Type of change: "time", "location", or "time_and_location"
+     * @return Notification body text
+     */
+    public String getHangoutUpdatedBody(String hangoutTitle, String changeType) {
+        return switch (changeType) {
+            case "time" -> String.format("Time changed for '%s'", hangoutTitle);
+            case "location" -> String.format("Location changed for '%s'", hangoutTitle);
+            case "time_and_location" -> String.format("Time and location changed for '%s'", hangoutTitle);
+            default -> String.format("'%s' was updated", hangoutTitle);
+        };
     }
 }

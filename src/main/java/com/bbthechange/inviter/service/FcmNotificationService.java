@@ -105,6 +105,38 @@ public class FcmNotificationService {
         }
     }
 
+    public void sendHangoutUpdatedNotification(String deviceToken, String hangoutId, String groupId,
+                                                  String hangoutTitle, String changeType) {
+        if (firebaseApp == null) {
+            logger.info("FCM not configured - skipping push notification for hangout update '{}'", hangoutTitle);
+            return;
+        }
+
+        String tokenPrefix = deviceToken.substring(0, Math.min(8, deviceToken.length())) + "...";
+
+        try {
+            Message message = Message.builder()
+                    .setToken(deviceToken)
+                    .setNotification(Notification.builder()
+                            .setTitle(NotificationTextGenerator.HANGOUT_UPDATED_TITLE)
+                            .setBody(textGenerator.getHangoutUpdatedBody(hangoutTitle, changeType))
+                            .build())
+                    .putData("type", "hangout_updated")
+                    .putData("hangoutId", hangoutId)
+                    .putData("groupId", groupId)
+                    .putData("changeType", changeType)
+                    .build();
+
+            String messageId = FirebaseMessaging.getInstance(firebaseApp).send(message);
+            logger.info("Hangout update notification sent successfully to device: {}, messageId: {}",
+                    tokenPrefix, messageId);
+            meterRegistry.counter("fcm_notification_total", "status", "success", "type", "hangout_updated").increment();
+
+        } catch (FirebaseMessagingException e) {
+            handleFcmError(e, deviceToken, tokenPrefix);
+        }
+    }
+
     /**
      * Handle FCM errors and clean up invalid tokens.
      */

@@ -1,16 +1,19 @@
 package com.bbthechange.inviter.service.impl;
 
+import com.bbthechange.inviter.dto.Address;
 import com.bbthechange.inviter.dto.HangoutDetailData;
 import com.bbthechange.inviter.dto.TimeInfo;
 import com.bbthechange.inviter.dto.UpdateHangoutRequest;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.service.FuzzyTimeService;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -442,5 +445,503 @@ class HangoutServiceUpdateTest extends HangoutServiceTestBase {
 
         List<String> capturedGroupIds = groupIdsCaptor.getValue();
         assertThat(capturedGroupIds).containsExactly(groupId);
+    }
+
+    // ================= Time/Location Change Notification Tests =================
+
+    @Nested
+    class TimeLocationChangeNotifications {
+
+        private static final String HANGOUT_ID = "12345678-1234-1234-1234-123456789012";
+        private static final String USER_ID = "87654321-4321-4321-4321-210987654321";
+        private static final String GROUP_ID = "11111111-1111-1111-1111-111111111111";
+
+        @Test
+        void updateHangout_TimeChanged_TriggersNotificationWithTimeChangeType() {
+            // Given: Existing hangout with TimeInfo, update request with different startTime
+            Hangout existingHangout = createTestHangout(HANGOUT_ID);
+            TimeInfo existingTimeInfo = new TimeInfo();
+            existingTimeInfo.setPeriodGranularity("DAY");
+            existingTimeInfo.setPeriodStart("2025-01-01T00:00:00Z");
+            existingTimeInfo.setStartTime("2025-01-01T10:00:00Z");
+            existingHangout.setTimeInput(existingTimeInfo);
+            existingHangout.setAssociatedGroups(new java.util.ArrayList<>(List.of(GROUP_ID)));
+
+            TimeInfo newTimeInfo = new TimeInfo();
+            newTimeInfo.setPeriodGranularity("DAY");
+            newTimeInfo.setPeriodStart("2025-01-02T00:00:00Z"); // Different date
+            newTimeInfo.setStartTime("2025-01-02T10:00:00Z");
+
+            UpdateHangoutRequest request = new UpdateHangoutRequest();
+            request.setTimeInfo(newTimeInfo);
+
+            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(existingHangout));
+            when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+
+            // Mock authorization
+            GroupMembership membership = createTestMembership(GROUP_ID, USER_ID, "Test Group");
+            when(groupRepository.findMembership(GROUP_ID, USER_ID)).thenReturn(Optional.of(membership));
+
+            // Mock fuzzy time service
+            FuzzyTimeService.TimeConversionResult timeResult = new FuzzyTimeService.TimeConversionResult(1754603600L, 1754618000L);
+            when(fuzzyTimeService.convert(newTimeInfo)).thenReturn(timeResult);
+
+            // Mock detail data with GOING users
+            InterestLevel goingUser = new InterestLevel();
+            goingUser.setUserId("user-going-1");
+            goingUser.setStatus("GOING");
+            HangoutDetailData detailData = HangoutDetailData.builder()
+                .withHangout(existingHangout)
+                .withAttendance(List.of(goingUser))
+                .build();
+            when(hangoutRepository.getHangoutDetailData(HANGOUT_ID)).thenReturn(detailData);
+
+            // When
+            hangoutService.updateHangout(HANGOUT_ID, request, USER_ID);
+
+            // Then: notification sent with changeType="time"
+            ArgumentCaptor<String> changeTypeCaptor = ArgumentCaptor.forClass(String.class);
+            verify(notificationService).notifyHangoutUpdated(
+                eq(HANGOUT_ID),
+                anyString(),
+                anyList(),
+                changeTypeCaptor.capture(),
+                eq(USER_ID),
+                any()
+            );
+            assertThat(changeTypeCaptor.getValue()).isEqualTo("time");
+        }
+
+        @Test
+        void updateHangout_LocationChanged_TriggersNotificationWithLocationChangeType() {
+            // Given: Existing hangout with Address, update request with different address
+            Hangout existingHangout = createTestHangout(HANGOUT_ID);
+            Address existingLocation = new Address();
+            existingLocation.setName("Old Place");
+            existingLocation.setStreetAddress("123 Old St");
+            existingHangout.setLocation(existingLocation);
+            existingHangout.setAssociatedGroups(new java.util.ArrayList<>(List.of(GROUP_ID)));
+
+            Address newLocation = new Address();
+            newLocation.setName("New Place");
+            newLocation.setStreetAddress("456 New St");
+
+            UpdateHangoutRequest request = new UpdateHangoutRequest();
+            request.setLocation(newLocation);
+
+            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(existingHangout));
+            when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+
+            GroupMembership membership = createTestMembership(GROUP_ID, USER_ID, "Test Group");
+            when(groupRepository.findMembership(GROUP_ID, USER_ID)).thenReturn(Optional.of(membership));
+
+            // Mock detail data with INTERESTED user
+            InterestLevel interestedUser = new InterestLevel();
+            interestedUser.setUserId("user-interested-1");
+            interestedUser.setStatus("INTERESTED");
+            HangoutDetailData detailData = HangoutDetailData.builder()
+                .withHangout(existingHangout)
+                .withAttendance(List.of(interestedUser))
+                .build();
+            when(hangoutRepository.getHangoutDetailData(HANGOUT_ID)).thenReturn(detailData);
+
+            // When
+            hangoutService.updateHangout(HANGOUT_ID, request, USER_ID);
+
+            // Then: notification sent with changeType="location"
+            ArgumentCaptor<String> changeTypeCaptor = ArgumentCaptor.forClass(String.class);
+            verify(notificationService).notifyHangoutUpdated(
+                eq(HANGOUT_ID),
+                anyString(),
+                anyList(),
+                changeTypeCaptor.capture(),
+                eq(USER_ID),
+                any()
+            );
+            assertThat(changeTypeCaptor.getValue()).isEqualTo("location");
+        }
+
+        @Test
+        void updateHangout_TimeAndLocationChanged_TriggersNotificationWithCombinedChangeType() {
+            // Given: Update request changes both timeInfo and location
+            Hangout existingHangout = createTestHangout(HANGOUT_ID);
+            TimeInfo existingTimeInfo = new TimeInfo();
+            existingTimeInfo.setStartTime("2025-01-01T10:00:00Z");
+            existingHangout.setTimeInput(existingTimeInfo);
+            Address existingLocation = new Address();
+            existingLocation.setName("Old Place");
+            existingHangout.setLocation(existingLocation);
+            existingHangout.setAssociatedGroups(new java.util.ArrayList<>(List.of(GROUP_ID)));
+
+            TimeInfo newTimeInfo = new TimeInfo();
+            newTimeInfo.setStartTime("2025-01-02T10:00:00Z"); // Different
+
+            Address newLocation = new Address();
+            newLocation.setName("New Place"); // Different
+
+            UpdateHangoutRequest request = new UpdateHangoutRequest();
+            request.setTimeInfo(newTimeInfo);
+            request.setLocation(newLocation);
+
+            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(existingHangout));
+            when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+
+            GroupMembership membership = createTestMembership(GROUP_ID, USER_ID, "Test Group");
+            when(groupRepository.findMembership(GROUP_ID, USER_ID)).thenReturn(Optional.of(membership));
+
+            FuzzyTimeService.TimeConversionResult timeResult = new FuzzyTimeService.TimeConversionResult(1754603600L, 1754618000L);
+            when(fuzzyTimeService.convert(newTimeInfo)).thenReturn(timeResult);
+
+            InterestLevel goingUser = new InterestLevel();
+            goingUser.setUserId("user-going-1");
+            goingUser.setStatus("GOING");
+            HangoutDetailData detailData = HangoutDetailData.builder()
+                .withHangout(existingHangout)
+                .withAttendance(List.of(goingUser))
+                .build();
+            when(hangoutRepository.getHangoutDetailData(HANGOUT_ID)).thenReturn(detailData);
+
+            // When
+            hangoutService.updateHangout(HANGOUT_ID, request, USER_ID);
+
+            // Then: notification sent with changeType="time_and_location"
+            ArgumentCaptor<String> changeTypeCaptor = ArgumentCaptor.forClass(String.class);
+            verify(notificationService).notifyHangoutUpdated(
+                eq(HANGOUT_ID),
+                anyString(),
+                anyList(),
+                changeTypeCaptor.capture(),
+                eq(USER_ID),
+                any()
+            );
+            assertThat(changeTypeCaptor.getValue()).isEqualTo("time_and_location");
+        }
+
+        @Test
+        void updateHangout_OnlyTitleChanged_NoNotification() {
+            // Given: Update request only changes title
+            Hangout existingHangout = createTestHangout(HANGOUT_ID);
+            existingHangout.setTitle("Old Title");
+            existingHangout.setAssociatedGroups(new java.util.ArrayList<>(List.of(GROUP_ID)));
+
+            UpdateHangoutRequest request = new UpdateHangoutRequest();
+            request.setTitle("New Title");
+
+            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(existingHangout));
+            when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+
+            GroupMembership membership = createTestMembership(GROUP_ID, USER_ID, "Test Group");
+            when(groupRepository.findMembership(GROUP_ID, USER_ID)).thenReturn(Optional.of(membership));
+
+            // When
+            hangoutService.updateHangout(HANGOUT_ID, request, USER_ID);
+
+            // Then: notification NOT called
+            verify(notificationService, never()).notifyHangoutUpdated(
+                anyString(), anyString(), anyList(), anyString(), anyString(), any()
+            );
+        }
+
+        @Test
+        void updateHangout_SameTimeInfo_NoNotification() {
+            // Given: Update request has same TimeInfo values as existing hangout
+            Hangout existingHangout = createTestHangout(HANGOUT_ID);
+            TimeInfo existingTimeInfo = new TimeInfo();
+            existingTimeInfo.setPeriodGranularity("DAY");
+            existingTimeInfo.setPeriodStart("2025-01-01T00:00:00Z");
+            existingTimeInfo.setStartTime("2025-01-01T10:00:00Z");
+            existingTimeInfo.setEndTime("2025-01-01T12:00:00Z");
+            existingHangout.setTimeInput(existingTimeInfo);
+            existingHangout.setAssociatedGroups(new java.util.ArrayList<>(List.of(GROUP_ID)));
+
+            // Same values (start time fields match)
+            TimeInfo sameTimeInfo = new TimeInfo();
+            sameTimeInfo.setPeriodGranularity("DAY");
+            sameTimeInfo.setPeriodStart("2025-01-01T00:00:00Z");
+            sameTimeInfo.setStartTime("2025-01-01T10:00:00Z");
+            sameTimeInfo.setEndTime("2025-01-01T12:00:00Z");
+
+            UpdateHangoutRequest request = new UpdateHangoutRequest();
+            request.setTimeInfo(sameTimeInfo);
+
+            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(existingHangout));
+            when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+
+            GroupMembership membership = createTestMembership(GROUP_ID, USER_ID, "Test Group");
+            when(groupRepository.findMembership(GROUP_ID, USER_ID)).thenReturn(Optional.of(membership));
+
+            FuzzyTimeService.TimeConversionResult timeResult = new FuzzyTimeService.TimeConversionResult(1754603600L, 1754618000L);
+            when(fuzzyTimeService.convert(sameTimeInfo)).thenReturn(timeResult);
+
+            // When
+            hangoutService.updateHangout(HANGOUT_ID, request, USER_ID);
+
+            // Then: notification NOT called
+            verify(notificationService, never()).notifyHangoutUpdated(
+                anyString(), anyString(), anyList(), anyString(), anyString(), any()
+            );
+        }
+
+        @Test
+        void updateHangout_SameLocation_NoNotification() {
+            // Given: Update request has same Address as existing hangout
+            Hangout existingHangout = createTestHangout(HANGOUT_ID);
+            Address existingLocation = new Address();
+            existingLocation.setName("Same Place");
+            existingLocation.setStreetAddress("123 Main St");
+            existingHangout.setLocation(existingLocation);
+            existingHangout.setAssociatedGroups(new java.util.ArrayList<>(List.of(GROUP_ID)));
+
+            // Same values
+            Address sameLocation = new Address();
+            sameLocation.setName("Same Place");
+            sameLocation.setStreetAddress("123 Main St");
+
+            UpdateHangoutRequest request = new UpdateHangoutRequest();
+            request.setLocation(sameLocation);
+
+            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(existingHangout));
+            when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+
+            GroupMembership membership = createTestMembership(GROUP_ID, USER_ID, "Test Group");
+            when(groupRepository.findMembership(GROUP_ID, USER_ID)).thenReturn(Optional.of(membership));
+
+            // When
+            hangoutService.updateHangout(HANGOUT_ID, request, USER_ID);
+
+            // Then: notification NOT called
+            verify(notificationService, never()).notifyHangoutUpdated(
+                anyString(), anyString(), anyList(), anyString(), anyString(), any()
+            );
+        }
+
+        @Test
+        void updateHangout_OnlyEndTimeChanged_NoNotification() {
+            // Given: Existing TimeInfo with start and end time
+            Hangout existingHangout = createTestHangout(HANGOUT_ID);
+            TimeInfo existingTimeInfo = new TimeInfo();
+            existingTimeInfo.setPeriodGranularity("DAY");
+            existingTimeInfo.setPeriodStart("2025-01-01T00:00:00Z");
+            existingTimeInfo.setStartTime("2025-01-01T10:00:00Z");
+            existingTimeInfo.setEndTime("2025-01-01T12:00:00Z");
+            existingHangout.setTimeInput(existingTimeInfo);
+            existingHangout.setAssociatedGroups(new java.util.ArrayList<>(List.of(GROUP_ID)));
+
+            // Same start time fields, different end time
+            TimeInfo newTimeInfo = new TimeInfo();
+            newTimeInfo.setPeriodGranularity("DAY");
+            newTimeInfo.setPeriodStart("2025-01-01T00:00:00Z");
+            newTimeInfo.setStartTime("2025-01-01T10:00:00Z");
+            newTimeInfo.setEndTime("2025-01-01T14:00:00Z"); // Different end time
+
+            UpdateHangoutRequest request = new UpdateHangoutRequest();
+            request.setTimeInfo(newTimeInfo);
+
+            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(existingHangout));
+            when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+
+            GroupMembership membership = createTestMembership(GROUP_ID, USER_ID, "Test Group");
+            when(groupRepository.findMembership(GROUP_ID, USER_ID)).thenReturn(Optional.of(membership));
+
+            FuzzyTimeService.TimeConversionResult timeResult = new FuzzyTimeService.TimeConversionResult(1754603600L, 1754628000L);
+            when(fuzzyTimeService.convert(newTimeInfo)).thenReturn(timeResult);
+
+            // When
+            hangoutService.updateHangout(HANGOUT_ID, request, USER_ID);
+
+            // Then: notification NOT called (end time changes don't trigger notifications)
+            verify(notificationService, never()).notifyHangoutUpdated(
+                anyString(), anyString(), anyList(), anyString(), anyString(), any()
+            );
+        }
+
+        @Test
+        void updateHangout_NullToValueTimeInfo_TriggersNotification() {
+            // Given: Existing hangout with null timeInput
+            Hangout existingHangout = createTestHangout(HANGOUT_ID);
+            existingHangout.setTimeInput(null);
+            existingHangout.setAssociatedGroups(new java.util.ArrayList<>(List.of(GROUP_ID)));
+
+            // Request sets a TimeInfo
+            TimeInfo newTimeInfo = new TimeInfo();
+            newTimeInfo.setPeriodGranularity("DAY");
+            newTimeInfo.setPeriodStart("2025-01-01T00:00:00Z");
+            newTimeInfo.setStartTime("2025-01-01T10:00:00Z");
+
+            UpdateHangoutRequest request = new UpdateHangoutRequest();
+            request.setTimeInfo(newTimeInfo);
+
+            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(existingHangout));
+            when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+
+            GroupMembership membership = createTestMembership(GROUP_ID, USER_ID, "Test Group");
+            when(groupRepository.findMembership(GROUP_ID, USER_ID)).thenReturn(Optional.of(membership));
+
+            FuzzyTimeService.TimeConversionResult timeResult = new FuzzyTimeService.TimeConversionResult(1754603600L, 1754618000L);
+            when(fuzzyTimeService.convert(newTimeInfo)).thenReturn(timeResult);
+
+            InterestLevel goingUser = new InterestLevel();
+            goingUser.setUserId("user-going-1");
+            goingUser.setStatus("GOING");
+            HangoutDetailData detailData = HangoutDetailData.builder()
+                .withHangout(existingHangout)
+                .withAttendance(List.of(goingUser))
+                .build();
+            when(hangoutRepository.getHangoutDetailData(HANGOUT_ID)).thenReturn(detailData);
+
+            // When
+            hangoutService.updateHangout(HANGOUT_ID, request, USER_ID);
+
+            // Then: notification sent with changeType="time"
+            verify(notificationService).notifyHangoutUpdated(
+                eq(HANGOUT_ID), anyString(), anyList(), eq("time"), eq(USER_ID), any()
+            );
+        }
+
+        @Test
+        void updateHangout_PeriodGranularityChanged_TriggersNotification() {
+            // Given: Existing TimeInfo with periodGranularity="DAY"
+            Hangout existingHangout = createTestHangout(HANGOUT_ID);
+            TimeInfo existingTimeInfo = new TimeInfo();
+            existingTimeInfo.setPeriodGranularity("DAY");
+            existingTimeInfo.setPeriodStart("2025-01-01T00:00:00Z");
+            existingTimeInfo.setStartTime("2025-01-01T10:00:00Z");
+            existingHangout.setTimeInput(existingTimeInfo);
+            existingHangout.setAssociatedGroups(new java.util.ArrayList<>(List.of(GROUP_ID)));
+
+            // New TimeInfo with periodGranularity="WEEK"
+            TimeInfo newTimeInfo = new TimeInfo();
+            newTimeInfo.setPeriodGranularity("WEEK"); // Different granularity
+            newTimeInfo.setPeriodStart("2025-01-01T00:00:00Z");
+            newTimeInfo.setStartTime("2025-01-01T10:00:00Z");
+
+            UpdateHangoutRequest request = new UpdateHangoutRequest();
+            request.setTimeInfo(newTimeInfo);
+
+            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(existingHangout));
+            when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+
+            GroupMembership membership = createTestMembership(GROUP_ID, USER_ID, "Test Group");
+            when(groupRepository.findMembership(GROUP_ID, USER_ID)).thenReturn(Optional.of(membership));
+
+            FuzzyTimeService.TimeConversionResult timeResult = new FuzzyTimeService.TimeConversionResult(1754603600L, 1754618000L);
+            when(fuzzyTimeService.convert(newTimeInfo)).thenReturn(timeResult);
+
+            InterestLevel goingUser = new InterestLevel();
+            goingUser.setUserId("user-going-1");
+            goingUser.setStatus("GOING");
+            HangoutDetailData detailData = HangoutDetailData.builder()
+                .withHangout(existingHangout)
+                .withAttendance(List.of(goingUser))
+                .build();
+            when(hangoutRepository.getHangoutDetailData(HANGOUT_ID)).thenReturn(detailData);
+
+            // When
+            hangoutService.updateHangout(HANGOUT_ID, request, USER_ID);
+
+            // Then: notification sent
+            verify(notificationService).notifyHangoutUpdated(
+                eq(HANGOUT_ID), anyString(), anyList(), eq("time"), eq(USER_ID), any()
+            );
+        }
+
+        @Test
+        void updateHangout_NotificationFailure_DoesNotBreakUpdate() {
+            // Given: Notification service throws exception
+            Hangout existingHangout = createTestHangout(HANGOUT_ID);
+            existingHangout.setAssociatedGroups(new java.util.ArrayList<>(List.of(GROUP_ID)));
+
+            TimeInfo newTimeInfo = new TimeInfo();
+            newTimeInfo.setStartTime("2025-01-02T10:00:00Z");
+
+            UpdateHangoutRequest request = new UpdateHangoutRequest();
+            request.setTimeInfo(newTimeInfo);
+
+            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(existingHangout));
+            when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+
+            GroupMembership membership = createTestMembership(GROUP_ID, USER_ID, "Test Group");
+            when(groupRepository.findMembership(GROUP_ID, USER_ID)).thenReturn(Optional.of(membership));
+
+            FuzzyTimeService.TimeConversionResult timeResult = new FuzzyTimeService.TimeConversionResult(1754603600L, 1754618000L);
+            when(fuzzyTimeService.convert(newTimeInfo)).thenReturn(timeResult);
+
+            InterestLevel goingUser = new InterestLevel();
+            goingUser.setUserId("user-going-1");
+            goingUser.setStatus("GOING");
+            HangoutDetailData detailData = HangoutDetailData.builder()
+                .withHangout(existingHangout)
+                .withAttendance(List.of(goingUser))
+                .build();
+            when(hangoutRepository.getHangoutDetailData(HANGOUT_ID)).thenReturn(detailData);
+
+            // Mock notification service to throw exception
+            doThrow(new RuntimeException("Notification failed"))
+                .when(notificationService).notifyHangoutUpdated(
+                    anyString(), anyString(), anyList(), anyString(), anyString(), any()
+                );
+
+            // When/Then: no exception propagated from updateHangout
+            assertThatCode(() -> hangoutService.updateHangout(HANGOUT_ID, request, USER_ID))
+                .doesNotThrowAnyException();
+
+            // And hangout was still saved
+            verify(hangoutRepository).createHangout(any(Hangout.class));
+        }
+
+        @Test
+        void updateHangout_FiltersInterestedUsers_OnlyGOINGAndINTERESTED() {
+            // Given: Attendance with GOING, INTERESTED, and NOT_GOING users
+            Hangout existingHangout = createTestHangout(HANGOUT_ID);
+            existingHangout.setAssociatedGroups(new java.util.ArrayList<>(List.of(GROUP_ID)));
+
+            TimeInfo newTimeInfo = new TimeInfo();
+            newTimeInfo.setStartTime("2025-01-02T10:00:00Z");
+
+            UpdateHangoutRequest request = new UpdateHangoutRequest();
+            request.setTimeInfo(newTimeInfo);
+
+            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(existingHangout));
+            when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+
+            GroupMembership membership = createTestMembership(GROUP_ID, USER_ID, "Test Group");
+            when(groupRepository.findMembership(GROUP_ID, USER_ID)).thenReturn(Optional.of(membership));
+
+            FuzzyTimeService.TimeConversionResult timeResult = new FuzzyTimeService.TimeConversionResult(1754603600L, 1754618000L);
+            when(fuzzyTimeService.convert(newTimeInfo)).thenReturn(timeResult);
+
+            // Create attendance with different statuses
+            InterestLevel goingUser = new InterestLevel();
+            goingUser.setUserId("user-going");
+            goingUser.setStatus("GOING");
+
+            InterestLevel interestedUser = new InterestLevel();
+            interestedUser.setUserId("user-interested");
+            interestedUser.setStatus("INTERESTED");
+
+            InterestLevel notGoingUser = new InterestLevel();
+            notGoingUser.setUserId("user-not-going");
+            notGoingUser.setStatus("NOT_GOING");
+
+            HangoutDetailData detailData = HangoutDetailData.builder()
+                .withHangout(existingHangout)
+                .withAttendance(List.of(goingUser, interestedUser, notGoingUser))
+                .build();
+            when(hangoutRepository.getHangoutDetailData(HANGOUT_ID)).thenReturn(detailData);
+
+            // When
+            hangoutService.updateHangout(HANGOUT_ID, request, USER_ID);
+
+            // Then: capture and verify interestedUserIds only contains GOING and INTERESTED
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<Set<String>> userIdsCaptor = ArgumentCaptor.forClass(Set.class);
+            verify(notificationService).notifyHangoutUpdated(
+                eq(HANGOUT_ID), anyString(), anyList(), anyString(), eq(USER_ID), userIdsCaptor.capture()
+            );
+
+            Set<String> capturedUserIds = userIdsCaptor.getValue();
+            assertThat(capturedUserIds).containsExactlyInAnyOrder("user-going", "user-interested");
+            assertThat(capturedUserIds).doesNotContain("user-not-going");
+        }
     }
 }

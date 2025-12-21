@@ -17,7 +17,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.util.*;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * Implementation of NotificationService that handles user deduplication,
@@ -292,6 +296,113 @@ public class NotificationServiceImpl implements NotificationService {
             logger.warn("Failed to send group member added notifications to user {}: {}", userId, e.getMessage());
             meterRegistry.counter("group_member_added_notification_total",
                     "status", "error", "error_type", "device_lookup_failed").increment();
+            return false;
+        }
+    }
+
+    @Override
+    public void notifyHangoutUpdated(String hangoutId, String hangoutTitle, List<String> groupIds,
+                                      String changeType, String updatedByUserId, Set<String> interestedUserIds) {
+        if (interestedUserIds == null || interestedUserIds.isEmpty()) {
+            logger.debug("No interested users to notify for hangout update {}", hangoutId);
+            return;
+        }
+
+        if (groupIds == null || groupIds.isEmpty()) {
+            logger.debug("No groups associated with hangout {}, skipping update notifications", hangoutId);
+            return;
+        }
+
+        try {
+            // Remove the user who made the change from notification list
+            Set<String> usersToNotify = new HashSet<>(interestedUserIds);
+            usersToNotify.remove(updatedByUserId);
+
+            if (usersToNotify.isEmpty()) {
+                logger.debug("No users to notify for hangout update {} (only updater is interested)", hangoutId);
+                return;
+            }
+
+            logger.info("Sending hangout update ({}) notifications for {} to {} users",
+                       changeType, hangoutId, usersToNotify.size());
+
+            // Use first group for notification context
+            String primaryGroupId = groupIds.get(0);
+
+            int successCount = 0;
+            int failureCount = 0;
+
+            for (String userId : usersToNotify) {
+                try {
+                    boolean sent = sendHangoutUpdatedNotificationToUser(
+                        userId, hangoutId, primaryGroupId, hangoutTitle, changeType
+                    );
+                    if (sent) {
+                        successCount++;
+                    }
+                } catch (Exception e) {
+                    failureCount++;
+                    logger.warn("Failed to send hangout update notification to user {}: {}", userId, e.getMessage());
+                }
+            }
+
+            logger.info("Hangout update notification summary for {}: {} sent, {} failed",
+                       hangoutId, successCount, failureCount);
+
+        } catch (Exception e) {
+            logger.error("Error sending hangout update notifications for {}: {}", hangoutId, e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Send hangout update notification to all active devices for a single user.
+     * Returns true if at least one notification was sent successfully.
+     */
+    private boolean sendHangoutUpdatedNotificationToUser(String userId, String hangoutId,
+                                                          String groupId, String hangoutTitle,
+                                                          String changeType) {
+        try {
+            List<Device> devices = deviceService.getActiveDevicesForUser(UUID.fromString(userId));
+
+            if (devices.isEmpty()) {
+                logger.debug("No active devices for user {}", userId);
+                return false;
+            }
+
+            boolean anySent = false;
+
+            for (Device device : devices) {
+                try {
+                    if (device.getPlatform() == Device.Platform.IOS) {
+                        pushNotificationService.sendHangoutUpdatedNotification(
+                            device.getToken(),
+                            hangoutId,
+                            groupId,
+                            hangoutTitle,
+                            changeType
+                        );
+                        anySent = true;
+                    } else if (device.getPlatform() == Device.Platform.ANDROID) {
+                        fcmNotificationService.sendHangoutUpdatedNotification(
+                            device.getToken(),
+                            hangoutId,
+                            groupId,
+                            hangoutTitle,
+                            changeType
+                        );
+                        anySent = true;
+                    }
+                } catch (Exception e) {
+                    logger.error("Failed to send hangout update notification to device {}: {}",
+                        device.getToken().substring(0, Math.min(8, device.getToken().length())),
+                        e.getMessage());
+                }
+            }
+
+            return anySent;
+
+        } catch (Exception e) {
+            logger.warn("Failed to send hangout update notifications to user {}: {}", userId, e.getMessage());
             return false;
         }
     }

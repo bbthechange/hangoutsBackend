@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.service;
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * Service for managing and sending notifications across multiple channels.
@@ -31,8 +32,18 @@ public interface NotificationService {
      */
     void notifyGroupMemberAdded(String groupId, String groupName, String addedUserId, String adderUserId);
 
-    // Future methods (not implementing yet):
-    // void notifyUpcomingHangout(String hangoutId, List<String> interestedUserIds);
-    // void notifyHangoutUpdated(String hangoutId, String updatedByUserId,
-    //                          List<String> participantUserIds, String updateDescription);
+    /**
+     * Notify users about hangout time/location changes.
+     * Only notifies users with GOING or INTERESTED status.
+     * Excludes the user who made the change.
+     *
+     * @param hangoutId The ID of the updated hangout
+     * @param hangoutTitle The title of the hangout
+     * @param groupIds The associated group IDs
+     * @param changeType Type of change: "time", "location", or "time_and_location"
+     * @param updatedByUserId The user who made the update (won't be notified)
+     * @param interestedUserIds Set of user IDs with GOING or INTERESTED status
+     */
+    void notifyHangoutUpdated(String hangoutId, String hangoutTitle, List<String> groupIds,
+                              String changeType, String updatedByUserId, Set<String> interestedUserIds);
 }

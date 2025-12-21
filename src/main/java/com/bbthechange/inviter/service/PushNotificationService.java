@@ -232,6 +232,58 @@ public class PushNotificationService {
         }
     }
 
+    public void sendHangoutUpdatedNotification(String deviceToken, String hangoutId, String groupId,
+                                                  String hangoutTitle, String changeType) {
+        if (apnsClient == null) {
+            logger.info("APNs not configured - skipping push notification for hangout update '{}'", hangoutTitle);
+            return;
+        }
+
+        try {
+            SimpleApnsPayloadBuilder payloadBuilder = new SimpleApnsPayloadBuilder();
+            payloadBuilder.setAlertTitle(NotificationTextGenerator.HANGOUT_UPDATED_TITLE);
+            payloadBuilder.setAlertBody(textGenerator.getHangoutUpdatedBody(hangoutTitle, changeType));
+            payloadBuilder.setBadgeNumber(1);
+            payloadBuilder.setSound("default");
+            payloadBuilder.addCustomProperty("type", "hangout_updated");
+            payloadBuilder.addCustomProperty("hangoutId", hangoutId);
+            payloadBuilder.addCustomProperty("groupId", groupId);
+            payloadBuilder.addCustomProperty("changeType", changeType);
+
+            String payload = payloadBuilder.build();
+            String token = TokenUtil.sanitizeTokenString(deviceToken);
+
+            SimpleApnsPushNotification pushNotification = new SimpleApnsPushNotification(token, bundleId, payload);
+
+            PushNotificationResponse<SimpleApnsPushNotification> response = apnsClient.sendNotification(pushNotification).get();
+
+            if (response.isAccepted()) {
+                logger.info("Hangout update notification sent successfully to device: {}", deviceToken.substring(0, 8) + "...");
+                meterRegistry.counter("apns_notification_total", "status", "success", "type", "hangout_updated").increment();
+            } else {
+                Optional<String> rejectionReason = response.getRejectionReason();
+                String reason = rejectionReason.orElse("unknown");
+                logger.error("Hangout update notification failed for device: {}. Reason: {}",
+                    deviceToken.substring(0, 8) + "...", reason);
+                meterRegistry.counter("apns_notification_total",
+                        "status", "rejected", "type", "hangout_updated",
+                        "reason", reason, "category", categorizeApnsRejection(reason)).increment();
+            }
+
+        } catch (ExecutionException | InterruptedException e) {
+            logger.error("Error sending hangout update notification to device: {}", deviceToken.substring(0, 8) + "...", e);
+            meterRegistry.counter("apns_notification_total",
+                    "status", "error", "type", "hangout_updated",
+                    "error_type", "execution", "category", "transient").increment();
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            logger.error("Unexpected error sending hangout update notification", e);
+            meterRegistry.counter("apns_notification_total",
+                    "status", "error", "type", "hangout_updated",
+                    "error_type", "unexpected", "category", "unexpected").increment();
+        }
+    }
+
     /**
      * Categorize APNs rejection reason as expected or unexpected.
      * Expected: User/device issues (app uninstalled, token expired)
