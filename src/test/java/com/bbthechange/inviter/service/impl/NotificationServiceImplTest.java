@@ -628,13 +628,13 @@ class NotificationServiceImplTest {
 
             // When
             notificationService.notifyHangoutUpdated(HANGOUT_ID, HANGOUT_TITLE, groupIds,
-                "time", UPDATER_USER_ID, interestedUserIds);
+                "time", UPDATER_USER_ID, interestedUserIds, null);
 
             // Then: notifications sent to both users
             verify(pushNotificationService).sendHangoutUpdatedNotification(
-                eq("ios-token-user1"), eq(HANGOUT_ID), eq(GROUP_ID), eq(HANGOUT_TITLE), eq("time"));
+                eq("ios-token-user1"), eq(HANGOUT_ID), eq(GROUP_ID), eq(HANGOUT_TITLE), eq("time"), isNull());
             verify(pushNotificationService).sendHangoutUpdatedNotification(
-                eq("ios-token-user2"), eq(HANGOUT_ID), eq(GROUP_ID), eq(HANGOUT_TITLE), eq("time"));
+                eq("ios-token-user2"), eq(HANGOUT_ID), eq(GROUP_ID), eq(HANGOUT_TITLE), eq("time"), isNull());
         }
 
         @Test
@@ -651,11 +651,11 @@ class NotificationServiceImplTest {
 
             // When
             notificationService.notifyHangoutUpdated(HANGOUT_ID, HANGOUT_TITLE, groupIds,
-                "time", UPDATER_USER_ID, interestedUserIds);
+                "time", UPDATER_USER_ID, interestedUserIds, null);
 
             // Then: only 1 notification sent (to the other user, not the updater)
             verify(pushNotificationService, times(1)).sendHangoutUpdatedNotification(
-                eq("ios-token-user1"), eq(HANGOUT_ID), eq(GROUP_ID), eq(HANGOUT_TITLE), eq("time"));
+                eq("ios-token-user1"), eq(HANGOUT_ID), eq(GROUP_ID), eq(HANGOUT_TITLE), eq("time"), isNull());
             verify(deviceService, never()).getActiveDevicesForUser(UUID.fromString(UPDATER_USER_ID));
         }
 
@@ -667,13 +667,13 @@ class NotificationServiceImplTest {
 
             // When
             notificationService.notifyHangoutUpdated(HANGOUT_ID, HANGOUT_TITLE, groupIds,
-                "time", UPDATER_USER_ID, interestedUserIds);
+                "time", UPDATER_USER_ID, interestedUserIds, null);
 
             // Then: no calls to notification services
             verify(pushNotificationService, never()).sendHangoutUpdatedNotification(
-                anyString(), anyString(), anyString(), anyString(), anyString());
+                anyString(), anyString(), anyString(), anyString(), anyString(), any());
             verify(fcmNotificationService, never()).sendHangoutUpdatedNotification(
-                anyString(), anyString(), anyString(), anyString(), anyString());
+                anyString(), anyString(), anyString(), anyString(), anyString(), any());
             verify(deviceService, never()).getActiveDevicesForUser(any());
         }
 
@@ -685,12 +685,12 @@ class NotificationServiceImplTest {
 
             // When
             notificationService.notifyHangoutUpdated(HANGOUT_ID, HANGOUT_TITLE, groupIds,
-                "time", UPDATER_USER_ID, interestedUserIds);
+                "time", UPDATER_USER_ID, interestedUserIds, null);
 
             // Then: no calls to device service
             verify(deviceService, never()).getActiveDevicesForUser(any());
             verify(pushNotificationService, never()).sendHangoutUpdatedNotification(
-                anyString(), anyString(), anyString(), anyString(), anyString());
+                anyString(), anyString(), anyString(), anyString(), anyString(), any());
         }
 
         @Test
@@ -700,7 +700,7 @@ class NotificationServiceImplTest {
 
             // When
             notificationService.notifyHangoutUpdated(HANGOUT_ID, HANGOUT_TITLE, groupIds,
-                "time", UPDATER_USER_ID, null);
+                "time", UPDATER_USER_ID, null, null);
 
             // Then: no exceptions thrown, no calls to device service
             verify(deviceService, never()).getActiveDevicesForUser(any());
@@ -713,14 +713,14 @@ class NotificationServiceImplTest {
 
             // When - with null groupIds
             notificationService.notifyHangoutUpdated(HANGOUT_ID, HANGOUT_TITLE, null,
-                "time", UPDATER_USER_ID, interestedUserIds);
+                "time", UPDATER_USER_ID, interestedUserIds, null);
 
             // Then: no calls to device service
             verify(deviceService, never()).getActiveDevicesForUser(any());
 
             // When - with empty groupIds
             notificationService.notifyHangoutUpdated(HANGOUT_ID, HANGOUT_TITLE, List.of(),
-                "location", UPDATER_USER_ID, interestedUserIds);
+                "location", UPDATER_USER_ID, interestedUserIds, null);
 
             // Then: still no calls to device service
             verify(deviceService, never()).getActiveDevicesForUser(any());
@@ -740,13 +740,13 @@ class NotificationServiceImplTest {
 
             // When
             notificationService.notifyHangoutUpdated(HANGOUT_ID, HANGOUT_TITLE, groupIds,
-                "location", UPDATER_USER_ID, interestedUserIds);
+                "location", UPDATER_USER_ID, interestedUserIds, "Central Park");
 
-            // Then: both platforms receive notifications
+            // Then: both platforms receive notifications with location name
             verify(pushNotificationService).sendHangoutUpdatedNotification(
-                eq("ios-token"), eq(HANGOUT_ID), eq(GROUP_ID), eq(HANGOUT_TITLE), eq("location"));
+                eq("ios-token"), eq(HANGOUT_ID), eq(GROUP_ID), eq(HANGOUT_TITLE), eq("location"), eq("Central Park"));
             verify(fcmNotificationService).sendHangoutUpdatedNotification(
-                eq("android-token"), eq(HANGOUT_ID), eq(GROUP_ID), eq(HANGOUT_TITLE), eq("location"));
+                eq("android-token"), eq(HANGOUT_ID), eq(GROUP_ID), eq(HANGOUT_TITLE), eq("location"), eq("Central Park"));
         }
 
         @Test
@@ -766,15 +766,15 @@ class NotificationServiceImplTest {
             // First device throws exception
             doThrow(new RuntimeException("APNS error"))
                 .when(pushNotificationService).sendHangoutUpdatedNotification(
-                    eq("ios-token-fail"), anyString(), anyString(), anyString(), anyString());
+                    eq("ios-token-fail"), anyString(), anyString(), anyString(), anyString(), any());
 
             // When
             notificationService.notifyHangoutUpdated(HANGOUT_ID, HANGOUT_TITLE, groupIds,
-                "time", UPDATER_USER_ID, interestedUserIds);
+                "time", UPDATER_USER_ID, interestedUserIds, null);
 
             // Then: second user still receives notification, no exception propagated
             verify(pushNotificationService).sendHangoutUpdatedNotification(
-                eq("ios-token-success"), eq(HANGOUT_ID), eq(GROUP_ID), eq(HANGOUT_TITLE), eq("time"));
+                eq("ios-token-success"), eq(HANGOUT_ID), eq(GROUP_ID), eq(HANGOUT_TITLE), eq("time"), isNull());
         }
 
         @Test
@@ -793,11 +793,11 @@ class NotificationServiceImplTest {
 
             // When
             notificationService.notifyHangoutUpdated(HANGOUT_ID, HANGOUT_TITLE, groupIds,
-                "time_and_location", UPDATER_USER_ID, interestedUserIds);
+                "time_and_location", UPDATER_USER_ID, interestedUserIds, "Coffee Shop");
 
-            // Then: second user still receives notification
+            // Then: second user still receives notification with location
             verify(pushNotificationService).sendHangoutUpdatedNotification(
-                eq("ios-token-user2"), eq(HANGOUT_ID), eq(GROUP_ID), eq(HANGOUT_TITLE), eq("time_and_location"));
+                eq("ios-token-user2"), eq(HANGOUT_ID), eq(GROUP_ID), eq(HANGOUT_TITLE), eq("time_and_location"), eq("Coffee Shop"));
         }
     }
 }

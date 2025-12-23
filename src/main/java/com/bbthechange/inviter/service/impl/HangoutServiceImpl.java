@@ -431,8 +431,18 @@ public class HangoutServiceImpl implements HangoutService {
                     .map(InterestLevel::getUserId)
                     .collect(Collectors.toSet());
 
+                // Extract location name for notification message
+                String newLocationName = null;
+                if (locationChanged && hangout.getLocation() != null) {
+                    newLocationName = hangout.getLocation().getName();
+                    if (newLocationName == null || newLocationName.trim().isEmpty()) {
+                        newLocationName = hangout.getLocation().getStreetAddress();
+                    }
+                }
+
                 notificationService.notifyHangoutUpdated(hangoutId, hangout.getTitle(),
-                    hangout.getAssociatedGroups(), changeType, requestingUserId, interestedUserIds);
+                    hangout.getAssociatedGroups(), changeType, requestingUserId, interestedUserIds,
+                    newLocationName);
             } catch (Exception e) {
                 logger.warn("Failed to send hangout update notifications for {}: {}", hangoutId, e.getMessage());
                 // Continue execution - notifications shouldn't break the update

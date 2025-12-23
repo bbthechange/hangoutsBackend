@@ -44,13 +44,20 @@ public class NotificationTextGenerator {
      * Generate body text for hangout update notification.
      * @param hangoutTitle Title of the hangout
      * @param changeType Type of change: "time", "location", or "time_and_location"
+     * @param newLocationName The new location name (used for location changes, can be null)
      * @return Notification body text
      */
-    public String getHangoutUpdatedBody(String hangoutTitle, String changeType) {
+    public String getHangoutUpdatedBody(String hangoutTitle, String changeType, String newLocationName) {
+        boolean hasLocation = newLocationName != null && !newLocationName.trim().isEmpty();
+
         return switch (changeType) {
             case "time" -> String.format("Time changed for '%s'", hangoutTitle);
-            case "location" -> String.format("Location changed for '%s'", hangoutTitle);
-            case "time_and_location" -> String.format("Time and location changed for '%s'", hangoutTitle);
+            case "location" -> hasLocation
+                ? String.format("Location changed for '%s', now at %s", hangoutTitle, newLocationName)
+                : String.format("Location changed for '%s'", hangoutTitle);
+            case "time_and_location" -> hasLocation
+                ? String.format("Time and location changed for '%s', now at %s", hangoutTitle, newLocationName)
+                : String.format("Time and location changed for '%s'", hangoutTitle);
             default -> String.format("'%s' was updated", hangoutTitle);
         };
     }

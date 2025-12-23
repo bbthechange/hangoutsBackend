@@ -302,7 +302,8 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Override
     public void notifyHangoutUpdated(String hangoutId, String hangoutTitle, List<String> groupIds,
-                                      String changeType, String updatedByUserId, Set<String> interestedUserIds) {
+                                      String changeType, String updatedByUserId, Set<String> interestedUserIds,
+                                      String newLocationName) {
         if (interestedUserIds == null || interestedUserIds.isEmpty()) {
             logger.debug("No interested users to notify for hangout update {}", hangoutId);
             return;
@@ -335,7 +336,7 @@ public class NotificationServiceImpl implements NotificationService {
             for (String userId : usersToNotify) {
                 try {
                     boolean sent = sendHangoutUpdatedNotificationToUser(
-                        userId, hangoutId, primaryGroupId, hangoutTitle, changeType
+                        userId, hangoutId, primaryGroupId, hangoutTitle, changeType, newLocationName
                     );
                     if (sent) {
                         successCount++;
@@ -360,7 +361,7 @@ public class NotificationServiceImpl implements NotificationService {
      */
     private boolean sendHangoutUpdatedNotificationToUser(String userId, String hangoutId,
                                                           String groupId, String hangoutTitle,
-                                                          String changeType) {
+                                                          String changeType, String newLocationName) {
         try {
             List<Device> devices = deviceService.getActiveDevicesForUser(UUID.fromString(userId));
 
@@ -379,7 +380,8 @@ public class NotificationServiceImpl implements NotificationService {
                             hangoutId,
                             groupId,
                             hangoutTitle,
-                            changeType
+                            changeType,
+                            newLocationName
                         );
                         anySent = true;
                     } else if (device.getPlatform() == Device.Platform.ANDROID) {
@@ -388,7 +390,8 @@ public class NotificationServiceImpl implements NotificationService {
                             hangoutId,
                             groupId,
                             hangoutTitle,
-                            changeType
+                            changeType,
+                            newLocationName
                         );
                         anySent = true;
                     }

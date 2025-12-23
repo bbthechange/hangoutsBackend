@@ -507,6 +507,7 @@ class HangoutServiceUpdateTest extends HangoutServiceTestBase {
                 anyList(),
                 changeTypeCaptor.capture(),
                 eq(USER_ID),
+                any(),
                 any()
             );
             assertThat(changeTypeCaptor.getValue()).isEqualTo("time");
@@ -556,6 +557,7 @@ class HangoutServiceUpdateTest extends HangoutServiceTestBase {
                 anyList(),
                 changeTypeCaptor.capture(),
                 eq(USER_ID),
+                any(),
                 any()
             );
             assertThat(changeTypeCaptor.getValue()).isEqualTo("location");
@@ -612,6 +614,7 @@ class HangoutServiceUpdateTest extends HangoutServiceTestBase {
                 anyList(),
                 changeTypeCaptor.capture(),
                 eq(USER_ID),
+                any(),
                 any()
             );
             assertThat(changeTypeCaptor.getValue()).isEqualTo("time_and_location");
@@ -638,7 +641,7 @@ class HangoutServiceUpdateTest extends HangoutServiceTestBase {
 
             // Then: notification NOT called
             verify(notificationService, never()).notifyHangoutUpdated(
-                anyString(), anyString(), anyList(), anyString(), anyString(), any()
+                anyString(), anyString(), anyList(), anyString(), anyString(), any(), any()
             );
         }
 
@@ -678,7 +681,7 @@ class HangoutServiceUpdateTest extends HangoutServiceTestBase {
 
             // Then: notification NOT called
             verify(notificationService, never()).notifyHangoutUpdated(
-                anyString(), anyString(), anyList(), anyString(), anyString(), any()
+                anyString(), anyString(), anyList(), anyString(), anyString(), any(), any()
             );
         }
 
@@ -711,7 +714,7 @@ class HangoutServiceUpdateTest extends HangoutServiceTestBase {
 
             // Then: notification NOT called
             verify(notificationService, never()).notifyHangoutUpdated(
-                anyString(), anyString(), anyList(), anyString(), anyString(), any()
+                anyString(), anyString(), anyList(), anyString(), anyString(), any(), any()
             );
         }
 
@@ -751,7 +754,7 @@ class HangoutServiceUpdateTest extends HangoutServiceTestBase {
 
             // Then: notification NOT called (end time changes don't trigger notifications)
             verify(notificationService, never()).notifyHangoutUpdated(
-                anyString(), anyString(), anyList(), anyString(), anyString(), any()
+                anyString(), anyString(), anyList(), anyString(), anyString(), any(), any()
             );
         }
 
@@ -794,7 +797,7 @@ class HangoutServiceUpdateTest extends HangoutServiceTestBase {
 
             // Then: notification sent with changeType="time"
             verify(notificationService).notifyHangoutUpdated(
-                eq(HANGOUT_ID), anyString(), anyList(), eq("time"), eq(USER_ID), any()
+                eq(HANGOUT_ID), anyString(), anyList(), eq("time"), eq(USER_ID), any(), any()
             );
         }
 
@@ -841,7 +844,7 @@ class HangoutServiceUpdateTest extends HangoutServiceTestBase {
 
             // Then: notification sent
             verify(notificationService).notifyHangoutUpdated(
-                eq(HANGOUT_ID), anyString(), anyList(), eq("time"), eq(USER_ID), any()
+                eq(HANGOUT_ID), anyString(), anyList(), eq("time"), eq(USER_ID), any(), any()
             );
         }
 
@@ -878,7 +881,7 @@ class HangoutServiceUpdateTest extends HangoutServiceTestBase {
             // Mock notification service to throw exception
             doThrow(new RuntimeException("Notification failed"))
                 .when(notificationService).notifyHangoutUpdated(
-                    anyString(), anyString(), anyList(), anyString(), anyString(), any()
+                    anyString(), anyString(), anyList(), anyString(), anyString(), any(), any()
                 );
 
             // When/Then: no exception propagated from updateHangout
@@ -936,7 +939,7 @@ class HangoutServiceUpdateTest extends HangoutServiceTestBase {
             @SuppressWarnings("unchecked")
             ArgumentCaptor<Set<String>> userIdsCaptor = ArgumentCaptor.forClass(Set.class);
             verify(notificationService).notifyHangoutUpdated(
-                eq(HANGOUT_ID), anyString(), anyList(), anyString(), eq(USER_ID), userIdsCaptor.capture()
+                eq(HANGOUT_ID), anyString(), anyList(), anyString(), eq(USER_ID), userIdsCaptor.capture(), any()
             );
 
             Set<String> capturedUserIds = userIdsCaptor.getValue();

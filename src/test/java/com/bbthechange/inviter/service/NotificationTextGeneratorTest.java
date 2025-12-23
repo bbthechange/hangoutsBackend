@@ -78,31 +78,57 @@ class NotificationTextGeneratorTest {
         String hangoutTitle = "Movie Night";
 
         // When
-        String result = textGenerator.getHangoutUpdatedBody(hangoutTitle, "time");
+        String result = textGenerator.getHangoutUpdatedBody(hangoutTitle, "time", null);
 
         // Then
         assertThat(result).isEqualTo("Time changed for 'Movie Night'");
     }
 
     @Test
-    void getHangoutUpdatedBody_LocationChange_ReturnsLocationChangedMessage() {
+    void getHangoutUpdatedBody_LocationChange_WithLocationName_ReturnsMessageWithLocation() {
+        // Given
+        String hangoutTitle = "Movie Night";
+        String locationName = "Central Park";
+
+        // When
+        String result = textGenerator.getHangoutUpdatedBody(hangoutTitle, "location", locationName);
+
+        // Then
+        assertThat(result).isEqualTo("Location changed for 'Movie Night', now at Central Park");
+    }
+
+    @Test
+    void getHangoutUpdatedBody_LocationChange_WithoutLocationName_ReturnsBasicMessage() {
         // Given
         String hangoutTitle = "Movie Night";
 
         // When
-        String result = textGenerator.getHangoutUpdatedBody(hangoutTitle, "location");
+        String result = textGenerator.getHangoutUpdatedBody(hangoutTitle, "location", null);
 
         // Then
         assertThat(result).isEqualTo("Location changed for 'Movie Night'");
     }
 
     @Test
-    void getHangoutUpdatedBody_TimeAndLocationChange_ReturnsCombinedMessage() {
+    void getHangoutUpdatedBody_TimeAndLocationChange_WithLocationName_ReturnsCombinedMessage() {
+        // Given
+        String hangoutTitle = "Movie Night";
+        String locationName = "Central Park";
+
+        // When
+        String result = textGenerator.getHangoutUpdatedBody(hangoutTitle, "time_and_location", locationName);
+
+        // Then
+        assertThat(result).isEqualTo("Time and location changed for 'Movie Night', now at Central Park");
+    }
+
+    @Test
+    void getHangoutUpdatedBody_TimeAndLocationChange_WithoutLocationName_ReturnsCombinedMessage() {
         // Given
         String hangoutTitle = "Movie Night";
 
         // When
-        String result = textGenerator.getHangoutUpdatedBody(hangoutTitle, "time_and_location");
+        String result = textGenerator.getHangoutUpdatedBody(hangoutTitle, "time_and_location", null);
 
         // Then
         assertThat(result).isEqualTo("Time and location changed for 'Movie Night'");
@@ -114,7 +140,7 @@ class NotificationTextGeneratorTest {
         String hangoutTitle = "Movie Night";
 
         // When
-        String result = textGenerator.getHangoutUpdatedBody(hangoutTitle, "unknown");
+        String result = textGenerator.getHangoutUpdatedBody(hangoutTitle, "unknown", null);
 
         // Then
         assertThat(result).isEqualTo("'Movie Night' was updated");

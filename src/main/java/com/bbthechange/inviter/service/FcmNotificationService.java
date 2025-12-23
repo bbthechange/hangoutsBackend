@@ -106,7 +106,7 @@ public class FcmNotificationService {
     }
 
     public void sendHangoutUpdatedNotification(String deviceToken, String hangoutId, String groupId,
-                                                  String hangoutTitle, String changeType) {
+                                                  String hangoutTitle, String changeType, String newLocationName) {
         if (firebaseApp == null) {
             logger.info("FCM not configured - skipping push notification for hangout update '{}'", hangoutTitle);
             return;
@@ -119,7 +119,7 @@ public class FcmNotificationService {
                     .setToken(deviceToken)
                     .setNotification(Notification.builder()
                             .setTitle(NotificationTextGenerator.HANGOUT_UPDATED_TITLE)
-                            .setBody(textGenerator.getHangoutUpdatedBody(hangoutTitle, changeType))
+                            .setBody(textGenerator.getHangoutUpdatedBody(hangoutTitle, changeType, newLocationName))
                             .build())
                     .putData("type", "hangout_updated")
                     .putData("hangoutId", hangoutId)

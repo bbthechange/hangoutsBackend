@@ -233,7 +233,7 @@ public class PushNotificationService {
     }
 
     public void sendHangoutUpdatedNotification(String deviceToken, String hangoutId, String groupId,
-                                                  String hangoutTitle, String changeType) {
+                                                  String hangoutTitle, String changeType, String newLocationName) {
         if (apnsClient == null) {
             logger.info("APNs not configured - skipping push notification for hangout update '{}'", hangoutTitle);
             return;
@@ -242,7 +242,7 @@ public class PushNotificationService {
         try {
             SimpleApnsPayloadBuilder payloadBuilder = new SimpleApnsPayloadBuilder();
             payloadBuilder.setAlertTitle(NotificationTextGenerator.HANGOUT_UPDATED_TITLE);
-            payloadBuilder.setAlertBody(textGenerator.getHangoutUpdatedBody(hangoutTitle, changeType));
+            payloadBuilder.setAlertBody(textGenerator.getHangoutUpdatedBody(hangoutTitle, changeType, newLocationName));
             payloadBuilder.setBadgeNumber(1);
             payloadBuilder.setSound("default");
             payloadBuilder.addCustomProperty("type", "hangout_updated");

@@ -43,7 +43,9 @@ public interface NotificationService {
      * @param changeType Type of change: "time", "location", or "time_and_location"
      * @param updatedByUserId The user who made the update (won't be notified)
      * @param interestedUserIds Set of user IDs with GOING or INTERESTED status
+     * @param newLocationName The new location name for location changes (can be null)
      */
     void notifyHangoutUpdated(String hangoutId, String hangoutTitle, List<String> groupIds,
-                              String changeType, String updatedByUserId, Set<String> interestedUserIds);
+                              String changeType, String updatedByUserId, Set<String> interestedUserIds,
+                              String newLocationName);
 }
