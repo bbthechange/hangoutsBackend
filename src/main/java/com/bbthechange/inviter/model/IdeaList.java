@@ -37,7 +37,9 @@ public class IdeaList extends BaseItem {
     private String note;
     @Getter @Setter
     private String createdBy;
-    
+    @Getter @Setter
+    private Boolean isLocation;
+
     // Transient field - not stored in DynamoDB but populated by repository
     private List<IdeaListMember> members = new ArrayList<>();
     

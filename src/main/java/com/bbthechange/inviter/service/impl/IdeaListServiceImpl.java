@@ -72,13 +72,14 @@ public class IdeaListServiceImpl implements IdeaListService {
         
         // Create idea list (empty initially)
         IdeaList ideaList = new IdeaList(
-                groupId, 
-                request.getName(), 
-                request.getCategory(), 
-                request.getNote(), 
+                groupId,
+                request.getName(),
+                request.getCategory(),
+                request.getNote(),
                 requestingUserId
         );
-        
+        ideaList.setIsLocation(request.getIsLocation());
+
         IdeaList savedList = ideaListRepository.saveIdeaList(ideaList);
         logger.debug("Created idea list: {} in group: {} by user: {}", savedList.getListId(), groupId, requestingUserId);
         
@@ -108,7 +109,11 @@ public class IdeaListServiceImpl implements IdeaListService {
             existingList.setNote(request.getNote());
             updated = true;
         }
-        
+        if (request.getIsLocation() != null) {
+            existingList.setIsLocation(request.getIsLocation());
+            updated = true;
+        }
+
         if (updated) {
             existingList.touch(); // Update timestamp
             IdeaList savedList = ideaListRepository.saveIdeaList(existingList);

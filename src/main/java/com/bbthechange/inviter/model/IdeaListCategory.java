@@ -6,11 +6,13 @@ package com.bbthechange.inviter.model;
  */
 public enum IdeaListCategory {
     RESTAURANT("Restaurant"),
-    ACTIVITY("Activity"), 
+    ACTIVITY("Activity"),
     TRAIL("Trail"),
     MOVIE("Movie"),
     BOOK("Book"),
     TRAVEL("Travel"),
+    SHOW("Show"),
+    BAR("Bar"),
     OTHER("Other");
     
     private final String displayName;

@@ -16,14 +16,23 @@ public class UpdateIdeaListRequest {
     private String name;
     
     private IdeaListCategory category;
-    
+
     @Size(max = 500, message = "Note must be less than 500 characters")
     private String note;
-    
+
+    private Boolean isLocation;
+
     public UpdateIdeaListRequest(String name, IdeaListCategory category, String note) {
         this.name = name;
         this.category = category;
         this.note = note;
+    }
+
+    public UpdateIdeaListRequest(String name, IdeaListCategory category, String note, Boolean isLocation) {
+        this.name = name;
+        this.category = category;
+        this.note = note;
+        this.isLocation = isLocation;
     }
     
     // Input sanitization in getters

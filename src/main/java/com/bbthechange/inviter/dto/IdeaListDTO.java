@@ -23,8 +23,9 @@ public class IdeaListDTO {
     private String note;
     private String createdBy;
     private Instant createdAt;
+    private Boolean isLocation;
     private List<IdeaDTO> ideas = new ArrayList<>();
-    
+
     // Constructor from IdeaList entity
     public IdeaListDTO(IdeaList ideaList) {
         this.id = ideaList.getListId();
@@ -33,6 +34,7 @@ public class IdeaListDTO {
         this.note = ideaList.getNote();
         this.createdBy = ideaList.getCreatedBy();
         this.createdAt = ideaList.getCreatedAt();
+        this.isLocation = ideaList.getIsLocation();
         this.ideas = new ArrayList<>();
     }
     
