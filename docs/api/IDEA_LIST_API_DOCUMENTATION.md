@@ -35,6 +35,7 @@ Authorization: Bearer <jwt_token>
     "name": "Weekend Restaurant Ideas",
     "category": "RESTAURANT",
     "note": "Places we want to try",
+    "isLocation": true,
     "createdBy": "user-123",
     "createdAt": "2025-01-15T10:30:00Z",
     "ideas": [
@@ -84,6 +85,7 @@ Authorization: Bearer <jwt_token>
   "name": "Weekend Restaurant Ideas",
   "category": "RESTAURANT",
   "note": "Places we want to try",
+  "isLocation": true,
   "createdBy": "user-123",
   "createdAt": "2025-01-15T10:30:00Z",
   "ideas": [
@@ -124,14 +126,16 @@ Creates a new idea list (initially empty, without ideas).
 {
   "name": "Summer Activities",
   "category": "ACTIVITY",
-  "note": "Fun things to do this summer"
+  "note": "Fun things to do this summer",
+  "isLocation": false
 }
 ```
 
 **Field Validations:**
 - `name` (required, string, 1-100 characters) - Name of the idea list
-- `category` (optional, enum) - One of: `RESTAURANT`, `ACTIVITY`, `TRAIL`, `MOVIE`, `BOOK`, `TRAVEL`, `OTHER`
+- `category` (optional, enum) - One of: `RESTAURANT`, `ACTIVITY`, `TRAIL`, `MOVIE`, `BOOK`, `TRAVEL`, `SHOW`, `BAR`, `OTHER`
 - `note` (optional, string, max 500 characters) - Additional notes about the list
+- `isLocation` (optional, boolean) - Whether ideas in this list represent physical locations
 
 #### Example Request
 ```bash
@@ -142,7 +146,8 @@ Content-Type: application/json
 {
   "name": "Summer Activities",
   "category": "ACTIVITY",
-  "note": "Fun things to do this summer"
+  "note": "Fun things to do this summer",
+  "isLocation": false
 }
 ```
 
@@ -153,6 +158,7 @@ Content-Type: application/json
   "name": "Summer Activities",
   "category": "ACTIVITY",
   "note": "Fun things to do this summer",
+  "isLocation": false,
   "createdBy": "user-123",
   "createdAt": "2025-01-15T12:00:00Z",
   "ideas": []
@@ -187,7 +193,8 @@ Updates an idea list's name, category, or note. All fields are optional (partial
 {
   "name": "Updated Restaurant List",
   "category": "RESTAURANT",
-  "note": "Updated notes"
+  "note": "Updated notes",
+  "isLocation": true
 }
 ```
 
@@ -195,6 +202,7 @@ Updates an idea list's name, category, or note. All fields are optional (partial
 - `name` (optional, string, 1-100 characters) - Updated name
 - `category` (optional, enum) - Updated category
 - `note` (optional, string, max 500 characters) - Updated note
+- `isLocation` (optional, boolean) - Whether ideas represent physical locations
 
 **Note:** Only include fields you want to update. Omitted fields remain unchanged.
 
@@ -216,6 +224,7 @@ Content-Type: application/json
   "name": "Updated Restaurant List",
   "category": "RESTAURANT",
   "note": "Places we want to try",
+  "isLocation": true,
   "createdBy": "user-123",
   "createdAt": "2025-01-15T10:30:00Z",
   "ideas": []
@@ -437,6 +446,8 @@ Valid values for the `category` field:
 - `MOVIE`
 - `BOOK`
 - `TRAVEL`
+- `SHOW`
+- `BAR`
 - `OTHER`
 
 ---
