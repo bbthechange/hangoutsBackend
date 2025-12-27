@@ -43,6 +43,10 @@ public class Hangout extends BaseItem {
     private Boolean ticketsRequired;    // Are tickets mandatory?
     private String discountCode;        // Optional discount code
 
+    // Reminder-related fields
+    private String reminderScheduleName;  // EventBridge schedule name (e.g., "hangout-{id}") for updates/deletion
+    private Long reminderSentAt;          // Epoch millis when reminder was sent (idempotency flag)
+
     // Default constructor for DynamoDB
     public Hangout() {
         super();
@@ -267,6 +271,24 @@ public class Hangout extends BaseItem {
 
     public void setDiscountCode(String discountCode) {
         this.discountCode = discountCode;
+        touch(); // Update timestamp
+    }
+
+    public String getReminderScheduleName() {
+        return reminderScheduleName;
+    }
+
+    public void setReminderScheduleName(String reminderScheduleName) {
+        this.reminderScheduleName = reminderScheduleName;
+        touch(); // Update timestamp
+    }
+
+    public Long getReminderSentAt() {
+        return reminderSentAt;
+    }
+
+    public void setReminderSentAt(Long reminderSentAt) {
+        this.reminderSentAt = reminderSentAt;
         touch(); // Update timestamp
     }
 }

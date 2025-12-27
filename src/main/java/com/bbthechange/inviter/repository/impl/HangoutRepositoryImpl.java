@@ -1524,14 +1524,106 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                     logger.warn("BatchGetItem had unprocessed keys for hangout {}", hangout.getHangoutId());
                 }
                 
-                logger.debug("Found {} pointers for hangout {} across {} groups", 
+                logger.debug("Found {} pointers for hangout {} across {} groups",
                     pointers.size(), hangout.getHangoutId(), associatedGroups.size());
-                
+
                 return pointers;
-                
+
             } catch (DynamoDbException e) {
                 logger.error("Failed to batch get pointers for hangout {}", hangout.getHangoutId(), e);
                 throw new RepositoryException("Failed to retrieve hangout pointers", e);
+            }
+        });
+    }
+
+    // ============================================================================
+    // REMINDER SCHEDULING OPERATIONS
+    // ============================================================================
+
+    @Override
+    public boolean setReminderSentAtIfNull(String hangoutId, long timestamp) {
+        return performanceTracker.trackQuery("setReminderSentAtIfNull", TABLE_NAME, () -> {
+            try {
+                UpdateItemRequest request = UpdateItemRequest.builder()
+                    .tableName(TABLE_NAME)
+                    .key(Map.of(
+                        "pk", AttributeValue.builder().s(InviterKeyFactory.getEventPk(hangoutId)).build(),
+                        "sk", AttributeValue.builder().s(InviterKeyFactory.getMetadataSk()).build()
+                    ))
+                    .updateExpression("SET reminderSentAt = :timestamp, updatedAt = :now")
+                    .conditionExpression("attribute_not_exists(reminderSentAt)")
+                    .expressionAttributeValues(Map.of(
+                        ":timestamp", AttributeValue.builder().n(String.valueOf(timestamp)).build(),
+                        ":now", AttributeValue.builder().n(String.valueOf(Instant.now().toEpochMilli())).build()
+                    ))
+                    .build();
+
+                dynamoDbClient.updateItem(request);
+                logger.debug("Successfully set reminderSentAt for hangout {} to {}", hangoutId, timestamp);
+                return true;
+
+            } catch (ConditionalCheckFailedException e) {
+                // This is expected when reminder was already sent - not an error
+                logger.debug("Reminder already sent for hangout {} (idempotency check passed)", hangoutId);
+                return false;
+            } catch (DynamoDbException e) {
+                logger.error("Failed to set reminderSentAt for hangout {}", hangoutId, e);
+                throw new RepositoryException("Failed to set reminderSentAt", e);
+            }
+        });
+    }
+
+    @Override
+    public void updateReminderScheduleName(String hangoutId, String scheduleName) {
+        performanceTracker.trackQuery("updateReminderScheduleName", TABLE_NAME, () -> {
+            try {
+                UpdateItemRequest request = UpdateItemRequest.builder()
+                    .tableName(TABLE_NAME)
+                    .key(Map.of(
+                        "pk", AttributeValue.builder().s(InviterKeyFactory.getEventPk(hangoutId)).build(),
+                        "sk", AttributeValue.builder().s(InviterKeyFactory.getMetadataSk()).build()
+                    ))
+                    .updateExpression("SET reminderScheduleName = :name, updatedAt = :now")
+                    .expressionAttributeValues(Map.of(
+                        ":name", AttributeValue.builder().s(scheduleName).build(),
+                        ":now", AttributeValue.builder().n(String.valueOf(Instant.now().toEpochMilli())).build()
+                    ))
+                    .build();
+
+                dynamoDbClient.updateItem(request);
+                logger.debug("Updated reminderScheduleName for hangout {} to {}", hangoutId, scheduleName);
+                return null;
+
+            } catch (DynamoDbException e) {
+                logger.error("Failed to update reminderScheduleName for hangout {}", hangoutId, e);
+                throw new RepositoryException("Failed to update reminderScheduleName", e);
+            }
+        });
+    }
+
+    @Override
+    public void clearReminderSentAt(String hangoutId) {
+        performanceTracker.trackQuery("clearReminderSentAt", TABLE_NAME, () -> {
+            try {
+                UpdateItemRequest request = UpdateItemRequest.builder()
+                    .tableName(TABLE_NAME)
+                    .key(Map.of(
+                        "pk", AttributeValue.builder().s(InviterKeyFactory.getEventPk(hangoutId)).build(),
+                        "sk", AttributeValue.builder().s(InviterKeyFactory.getMetadataSk()).build()
+                    ))
+                    .updateExpression("REMOVE reminderSentAt SET updatedAt = :now")
+                    .expressionAttributeValues(Map.of(
+                        ":now", AttributeValue.builder().n(String.valueOf(Instant.now().toEpochMilli())).build()
+                    ))
+                    .build();
+
+                dynamoDbClient.updateItem(request);
+                logger.debug("Cleared reminderSentAt for hangout {}", hangoutId);
+                return null;
+
+            } catch (DynamoDbException e) {
+                logger.error("Failed to clear reminderSentAt for hangout {}", hangoutId, e);
+                throw new RepositoryException("Failed to clear reminderSentAt", e);
             }
         });
     }

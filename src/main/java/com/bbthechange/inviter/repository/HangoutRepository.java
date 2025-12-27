@@ -179,12 +179,41 @@ public interface HangoutRepository {
     /**
      * Find all hangouts that belong to a specific EventSeries.
      * Uses the SeriesIndex GSI for efficient querying.
-     * 
+     *
      * ⚠️ PERFORMANCE CRITICAL: This method MUST use the SeriesIndex GSI.
      * Never fetch all hangouts and filter in memory - this would be a severe performance issue.
-     * 
+     *
      * @param seriesId The series identifier
      * @return List of hangouts in the series, ordered by start timestamp
      */
     List<Hangout> findHangoutsBySeriesId(String seriesId);
+
+    // Reminder scheduling operations
+
+    /**
+     * Atomically set reminderSentAt if it is currently null/missing.
+     * Used for idempotent reminder sending - only the first caller wins.
+     *
+     * @param hangoutId The hangout ID
+     * @param timestamp The epoch millis timestamp to set
+     * @return true if update succeeded (was null), false if already set (lost race)
+     */
+    boolean setReminderSentAtIfNull(String hangoutId, long timestamp);
+
+    /**
+     * Update the reminderScheduleName for a hangout.
+     * Used to track the EventBridge schedule for updates/deletion.
+     *
+     * @param hangoutId The hangout ID
+     * @param scheduleName The schedule name (e.g., "hangout-{id}")
+     */
+    void updateReminderScheduleName(String hangoutId, String scheduleName);
+
+    /**
+     * Clear the reminderSentAt flag when a hangout's start time changes.
+     * Allows a new reminder to be scheduled after time updates.
+     *
+     * @param hangoutId The hangout ID
+     */
+    void clearReminderSentAt(String hangoutId);
 }
