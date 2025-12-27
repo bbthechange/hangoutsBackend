@@ -6,10 +6,10 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
-import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.ssm.SsmClient;
 import software.amazon.awssdk.services.ssm.model.GetParameterRequest;
 import software.amazon.awssdk.services.ssm.model.GetParameterResponse;
@@ -28,8 +28,7 @@ public class InternalApiKeyFilter extends OncePerRequestFilter {
     private static final String API_KEY_HEADER = "X-Api-Key";
     private static final String INTERNAL_PATH_PREFIX = "/internal/";
 
-    @Value("${aws.region:us-west-2}")
-    private String awsRegion;
+    private final SsmClient ssmClient;
 
     @Value("${internal.api-key-parameter-name:/inviter/scheduler/internal-api-key}")
     private String apiKeyParameterName;
@@ -38,6 +37,14 @@ public class InternalApiKeyFilter extends OncePerRequestFilter {
     private volatile String cachedApiKey;
     private volatile long cacheExpiry = 0;
     private static final long CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+    @Autowired
+    public InternalApiKeyFilter(@Autowired(required = false) SsmClient ssmClient) {
+        this.ssmClient = ssmClient;
+        if (ssmClient == null) {
+            logger.info("SsmClient not configured - internal API endpoints will reject all requests");
+        }
+    }
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
@@ -84,6 +91,11 @@ public class InternalApiKeyFilter extends OncePerRequestFilter {
      * Get API key from cache or fetch from SSM Parameter Store.
      */
     private String getApiKey() {
+        if (ssmClient == null) {
+            logger.warn("SsmClient not available - cannot retrieve API key");
+            return null;
+        }
+
         long now = System.currentTimeMillis();
         if (cachedApiKey != null && now < cacheExpiry) {
             return cachedApiKey;
@@ -95,10 +107,7 @@ public class InternalApiKeyFilter extends OncePerRequestFilter {
                 return cachedApiKey;
             }
 
-            try (SsmClient ssmClient = SsmClient.builder()
-                    .region(Region.of(awsRegion))
-                    .build()) {
-
+            try {
                 GetParameterRequest parameterRequest = GetParameterRequest.builder()
                         .name(apiKeyParameterName)
                         .withDecryption(true)
