@@ -33,6 +33,9 @@ public class InternalApiKeyFilter extends OncePerRequestFilter {
     @Value("${internal.api-key-parameter-name:/inviter/scheduler/internal-api-key}")
     private String apiKeyParameterName;
 
+    @Value("${internal.api-key-bypass:false}")
+    private boolean apiKeyBypass;
+
     // Cached API key to avoid repeated SSM calls
     private volatile String cachedApiKey;
     private volatile long cacheExpiry = 0;
@@ -55,6 +58,13 @@ public class InternalApiKeyFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
+
+        // Allow bypass for local development (internal.api-key-bypass=true)
+        if (apiKeyBypass) {
+            logger.debug("API key bypass enabled, allowing request to: {}", request.getRequestURI());
+            filterChain.doFilter(request, response);
+            return;
+        }
 
         String providedApiKey = request.getHeader(API_KEY_HEADER);
 
