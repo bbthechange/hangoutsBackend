@@ -1,10 +1,13 @@
 package com.bbthechange.inviter.service.impl;
 
+import com.bbthechange.inviter.dto.HangoutDetailData;
 import com.bbthechange.inviter.model.Device;
 import com.bbthechange.inviter.model.Group;
 import com.bbthechange.inviter.model.GroupMembership;
 import com.bbthechange.inviter.model.Hangout;
+import com.bbthechange.inviter.model.InterestLevel;
 import com.bbthechange.inviter.repository.GroupRepository;
+import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.dto.UserSummaryDTO;
 import com.bbthechange.inviter.service.DeviceService;
 import com.bbthechange.inviter.service.FcmNotificationService;
@@ -33,6 +36,7 @@ public class NotificationServiceImpl implements NotificationService {
     private static final Logger logger = LoggerFactory.getLogger(NotificationServiceImpl.class);
 
     private final GroupRepository groupRepository;
+    private final HangoutRepository hangoutRepository;
     private final DeviceService deviceService;
     private final PushNotificationService pushNotificationService;
     private final FcmNotificationService fcmNotificationService;
@@ -41,12 +45,14 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Autowired
     public NotificationServiceImpl(GroupRepository groupRepository,
+                                   HangoutRepository hangoutRepository,
                                    DeviceService deviceService,
                                    PushNotificationService pushNotificationService,
                                    FcmNotificationService fcmNotificationService,
                                    UserService userService,
                                    MeterRegistry meterRegistry) {
         this.groupRepository = groupRepository;
+        this.hangoutRepository = hangoutRepository;
         this.deviceService = deviceService;
         this.pushNotificationService = pushNotificationService;
         this.fcmNotificationService = fcmNotificationService;
@@ -406,6 +412,122 @@ public class NotificationServiceImpl implements NotificationService {
 
         } catch (Exception e) {
             logger.warn("Failed to send hangout update notifications to user {}: {}", userId, e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public void sendHangoutReminder(Hangout hangout) {
+        String hangoutId = hangout.getHangoutId();
+        List<String> groupIds = hangout.getAssociatedGroups();
+
+        if (groupIds == null || groupIds.isEmpty()) {
+            logger.debug("No groups associated with hangout {}, skipping reminder notifications", hangoutId);
+            return;
+        }
+
+        try {
+            // Get attendance data for the hangout
+            HangoutDetailData detailData = hangoutRepository.getHangoutDetailData(hangoutId);
+            List<InterestLevel> attendance = detailData.getAttendance();
+
+            if (attendance.isEmpty()) {
+                logger.debug("No attendance records for hangout {}, skipping reminder notifications", hangoutId);
+                return;
+            }
+
+            // Filter for users with GOING or INTERESTED status
+            List<String> interestedUserIds = attendance.stream()
+                    .filter(a -> "GOING".equals(a.getStatus()) || "INTERESTED".equals(a.getStatus()))
+                    .map(InterestLevel::getUserId)
+                    .toList();
+
+            if (interestedUserIds.isEmpty()) {
+                logger.debug("No GOING/INTERESTED users for hangout {}, skipping reminder notifications", hangoutId);
+                return;
+            }
+
+            logger.info("Sending reminder notifications for hangout {} to {} users",
+                    hangoutId, interestedUserIds.size());
+
+            // Use first group for notification context
+            String primaryGroupId = groupIds.get(0);
+
+            int successCount = 0;
+            int failureCount = 0;
+
+            for (String userId : interestedUserIds) {
+                try {
+                    boolean sent = sendHangoutReminderToUser(userId, hangout, primaryGroupId);
+                    if (sent) {
+                        successCount++;
+                    }
+                } catch (Exception e) {
+                    failureCount++;
+                    logger.warn("Failed to send reminder to user {}: {}", userId, e.getMessage());
+                }
+            }
+
+            logger.info("Hangout reminder summary for {}: {} sent, {} failed",
+                    hangoutId, successCount, failureCount);
+
+            meterRegistry.counter("hangout_reminder_notification_total",
+                    "status", "success").increment(successCount);
+            if (failureCount > 0) {
+                meterRegistry.counter("hangout_reminder_notification_total",
+                        "status", "failure").increment(failureCount);
+            }
+
+        } catch (Exception e) {
+            logger.error("Error sending hangout reminder notifications for {}: {}", hangoutId, e.getMessage(), e);
+            meterRegistry.counter("hangout_reminder_notification_total",
+                    "status", "error", "error_type", "unexpected").increment();
+        }
+    }
+
+    /**
+     * Send hangout reminder notification to all active devices for a single user.
+     * Returns true if at least one notification was sent successfully.
+     */
+    private boolean sendHangoutReminderToUser(String userId, Hangout hangout, String groupId) {
+        try {
+            List<Device> devices = deviceService.getActiveDevicesForUser(UUID.fromString(userId));
+
+            if (devices.isEmpty()) {
+                logger.debug("No active devices for user {}", userId);
+                return false;
+            }
+
+            boolean anySent = false;
+
+            for (Device device : devices) {
+                try {
+                    if (device.getPlatform() == Device.Platform.IOS) {
+                        pushNotificationService.sendHangoutReminderNotification(
+                                device.getToken(),
+                                hangout,
+                                groupId
+                        );
+                        anySent = true;
+                    } else if (device.getPlatform() == Device.Platform.ANDROID) {
+                        fcmNotificationService.sendHangoutReminderNotification(
+                                device.getToken(),
+                                hangout,
+                                groupId
+                        );
+                        anySent = true;
+                    }
+                } catch (Exception e) {
+                    logger.error("Failed to send hangout reminder to device {}: {}",
+                            device.getToken().substring(0, Math.min(8, device.getToken().length())),
+                            e.getMessage());
+                }
+            }
+
+            return anySent;
+
+        } catch (Exception e) {
+            logger.warn("Failed to send hangout reminder to user {}: {}", userId, e.getMessage());
             return false;
         }
     }

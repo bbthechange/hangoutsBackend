@@ -12,6 +12,7 @@ public class NotificationTextGenerator {
     public static final String NEW_HANGOUT_TITLE = "New Hangout";
     public static final String GROUP_MEMBER_ADDED_TITLE = "Added to Group";
     public static final String HANGOUT_UPDATED_TITLE = "Hangout Updated";
+    public static final String HANGOUT_REMINDER_TITLE = "Starting Soon!";
 
     /**
      * Generate body text for new hangout notification.
@@ -60,5 +61,14 @@ public class NotificationTextGenerator {
                 : String.format("Time and location changed for '%s'", hangoutTitle);
             default -> String.format("'%s' was updated", hangoutTitle);
         };
+    }
+
+    /**
+     * Generate body text for hangout reminder notification.
+     * @param hangoutTitle Title of the hangout
+     * @return Notification body text
+     */
+    public String getHangoutReminderBody(String hangoutTitle) {
+        return hangoutTitle + " starts in 2 hours";
     }
 }

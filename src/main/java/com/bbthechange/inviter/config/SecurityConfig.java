@@ -14,6 +14,8 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import org.springframework.security.authorization.AuthorizationDecision;
 
+import com.bbthechange.inviter.security.InternalApiKeyFilter;
+
 import java.util.Arrays;
 
 @Configuration
@@ -22,7 +24,10 @@ public class SecurityConfig {
     
     @Autowired
     private JwtAuthenticationFilter jwtAuthenticationFilter;
-    
+
+    @Autowired
+    private InternalApiKeyFilter internalApiKeyFilter;
+
     @Autowired
     private JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
     
@@ -41,11 +46,13 @@ public class SecurityConfig {
                 .requestMatchers("/hiking/**").permitAll() // Allow public hiking trail search
                 .requestMatchers("/calendar/feed/**").permitAll() // Allow public calendar feed access
                 .requestMatchers("/groups/invite/**").permitAll() // Allow public group invite preview
+                .requestMatchers("/internal/**").permitAll() // Internal API (authenticated by API key filter)
                 .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
                 .requestMatchers("/actuator/prometheus").access((authentication, context) ->
                     new AuthorizationDecision("127.0.0.1".equals(context.getRequest().getRemoteAddr())))
                 .anyRequest().authenticated()
             )
+            .addFilterBefore(internalApiKeyFilter, UsernamePasswordAuthenticationFilter.class)
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         
         return http.build();

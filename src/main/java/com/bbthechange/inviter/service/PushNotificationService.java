@@ -1,5 +1,6 @@
 package com.bbthechange.inviter.service;
 
+import com.bbthechange.inviter.model.Hangout;
 import com.eatthepath.pushy.apns.ApnsClient;
 import com.eatthepath.pushy.apns.PushNotificationResponse;
 import com.eatthepath.pushy.apns.util.SimpleApnsPayloadBuilder;
@@ -12,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 
@@ -280,6 +282,56 @@ public class PushNotificationService {
             logger.error("Unexpected error sending hangout update notification", e);
             meterRegistry.counter("apns_notification_total",
                     "status", "error", "type", "hangout_updated",
+                    "error_type", "unexpected", "category", "unexpected").increment();
+        }
+    }
+
+    public void sendHangoutReminderNotification(String deviceToken, Hangout hangout, String groupId) {
+        if (apnsClient == null) {
+            logger.info("APNs not configured - skipping push notification for hangout reminder '{}'", hangout.getTitle());
+            return;
+        }
+
+        try {
+            SimpleApnsPayloadBuilder payloadBuilder = new SimpleApnsPayloadBuilder();
+            payloadBuilder.setAlertTitle(NotificationTextGenerator.HANGOUT_REMINDER_TITLE);
+            payloadBuilder.setAlertBody(textGenerator.getHangoutReminderBody(hangout.getTitle()));
+            payloadBuilder.setBadgeNumber(1);
+            payloadBuilder.setSound("default");
+            payloadBuilder.addCustomProperty("type", "hangout_reminder");
+            payloadBuilder.addCustomProperty("hangoutId", hangout.getHangoutId());
+            payloadBuilder.addCustomProperty("groupId", groupId);
+
+            String payload = payloadBuilder.build();
+            String token = TokenUtil.sanitizeTokenString(deviceToken);
+
+            SimpleApnsPushNotification pushNotification = new SimpleApnsPushNotification(token, bundleId, payload);
+
+            PushNotificationResponse<SimpleApnsPushNotification> response = apnsClient.sendNotification(pushNotification).get();
+
+            if (response.isAccepted()) {
+                logger.info("Hangout reminder notification sent successfully to device: {}", deviceToken.substring(0, 8) + "...");
+                meterRegistry.counter("apns_notification_total", "status", "success", "type", "hangout_reminder").increment();
+            } else {
+                Optional<String> rejectionReason = response.getRejectionReason();
+                String reason = rejectionReason.orElse("unknown");
+                logger.error("Hangout reminder notification failed for device: {}. Reason: {}",
+                    deviceToken.substring(0, 8) + "...", reason);
+                meterRegistry.counter("apns_notification_total",
+                        "status", "rejected", "type", "hangout_reminder",
+                        "reason", reason, "category", categorizeApnsRejection(reason)).increment();
+            }
+
+        } catch (ExecutionException | InterruptedException e) {
+            logger.error("Error sending hangout reminder notification to device: {}", deviceToken.substring(0, 8) + "...", e);
+            meterRegistry.counter("apns_notification_total",
+                    "status", "error", "type", "hangout_reminder",
+                    "error_type", "execution", "category", "transient").increment();
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            logger.error("Unexpected error sending hangout reminder notification", e);
+            meterRegistry.counter("apns_notification_total",
+                    "status", "error", "type", "hangout_reminder",
                     "error_type", "unexpected", "category", "unexpected").increment();
         }
     }

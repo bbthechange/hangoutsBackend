@@ -48,4 +48,13 @@ public interface NotificationService {
     void notifyHangoutUpdated(String hangoutId, String hangoutTitle, List<String> groupIds,
                               String changeType, String updatedByUserId, Set<String> interestedUserIds,
                               String newLocationName);
+
+    /**
+     * Send reminder notification for an upcoming hangout.
+     * Notifies users with GOING or INTERESTED status.
+     * Called by EventBridge Scheduler 2 hours before hangout start.
+     *
+     * @param hangout The hangout to send reminders for
+     */
+    void sendHangoutReminder(com.bbthechange.inviter.model.Hangout hangout);
 }

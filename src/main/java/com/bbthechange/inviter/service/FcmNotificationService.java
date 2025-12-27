@@ -1,5 +1,6 @@
 package com.bbthechange.inviter.service;
 
+import com.bbthechange.inviter.model.Hangout;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.messaging.FirebaseMessaging;
 import com.google.firebase.messaging.FirebaseMessagingException;
@@ -131,6 +132,36 @@ public class FcmNotificationService {
             logger.info("Hangout update notification sent successfully to device: {}, messageId: {}",
                     tokenPrefix, messageId);
             meterRegistry.counter("fcm_notification_total", "status", "success", "type", "hangout_updated").increment();
+
+        } catch (FirebaseMessagingException e) {
+            handleFcmError(e, deviceToken, tokenPrefix);
+        }
+    }
+
+    public void sendHangoutReminderNotification(String deviceToken, Hangout hangout, String groupId) {
+        if (firebaseApp == null) {
+            logger.info("FCM not configured - skipping push notification for hangout reminder '{}'", hangout.getTitle());
+            return;
+        }
+
+        String tokenPrefix = deviceToken.substring(0, Math.min(8, deviceToken.length())) + "...";
+
+        try {
+            Message message = Message.builder()
+                    .setToken(deviceToken)
+                    .setNotification(Notification.builder()
+                            .setTitle(NotificationTextGenerator.HANGOUT_REMINDER_TITLE)
+                            .setBody(textGenerator.getHangoutReminderBody(hangout.getTitle()))
+                            .build())
+                    .putData("type", "hangout_reminder")
+                    .putData("hangoutId", hangout.getHangoutId())
+                    .putData("groupId", groupId)
+                    .build();
+
+            String messageId = FirebaseMessaging.getInstance(firebaseApp).send(message);
+            logger.info("Hangout reminder notification sent successfully to device: {}, messageId: {}",
+                    tokenPrefix, messageId);
+            meterRegistry.counter("fcm_notification_total", "status", "success", "type", "hangout_reminder").increment();
 
         } catch (FirebaseMessagingException e) {
             handleFcmError(e, deviceToken, tokenPrefix);
