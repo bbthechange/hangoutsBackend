@@ -145,4 +145,60 @@ class NotificationTextGeneratorTest {
         // Then
         assertThat(result).isEqualTo("'Movie Night' was updated");
     }
+
+    // ========== Hangout Reminder Tests ==========
+
+    @Test
+    void getHangoutReminderBody_ReturnsCorrectFormat() {
+        // Given
+        String hangoutTitle = "Pizza Night";
+
+        // When
+        String result = textGenerator.getHangoutReminderBody(hangoutTitle);
+
+        // Then
+        assertThat(result).isEqualTo("Pizza Night starts in 2 hours");
+    }
+
+    @Test
+    void getHangoutReminderBody_HandlesSpecialCharacters() {
+        // Given: Title with special characters
+        String hangoutTitle = "John's Birthday @ the Park!";
+
+        // When
+        String result = textGenerator.getHangoutReminderBody(hangoutTitle);
+
+        // Then: Special characters preserved
+        assertThat(result).isEqualTo("John's Birthday @ the Park! starts in 2 hours");
+    }
+
+    @Test
+    void getHangoutReminderBody_HandlesEmojis() {
+        // Given: Title with emojis
+        String hangoutTitle = "Team BBQ 🍖🔥";
+
+        // When
+        String result = textGenerator.getHangoutReminderBody(hangoutTitle);
+
+        // Then: Emojis preserved
+        assertThat(result).isEqualTo("Team BBQ 🍖🔥 starts in 2 hours");
+    }
+
+    @Test
+    void getHangoutReminderBody_HandlesLongTitle() {
+        // Given: Long title
+        String hangoutTitle = "Annual Company Holiday Party and Team Building Event 2024";
+
+        // When
+        String result = textGenerator.getHangoutReminderBody(hangoutTitle);
+
+        // Then: Full title used
+        assertThat(result).isEqualTo("Annual Company Holiday Party and Team Building Event 2024 starts in 2 hours");
+    }
+
+    @Test
+    void hangoutReminderTitle_IsConstant() {
+        // Verify the title constant
+        assertThat(NotificationTextGenerator.HANGOUT_REMINDER_TITLE).isEqualTo("Starting Soon!");
+    }
 }

@@ -1,5 +1,6 @@
 package com.bbthechange.inviter.service;
 
+import com.bbthechange.inviter.model.Hangout;
 import com.eatthepath.pushy.apns.ApnsClient;
 import com.eatthepath.pushy.apns.PushNotificationResponse;
 import com.eatthepath.pushy.apns.util.SimpleApnsPushNotification;
@@ -219,6 +220,116 @@ class PushNotificationServiceTest {
         verify(apnsClient).sendNotification(any(SimpleApnsPushNotification.class));
         verify(meterRegistry).counter("apns_notification_total",
                 "status", "error", "type", "group_member_added",
+                "error_type", "execution", "category", "transient");
+    }
+
+    // ========== sendHangoutReminderNotification Tests ==========
+
+    private static final String TEST_HANGOUT_ID = "hangout-123";
+    private static final String TEST_HANGOUT_TITLE = "Pizza Night";
+    private static final String TEST_REMINDER_BODY = "Pizza Night starts in 2 hours";
+
+    private Hangout createTestHangout() {
+        Hangout hangout = new Hangout();
+        hangout.setHangoutId(TEST_HANGOUT_ID);
+        hangout.setTitle(TEST_HANGOUT_TITLE);
+        return hangout;
+    }
+
+    @Test
+    void sendHangoutReminderNotification_ApnsClientNull_SkipsQuietly() {
+        // Given: APNs not configured
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", null);
+        Hangout hangout = createTestHangout();
+
+        // When
+        pushNotificationService.sendHangoutReminderNotification(TEST_DEVICE_TOKEN, hangout, TEST_GROUP_ID);
+
+        // Then: No exception, no interactions
+        verifyNoInteractions(apnsClient);
+        verifyNoInteractions(meterRegistry);
+    }
+
+    @Test
+    void sendHangoutReminderNotification_Success_EmitsSuccessMetric() throws ExecutionException, InterruptedException {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", apnsClient);
+        Hangout hangout = createTestHangout();
+        when(textGenerator.getHangoutReminderBody(TEST_HANGOUT_TITLE))
+                .thenReturn(TEST_REMINDER_BODY);
+        when(apnsClient.sendNotification(any(SimpleApnsPushNotification.class))).thenReturn(pushNotificationFuture);
+        when(pushNotificationFuture.get()).thenReturn(pushNotificationResponse);
+        when(pushNotificationResponse.isAccepted()).thenReturn(true);
+
+        // When
+        pushNotificationService.sendHangoutReminderNotification(TEST_DEVICE_TOKEN, hangout, TEST_GROUP_ID);
+
+        // Then
+        verify(apnsClient).sendNotification(any(SimpleApnsPushNotification.class));
+        verify(pushNotificationResponse).isAccepted();
+        verify(meterRegistry).counter("apns_notification_total", "status", "success", "type", "hangout_reminder");
+    }
+
+    @Test
+    void sendHangoutReminderNotification_PayloadContainsCorrectData() throws ExecutionException, InterruptedException {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", apnsClient);
+        Hangout hangout = createTestHangout();
+        when(textGenerator.getHangoutReminderBody(TEST_HANGOUT_TITLE))
+                .thenReturn(TEST_REMINDER_BODY);
+        when(apnsClient.sendNotification(any(SimpleApnsPushNotification.class))).thenReturn(pushNotificationFuture);
+        when(pushNotificationFuture.get()).thenReturn(pushNotificationResponse);
+        when(pushNotificationResponse.isAccepted()).thenReturn(true);
+
+        // When
+        pushNotificationService.sendHangoutReminderNotification(TEST_DEVICE_TOKEN, hangout, TEST_GROUP_ID);
+
+        // Then: Verify text generator was called with correct title
+        verify(textGenerator).getHangoutReminderBody(TEST_HANGOUT_TITLE);
+        verify(apnsClient).sendNotification(any(SimpleApnsPushNotification.class));
+    }
+
+    @Test
+    void sendHangoutReminderNotification_Rejected_EmitsRejectedMetric() throws ExecutionException, InterruptedException {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", apnsClient);
+        Hangout hangout = createTestHangout();
+        when(textGenerator.getHangoutReminderBody(TEST_HANGOUT_TITLE))
+                .thenReturn(TEST_REMINDER_BODY);
+        when(apnsClient.sendNotification(any(SimpleApnsPushNotification.class))).thenReturn(pushNotificationFuture);
+        when(pushNotificationFuture.get()).thenReturn(pushNotificationResponse);
+        when(pushNotificationResponse.isAccepted()).thenReturn(false);
+        when(pushNotificationResponse.getRejectionReason()).thenReturn(Optional.of("BadDeviceToken"));
+
+        // When
+        pushNotificationService.sendHangoutReminderNotification(TEST_DEVICE_TOKEN, hangout, TEST_GROUP_ID);
+
+        // Then
+        verify(apnsClient).sendNotification(any(SimpleApnsPushNotification.class));
+        verify(pushNotificationResponse).isAccepted();
+        verify(pushNotificationResponse).getRejectionReason();
+        verify(meterRegistry).counter("apns_notification_total",
+                "status", "rejected", "type", "hangout_reminder",
+                "reason", "BadDeviceToken", "category", "expected");
+    }
+
+    @Test
+    void sendHangoutReminderNotification_ExecutionException_EmitsErrorMetric() throws ExecutionException, InterruptedException {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", apnsClient);
+        Hangout hangout = createTestHangout();
+        when(textGenerator.getHangoutReminderBody(TEST_HANGOUT_TITLE))
+                .thenReturn(TEST_REMINDER_BODY);
+        when(apnsClient.sendNotification(any(SimpleApnsPushNotification.class))).thenReturn(pushNotificationFuture);
+        when(pushNotificationFuture.get()).thenThrow(new ExecutionException("Network error", new RuntimeException()));
+
+        // When - should not throw exception
+        pushNotificationService.sendHangoutReminderNotification(TEST_DEVICE_TOKEN, hangout, TEST_GROUP_ID);
+
+        // Then
+        verify(apnsClient).sendNotification(any(SimpleApnsPushNotification.class));
+        verify(meterRegistry).counter("apns_notification_total",
+                "status", "error", "type", "hangout_reminder",
                 "error_type", "execution", "category", "transient");
     }
 }

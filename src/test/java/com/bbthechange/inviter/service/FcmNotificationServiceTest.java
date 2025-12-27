@@ -1,5 +1,6 @@
 package com.bbthechange.inviter.service;
 
+import com.bbthechange.inviter.model.Hangout;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.messaging.FirebaseMessaging;
 import com.google.firebase.messaging.FirebaseMessagingException;
@@ -250,6 +251,154 @@ class FcmNotificationServiceTest {
                     "status", "error",
                     "error_code", "UNREGISTERED",
                     "category", "expected");
+        }
+    }
+
+    // ========== sendHangoutReminderNotification Tests ==========
+
+    private static final String TEST_REMINDER_HANGOUT_ID = "reminder-hangout-123";
+    private static final String TEST_REMINDER_HANGOUT_TITLE = "Team Dinner";
+    private static final String TEST_REMINDER_BODY = "Team Dinner starts in 2 hours";
+
+    private Hangout createReminderHangout() {
+        Hangout hangout = new Hangout();
+        hangout.setHangoutId(TEST_REMINDER_HANGOUT_ID);
+        hangout.setTitle(TEST_REMINDER_HANGOUT_TITLE);
+        return hangout;
+    }
+
+    @Test
+    void sendHangoutReminderNotification_FirebaseAppNull_SkipsQuietly() {
+        // Given: FCM not configured
+        FcmNotificationService serviceWithoutFirebase = new FcmNotificationService(
+                null, textGenerator, deviceService, meterRegistry);
+        Hangout hangout = createReminderHangout();
+
+        // When
+        serviceWithoutFirebase.sendHangoutReminderNotification(TEST_DEVICE_TOKEN, hangout, TEST_GROUP_ID);
+
+        // Then - should not throw and should not interact with dependencies
+        verifyNoInteractions(textGenerator);
+        verifyNoInteractions(deviceService);
+    }
+
+    @Test
+    void sendHangoutReminderNotification_Success_EmitsSuccessMetric() throws FirebaseMessagingException {
+        // Given
+        Hangout hangout = createReminderHangout();
+        when(textGenerator.getHangoutReminderBody(TEST_REMINDER_HANGOUT_TITLE))
+                .thenReturn(TEST_REMINDER_BODY);
+
+        try (MockedStatic<FirebaseMessaging> mockedStatic = mockStatic(FirebaseMessaging.class)) {
+            mockedStatic.when(() -> FirebaseMessaging.getInstance(firebaseApp)).thenReturn(firebaseMessaging);
+            when(firebaseMessaging.send(any(Message.class))).thenReturn("message-id-789");
+
+            // When
+            fcmNotificationService.sendHangoutReminderNotification(TEST_DEVICE_TOKEN, hangout, TEST_GROUP_ID);
+
+            // Then
+            verify(textGenerator).getHangoutReminderBody(TEST_REMINDER_HANGOUT_TITLE);
+            verify(firebaseMessaging).send(any(Message.class));
+            verify(meterRegistry).counter("fcm_notification_total", "status", "success", "type", "hangout_reminder");
+            verifyNoInteractions(deviceService); // No error, so no device cleanup
+        }
+    }
+
+    @Test
+    void sendHangoutReminderNotification_MessageContainsCorrectData() throws FirebaseMessagingException {
+        // Given
+        Hangout hangout = createReminderHangout();
+        when(textGenerator.getHangoutReminderBody(TEST_REMINDER_HANGOUT_TITLE))
+                .thenReturn(TEST_REMINDER_BODY);
+
+        try (MockedStatic<FirebaseMessaging> mockedStatic = mockStatic(FirebaseMessaging.class)) {
+            mockedStatic.when(() -> FirebaseMessaging.getInstance(firebaseApp)).thenReturn(firebaseMessaging);
+            when(firebaseMessaging.send(any(Message.class))).thenReturn("message-id-789");
+
+            // When
+            fcmNotificationService.sendHangoutReminderNotification(TEST_DEVICE_TOKEN, hangout, TEST_GROUP_ID);
+
+            // Then: Verify text generator was called correctly
+            verify(textGenerator).getHangoutReminderBody(TEST_REMINDER_HANGOUT_TITLE);
+            verify(firebaseMessaging).send(any(Message.class));
+        }
+    }
+
+    @Test
+    void sendHangoutReminderNotification_UnregisteredToken_DeletesDevice() throws FirebaseMessagingException {
+        // Given
+        Hangout hangout = createReminderHangout();
+        when(textGenerator.getHangoutReminderBody(TEST_REMINDER_HANGOUT_TITLE))
+                .thenReturn(TEST_REMINDER_BODY);
+
+        FirebaseMessagingException unregisteredException = mock(FirebaseMessagingException.class);
+        when(unregisteredException.getMessagingErrorCode()).thenReturn(MessagingErrorCode.UNREGISTERED);
+
+        try (MockedStatic<FirebaseMessaging> mockedStatic = mockStatic(FirebaseMessaging.class)) {
+            mockedStatic.when(() -> FirebaseMessaging.getInstance(firebaseApp)).thenReturn(firebaseMessaging);
+            when(firebaseMessaging.send(any(Message.class))).thenThrow(unregisteredException);
+
+            // When
+            fcmNotificationService.sendHangoutReminderNotification(TEST_DEVICE_TOKEN, hangout, TEST_GROUP_ID);
+
+            // Then - device should be deleted
+            verify(deviceService).deleteDevice(TEST_DEVICE_TOKEN);
+            verify(meterRegistry).counter("fcm_notification_total",
+                    "status", "error",
+                    "error_code", "UNREGISTERED",
+                    "category", "expected");
+        }
+    }
+
+    @Test
+    void sendHangoutReminderNotification_QuotaExceeded_EmitsTransientMetric() throws FirebaseMessagingException {
+        // Given
+        Hangout hangout = createReminderHangout();
+        when(textGenerator.getHangoutReminderBody(TEST_REMINDER_HANGOUT_TITLE))
+                .thenReturn(TEST_REMINDER_BODY);
+
+        FirebaseMessagingException quotaException = mock(FirebaseMessagingException.class);
+        when(quotaException.getMessagingErrorCode()).thenReturn(MessagingErrorCode.QUOTA_EXCEEDED);
+
+        try (MockedStatic<FirebaseMessaging> mockedStatic = mockStatic(FirebaseMessaging.class)) {
+            mockedStatic.when(() -> FirebaseMessaging.getInstance(firebaseApp)).thenReturn(firebaseMessaging);
+            when(firebaseMessaging.send(any(Message.class))).thenThrow(quotaException);
+
+            // When
+            fcmNotificationService.sendHangoutReminderNotification(TEST_DEVICE_TOKEN, hangout, TEST_GROUP_ID);
+
+            // Then - should not delete device for transient error
+            verifyNoInteractions(deviceService);
+            verify(meterRegistry).counter("fcm_notification_total",
+                    "status", "error",
+                    "error_code", "QUOTA_EXCEEDED",
+                    "category", "transient");
+        }
+    }
+
+    @Test
+    void sendHangoutReminderNotification_ServiceUnavailable_EmitsTransientMetric() throws FirebaseMessagingException {
+        // Given
+        Hangout hangout = createReminderHangout();
+        when(textGenerator.getHangoutReminderBody(TEST_REMINDER_HANGOUT_TITLE))
+                .thenReturn(TEST_REMINDER_BODY);
+
+        FirebaseMessagingException unavailableException = mock(FirebaseMessagingException.class);
+        when(unavailableException.getMessagingErrorCode()).thenReturn(MessagingErrorCode.UNAVAILABLE);
+
+        try (MockedStatic<FirebaseMessaging> mockedStatic = mockStatic(FirebaseMessaging.class)) {
+            mockedStatic.when(() -> FirebaseMessaging.getInstance(firebaseApp)).thenReturn(firebaseMessaging);
+            when(firebaseMessaging.send(any(Message.class))).thenThrow(unavailableException);
+
+            // When
+            fcmNotificationService.sendHangoutReminderNotification(TEST_DEVICE_TOKEN, hangout, TEST_GROUP_ID);
+
+            // Then - should not delete device for transient error
+            verifyNoInteractions(deviceService);
+            verify(meterRegistry).counter("fcm_notification_total",
+                    "status", "error",
+                    "error_code", "UNAVAILABLE",
+                    "category", "transient");
         }
     }
 }

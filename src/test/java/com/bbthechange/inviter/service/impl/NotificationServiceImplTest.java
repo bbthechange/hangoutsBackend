@@ -1,8 +1,10 @@
 package com.bbthechange.inviter.service.impl;
 
+import com.bbthechange.inviter.dto.HangoutDetailData;
 import com.bbthechange.inviter.dto.UserSummaryDTO;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.GroupRepository;
+import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.service.DeviceService;
 import com.bbthechange.inviter.service.FcmNotificationService;
 import com.bbthechange.inviter.service.PushNotificationService;
@@ -27,6 +29,9 @@ class NotificationServiceImplTest {
 
     @Mock(lenient = true)
     private GroupRepository groupRepository;
+
+    @Mock(lenient = true)
+    private HangoutRepository hangoutRepository;
 
     @Mock(lenient = true)
     private DeviceService deviceService;
@@ -798,6 +803,352 @@ class NotificationServiceImplTest {
             // Then: second user still receives notification with location
             verify(pushNotificationService).sendHangoutUpdatedNotification(
                 eq("ios-token-user2"), eq(HANGOUT_ID), eq(GROUP_ID), eq(HANGOUT_TITLE), eq("time_and_location"), eq("Coffee Shop"));
+        }
+    }
+
+    // ================= Send Hangout Reminder Tests =================
+
+    @Nested
+    class SendHangoutReminderTests {
+
+        private static final String HANGOUT_ID = "00000000-0000-0000-0000-000000000100";
+        private static final String GROUP_ID = "00000000-0000-0000-0000-000000000201";
+        private static final String USER_1_ID = "00000000-0000-0000-0000-000000000002";
+        private static final String USER_2_ID = "00000000-0000-0000-0000-000000000003";
+        private static final String USER_3_ID = "00000000-0000-0000-0000-000000000004";
+
+        private Hangout createHangout() {
+            Hangout hangout = new Hangout();
+            hangout.setHangoutId(HANGOUT_ID);
+            hangout.setTitle("Test Hangout");
+            hangout.setAssociatedGroups(List.of(GROUP_ID));
+            return hangout;
+        }
+
+        private Device createDevice(String token, Device.Platform platform) {
+            Device device = new Device();
+            device.setToken(token);
+            device.setPlatform(platform);
+            device.setActive(true);
+            return device;
+        }
+
+        private InterestLevel createInterestLevel(String userId, String status) {
+            InterestLevel interestLevel = new InterestLevel();
+            interestLevel.setUserId(userId);
+            interestLevel.setStatus(status);
+            return interestLevel;
+        }
+
+        @Test
+        void sendHangoutReminder_NoAssociatedGroups_SkipsNotification() {
+            // Given: Hangout with null groups
+            Hangout hangout = createHangout();
+            hangout.setAssociatedGroups(null);
+
+            // When
+            notificationService.sendHangoutReminder(hangout);
+
+            // Then: No calls to repository or notification services
+            verifyNoInteractions(hangoutRepository);
+            verifyNoInteractions(pushNotificationService);
+            verifyNoInteractions(fcmNotificationService);
+        }
+
+        @Test
+        void sendHangoutReminder_EmptyAssociatedGroups_SkipsNotification() {
+            // Given: Hangout with empty groups
+            Hangout hangout = createHangout();
+            hangout.setAssociatedGroups(List.of());
+
+            // When
+            notificationService.sendHangoutReminder(hangout);
+
+            // Then: No calls to repository or notification services
+            verifyNoInteractions(hangoutRepository);
+            verifyNoInteractions(pushNotificationService);
+            verifyNoInteractions(fcmNotificationService);
+        }
+
+        @Test
+        void sendHangoutReminder_NoAttendanceRecords_SkipsNotification() {
+            // Given: Hangout with no attendance
+            Hangout hangout = createHangout();
+            HangoutDetailData detailData = HangoutDetailData.builder()
+                    .withHangout(hangout)
+                    .withAttendance(List.of())
+                    .build();
+            when(hangoutRepository.getHangoutDetailData(HANGOUT_ID)).thenReturn(detailData);
+
+            // When
+            notificationService.sendHangoutReminder(hangout);
+
+            // Then: No notification sent
+            verify(hangoutRepository).getHangoutDetailData(HANGOUT_ID);
+            verifyNoInteractions(deviceService);
+            verifyNoInteractions(pushNotificationService);
+            verifyNoInteractions(fcmNotificationService);
+        }
+
+        @Test
+        void sendHangoutReminder_OnlyNotGoingUsers_SkipsNotification() {
+            // Given: Only NOT_GOING users
+            Hangout hangout = createHangout();
+            List<InterestLevel> attendance = List.of(
+                createInterestLevel(USER_1_ID, "NOT_GOING"),
+                createInterestLevel(USER_2_ID, "NOT_GOING")
+            );
+            HangoutDetailData detailData = HangoutDetailData.builder()
+                    .withHangout(hangout)
+                    .withAttendance(attendance)
+                    .build();
+            when(hangoutRepository.getHangoutDetailData(HANGOUT_ID)).thenReturn(detailData);
+
+            // When
+            notificationService.sendHangoutReminder(hangout);
+
+            // Then: No notification sent
+            verifyNoInteractions(deviceService);
+            verifyNoInteractions(pushNotificationService);
+            verifyNoInteractions(fcmNotificationService);
+        }
+
+        @Test
+        void sendHangoutReminder_GoingUsers_SendsToIosDevices() {
+            // Given: User with GOING status and iOS device
+            Hangout hangout = createHangout();
+            List<InterestLevel> attendance = List.of(
+                createInterestLevel(USER_1_ID, "GOING")
+            );
+            HangoutDetailData detailData = HangoutDetailData.builder()
+                    .withHangout(hangout)
+                    .withAttendance(attendance)
+                    .build();
+            when(hangoutRepository.getHangoutDetailData(HANGOUT_ID)).thenReturn(detailData);
+
+            Device iosDevice = createDevice("ios-token-123", Device.Platform.IOS);
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(USER_1_ID)))
+                .thenReturn(List.of(iosDevice));
+
+            when(meterRegistry.counter(anyString(), any(String[].class))).thenReturn(mockCounter);
+
+            // When
+            notificationService.sendHangoutReminder(hangout);
+
+            // Then: iOS notification sent
+            verify(pushNotificationService).sendHangoutReminderNotification(
+                eq("ios-token-123"), eq(hangout), eq(GROUP_ID));
+            verifyNoInteractions(fcmNotificationService);
+        }
+
+        @Test
+        void sendHangoutReminder_InterestedUsers_SendsToAndroidDevices() {
+            // Given: User with INTERESTED status and Android device
+            Hangout hangout = createHangout();
+            List<InterestLevel> attendance = List.of(
+                createInterestLevel(USER_1_ID, "INTERESTED")
+            );
+            HangoutDetailData detailData = HangoutDetailData.builder()
+                    .withHangout(hangout)
+                    .withAttendance(attendance)
+                    .build();
+            when(hangoutRepository.getHangoutDetailData(HANGOUT_ID)).thenReturn(detailData);
+
+            Device androidDevice = createDevice("android-token-456", Device.Platform.ANDROID);
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(USER_1_ID)))
+                .thenReturn(List.of(androidDevice));
+
+            when(meterRegistry.counter(anyString(), any(String[].class))).thenReturn(mockCounter);
+
+            // When
+            notificationService.sendHangoutReminder(hangout);
+
+            // Then: Android notification sent
+            verify(fcmNotificationService).sendHangoutReminderNotification(
+                eq("android-token-456"), eq(hangout), eq(GROUP_ID));
+            verifyNoInteractions(pushNotificationService);
+        }
+
+        @Test
+        void sendHangoutReminder_MixedStatuses_OnlySendsToGoingAndInterested() {
+            // Given: Mix of GOING, INTERESTED, and NOT_GOING users
+            Hangout hangout = createHangout();
+            List<InterestLevel> attendance = List.of(
+                createInterestLevel(USER_1_ID, "GOING"),
+                createInterestLevel(USER_2_ID, "INTERESTED"),
+                createInterestLevel(USER_3_ID, "NOT_GOING")
+            );
+            HangoutDetailData detailData = HangoutDetailData.builder()
+                    .withHangout(hangout)
+                    .withAttendance(attendance)
+                    .build();
+            when(hangoutRepository.getHangoutDetailData(HANGOUT_ID)).thenReturn(detailData);
+
+            Device device1 = createDevice("ios-token-1", Device.Platform.IOS);
+            Device device2 = createDevice("ios-token-2", Device.Platform.IOS);
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(USER_1_ID)))
+                .thenReturn(List.of(device1));
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(USER_2_ID)))
+                .thenReturn(List.of(device2));
+
+            when(meterRegistry.counter(anyString(), any(String[].class))).thenReturn(mockCounter);
+
+            // When
+            notificationService.sendHangoutReminder(hangout);
+
+            // Then: Only 2 notifications sent (GOING and INTERESTED)
+            verify(pushNotificationService, times(2)).sendHangoutReminderNotification(
+                anyString(), eq(hangout), eq(GROUP_ID));
+            verify(deviceService, never()).getActiveDevicesForUser(UUID.fromString(USER_3_ID));
+        }
+
+        @Test
+        void sendHangoutReminder_UserWithNoDevices_ContinuesToNextUser() {
+            // Given: Two users, first has no devices
+            Hangout hangout = createHangout();
+            List<InterestLevel> attendance = List.of(
+                createInterestLevel(USER_1_ID, "GOING"),
+                createInterestLevel(USER_2_ID, "GOING")
+            );
+            HangoutDetailData detailData = HangoutDetailData.builder()
+                    .withHangout(hangout)
+                    .withAttendance(attendance)
+                    .build();
+            when(hangoutRepository.getHangoutDetailData(HANGOUT_ID)).thenReturn(detailData);
+
+            // First user has no devices
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(USER_1_ID)))
+                .thenReturn(List.of());
+            Device device2 = createDevice("ios-token-2", Device.Platform.IOS);
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(USER_2_ID)))
+                .thenReturn(List.of(device2));
+
+            when(meterRegistry.counter(anyString(), any(String[].class))).thenReturn(mockCounter);
+
+            // When
+            notificationService.sendHangoutReminder(hangout);
+
+            // Then: Second user still receives notification
+            verify(pushNotificationService).sendHangoutReminderNotification(
+                eq("ios-token-2"), eq(hangout), eq(GROUP_ID));
+        }
+
+        @Test
+        void sendHangoutReminder_DeviceSendFails_ContinuesToNextDevice() {
+            // Given: User has two devices, first fails
+            Hangout hangout = createHangout();
+            List<InterestLevel> attendance = List.of(
+                createInterestLevel(USER_1_ID, "GOING")
+            );
+            HangoutDetailData detailData = HangoutDetailData.builder()
+                    .withHangout(hangout)
+                    .withAttendance(attendance)
+                    .build();
+            when(hangoutRepository.getHangoutDetailData(HANGOUT_ID)).thenReturn(detailData);
+
+            Device iosDevice = createDevice("ios-token-fail", Device.Platform.IOS);
+            Device androidDevice = createDevice("android-token-success", Device.Platform.ANDROID);
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(USER_1_ID)))
+                .thenReturn(List.of(iosDevice, androidDevice));
+
+            // iOS notification fails
+            doThrow(new RuntimeException("APNS error"))
+                .when(pushNotificationService).sendHangoutReminderNotification(
+                    eq("ios-token-fail"), any(), anyString());
+
+            when(meterRegistry.counter(anyString(), any(String[].class))).thenReturn(mockCounter);
+
+            // When
+            notificationService.sendHangoutReminder(hangout);
+
+            // Then: Both services attempted, Android still receives notification
+            verify(pushNotificationService).sendHangoutReminderNotification(
+                eq("ios-token-fail"), eq(hangout), eq(GROUP_ID));
+            verify(fcmNotificationService).sendHangoutReminderNotification(
+                eq("android-token-success"), eq(hangout), eq(GROUP_ID));
+        }
+
+        @Test
+        void sendHangoutReminder_EmitsSuccessMetrics() {
+            // Given: Two users with devices
+            Hangout hangout = createHangout();
+            List<InterestLevel> attendance = List.of(
+                createInterestLevel(USER_1_ID, "GOING"),
+                createInterestLevel(USER_2_ID, "GOING")
+            );
+            HangoutDetailData detailData = HangoutDetailData.builder()
+                    .withHangout(hangout)
+                    .withAttendance(attendance)
+                    .build();
+            when(hangoutRepository.getHangoutDetailData(HANGOUT_ID)).thenReturn(detailData);
+
+            Device device1 = createDevice("ios-token-1", Device.Platform.IOS);
+            Device device2 = createDevice("ios-token-2", Device.Platform.IOS);
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(USER_1_ID)))
+                .thenReturn(List.of(device1));
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(USER_2_ID)))
+                .thenReturn(List.of(device2));
+
+            when(meterRegistry.counter("hangout_reminder_notification_total", "status", "success"))
+                .thenReturn(mockCounter);
+
+            // When
+            notificationService.sendHangoutReminder(hangout);
+
+            // Then: Success metric incremented
+            verify(meterRegistry).counter("hangout_reminder_notification_total", "status", "success");
+            verify(mockCounter).increment(2);
+        }
+
+        @Test
+        void sendHangoutReminder_DeviceLookupFails_NoSuccessNoFailure() {
+            // Given: User with device lookup that fails
+            // Note: sendHangoutReminderToUser catches exceptions internally and returns false,
+            // so this scenario results in sent=false but not counted as a "failure"
+            Hangout hangout = createHangout();
+            List<InterestLevel> attendance = List.of(
+                createInterestLevel(USER_1_ID, "GOING")
+            );
+            HangoutDetailData detailData = HangoutDetailData.builder()
+                    .withHangout(hangout)
+                    .withAttendance(attendance)
+                    .build();
+            when(hangoutRepository.getHangoutDetailData(HANGOUT_ID)).thenReturn(detailData);
+
+            // Device lookup fails - exception is caught inside sendHangoutReminderToUser
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(USER_1_ID)))
+                .thenThrow(new RuntimeException("Device lookup failed"));
+
+            Counter successCounter = mock(Counter.class);
+            when(meterRegistry.counter("hangout_reminder_notification_total", "status", "success"))
+                .thenReturn(successCounter);
+
+            // When
+            notificationService.sendHangoutReminder(hangout);
+
+            // Then: Success counter called with 0 (no successes)
+            // Failure counter not called since exception was caught internally
+            verify(successCounter).increment(0);
+            verify(meterRegistry, never()).counter("hangout_reminder_notification_total", "status", "failure");
+        }
+
+        @Test
+        void sendHangoutReminder_ExceptionDuringProcessing_EmitsErrorMetric() {
+            // Given: Repository throws unexpected exception
+            Hangout hangout = createHangout();
+            when(hangoutRepository.getHangoutDetailData(HANGOUT_ID))
+                .thenThrow(new RuntimeException("Unexpected database error"));
+
+            when(meterRegistry.counter("hangout_reminder_notification_total",
+                "status", "error", "error_type", "unexpected")).thenReturn(mockCounter);
+
+            // When
+            notificationService.sendHangoutReminder(hangout);
+
+            // Then: Error metric emitted
+            verify(meterRegistry).counter("hangout_reminder_notification_total",
+                "status", "error", "error_type", "unexpected");
+            verify(mockCounter).increment();
         }
     }
 }
