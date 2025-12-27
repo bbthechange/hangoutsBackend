@@ -46,11 +46,17 @@ public class ReminderController {
      * Idempotency: Uses atomic DynamoDB update to ensure only one reminder is sent.
      * Time validation: Skips if start time is outside expected window (stale/rescheduled).
      *
-     * @param hangoutId The hangout ID from path parameter
+     * @param body Request body containing hangoutId (from EventBridge Scheduler input)
      * @return 200 OK in all cases (scheduler should not retry)
      */
-    @PostMapping("/hangouts/{hangoutId}")
-    public ResponseEntity<Void> sendHangoutReminder(@PathVariable String hangoutId) {
+    @PostMapping("/hangouts")
+    public ResponseEntity<Void> sendHangoutReminder(@RequestBody java.util.Map<String, String> body) {
+        String hangoutId = body.get("hangoutId");
+        if (hangoutId == null || hangoutId.isBlank()) {
+            logger.warn("Received reminder request with missing hangoutId");
+            meterRegistry.counter("hangout_reminder_total", "status", "missing_id").increment();
+            return ResponseEntity.badRequest().build();
+        }
         logger.info("Received reminder request for hangout: {}", hangoutId);
 
         try {

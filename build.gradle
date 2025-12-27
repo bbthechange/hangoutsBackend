@@ -53,6 +53,7 @@ dependencies {
 	implementation 'software.amazon.awssdk:s3:2.28.29'
 	implementation 'software.amazon.awssdk:sns:2.28.29'
 	implementation 'software.amazon.awssdk:ssm:2.28.29'
+	implementation 'software.amazon.awssdk:scheduler:2.28.29'
 	implementation 'com.twilio.sdk:twilio:11.0.0'
 	implementation 'com.eatthepath:pushy:0.15.4'
 	implementation 'com.google.firebase:firebase-admin:9.2.0'

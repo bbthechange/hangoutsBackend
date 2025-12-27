@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.service.impl;
 
 import com.bbthechange.inviter.service.HangoutService;
+import com.bbthechange.inviter.service.HangoutSchedulerService;
 import com.bbthechange.inviter.service.FuzzyTimeService;
 import com.bbthechange.inviter.service.UserService;
 import com.bbthechange.inviter.service.EventSeriesService;
@@ -45,6 +46,7 @@ public class HangoutServiceImpl implements HangoutService {
     private final PointerUpdateService pointerUpdateService;
     private final S3Service s3Service;
     private final GroupTimestampService groupTimestampService;
+    private final HangoutSchedulerService hangoutSchedulerService;
 
     @Value("${inviter.attendance.backward-compat-interested:true}")
     private boolean attendanceBackwardCompatEnabled;
@@ -56,7 +58,8 @@ public class HangoutServiceImpl implements HangoutService {
                               NotificationService notificationService,
                               PointerUpdateService pointerUpdateService,
                               S3Service s3Service,
-                              GroupTimestampService groupTimestampService) {
+                              GroupTimestampService groupTimestampService,
+                              HangoutSchedulerService hangoutSchedulerService) {
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
         this.fuzzyTimeService = fuzzyTimeService;
@@ -66,6 +69,7 @@ public class HangoutServiceImpl implements HangoutService {
         this.pointerUpdateService = pointerUpdateService;
         this.s3Service = s3Service;
         this.groupTimestampService = groupTimestampService;
+        this.hangoutSchedulerService = hangoutSchedulerService;
     }
     
     @Override
@@ -188,6 +192,9 @@ public class HangoutServiceImpl implements HangoutService {
         // Send push notifications to group members
         String creatorName = getCreatorDisplayName(requestingUserId);
         notificationService.notifyNewHangout(hangout, requestingUserId, creatorName);
+
+        // Schedule reminder notification (2 hours before start)
+        hangoutSchedulerService.scheduleReminder(hangout);
 
         return hangout;
     }
@@ -403,6 +410,14 @@ public class HangoutServiceImpl implements HangoutService {
         // Update Group.lastHangoutModified for all associated groups
         groupTimestampService.updateGroupTimestamps(hangout.getAssociatedGroups());
 
+        // Reschedule reminder if start time changed
+        if (timeChanged) {
+            // Clear reminderSentAt to allow a new reminder for the updated time
+            hangoutRepository.clearReminderSentAt(hangoutId);
+            // Schedule a new reminder for the updated start time
+            hangoutSchedulerService.scheduleReminder(hangout);
+        }
+
         // If this hangout is part of a series, update the series records
         if (hangout.getSeriesId() != null) {
             try {
@@ -457,11 +472,14 @@ public class HangoutServiceImpl implements HangoutService {
         // Get and authorize
         Hangout hangout = hangoutRepository.findHangoutById(hangoutId)
             .orElseThrow(() -> new ResourceNotFoundException("Hangout not found: " + hangoutId));
-        
+
         if (!canUserEditHangout(requestingUserId, hangout)) {
             throw new UnauthorizedException("Cannot delete hangout");
         }
-        
+
+        // Cancel any scheduled reminder
+        hangoutSchedulerService.cancelReminder(hangout);
+
         // If this hangout is part of a series, handle series cleanup first
         if (hangout.getSeriesId() != null) {
             try {
