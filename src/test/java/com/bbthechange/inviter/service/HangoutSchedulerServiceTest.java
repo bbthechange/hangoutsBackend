@@ -47,7 +47,6 @@ class HangoutSchedulerServiceTest {
     private static final String TEST_ROLE_ARN = "arn:aws:iam::123456789:role/scheduler-role";
     private static final String TEST_DLQ_ARN = "arn:aws:sqs:us-west-2:123456789:dlq";
     private static final String TEST_GROUP_NAME = "hangout-reminders";
-    private static final int TEST_FLEXIBLE_WINDOW = 5;
 
     @BeforeEach
     void setUp() {
@@ -62,7 +61,6 @@ class HangoutSchedulerServiceTest {
         lenient().when(schedulerConfig.getRoleArn()).thenReturn(TEST_ROLE_ARN);
         lenient().when(schedulerConfig.getDlqArn()).thenReturn(TEST_DLQ_ARN);
         lenient().when(schedulerConfig.getGroupName()).thenReturn(TEST_GROUP_NAME);
-        lenient().when(schedulerConfig.getFlexibleWindowMinutes()).thenReturn(TEST_FLEXIBLE_WINDOW);
     }
 
     // ==================== scheduleReminder() Tests ====================

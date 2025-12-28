@@ -37,9 +37,6 @@ public class SchedulerConfig {
     @Value("${scheduler.group-name:hangout-reminders}")
     private String groupName;
 
-    @Value("${scheduler.flexible-window-minutes:5}")
-    private int flexibleWindowMinutes;
-
     @Bean
     @ConditionalOnProperty(name = "scheduler.enabled", havingValue = "true")
     public SchedulerClient schedulerClient() {
@@ -73,9 +70,5 @@ public class SchedulerConfig {
 
     public String getGroupName() {
         return groupName;
-    }
-
-    public int getFlexibleWindowMinutes() {
-        return flexibleWindowMinutes;
     }
 }
