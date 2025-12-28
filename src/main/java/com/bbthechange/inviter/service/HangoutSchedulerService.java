@@ -92,13 +92,12 @@ public class HangoutSchedulerService {
         String scheduleName = getScheduleName(hangout.getHangoutId());
         String scheduleExpression = buildScheduleExpression(reminderTimestamp);
 
-        // Build the target with API Destination
-        // The hangoutId is passed as JSON in the input field, which becomes the HTTP POST body.
-        // The controller extracts hangoutId from the request body.
+        // Build the target with SQS queue
+        // The hangoutId is passed as JSON in the input field, which becomes the SQS message body.
         String input = String.format("{\"hangoutId\":\"%s\"}", hangout.getHangoutId());
 
         Target target = Target.builder()
-                .arn(schedulerConfig.getTargetArn())
+                .arn(schedulerConfig.getQueueArn())
                 .roleArn(schedulerConfig.getRoleArn())
                 .input(input)
                 .deadLetterConfig(DeadLetterConfig.builder()

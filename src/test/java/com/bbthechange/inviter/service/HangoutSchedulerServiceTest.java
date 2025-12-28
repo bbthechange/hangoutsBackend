@@ -43,7 +43,7 @@ class HangoutSchedulerServiceTest {
     private HangoutSchedulerService service;
 
     private static final String TEST_HANGOUT_ID = "test-hangout-123";
-    private static final String TEST_TARGET_ARN = "arn:aws:events:us-west-2:123456789:api-destination/test";
+    private static final String TEST_QUEUE_ARN = "arn:aws:sqs:us-west-2:123456789:hangout-reminders";
     private static final String TEST_ROLE_ARN = "arn:aws:iam::123456789:role/scheduler-role";
     private static final String TEST_DLQ_ARN = "arn:aws:sqs:us-west-2:123456789:dlq";
     private static final String TEST_GROUP_NAME = "hangout-reminders";
@@ -58,7 +58,7 @@ class HangoutSchedulerServiceTest {
 
     private void setupDefaultSchedulerConfig() {
         lenient().when(schedulerConfig.isSchedulerEnabled()).thenReturn(true);
-        lenient().when(schedulerConfig.getTargetArn()).thenReturn(TEST_TARGET_ARN);
+        lenient().when(schedulerConfig.getQueueArn()).thenReturn(TEST_QUEUE_ARN);
         lenient().when(schedulerConfig.getRoleArn()).thenReturn(TEST_ROLE_ARN);
         lenient().when(schedulerConfig.getDlqArn()).thenReturn(TEST_DLQ_ARN);
         lenient().when(schedulerConfig.getGroupName()).thenReturn(TEST_GROUP_NAME);
@@ -161,7 +161,7 @@ class HangoutSchedulerServiceTest {
             assertThat(request.name()).isEqualTo("hangout-" + TEST_HANGOUT_ID);
             assertThat(request.groupName()).isEqualTo(TEST_GROUP_NAME);
             assertThat(request.scheduleExpression()).startsWith("at(");
-            assertThat(request.target().arn()).isEqualTo(TEST_TARGET_ARN);
+            assertThat(request.target().arn()).isEqualTo(TEST_QUEUE_ARN);
             assertThat(request.target().roleArn()).isEqualTo(TEST_ROLE_ARN);
             assertThat(request.actionAfterCompletion()).isEqualTo(ActionAfterCompletion.DELETE);
 

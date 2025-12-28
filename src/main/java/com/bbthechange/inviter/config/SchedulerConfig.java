@@ -25,8 +25,8 @@ public class SchedulerConfig {
     @Value("${scheduler.enabled:false}")
     private boolean schedulerEnabled;
 
-    @Value("${scheduler.target-arn:}")
-    private String targetArn;
+    @Value("${scheduler.queue-arn:}")
+    private String queueArn;
 
     @Value("${scheduler.role-arn:}")
     private String roleArn;
@@ -59,8 +59,8 @@ public class SchedulerConfig {
         return schedulerEnabled;
     }
 
-    public String getTargetArn() {
-        return targetArn;
+    public String getQueueArn() {
+        return queueArn;
     }
 
     public String getRoleArn() {
