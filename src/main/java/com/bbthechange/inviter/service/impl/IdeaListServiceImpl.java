@@ -161,7 +161,10 @@ public class IdeaListServiceImpl implements IdeaListService {
                 request.getNote(),
                 requestingUserId
         );
-        
+        member.setImageUrl(request.getImageUrl());
+        member.setExternalId(request.getExternalId());
+        member.setExternalSource(request.getExternalSource());
+
         IdeaListMember savedMember = ideaListRepository.saveIdeaListMember(member);
         logger.debug("Added idea: {} to list: {} in group: {} by user: {}", 
                 savedMember.getIdeaId(), listId, groupId, requestingUserId);
@@ -192,7 +195,19 @@ public class IdeaListServiceImpl implements IdeaListService {
             existingMember.setNote(request.getNote());
             updated = true;
         }
-        
+        if (request.getImageUrl() != null) {
+            existingMember.setImageUrl(request.getImageUrl());
+            updated = true;
+        }
+        if (request.getExternalId() != null) {
+            existingMember.setExternalId(request.getExternalId());
+            updated = true;
+        }
+        if (request.getExternalSource() != null) {
+            existingMember.setExternalSource(request.getExternalSource());
+            updated = true;
+        }
+
         if (updated) {
             existingMember.touch(); // Update timestamp
             IdeaListMember savedMember = ideaListRepository.saveIdeaListMember(existingMember);

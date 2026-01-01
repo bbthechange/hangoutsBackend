@@ -19,6 +19,9 @@ public class IdeaDTO {
     private String note;
     private String addedBy;
     private Instant addedTime;
+    private String imageUrl;
+    private String externalId;
+    private String externalSource;
     
     // Constructor from IdeaListMember entity
     public IdeaDTO(IdeaListMember member) {
@@ -28,5 +31,8 @@ public class IdeaDTO {
         this.note = member.getNote();
         this.addedBy = member.getAddedBy();
         this.addedTime = member.getAddedTime();
+        this.imageUrl = member.getImageUrl();
+        this.externalId = member.getExternalId();
+        this.externalSource = member.getExternalSource();
     }
 }

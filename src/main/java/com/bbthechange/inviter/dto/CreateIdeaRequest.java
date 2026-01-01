@@ -19,7 +19,16 @@ public class CreateIdeaRequest {
     
     @Size(max = 1000, message = "Note must be less than 1000 characters")
     private String note;
-    
+
+    @Size(max = 2000, message = "Image URL must be less than 2000 characters")
+    private String imageUrl;
+
+    @Size(max = 200, message = "External ID must be less than 200 characters")
+    private String externalId;
+
+    @Size(max = 50, message = "External source must be less than 50 characters")
+    private String externalSource;
+
     public CreateIdeaRequest(String name, String url, String note) {
         this.name = name;
         this.url = url;
@@ -37,5 +46,17 @@ public class CreateIdeaRequest {
     
     public String getNote() {
         return note != null ? note.trim() : null;
+    }
+
+    public String getImageUrl() {
+        return imageUrl != null ? imageUrl.trim() : null;
+    }
+
+    public String getExternalId() {
+        return externalId != null ? externalId.trim() : null;
+    }
+
+    public String getExternalSource() {
+        return externalSource != null ? externalSource.trim() : null;
     }
 }

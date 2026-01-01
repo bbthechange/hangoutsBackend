@@ -33,6 +33,9 @@ public class IdeaListMember extends BaseItem {
     private String note;
     private String addedBy;
     private Instant addedTime;
+    private String imageUrl;        // URL to image (may be external or S3 path)
+    private String externalId;      // ID from external source (e.g., Ticketmaster, Yelp)
+    private String externalSource;  // Source system for externalId (e.g., "TICKETMASTER", "YELP")
 
     /**
      * Create a new idea list member with generated UUID.
