@@ -41,6 +41,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/", "/health").permitAll() // Allow health check endpoints
                 .requestMatchers("/auth/register", "/auth/login", "/auth/refresh", "/auth/logout", "/auth/resend-code", "/auth/verify").permitAll()
+                .requestMatchers("/auth/request-password-reset", "/auth/verify-reset-code", "/auth/reset-password").permitAll()
                 .requestMatchers("/images/predefined").permitAll()
                 .requestMatchers("/hangouts/time-options").permitAll()
                 .requestMatchers("/hiking/**").permitAll() // Allow public hiking trail search
