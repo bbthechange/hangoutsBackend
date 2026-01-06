@@ -21,6 +21,7 @@ public class RefreshToken extends BaseItem {
     private Long expiryDate;          // Unix timestamp (30 days from creation) - also serves as TTL
     private String deviceId;          // Optional: for device binding
     private String ipAddress;         // Optional: IP binding for extra security
+    private Long supersededAt;        // Epoch seconds when this token was replaced (null = active, for grace period)
     
     public RefreshToken() {
         super();
@@ -59,5 +60,25 @@ public class RefreshToken extends BaseItem {
      */
     public boolean isExpired() {
         return expiryDate <= Instant.now().getEpochSecond();
+    }
+
+    /**
+     * Check if this token has been superseded by a newer token
+     */
+    public boolean isSuperseded() {
+        return supersededAt != null;
+    }
+
+    /**
+     * Check if this superseded token is still within the grace period
+     * @param gracePeriodSeconds the grace period in seconds (e.g., 300 for 5 minutes)
+     * @return true if the token can still be used, false if grace period expired
+     */
+    public boolean isWithinGracePeriod(long gracePeriodSeconds) {
+        if (supersededAt == null) {
+            return true; // Not superseded, always valid (from grace perspective)
+        }
+        long elapsed = Instant.now().getEpochSecond() - supersededAt;
+        return elapsed <= gracePeriodSeconds;
     }
 }

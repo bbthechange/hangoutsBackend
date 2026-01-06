@@ -48,13 +48,14 @@ public class MyService {
 - **DynamoDB queries**: `dynamodb.query.duration` (via `QueryPerformanceTracker`)
 - **JVM metrics**: memory, GC, threads (auto-configured)
 - **HTTP requests**: request duration, status codes (auto-configured)
+- **Rate limiting**: `rate_limit_exceeded_total{endpoint}` (via `RateLimitingService`)
+  - Tracked endpoints: `/auth/resend-code`, `/auth/verify`, `/groups/invite/preview`, `/auth/request-password-reset`, `/auth/verify-reset-code`, `/auth/refresh`
 
 ### Candidates for Future Instrumentation
 These are currently log-only, not tracked as metrics:
 
 | Service | Current Logging | Suggested Metric |
 |---------|----------------|------------------|
-| `RateLimitingService.publishRateLimitMetric()` | `logger.warn("CloudWatch Metric...")` | `rate_limit_exceeded{endpoint}` |
 | `FcmNotificationService.handleFcmError()` | Error logging by type | `fcm_notification_total{status,error_code}` |
 | `PushNotificationService` | Success/failure logs | `apns_notification_total{status,type}` |
 | `TwilioSmsValidationService` | Verification result logs | `sms_verification_result_total{result}` |

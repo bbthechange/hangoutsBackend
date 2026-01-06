@@ -48,16 +48,16 @@ class RefreshTokenRotationServiceTest {
     }
     
     @Test
-    void refreshTokens_WithValidToken_ShouldReturnNewTokenPair() {
+    void refreshTokens_WebClient_ShouldRotateWithGracePeriod() {
         // Given
         String rawRefreshToken = "valid-refresh-token";
         String lookupHash = "lookup-hash";
         String userId = "user-123";
         String newRawToken = "new-refresh-token";
         String newAccessToken = "new-access-token";
-        
+
         RefreshToken existingToken = createValidRefreshToken(userId);
-        
+
         when(hashingService.generateLookupHash(rawRefreshToken)).thenReturn(lookupHash);
         when(refreshTokenRepository.findByTokenHash(lookupHash)).thenReturn(Optional.of(existingToken));
         when(hashingService.matches(rawRefreshToken, existingToken.getSecurityHash())).thenReturn(true);
@@ -66,17 +66,48 @@ class RefreshTokenRotationServiceTest {
         when(hashingService.generateLookupHash(newRawToken)).thenReturn("new-lookup-hash");
         when(hashingService.generateSecurityHash(newRawToken)).thenReturn("new-security-hash");
         when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        
-        // When
-        RefreshTokenPair result = rotationService.refreshTokens(rawRefreshToken, "127.0.0.1", "test-agent");
-        
+
+        // When - web client (isMobile = false)
+        RefreshTokenPair result = rotationService.refreshTokens(rawRefreshToken, "127.0.0.1", "test-agent", false);
+
         // Then
         assertThat(result).isNotNull();
         assertThat(result.getAccessToken()).isEqualTo(newAccessToken);
         assertThat(result.getRefreshToken()).isEqualTo(newRawToken);
-        
-        verify(refreshTokenRepository).save(any(RefreshToken.class));
-        verify(refreshTokenRepository).deleteByTokenId(userId, existingToken.getTokenId());
+
+        // Web rotation: saves new token AND marks old token as superseded (2 saves)
+        verify(refreshTokenRepository, times(2)).save(any(RefreshToken.class));
+        // No delete - old token is marked superseded for grace period, not deleted
+        verify(refreshTokenRepository, never()).deleteByTokenId(anyString(), anyString());
+    }
+
+    @Test
+    void refreshTokens_MobileClient_ShouldNotRotateToken() {
+        // Given
+        String rawRefreshToken = "valid-refresh-token";
+        String lookupHash = "lookup-hash";
+        String userId = "user-123";
+        String newAccessToken = "new-access-token";
+
+        RefreshToken existingToken = createValidRefreshToken(userId);
+
+        when(hashingService.generateLookupHash(rawRefreshToken)).thenReturn(lookupHash);
+        when(refreshTokenRepository.findByTokenHash(lookupHash)).thenReturn(Optional.of(existingToken));
+        when(hashingService.matches(rawRefreshToken, existingToken.getSecurityHash())).thenReturn(true);
+        when(jwtService.generateToken(userId)).thenReturn(newAccessToken);
+
+        // When - mobile client (isMobile = true)
+        RefreshTokenPair result = rotationService.refreshTokens(rawRefreshToken, "127.0.0.1", "test-agent", true);
+
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result.getAccessToken()).isEqualTo(newAccessToken);
+        assertThat(result.getRefreshToken()).isEqualTo(rawRefreshToken); // Same token returned
+
+        // Mobile: no rotation, no saves, no deletes
+        verify(refreshTokenRepository, never()).save(any(RefreshToken.class));
+        verify(refreshTokenRepository, never()).deleteByTokenId(anyString(), anyString());
+        verify(hashingService, never()).generateRefreshToken(); // No new token generated
     }
     
     @Test

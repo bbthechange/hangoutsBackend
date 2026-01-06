@@ -231,28 +231,35 @@ public class AuthController {
         }
         
         try {
-            // Perform token rotation
             String ipAddress = extractClientIP(request);
             String userAgent = request.getHeader("User-Agent");
-            RefreshTokenPair newTokens = rotationService.refreshTokens(refreshToken, ipAddress, userAgent);
-            
+
+            // Rate limiting: Quick lookup to get userId, then check rate limit
+            Optional<String> userIdOpt = rotationService.getUserIdFromToken(refreshToken);
+            if (userIdOpt.isPresent() && !rateLimitingService.isRefreshAllowed(userIdOpt.get())) {
+                return new ResponseEntity<>(Map.of("error", "Too many requests"), HttpStatus.TOO_MANY_REQUESTS);
+            }
+
+            // Perform token refresh (with or without rotation based on client type)
+            RefreshTokenPair newTokens = rotationService.refreshTokens(refreshToken, ipAddress, userAgent, isMobile);
+
             // Prepare response
             Map<String, Object> responseBody = new HashMap<>();
             responseBody.put("accessToken", newTokens.getAccessToken());
             responseBody.put("expiresIn", jwtService.getAccessTokenExpirationSeconds());
             responseBody.put("tokenType", "Bearer");
-            
+
             if (isMobile) {
-                // Mobile: Return new refresh token in JSON
+                // Mobile: Return same refresh token (no rotation)
                 responseBody.put("refreshToken", newTokens.getRefreshToken());
             } else {
                 // Web: Set new refresh token as HttpOnly cookie
                 ResponseCookie refreshCookie = cookieService.createRefreshTokenCookie(newTokens.getRefreshToken());
                 response.addHeader(HttpHeaders.SET_COOKIE, refreshCookie.toString());
             }
-            
+
             return new ResponseEntity<>(responseBody, HttpStatus.OK);
-            
+
         } catch (UnauthorizedException e) {
             return new ResponseEntity<>(Map.of("error", e.getMessage()), HttpStatus.UNAUTHORIZED);
         }

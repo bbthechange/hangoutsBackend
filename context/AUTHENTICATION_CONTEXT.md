@@ -59,4 +59,86 @@ The authentication system is based on JSON Web Tokens (JWT) with a refresh token
 1.  **Endpoint:** `POST /auth/refresh`
 2.  When the access token expires, the client calls this endpoint, sending its refresh token (either from the cookie or the stored JSON value).
 3.  The `RefreshTokenRotationService` validates the refresh token against the stored hash in the database.
-4.  **Rotation:** If valid, the used refresh token is immediately revoked, and a **new** access token and a **new** refresh token are issued and returned to the client, following the same web/mobile logic as login.
+4.  **Differentiated Rotation by Client Type:**
+    *   **Mobile Clients (`X-Client-Type: mobile`):** No rotation occurs. The same refresh token is returned with a new access token. This prevents unexpected logouts when the app is backgrounded during refresh operations.
+    *   **Web Clients (default):** Token rotation occurs with a **5-minute grace period**. The old token is marked as superseded (not deleted) and remains valid for 5 minutes to handle network issues and race conditions.
+
+### Refresh Token Grace Period (Web Only)
+
+When a web client refreshes tokens:
+1.  A new refresh token is generated and saved.
+2.  The old token's `supersededAt` timestamp is set (marks it as superseded).
+3.  The old token remains usable for 5 minutes (configurable via `refresh.token.web.grace-period-seconds`).
+4.  After 5 minutes, attempts to use the superseded token return `401 Unauthorized`.
+5.  Superseded tokens are automatically cleaned up by DynamoDB TTL (30-day expiry).
+
+### Rate Limiting
+
+The refresh endpoint has per-user rate limiting:
+*   **Limit:** 10 requests per minute per user
+*   **Response:** `429 Too Many Requests` when exceeded
+*   **Implementation:** Uses Caffeine cache in `RateLimitingService`
+
+### Audit Logging
+
+All refresh attempts are logged for security monitoring:
+```
+// Success:
+Token refresh: user={userId} clientType={mobile|web} ip={ip} tokenAge={minutes}min success=true
+
+// Failure:
+Token refresh failed: reason={reason} ip={ip}
+```
+
+**Security:** Raw token values are never logged.
+
+## 4. Security Design Rationale
+
+### Why Mobile Tokens Don't Rotate
+
+| Aspect | Justification |
+| :--- | :--- |
+| **Secure Storage** | iOS Keychain provides hardware-backed security |
+| **App Sandboxing** | Token extraction requires device compromise |
+| **No XSS Risk** | No browser context to exploit |
+| **Industry Practice** | Google, Apple, Slack use long-lived mobile tokens |
+| **Reliability** | Prevents logout when app backgrounded during refresh |
+
+### Why Web Tokens Rotate with Grace Period
+
+| Aspect | Justification |
+| :--- | :--- |
+| **XSS Mitigation** | Rotation limits token lifetime if compromised |
+| **HttpOnly Cookies** | Primary defense against XSS |
+| **Grace Period** | Handles network issues without security degradation |
+| **5-Minute Window** | Short enough to limit exposure, long enough for retries |
+
+## 5. RefreshToken Model
+
+| Field | Type | Purpose |
+| :--- | :--- | :--- |
+| `tokenId` | String | UUID primary key |
+| `userId` | String | User this token belongs to |
+| `tokenHash` | String | SHA-256 hash for GSI lookup |
+| `securityHash` | String | BCrypt hash for validation |
+| `expiryDate` | Long | Unix timestamp (30 days from creation), also TTL |
+| `deviceId` | String | Optional device binding |
+| `ipAddress` | String | Optional IP binding |
+| `supersededAt` | Long | Epoch seconds when replaced (null = active) |
+
+### Key Methods
+
+```java
+boolean isExpired()                          // Check if past 30-day expiry
+boolean isSuperseded()                       // Check if supersededAt is set
+boolean isWithinGracePeriod(gracePeriodSec)  // Check if still usable after supersede
+```
+
+## 6. Security Event Revocation
+
+These events invalidate ALL tokens for a user (regardless of client type):
+
+*   **Password change** - `rotationService.revokeAllUserTokens(userId)`
+*   **Explicit logout-all** - User-initiated session termination
+*   **Suspicious activity** - Automated security response
+*   **Account compromise** - Manual admin action

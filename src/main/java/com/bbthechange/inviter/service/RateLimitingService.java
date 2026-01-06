@@ -39,6 +39,9 @@ public class RateLimitingService {
     // For /auth/verify-reset-code: 10 requests per hour per phone
     private final Cache<String, AtomicInteger> passwordResetVerifyCache;
 
+    // For /auth/refresh: 10 requests per minute per user
+    private final Cache<String, AtomicInteger> refreshRateLimitCache;
+
     public RateLimitingService(MeterRegistry meterRegistry) {
         this.meterRegistry = meterRegistry;
 
@@ -76,6 +79,11 @@ public class RateLimitingService {
 
         this.passwordResetVerifyCache = Caffeine.newBuilder()
                 .expireAfterWrite(Duration.ofHours(1))
+                .maximumSize(10000)
+                .build();
+
+        this.refreshRateLimitCache = Caffeine.newBuilder()
+                .expireAfterWrite(Duration.ofMinutes(1))
                 .maximumSize(10000)
                 .build();
     }
@@ -222,6 +230,23 @@ public class RateLimitingService {
         }
 
         hourlyCount.incrementAndGet();
+        return true;
+    }
+
+    /**
+     * Check if refresh token request is allowed for the given user.
+     * Enforces: 10 requests per minute per user.
+     *
+     * @param userId The user ID attempting to refresh
+     * @return true if allowed, false if rate limit exceeded
+     */
+    public boolean isRefreshAllowed(String userId) {
+        AtomicInteger count = refreshRateLimitCache.get(userId, k -> new AtomicInteger(0));
+        if (count.incrementAndGet() > 10) {
+            logger.warn("Refresh rate limit exceeded: user={}", userId);
+            publishRateLimitMetric("/auth/refresh");
+            return false;
+        }
         return true;
     }
 
