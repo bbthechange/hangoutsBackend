@@ -5,6 +5,7 @@ import io.restassured.response.Response;
 import org.junit.jupiter.api.*;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("Tier 1: Authentication & Access - Live Staging")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
@@ -106,10 +107,10 @@ class AuthenticationTests extends StagingTestBase {
     @Order(5)
     @DisplayName("Web token refresh rotates token with grace period")
     void tokenRefresh_WebClient_RotatesTokenWithGracePeriod() {
-        // Login with mobile client to get refresh token in response body (easier to test)
+        // Login as web client - refresh token returned in cookie
         Response loginResponse = given()
             .contentType("application/json")
-            .header("X-Client-Type", "mobile")
+            // No X-Client-Type header = web client
             .body(String.format("{\"phoneNumber\":\"%s\",\"password\":\"%s\"}",
                 testUserPhone, testUserPassword))
         .when()
@@ -119,29 +120,29 @@ class AuthenticationTests extends StagingTestBase {
         .extract()
             .response();
 
-        String refreshToken = loginResponse.jsonPath().getString("refreshToken");
+        String originalRefreshCookie = loginResponse.getCookie("refreshToken");
+        assertNotNull(originalRefreshCookie, "Login should return refresh token cookie");
 
-        // Refresh as web client (no X-Client-Type header) - should rotate
+        // Refresh as web client using cookie - should rotate
         Response refreshResponse = given()
             .contentType("application/json")
-            // No X-Client-Type header = web client
-            .body(String.format("{\"refreshToken\":\"%s\"}", refreshToken))
+            .cookie("refreshToken", originalRefreshCookie)
         .when()
             .post("/auth/refresh")
         .then()
             .statusCode(200)
             .body("accessToken", notNullValue())
-            .body("refreshToken", notNullValue())
-            .body("refreshToken", not(equalTo(refreshToken)))  // Token rotated
         .extract()
             .response();
 
-        String newRefreshToken = refreshResponse.jsonPath().getString("refreshToken");
+        String newRefreshCookie = refreshResponse.getCookie("refreshToken");
+        assertNotNull(newRefreshCookie, "Refresh should return new cookie");
+        assertNotEquals(originalRefreshCookie, newRefreshCookie, "Web refresh should rotate token");
 
         // Old token should still work within grace period (5 minutes)
         given()
             .contentType("application/json")
-            .body(String.format("{\"refreshToken\":\"%s\"}", refreshToken))
+            .cookie("refreshToken", originalRefreshCookie)
         .when()
             .post("/auth/refresh")
         .then()
@@ -151,7 +152,7 @@ class AuthenticationTests extends StagingTestBase {
         // New token should also work
         given()
             .contentType("application/json")
-            .body(String.format("{\"refreshToken\":\"%s\"}", newRefreshToken))
+            .cookie("refreshToken", newRefreshCookie)
         .when()
             .post("/auth/refresh")
         .then()
