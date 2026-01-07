@@ -55,8 +55,8 @@ class AuthenticationTests extends StagingTestBase {
 
     @Test
     @Order(4)
-    @DisplayName("Token refresh returns new token")
-    void tokenRefresh_ValidRefreshToken_ReturnsNewTokens() {
+    @DisplayName("Mobile token refresh returns same refresh token (no rotation)")
+    void tokenRefresh_MobileClient_ReturnsSameRefreshToken() {
         // Login with mobile client to get refresh token
         Response loginResponse = given()
             .contentType("application/json")
@@ -76,7 +76,7 @@ class AuthenticationTests extends StagingTestBase {
         // Delay to ensure new timestamp (JWT uses millisecond precision)
         try { Thread.sleep(1000); } catch (InterruptedException e) {}
 
-        // Use refresh token to get new tokens
+        // Use refresh token to get new tokens - mobile clients get SAME refresh token
         given()
             .contentType("application/json")
             .header("X-Client-Type", "mobile")
@@ -87,10 +87,10 @@ class AuthenticationTests extends StagingTestBase {
             .statusCode(200)
             .body("accessToken", notNullValue())
             .body("refreshToken", notNullValue())
-            .body("accessToken", not(equalTo(oldAccessToken)))
-            .body("refreshToken", not(equalTo(refreshToken)));  // Token rotation
+            .body("accessToken", not(equalTo(oldAccessToken)))  // New access token
+            .body("refreshToken", equalTo(refreshToken));  // Same refresh token (no rotation for mobile)
 
-        // Verify old refresh token is invalidated
+        // Verify refresh token is still valid (mobile tokens don't rotate)
         given()
             .contentType("application/json")
             .header("X-Client-Type", "mobile")
@@ -98,11 +98,69 @@ class AuthenticationTests extends StagingTestBase {
         .when()
             .post("/auth/refresh")
         .then()
-            .statusCode(401);
+            .statusCode(200)
+            .body("accessToken", notNullValue());
     }
 
     @Test
     @Order(5)
+    @DisplayName("Web token refresh rotates token with grace period")
+    void tokenRefresh_WebClient_RotatesTokenWithGracePeriod() {
+        // Login with mobile client to get refresh token in response body (easier to test)
+        Response loginResponse = given()
+            .contentType("application/json")
+            .header("X-Client-Type", "mobile")
+            .body(String.format("{\"phoneNumber\":\"%s\",\"password\":\"%s\"}",
+                testUserPhone, testUserPassword))
+        .when()
+            .post("/auth/login")
+        .then()
+            .statusCode(200)
+        .extract()
+            .response();
+
+        String refreshToken = loginResponse.jsonPath().getString("refreshToken");
+
+        // Refresh as web client (no X-Client-Type header) - should rotate
+        Response refreshResponse = given()
+            .contentType("application/json")
+            // No X-Client-Type header = web client
+            .body(String.format("{\"refreshToken\":\"%s\"}", refreshToken))
+        .when()
+            .post("/auth/refresh")
+        .then()
+            .statusCode(200)
+            .body("accessToken", notNullValue())
+            .body("refreshToken", notNullValue())
+            .body("refreshToken", not(equalTo(refreshToken)))  // Token rotated
+        .extract()
+            .response();
+
+        String newRefreshToken = refreshResponse.jsonPath().getString("refreshToken");
+
+        // Old token should still work within grace period (5 minutes)
+        given()
+            .contentType("application/json")
+            .body(String.format("{\"refreshToken\":\"%s\"}", refreshToken))
+        .when()
+            .post("/auth/refresh")
+        .then()
+            .statusCode(200)
+            .body("accessToken", notNullValue());
+
+        // New token should also work
+        given()
+            .contentType("application/json")
+            .body(String.format("{\"refreshToken\":\"%s\"}", newRefreshToken))
+        .when()
+            .post("/auth/refresh")
+        .then()
+            .statusCode(200)
+            .body("accessToken", notNullValue());
+    }
+
+    @Test
+    @Order(6)
     @DisplayName("Password change with valid credentials succeeds")
     void passwordChange_ValidCredentials_Success() {
         // Use dedicated test account to avoid affecting other tests
