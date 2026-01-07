@@ -332,4 +332,381 @@ class PushNotificationServiceTest {
                 "status", "error", "type", "hangout_reminder",
                 "error_type", "execution", "category", "transient");
     }
+
+    // ========== sendNewHangoutNotification Tests ==========
+
+    private static final String TEST_CREATOR_NAME = "Alice";
+
+    @Test
+    void sendNewHangoutNotification_ApnsClientNull_SkipsQuietly() {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", null);
+
+        // When
+        pushNotificationService.sendNewHangoutNotification(
+                TEST_DEVICE_TOKEN, TEST_HANGOUT_ID, TEST_GROUP_ID,
+                TEST_HANGOUT_TITLE, TEST_GROUP_NAME, TEST_CREATOR_NAME);
+
+        // Then
+        verifyNoInteractions(apnsClient);
+        verifyNoInteractions(meterRegistry);
+    }
+
+    @Test
+    void sendNewHangoutNotification_Success_EmitsSuccessMetric() throws ExecutionException, InterruptedException {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", apnsClient);
+        when(textGenerator.getNewHangoutBody(TEST_CREATOR_NAME, TEST_HANGOUT_TITLE, TEST_GROUP_NAME))
+                .thenReturn("Alice created Pizza Night in Friends Group");
+        when(apnsClient.sendNotification(any(SimpleApnsPushNotification.class))).thenReturn(pushNotificationFuture);
+        when(pushNotificationFuture.get()).thenReturn(pushNotificationResponse);
+        when(pushNotificationResponse.isAccepted()).thenReturn(true);
+
+        // When
+        pushNotificationService.sendNewHangoutNotification(
+                TEST_DEVICE_TOKEN, TEST_HANGOUT_ID, TEST_GROUP_ID,
+                TEST_HANGOUT_TITLE, TEST_GROUP_NAME, TEST_CREATOR_NAME);
+
+        // Then
+        verify(apnsClient).sendNotification(any(SimpleApnsPushNotification.class));
+        verify(pushNotificationResponse).isAccepted();
+        verify(meterRegistry).counter("apns_notification_total", "status", "success", "type", "new_hangout");
+    }
+
+    @Test
+    void sendNewHangoutNotification_Rejected_EmitsRejectedMetric() throws ExecutionException, InterruptedException {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", apnsClient);
+        when(textGenerator.getNewHangoutBody(TEST_CREATOR_NAME, TEST_HANGOUT_TITLE, TEST_GROUP_NAME))
+                .thenReturn("Alice created Pizza Night in Friends Group");
+        when(apnsClient.sendNotification(any(SimpleApnsPushNotification.class))).thenReturn(pushNotificationFuture);
+        when(pushNotificationFuture.get()).thenReturn(pushNotificationResponse);
+        when(pushNotificationResponse.isAccepted()).thenReturn(false);
+        when(pushNotificationResponse.getRejectionReason()).thenReturn(Optional.of("Unregistered"));
+
+        // When
+        pushNotificationService.sendNewHangoutNotification(
+                TEST_DEVICE_TOKEN, TEST_HANGOUT_ID, TEST_GROUP_ID,
+                TEST_HANGOUT_TITLE, TEST_GROUP_NAME, TEST_CREATOR_NAME);
+
+        // Then
+        verify(apnsClient).sendNotification(any(SimpleApnsPushNotification.class));
+        verify(pushNotificationResponse).getRejectionReason();
+        verify(meterRegistry).counter("apns_notification_total",
+                "status", "rejected", "type", "new_hangout",
+                "reason", "Unregistered", "category", "expected");
+    }
+
+    @Test
+    void sendNewHangoutNotification_ExecutionException_EmitsErrorMetric() throws ExecutionException, InterruptedException {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", apnsClient);
+        when(textGenerator.getNewHangoutBody(TEST_CREATOR_NAME, TEST_HANGOUT_TITLE, TEST_GROUP_NAME))
+                .thenReturn("Alice created Pizza Night in Friends Group");
+        when(apnsClient.sendNotification(any(SimpleApnsPushNotification.class))).thenReturn(pushNotificationFuture);
+        when(pushNotificationFuture.get()).thenThrow(new ExecutionException("Network error", new RuntimeException()));
+
+        // When
+        pushNotificationService.sendNewHangoutNotification(
+                TEST_DEVICE_TOKEN, TEST_HANGOUT_ID, TEST_GROUP_ID,
+                TEST_HANGOUT_TITLE, TEST_GROUP_NAME, TEST_CREATOR_NAME);
+
+        // Then
+        verify(apnsClient).sendNotification(any(SimpleApnsPushNotification.class));
+        verify(meterRegistry).counter("apns_notification_total",
+                "status", "error", "type", "new_hangout",
+                "error_type", "execution", "category", "transient");
+    }
+
+    @Test
+    void sendNewHangoutNotification_UnexpectedException_EmitsUnexpectedErrorMetric() throws ExecutionException, InterruptedException {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", apnsClient);
+        when(textGenerator.getNewHangoutBody(TEST_CREATOR_NAME, TEST_HANGOUT_TITLE, TEST_GROUP_NAME))
+                .thenThrow(new RuntimeException("Unexpected error"));
+
+        // When
+        pushNotificationService.sendNewHangoutNotification(
+                TEST_DEVICE_TOKEN, TEST_HANGOUT_ID, TEST_GROUP_ID,
+                TEST_HANGOUT_TITLE, TEST_GROUP_NAME, TEST_CREATOR_NAME);
+
+        // Then
+        verify(meterRegistry).counter("apns_notification_total",
+                "status", "error", "type", "new_hangout",
+                "error_type", "unexpected", "category", "unexpected");
+    }
+
+    // ========== sendHangoutUpdatedNotification Tests ==========
+
+    private static final String TEST_CHANGE_TYPE = "location";
+    private static final String TEST_NEW_LOCATION_NAME = "Central Park";
+
+    @Test
+    void sendHangoutUpdatedNotification_ApnsClientNull_SkipsQuietly() {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", null);
+
+        // When
+        pushNotificationService.sendHangoutUpdatedNotification(
+                TEST_DEVICE_TOKEN, TEST_HANGOUT_ID, TEST_GROUP_ID,
+                TEST_HANGOUT_TITLE, TEST_CHANGE_TYPE, TEST_NEW_LOCATION_NAME);
+
+        // Then
+        verifyNoInteractions(apnsClient);
+        verifyNoInteractions(meterRegistry);
+    }
+
+    @Test
+    void sendHangoutUpdatedNotification_Success_EmitsSuccessMetric() throws ExecutionException, InterruptedException {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", apnsClient);
+        when(textGenerator.getHangoutUpdatedBody(TEST_HANGOUT_TITLE, TEST_CHANGE_TYPE, TEST_NEW_LOCATION_NAME))
+                .thenReturn("Pizza Night location changed to Central Park");
+        when(apnsClient.sendNotification(any(SimpleApnsPushNotification.class))).thenReturn(pushNotificationFuture);
+        when(pushNotificationFuture.get()).thenReturn(pushNotificationResponse);
+        when(pushNotificationResponse.isAccepted()).thenReturn(true);
+
+        // When
+        pushNotificationService.sendHangoutUpdatedNotification(
+                TEST_DEVICE_TOKEN, TEST_HANGOUT_ID, TEST_GROUP_ID,
+                TEST_HANGOUT_TITLE, TEST_CHANGE_TYPE, TEST_NEW_LOCATION_NAME);
+
+        // Then
+        verify(apnsClient).sendNotification(any(SimpleApnsPushNotification.class));
+        verify(pushNotificationResponse).isAccepted();
+        verify(meterRegistry).counter("apns_notification_total", "status", "success", "type", "hangout_updated");
+    }
+
+    @Test
+    void sendHangoutUpdatedNotification_Rejected_EmitsRejectedMetric() throws ExecutionException, InterruptedException {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", apnsClient);
+        when(textGenerator.getHangoutUpdatedBody(TEST_HANGOUT_TITLE, TEST_CHANGE_TYPE, TEST_NEW_LOCATION_NAME))
+                .thenReturn("Pizza Night location changed to Central Park");
+        when(apnsClient.sendNotification(any(SimpleApnsPushNotification.class))).thenReturn(pushNotificationFuture);
+        when(pushNotificationFuture.get()).thenReturn(pushNotificationResponse);
+        when(pushNotificationResponse.isAccepted()).thenReturn(false);
+        when(pushNotificationResponse.getRejectionReason()).thenReturn(Optional.of("ExpiredToken"));
+
+        // When
+        pushNotificationService.sendHangoutUpdatedNotification(
+                TEST_DEVICE_TOKEN, TEST_HANGOUT_ID, TEST_GROUP_ID,
+                TEST_HANGOUT_TITLE, TEST_CHANGE_TYPE, TEST_NEW_LOCATION_NAME);
+
+        // Then
+        verify(apnsClient).sendNotification(any(SimpleApnsPushNotification.class));
+        verify(pushNotificationResponse).getRejectionReason();
+        verify(meterRegistry).counter("apns_notification_total",
+                "status", "rejected", "type", "hangout_updated",
+                "reason", "ExpiredToken", "category", "expected");
+    }
+
+    @Test
+    void sendHangoutUpdatedNotification_ExecutionException_EmitsErrorMetric() throws ExecutionException, InterruptedException {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", apnsClient);
+        when(textGenerator.getHangoutUpdatedBody(TEST_HANGOUT_TITLE, TEST_CHANGE_TYPE, TEST_NEW_LOCATION_NAME))
+                .thenReturn("Pizza Night location changed to Central Park");
+        when(apnsClient.sendNotification(any(SimpleApnsPushNotification.class))).thenReturn(pushNotificationFuture);
+        when(pushNotificationFuture.get()).thenThrow(new ExecutionException("Network error", new RuntimeException()));
+
+        // When
+        pushNotificationService.sendHangoutUpdatedNotification(
+                TEST_DEVICE_TOKEN, TEST_HANGOUT_ID, TEST_GROUP_ID,
+                TEST_HANGOUT_TITLE, TEST_CHANGE_TYPE, TEST_NEW_LOCATION_NAME);
+
+        // Then
+        verify(apnsClient).sendNotification(any(SimpleApnsPushNotification.class));
+        verify(meterRegistry).counter("apns_notification_total",
+                "status", "error", "type", "hangout_updated",
+                "error_type", "execution", "category", "transient");
+    }
+
+    @Test
+    void sendHangoutUpdatedNotification_UnexpectedException_EmitsUnexpectedErrorMetric() throws ExecutionException, InterruptedException {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", apnsClient);
+        when(textGenerator.getHangoutUpdatedBody(TEST_HANGOUT_TITLE, TEST_CHANGE_TYPE, TEST_NEW_LOCATION_NAME))
+                .thenThrow(new RuntimeException("Unexpected error"));
+
+        // When
+        pushNotificationService.sendHangoutUpdatedNotification(
+                TEST_DEVICE_TOKEN, TEST_HANGOUT_ID, TEST_GROUP_ID,
+                TEST_HANGOUT_TITLE, TEST_CHANGE_TYPE, TEST_NEW_LOCATION_NAME);
+
+        // Then
+        verify(meterRegistry).counter("apns_notification_total",
+                "status", "error", "type", "hangout_updated",
+                "error_type", "unexpected", "category", "unexpected");
+    }
+
+    // ========== sendEventUpdateNotification Additional Tests ==========
+
+    @Test
+    void sendEventUpdateNotification_ApnsClientNull_SkipsQuietly() {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", null);
+
+        // When
+        pushNotificationService.sendEventUpdateNotification(TEST_DEVICE_TOKEN, TEST_EVENT_TITLE, TEST_UPDATE_MESSAGE);
+
+        // Then
+        verifyNoInteractions(apnsClient);
+        verifyNoInteractions(meterRegistry);
+    }
+
+    @Test
+    void sendEventUpdateNotification_Rejected_EmitsRejectedMetric() throws ExecutionException, InterruptedException {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", apnsClient);
+        when(apnsClient.sendNotification(any(SimpleApnsPushNotification.class))).thenReturn(pushNotificationFuture);
+        when(pushNotificationFuture.get()).thenReturn(pushNotificationResponse);
+        when(pushNotificationResponse.isAccepted()).thenReturn(false);
+        when(pushNotificationResponse.getRejectionReason()).thenReturn(Optional.of("DeviceTokenNotForTopic"));
+
+        // When
+        pushNotificationService.sendEventUpdateNotification(TEST_DEVICE_TOKEN, TEST_EVENT_TITLE, TEST_UPDATE_MESSAGE);
+
+        // Then
+        verify(apnsClient).sendNotification(any(SimpleApnsPushNotification.class));
+        verify(pushNotificationResponse).getRejectionReason();
+        verify(meterRegistry).counter("apns_notification_total",
+                "status", "rejected", "type", "event_update",
+                "reason", "DeviceTokenNotForTopic", "category", "expected");
+    }
+
+    @Test
+    void sendEventUpdateNotification_ExecutionException_EmitsErrorMetric() throws ExecutionException, InterruptedException {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", apnsClient);
+        when(apnsClient.sendNotification(any(SimpleApnsPushNotification.class))).thenReturn(pushNotificationFuture);
+        when(pushNotificationFuture.get()).thenThrow(new ExecutionException("Network error", new RuntimeException()));
+
+        // When
+        pushNotificationService.sendEventUpdateNotification(TEST_DEVICE_TOKEN, TEST_EVENT_TITLE, TEST_UPDATE_MESSAGE);
+
+        // Then
+        verify(apnsClient).sendNotification(any(SimpleApnsPushNotification.class));
+        verify(meterRegistry).counter("apns_notification_total",
+                "status", "error", "type", "event_update",
+                "error_type", "execution", "category", "transient");
+    }
+
+    @Test
+    void sendEventUpdateNotification_UnexpectedException_EmitsUnexpectedErrorMetric() {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", apnsClient);
+        when(apnsClient.sendNotification(any(SimpleApnsPushNotification.class)))
+                .thenThrow(new RuntimeException("Unexpected error"));
+
+        // When
+        pushNotificationService.sendEventUpdateNotification(TEST_DEVICE_TOKEN, TEST_EVENT_TITLE, TEST_UPDATE_MESSAGE);
+
+        // Then
+        verify(meterRegistry).counter("apns_notification_total",
+                "status", "error", "type", "event_update",
+                "error_type", "unexpected", "category", "unexpected");
+    }
+
+    // ========== sendInviteNotification Additional Tests ==========
+
+    @Test
+    void sendInviteNotification_NullHostName_FormatsMessageWithoutHost() throws ExecutionException, InterruptedException {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", apnsClient);
+        when(apnsClient.sendNotification(any(SimpleApnsPushNotification.class))).thenReturn(pushNotificationFuture);
+        when(pushNotificationFuture.get()).thenReturn(pushNotificationResponse);
+        when(pushNotificationResponse.isAccepted()).thenReturn(true);
+
+        // When
+        pushNotificationService.sendInviteNotification(TEST_DEVICE_TOKEN, TEST_EVENT_TITLE, null);
+
+        // Then
+        verify(apnsClient).sendNotification(any(SimpleApnsPushNotification.class));
+        verify(meterRegistry).counter("apns_notification_total", "status", "success", "type", "invite");
+    }
+
+    @Test
+    void sendInviteNotification_EmptyHostName_FormatsMessageWithoutHost() throws ExecutionException, InterruptedException {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", apnsClient);
+        when(apnsClient.sendNotification(any(SimpleApnsPushNotification.class))).thenReturn(pushNotificationFuture);
+        when(pushNotificationFuture.get()).thenReturn(pushNotificationResponse);
+        when(pushNotificationResponse.isAccepted()).thenReturn(true);
+
+        // When
+        pushNotificationService.sendInviteNotification(TEST_DEVICE_TOKEN, TEST_EVENT_TITLE, "   ");
+
+        // Then
+        verify(apnsClient).sendNotification(any(SimpleApnsPushNotification.class));
+        verify(meterRegistry).counter("apns_notification_total", "status", "success", "type", "invite");
+    }
+
+    @Test
+    void sendInviteNotification_UnknownHost_FormatsMessageWithoutHost() throws ExecutionException, InterruptedException {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", apnsClient);
+        when(apnsClient.sendNotification(any(SimpleApnsPushNotification.class))).thenReturn(pushNotificationFuture);
+        when(pushNotificationFuture.get()).thenReturn(pushNotificationResponse);
+        when(pushNotificationResponse.isAccepted()).thenReturn(true);
+
+        // When
+        pushNotificationService.sendInviteNotification(TEST_DEVICE_TOKEN, TEST_EVENT_TITLE, "Unknown Host");
+
+        // Then
+        verify(apnsClient).sendNotification(any(SimpleApnsPushNotification.class));
+        verify(meterRegistry).counter("apns_notification_total", "status", "success", "type", "invite");
+    }
+
+    @Test
+    void sendInviteNotification_UnexpectedException_EmitsUnexpectedErrorMetric() {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", apnsClient);
+        when(apnsClient.sendNotification(any(SimpleApnsPushNotification.class)))
+                .thenThrow(new RuntimeException("Unexpected error"));
+
+        // When
+        pushNotificationService.sendInviteNotification(TEST_DEVICE_TOKEN, TEST_EVENT_TITLE, TEST_HOST_NAME);
+
+        // Then
+        verify(meterRegistry).counter("apns_notification_total",
+                "status", "error", "type", "invite",
+                "error_type", "unexpected", "category", "unexpected");
+    }
+
+    @Test
+    void sendInviteNotification_RejectedWithUnknownReason_CategorizedAsUnexpected() throws ExecutionException, InterruptedException {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", apnsClient);
+        when(apnsClient.sendNotification(any(SimpleApnsPushNotification.class))).thenReturn(pushNotificationFuture);
+        when(pushNotificationFuture.get()).thenReturn(pushNotificationResponse);
+        when(pushNotificationResponse.isAccepted()).thenReturn(false);
+        when(pushNotificationResponse.getRejectionReason()).thenReturn(Optional.of("SomeNewErrorCode"));
+
+        // When
+        pushNotificationService.sendInviteNotification(TEST_DEVICE_TOKEN, TEST_EVENT_TITLE, TEST_HOST_NAME);
+
+        // Then
+        verify(meterRegistry).counter("apns_notification_total",
+                "status", "rejected", "type", "invite",
+                "reason", "SomeNewErrorCode", "category", "unexpected");
+    }
+
+    @Test
+    void sendInviteNotification_RejectedWithNoReason_UsesUnknown() throws ExecutionException, InterruptedException {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", apnsClient);
+        when(apnsClient.sendNotification(any(SimpleApnsPushNotification.class))).thenReturn(pushNotificationFuture);
+        when(pushNotificationFuture.get()).thenReturn(pushNotificationResponse);
+        when(pushNotificationResponse.isAccepted()).thenReturn(false);
+        when(pushNotificationResponse.getRejectionReason()).thenReturn(Optional.empty());
+
+        // When
+        pushNotificationService.sendInviteNotification(TEST_DEVICE_TOKEN, TEST_EVENT_TITLE, TEST_HOST_NAME);
+
+        // Then
+        verify(meterRegistry).counter("apns_notification_total",
+                "status", "rejected", "type", "invite",
+                "reason", "unknown", "category", "unexpected");
+    }
 }

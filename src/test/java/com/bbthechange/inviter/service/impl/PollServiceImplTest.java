@@ -287,6 +287,95 @@ class PollServiceImplTest {
     }
 
     @Test
+    void getEventPolls_WhenUserCannotView_ThrowsUnauthorizedException() {
+        // Given
+        Hangout hangout = new Hangout();
+        HangoutDetailData hangoutData = HangoutDetailData.builder().withHangout(hangout).build();
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+        when(authorizationService.canUserViewHangout(userId, hangout)).thenReturn(false);
+
+        // When & Then
+        assertThatThrownBy(() -> pollService.getEventPolls(eventId, userId))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void addPollOption_WhenUserCannotEdit_ThrowsUnauthorizedException() {
+        // Given
+        AddPollOptionRequest request = new AddPollOptionRequest("New Option");
+        Hangout hangout = new Hangout();
+        HangoutDetailData hangoutData = HangoutDetailData.builder().withHangout(hangout).build();
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+        when(authorizationService.canUserEditHangout(userId, hangout)).thenReturn(false);
+
+        // When & Then
+        assertThatThrownBy(() -> pollService.addPollOption(eventId, pollId, request, userId))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void deletePoll_WhenUserCannotEdit_ThrowsUnauthorizedException() {
+        // Given
+        Hangout hangout = new Hangout();
+        HangoutDetailData hangoutData = HangoutDetailData.builder().withHangout(hangout).build();
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+        when(authorizationService.canUserEditHangout(userId, hangout)).thenReturn(false);
+
+        // When & Then
+        assertThatThrownBy(() -> pollService.deletePoll(eventId, pollId, userId))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void deletePollOption_WhenUserCannotEdit_ThrowsUnauthorizedException() {
+        // Given
+        Hangout hangout = new Hangout();
+        HangoutDetailData hangoutData = HangoutDetailData.builder().withHangout(hangout).build();
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+        when(authorizationService.canUserEditHangout(userId, hangout)).thenReturn(false);
+
+        // When & Then
+        assertThatThrownBy(() -> pollService.deletePollOption(eventId, pollId, optionId, userId))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void voteOnPoll_WhenUserCannotView_ThrowsUnauthorizedException() {
+        // Given
+        VoteRequest request = new VoteRequest();
+        request.setOptionId(optionId);
+        request.setVoteType("YES");
+
+        Hangout hangout = new Hangout();
+        HangoutDetailData hangoutData = HangoutDetailData.builder().withHangout(hangout).build();
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+        when(authorizationService.canUserViewHangout(userId, hangout)).thenReturn(false);
+
+        // When & Then
+        assertThatThrownBy(() -> pollService.voteOnPoll(eventId, pollId, request, userId))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void removeVote_WhenUserCannotView_ThrowsUnauthorizedException() {
+        // Given
+        Hangout hangout = new Hangout();
+        HangoutDetailData hangoutData = HangoutDetailData.builder().withHangout(hangout).build();
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+        when(authorizationService.canUserViewHangout(userId, hangout)).thenReturn(false);
+
+        // When & Then
+        assertThatThrownBy(() -> pollService.removeVote(eventId, pollId, optionId, userId))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
     void removeVote_WithValidRequest_DeletesVote() {
         // Given
         Hangout hangout = new Hangout();

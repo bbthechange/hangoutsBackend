@@ -219,14 +219,246 @@ class GroupFeedServiceImplTest {
     
     private List<HangoutAttribute> createMockUndecidedAttributes(String eventId, String attributeId) {
         List<HangoutAttribute> attributes = new ArrayList<>();
-        
+
         HangoutAttribute attribute = new HangoutAttribute();
         attribute.setHangoutId(eventId);
         attribute.setAttributeId(attributeId);
         attribute.setAttributeName("Meeting Location");
         attribute.setStringValue(null); // Undecided
-        
+
         attributes.add(attribute);
+        return attributes;
+    }
+
+    @Test
+    void getFeedItems_ReachesLimitWithMoreEventsAvailable_ReturnsNextPageToken() {
+        // Given - user has access
+        when(groupService.isUserInGroup(USER_ID, GROUP_ID)).thenReturn(true);
+
+        // First page with one event (and more available)
+        List<HangoutPointer> hangoutPointers = new ArrayList<>();
+        HangoutPointer pointer1 = new HangoutPointer();
+        pointer1.setHangoutId(EVENT_ID_1);
+        pointer1.setTitle("First Event");
+        pointer1.setStartTimestamp(System.currentTimeMillis() / 1000 + 3600);
+        hangoutPointers.add(pointer1);
+
+        String nextDbToken = "next-db-page-token";
+        PaginatedResult<HangoutPointer> firstPage = new PaginatedResult<>(hangoutPointers, nextDbToken);
+        when(hangoutRepository.findUpcomingHangoutsPage("GROUP#" + GROUP_ID, "T#", 10, null))
+            .thenReturn(firstPage);
+
+        // Mock poll data that produces 2 feed items
+        List<BaseItem> pollData1 = createMockPollData(EVENT_ID_1, POLL_ID_1);
+        when(hangoutRepository.getAllPollData(EVENT_ID_1)).thenReturn(pollData1);
+
+        // Mock 1 undecided attribute
+        List<HangoutAttribute> attributes1 = createMockUndecidedAttributes(EVENT_ID_1, ATTRIBUTE_ID_1);
+        when(hangoutRepository.findAttributesByHangoutId(EVENT_ID_1)).thenReturn(attributes1);
+
+        // When - request limit of 1 (will be exceeded by 2 items from first event)
+        GroupFeedItemsResponse response = groupFeedService.getFeedItems(GROUP_ID, 1, null, USER_ID);
+
+        // Then - should return items and continuation token
+        assertThat(response).isNotNull();
+        assertThat(response.getItems()).isNotEmpty();
+        assertThat(response.getNextPageToken()).isEqualTo(nextDbToken);
+    }
+
+    @Test
+    void getFeedItems_WithPollOptionsAndVotes_ReturnsPollWithVoterInfo() {
+        // Given
+        when(groupService.isUserInGroup(USER_ID, GROUP_ID)).thenReturn(true);
+
+        // Mock paginated hangouts
+        List<HangoutPointer> hangoutPointers = new ArrayList<>();
+        HangoutPointer pointer1 = new HangoutPointer();
+        pointer1.setHangoutId(EVENT_ID_1);
+        pointer1.setTitle("Event With Full Poll");
+        pointer1.setStartTimestamp(System.currentTimeMillis() / 1000 + 3600);
+        hangoutPointers.add(pointer1);
+        PaginatedResult<HangoutPointer> firstPage = new PaginatedResult<>(hangoutPointers, null);
+        when(hangoutRepository.findUpcomingHangoutsPage("GROUP#" + GROUP_ID, "T#", 10, null))
+            .thenReturn(firstPage);
+
+        // Mock full poll data with Poll, PollOptions, and Votes
+        List<BaseItem> pollData = createFullPollData(EVENT_ID_1, POLL_ID_1);
+        when(hangoutRepository.getAllPollData(EVENT_ID_1)).thenReturn(pollData);
+
+        // No attributes for this test
+        when(hangoutRepository.findAttributesByHangoutId(EVENT_ID_1)).thenReturn(new ArrayList<>());
+
+        // When
+        GroupFeedItemsResponse response = groupFeedService.getFeedItems(GROUP_ID, 10, null, USER_ID);
+
+        // Then
+        assertThat(response).isNotNull();
+        assertThat(response.getItems()).hasSize(1);
+
+        FeedItemDTO pollItem = response.getItems().get(0);
+        assertThat(pollItem.getItemType()).isEqualTo("POLL");
+        assertThat(pollItem.getData().get("pollId")).isEqualTo(POLL_ID_1);
+
+        // Verify options are included
+        @SuppressWarnings("unchecked")
+        List<java.util.Map<String, Object>> options =
+            (List<java.util.Map<String, Object>>) pollItem.getData().get("options");
+        assertThat(options).hasSize(2);
+
+        // First option should have voter
+        assertThat(options.get(0).get("optionId")).isEqualTo("option-1");
+        assertThat(options.get(0).get("text")).isEqualTo("Option A");
+        @SuppressWarnings("unchecked")
+        List<String> voters = (List<String>) options.get(0).get("voters");
+        assertThat(voters).containsExactly("voter-user-1");
+    }
+
+    @Test
+    void getFeedItems_WithDecidedAndUndecidedAttributes_OnlyReturnsUndecided() {
+        // Given
+        when(groupService.isUserInGroup(USER_ID, GROUP_ID)).thenReturn(true);
+
+        // Mock paginated hangouts
+        List<HangoutPointer> hangoutPointers = new ArrayList<>();
+        HangoutPointer pointer1 = new HangoutPointer();
+        pointer1.setHangoutId(EVENT_ID_1);
+        pointer1.setTitle("Event With Attributes");
+        pointer1.setStartTimestamp(System.currentTimeMillis() / 1000 + 3600);
+        hangoutPointers.add(pointer1);
+        PaginatedResult<HangoutPointer> firstPage = new PaginatedResult<>(hangoutPointers, null);
+        when(hangoutRepository.findUpcomingHangoutsPage("GROUP#" + GROUP_ID, "T#", 10, null))
+            .thenReturn(firstPage);
+
+        // No polls
+        when(hangoutRepository.getAllPollData(EVENT_ID_1)).thenReturn(new ArrayList<>());
+
+        // Mock attributes - mix of decided and undecided
+        List<HangoutAttribute> attributes = createMixedAttributes(EVENT_ID_1);
+        when(hangoutRepository.findAttributesByHangoutId(EVENT_ID_1)).thenReturn(attributes);
+
+        // When
+        GroupFeedItemsResponse response = groupFeedService.getFeedItems(GROUP_ID, 10, null, USER_ID);
+
+        // Then - only undecided attributes should appear (null, empty, and whitespace-only)
+        assertThat(response).isNotNull();
+        assertThat(response.getItems()).hasSize(3); // null, empty string, and whitespace-only
+
+        // Verify all returned items are undecided attributes
+        for (FeedItemDTO item : response.getItems()) {
+            assertThat(item.getItemType()).isEqualTo("ATTRIBUTE");
+            assertThat(item.getData().get("isDecided")).isEqualTo(false);
+        }
+    }
+
+    @Test
+    void getFeedItems_WithInactivePoll_SkipsInactivePoll() {
+        // Given
+        when(groupService.isUserInGroup(USER_ID, GROUP_ID)).thenReturn(true);
+
+        List<HangoutPointer> hangoutPointers = new ArrayList<>();
+        HangoutPointer pointer1 = new HangoutPointer();
+        pointer1.setHangoutId(EVENT_ID_1);
+        pointer1.setTitle("Event With Inactive Poll");
+        pointer1.setStartTimestamp(System.currentTimeMillis() / 1000 + 3600);
+        hangoutPointers.add(pointer1);
+        PaginatedResult<HangoutPointer> firstPage = new PaginatedResult<>(hangoutPointers, null);
+        when(hangoutRepository.findUpcomingHangoutsPage("GROUP#" + GROUP_ID, "T#", 10, null))
+            .thenReturn(firstPage);
+
+        // Mock inactive poll
+        List<BaseItem> pollData = new ArrayList<>();
+        Poll inactivePoll = new Poll();
+        inactivePoll.setEventId(EVENT_ID_1);
+        inactivePoll.setPollId(POLL_ID_1);
+        inactivePoll.setTitle("Inactive Poll");
+        inactivePoll.setActive(false); // Inactive!
+        pollData.add(inactivePoll);
+        when(hangoutRepository.getAllPollData(EVENT_ID_1)).thenReturn(pollData);
+
+        when(hangoutRepository.findAttributesByHangoutId(EVENT_ID_1)).thenReturn(new ArrayList<>());
+
+        // When
+        GroupFeedItemsResponse response = groupFeedService.getFeedItems(GROUP_ID, 10, null, USER_ID);
+
+        // Then - inactive poll should be skipped
+        assertThat(response).isNotNull();
+        assertThat(response.getItems()).isEmpty();
+    }
+
+    private List<BaseItem> createFullPollData(String eventId, String pollId) {
+        List<BaseItem> pollData = new ArrayList<>();
+
+        // Add Poll
+        Poll poll = new Poll();
+        poll.setEventId(eventId);
+        poll.setPollId(pollId);
+        poll.setTitle("Full Poll Question");
+        poll.setDescription("Poll with options and votes");
+        poll.setMultipleChoice(false);
+        poll.setActive(true);
+        pollData.add(poll);
+
+        // Add PollOptions
+        PollOption option1 = new PollOption();
+        option1.setEventId(eventId);
+        option1.setPollId(pollId);
+        option1.setOptionId("option-1");
+        option1.setText("Option A");
+        pollData.add(option1);
+
+        PollOption option2 = new PollOption();
+        option2.setEventId(eventId);
+        option2.setPollId(pollId);
+        option2.setOptionId("option-2");
+        option2.setText("Option B");
+        pollData.add(option2);
+
+        // Add Vote for option 1
+        Vote vote1 = new Vote();
+        vote1.setEventId(eventId);
+        vote1.setPollId(pollId);
+        vote1.setOptionId("option-1");
+        vote1.setUserId("voter-user-1");
+        pollData.add(vote1);
+
+        return pollData;
+    }
+
+    private List<HangoutAttribute> createMixedAttributes(String eventId) {
+        List<HangoutAttribute> attributes = new ArrayList<>();
+
+        // Undecided - null value
+        HangoutAttribute nullAttr = new HangoutAttribute();
+        nullAttr.setHangoutId(eventId);
+        nullAttr.setAttributeId("attr-null");
+        nullAttr.setAttributeName("Undecided Null");
+        nullAttr.setStringValue(null);
+        attributes.add(nullAttr);
+
+        // Undecided - empty string
+        HangoutAttribute emptyAttr = new HangoutAttribute();
+        emptyAttr.setHangoutId(eventId);
+        emptyAttr.setAttributeId("attr-empty");
+        emptyAttr.setAttributeName("Undecided Empty");
+        emptyAttr.setStringValue("");
+        attributes.add(emptyAttr);
+
+        // Decided - has value
+        HangoutAttribute decidedAttr = new HangoutAttribute();
+        decidedAttr.setHangoutId(eventId);
+        decidedAttr.setAttributeId("attr-decided");
+        decidedAttr.setAttributeName("Decided Attribute");
+        decidedAttr.setStringValue("Central Park");
+        attributes.add(decidedAttr);
+
+        // Undecided - whitespace only (should be filtered as undecided)
+        HangoutAttribute whitespaceAttr = new HangoutAttribute();
+        whitespaceAttr.setHangoutId(eventId);
+        whitespaceAttr.setAttributeId("attr-whitespace");
+        whitespaceAttr.setAttributeName("Whitespace Only");
+        whitespaceAttr.setStringValue("   ");
+        attributes.add(whitespaceAttr);
+
         return attributes;
     }
 }

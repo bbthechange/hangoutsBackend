@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.service;
 
 import com.bbthechange.inviter.dto.InviteResponse;
+import com.bbthechange.inviter.model.Device;
 import com.bbthechange.inviter.model.Event;
 import com.bbthechange.inviter.model.Invite;
 import com.bbthechange.inviter.model.User;
@@ -33,7 +34,10 @@ class InviteServiceTest {
     
     @Mock
     private PushNotificationService pushNotificationService;
-    
+
+    @Mock
+    private DeviceService deviceService;
+
     @InjectMocks
     private InviteService inviteService;
     
@@ -307,18 +311,269 @@ class InviteServiceTest {
         List<Invite> invites = Arrays.asList(testInvite);
         when(inviteRepository.findByEventId(eventId)).thenReturn(invites);
         when(userRepository.findById(userId)).thenReturn(Optional.empty());
-        
+
         // Act
         List<InviteResponse> result = inviteService.getInvitesForEvent(eventId);
-        
+
         // Assert
         assertEquals(1, result.size());
         InviteResponse response = result.get(0);
         assertNull(response.getUserPhoneNumber());
         assertNull(response.getUsername());
         assertNull(response.getDisplayName());
-        
+
         verify(inviteRepository).findByEventId(eventId);
         verify(userRepository).findById(userId);
+    }
+
+    @Test
+    void testAddInviteToEvent_SendsPushNotificationToActiveDevices() {
+        // Arrange
+        String phoneNumber = "1234567890";
+        Device activeDevice = new Device("device-token", userId, Device.Platform.IOS);
+
+        // Setup host invite for host name lookup
+        UUID hostId = UUID.randomUUID();
+        User hostUser = new User();
+        hostUser.setId(hostId);
+        hostUser.setDisplayName("Host User");
+
+        Invite hostInvite = new Invite(eventId, hostId, Invite.InviteType.HOST);
+
+        when(userRepository.findByPhoneNumber(phoneNumber)).thenReturn(Optional.of(testUser));
+        when(inviteRepository.findByEventId(eventId))
+                .thenReturn(Collections.emptyList())  // First call - check if already invited
+                .thenReturn(Arrays.asList(hostInvite));  // Second call - get host name
+        when(inviteRepository.save(any(Invite.class))).thenReturn(testInvite);
+        when(deviceService.getActiveDevicesForUser(userId)).thenReturn(Arrays.asList(activeDevice));
+        when(eventRepository.findById(eventId)).thenReturn(Optional.of(testEvent));
+        when(userRepository.findById(hostId)).thenReturn(Optional.of(hostUser));
+
+        // Act
+        Invite result = inviteService.addInviteToEvent(eventId, phoneNumber);
+
+        // Assert
+        assertEquals(testInvite, result);
+        verify(pushNotificationService).sendInviteNotification("device-token", "Test Event", "Host User");
+    }
+
+    @Test
+    void testAddInviteToEvent_NoActiveDevices_SkipsNotification() {
+        // Arrange
+        String phoneNumber = "1234567890";
+
+        when(userRepository.findByPhoneNumber(phoneNumber)).thenReturn(Optional.of(testUser));
+        when(inviteRepository.findByEventId(eventId)).thenReturn(Collections.emptyList());
+        when(inviteRepository.save(any(Invite.class))).thenReturn(testInvite);
+        when(deviceService.getActiveDevicesForUser(userId)).thenReturn(Collections.emptyList());
+
+        // Act
+        Invite result = inviteService.addInviteToEvent(eventId, phoneNumber);
+
+        // Assert
+        assertEquals(testInvite, result);
+        verify(pushNotificationService, never()).sendInviteNotification(any(), any(), any());
+    }
+
+    @Test
+    void testAddInviteToEvent_EventNotFound_SkipsNotification() {
+        // Arrange
+        String phoneNumber = "1234567890";
+        Device activeDevice = new Device("device-token", userId, Device.Platform.IOS);
+
+        when(userRepository.findByPhoneNumber(phoneNumber)).thenReturn(Optional.of(testUser));
+        when(inviteRepository.findByEventId(eventId)).thenReturn(Collections.emptyList());
+        when(inviteRepository.save(any(Invite.class))).thenReturn(testInvite);
+        when(deviceService.getActiveDevicesForUser(userId)).thenReturn(Arrays.asList(activeDevice));
+        when(eventRepository.findById(eventId)).thenReturn(Optional.empty());
+
+        // Act
+        Invite result = inviteService.addInviteToEvent(eventId, phoneNumber);
+
+        // Assert
+        assertEquals(testInvite, result);
+        verify(pushNotificationService, never()).sendInviteNotification(any(), any(), any());
+    }
+
+    @Test
+    void testAddInviteToEvent_PushNotificationFailure_StillReturnsInvite() {
+        // Arrange
+        String phoneNumber = "1234567890";
+        Device activeDevice = new Device("device-token", userId, Device.Platform.IOS);
+
+        when(userRepository.findByPhoneNumber(phoneNumber)).thenReturn(Optional.of(testUser));
+        when(inviteRepository.findByEventId(eventId)).thenReturn(Collections.emptyList());
+        when(inviteRepository.save(any(Invite.class))).thenReturn(testInvite);
+        when(deviceService.getActiveDevicesForUser(userId)).thenReturn(Arrays.asList(activeDevice));
+        when(eventRepository.findById(eventId)).thenReturn(Optional.of(testEvent));
+        doThrow(new RuntimeException("Push failed")).when(pushNotificationService)
+                .sendInviteNotification(any(), any(), any());
+
+        // Act - should not throw exception
+        Invite result = inviteService.addInviteToEvent(eventId, phoneNumber);
+
+        // Assert
+        assertEquals(testInvite, result);
+    }
+
+    @Test
+    void testAddInviteToEvent_DeviceServiceFailure_StillReturnsInvite() {
+        // Arrange
+        String phoneNumber = "1234567890";
+
+        when(userRepository.findByPhoneNumber(phoneNumber)).thenReturn(Optional.of(testUser));
+        when(inviteRepository.findByEventId(eventId)).thenReturn(Collections.emptyList());
+        when(inviteRepository.save(any(Invite.class))).thenReturn(testInvite);
+        when(deviceService.getActiveDevicesForUser(userId)).thenThrow(new RuntimeException("Device lookup failed"));
+
+        // Act - should not throw exception
+        Invite result = inviteService.addInviteToEvent(eventId, phoneNumber);
+
+        // Assert
+        assertEquals(testInvite, result);
+    }
+
+    @Test
+    void testAddInviteToEvent_HostWithUsernameOnly_UsesUsername() {
+        // Arrange
+        String phoneNumber = "1234567890";
+        Device activeDevice = new Device("device-token", userId, Device.Platform.IOS);
+
+        UUID hostId = UUID.randomUUID();
+        User hostUser = new User();
+        hostUser.setId(hostId);
+        hostUser.setDisplayName(null);  // No display name
+        hostUser.setUsername("hostusername");
+
+        Invite hostInvite = new Invite(eventId, hostId, Invite.InviteType.HOST);
+
+        when(userRepository.findByPhoneNumber(phoneNumber)).thenReturn(Optional.of(testUser));
+        when(inviteRepository.findByEventId(eventId))
+                .thenReturn(Collections.emptyList())
+                .thenReturn(Arrays.asList(hostInvite));
+        when(inviteRepository.save(any(Invite.class))).thenReturn(testInvite);
+        when(deviceService.getActiveDevicesForUser(userId)).thenReturn(Arrays.asList(activeDevice));
+        when(eventRepository.findById(eventId)).thenReturn(Optional.of(testEvent));
+        when(userRepository.findById(hostId)).thenReturn(Optional.of(hostUser));
+
+        // Act
+        Invite result = inviteService.addInviteToEvent(eventId, phoneNumber);
+
+        // Assert
+        assertEquals(testInvite, result);
+        verify(pushNotificationService).sendInviteNotification("device-token", "Test Event", "hostusername");
+    }
+
+    @Test
+    void testAddInviteToEvent_NoHostInvite_SendsNullHostName() {
+        // Arrange
+        String phoneNumber = "1234567890";
+        Device activeDevice = new Device("device-token", userId, Device.Platform.IOS);
+
+        // Only guest invites exist
+        Invite guestInvite = new Invite(eventId, UUID.randomUUID(), Invite.InviteType.GUEST);
+
+        when(userRepository.findByPhoneNumber(phoneNumber)).thenReturn(Optional.of(testUser));
+        when(inviteRepository.findByEventId(eventId))
+                .thenReturn(Collections.emptyList())
+                .thenReturn(Arrays.asList(guestInvite));
+        when(inviteRepository.save(any(Invite.class))).thenReturn(testInvite);
+        when(deviceService.getActiveDevicesForUser(userId)).thenReturn(Arrays.asList(activeDevice));
+        when(eventRepository.findById(eventId)).thenReturn(Optional.of(testEvent));
+
+        // Act
+        Invite result = inviteService.addInviteToEvent(eventId, phoneNumber);
+
+        // Assert
+        assertEquals(testInvite, result);
+        verify(pushNotificationService).sendInviteNotification("device-token", "Test Event", null);
+    }
+
+    @Test
+    void testAddInviteToEvent_HostUserNotFound_SendsNullHostName() {
+        // Arrange
+        String phoneNumber = "1234567890";
+        Device activeDevice = new Device("device-token", userId, Device.Platform.IOS);
+
+        UUID hostId = UUID.randomUUID();
+        Invite hostInvite = new Invite(eventId, hostId, Invite.InviteType.HOST);
+
+        when(userRepository.findByPhoneNumber(phoneNumber)).thenReturn(Optional.of(testUser));
+        when(inviteRepository.findByEventId(eventId))
+                .thenReturn(Collections.emptyList())
+                .thenReturn(Arrays.asList(hostInvite));
+        when(inviteRepository.save(any(Invite.class))).thenReturn(testInvite);
+        when(deviceService.getActiveDevicesForUser(userId)).thenReturn(Arrays.asList(activeDevice));
+        when(eventRepository.findById(eventId)).thenReturn(Optional.of(testEvent));
+        when(userRepository.findById(hostId)).thenReturn(Optional.empty());
+
+        // Act
+        Invite result = inviteService.addInviteToEvent(eventId, phoneNumber);
+
+        // Assert
+        assertEquals(testInvite, result);
+        verify(pushNotificationService).sendInviteNotification("device-token", "Test Event", null);
+    }
+
+    @Test
+    void testAddInviteToEvent_HostWithEmptyDisplayName_UsesUsername() {
+        // Arrange
+        String phoneNumber = "1234567890";
+        Device activeDevice = new Device("device-token", userId, Device.Platform.IOS);
+
+        UUID hostId = UUID.randomUUID();
+        User hostUser = new User();
+        hostUser.setId(hostId);
+        hostUser.setDisplayName("   ");  // Whitespace-only display name
+        hostUser.setUsername("hostuser");
+
+        Invite hostInvite = new Invite(eventId, hostId, Invite.InviteType.HOST);
+
+        when(userRepository.findByPhoneNumber(phoneNumber)).thenReturn(Optional.of(testUser));
+        when(inviteRepository.findByEventId(eventId))
+                .thenReturn(Collections.emptyList())
+                .thenReturn(Arrays.asList(hostInvite));
+        when(inviteRepository.save(any(Invite.class))).thenReturn(testInvite);
+        when(deviceService.getActiveDevicesForUser(userId)).thenReturn(Arrays.asList(activeDevice));
+        when(eventRepository.findById(eventId)).thenReturn(Optional.of(testEvent));
+        when(userRepository.findById(hostId)).thenReturn(Optional.of(hostUser));
+
+        // Act
+        Invite result = inviteService.addInviteToEvent(eventId, phoneNumber);
+
+        // Assert
+        assertEquals(testInvite, result);
+        verify(pushNotificationService).sendInviteNotification("device-token", "Test Event", "hostuser");
+    }
+
+    @Test
+    void testAddInviteToEvent_HostWithEmptyUsernameAndDisplayName_SendsNull() {
+        // Arrange
+        String phoneNumber = "1234567890";
+        Device activeDevice = new Device("device-token", userId, Device.Platform.IOS);
+
+        UUID hostId = UUID.randomUUID();
+        User hostUser = new User();
+        hostUser.setId(hostId);
+        hostUser.setDisplayName("  ");  // Whitespace-only
+        hostUser.setUsername("  ");  // Whitespace-only
+
+        Invite hostInvite = new Invite(eventId, hostId, Invite.InviteType.HOST);
+
+        when(userRepository.findByPhoneNumber(phoneNumber)).thenReturn(Optional.of(testUser));
+        when(inviteRepository.findByEventId(eventId))
+                .thenReturn(Collections.emptyList())
+                .thenReturn(Arrays.asList(hostInvite));
+        when(inviteRepository.save(any(Invite.class))).thenReturn(testInvite);
+        when(deviceService.getActiveDevicesForUser(userId)).thenReturn(Arrays.asList(activeDevice));
+        when(eventRepository.findById(eventId)).thenReturn(Optional.of(testEvent));
+        when(userRepository.findById(hostId)).thenReturn(Optional.of(hostUser));
+
+        // Act
+        Invite result = inviteService.addInviteToEvent(eventId, phoneNumber);
+
+        // Assert
+        assertEquals(testInvite, result);
+        verify(pushNotificationService).sendInviteNotification("device-token", "Test Event", null);
     }
 }
