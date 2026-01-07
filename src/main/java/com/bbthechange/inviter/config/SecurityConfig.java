@@ -77,10 +77,13 @@ public class SecurityConfig {
         ));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList(
-            "Content-Type", 
-            "Authorization", 
+            "Content-Type",
+            "Authorization",
             "X-Requested-With",
-            "X-Client-Type"           // Add client type header
+            "X-Client-Type",          // Client type (ios, android, web, mobile)
+            "X-App-Version",          // App version (e.g., "1.2.3")
+            "X-Build-Number",         // Build number (e.g., "45")
+            "X-Device-ID"             // Device identifier
         ));
         configuration.setAllowCredentials(true);  // Required for HttpOnly cookies
         configuration.setMaxAge(3600L);           // Cache preflight for 1 hour
