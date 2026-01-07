@@ -81,18 +81,27 @@ public class RefreshTokenRepositoryImpl implements RefreshTokenRepository {
     @Override
     public void deleteAllUserTokens(String userId) {
         List<RefreshToken> userTokens = findAllByUserId(userId);
-        
-        if (!userTokens.isEmpty()) {
+
+        if (userTokens.isEmpty()) {
+            return;
+        }
+
+        // DynamoDB BatchWriteItem limit is 25 items per request
+        int batchSize = 25;
+        for (int i = 0; i < userTokens.size(); i += batchSize) {
+            List<RefreshToken> batch = userTokens.subList(i,
+                Math.min(i + batchSize, userTokens.size()));
+
             WriteBatch.Builder<RefreshToken> batchBuilder = WriteBatch.builder(RefreshToken.class)
                 .mappedTableResource(refreshTokenTable);
-                
-            userTokens.forEach(token -> 
+
+            batch.forEach(token ->
                 batchBuilder.addDeleteItem(Key.builder()
                     .partitionValue(token.getPk())
                     .sortValue(token.getSk())
                     .build())
             );
-            
+
             enhancedClient.batchWriteItem(BatchWriteItemEnhancedRequest.builder()
                 .writeBatches(batchBuilder.build())
                 .build());
