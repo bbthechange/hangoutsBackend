@@ -27,6 +27,7 @@ import com.bbthechange.inviter.service.AccountService;
 import com.bbthechange.inviter.service.VerificationResult;
 import com.bbthechange.inviter.service.RateLimitingService;
 import com.bbthechange.inviter.service.PasswordResetService;
+import com.bbthechange.inviter.config.ClientInfo;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -173,10 +174,10 @@ public class AuthController {
         );
         refreshTokenRepository.save(refreshTokenRecord);
         
-        // Check client type
-        String clientType = request.getHeader("X-Client-Type");
-        boolean isMobile = "mobile".equals(clientType);
-        
+        // Check client type (supports "mobile", "ios", and "android")
+        ClientInfo clientInfo = ClientInfo.fromRequestAttribute(request);
+        boolean isMobile = clientInfo != null && clientInfo.isMobile();
+
         Map<String, Object> responseBody = new HashMap<>();
         responseBody.put("accessToken", accessToken);
         responseBody.put("expiresIn", jwtService.getAccessTokenExpirationSeconds());
@@ -212,10 +213,11 @@ public class AuthController {
             HttpServletRequest request,
             HttpServletResponse response,
             @RequestBody(required = false) RefreshRequest refreshRequest) {
-        
-        String clientType = request.getHeader("X-Client-Type");
-        boolean isMobile = "mobile".equals(clientType);
-        
+
+        // Check client type (supports "mobile", "ios", and "android")
+        ClientInfo clientInfo = ClientInfo.fromRequestAttribute(request);
+        boolean isMobile = clientInfo != null && clientInfo.isMobile();
+
         // Extract refresh token based on client type
         String refreshToken;
         if (isMobile) {
@@ -270,10 +272,11 @@ public class AuthController {
             HttpServletRequest request,
             HttpServletResponse response,
             @RequestBody(required = false) RefreshRequest logoutRequest) {
-        
-        String clientType = request.getHeader("X-Client-Type");
-        boolean isMobile = "mobile".equals(clientType);
-        
+
+        // Check client type (supports "mobile", "ios", and "android")
+        ClientInfo clientInfo = ClientInfo.fromRequestAttribute(request);
+        boolean isMobile = clientInfo != null && clientInfo.isMobile();
+
         // Extract refresh token
         String refreshToken;
         if (isMobile) {
@@ -517,9 +520,9 @@ public class AuthController {
             );
             refreshTokenRepository.save(refreshTokenRecord);
 
-            // Check client type for response format
-            String clientType = httpRequest.getHeader("X-Client-Type");
-            boolean isMobile = "mobile".equals(clientType);
+            // Check client type for response format (supports "mobile", "ios", and "android")
+            ClientInfo clientInfo = ClientInfo.fromRequestAttribute(httpRequest);
+            boolean isMobile = clientInfo != null && clientInfo.isMobile();
 
             Map<String, Object> response = new HashMap<>();
             response.put("message", "Password successfully reset");

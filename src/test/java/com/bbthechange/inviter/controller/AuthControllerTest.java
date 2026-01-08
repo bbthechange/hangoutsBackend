@@ -1,5 +1,6 @@
 package com.bbthechange.inviter.controller;
 
+import com.bbthechange.inviter.config.ClientInfo;
 import com.bbthechange.inviter.controller.AuthController.LoginRequest;
 import com.bbthechange.inviter.dto.VerifyRequest;
 import com.bbthechange.inviter.model.RefreshToken;
@@ -407,10 +408,11 @@ class AuthControllerTest {
             when(hashingService.generateSecurityHash("refresh-token")).thenReturn("security-hash");
             when(request.getHeader("X-Device-ID")).thenReturn("device-123");
             when(request.getHeader("X-Forwarded-For")).thenReturn(null);  // No X-Forwarded-For header
-            when(request.getHeader("X-Client-Type")).thenReturn(null);
-            when(jwtService.getAccessTokenExpirationSeconds()).thenReturn(1800);     // Web client (not mobile)
+            when(request.getAttribute(ClientInfo.REQUEST_ATTRIBUTE)).thenReturn(
+                new ClientInfo(null, null, "web", null, null, "web"));  // Web client (not mobile)
+            when(jwtService.getAccessTokenExpirationSeconds()).thenReturn(1800);
             when(request.getRemoteAddr()).thenReturn("192.168.1.1");
-            
+
             // Mock cookie service for web client
             ResponseCookie mockCookie = ResponseCookie.from("refresh_token", "refresh-token").build();
             when(cookieService.createRefreshTokenCookie("refresh-token")).thenReturn(mockCookie);
@@ -567,10 +569,11 @@ class AuthControllerTest {
             when(hashingService.generateSecurityHash("refresh-token")).thenReturn("security-hash");
             when(request.getHeader("X-Device-ID")).thenReturn("device-123");
             when(request.getHeader("X-Forwarded-For")).thenReturn(null);
-            when(request.getHeader("X-Client-Type")).thenReturn(null);
+            when(request.getAttribute(ClientInfo.REQUEST_ATTRIBUTE)).thenReturn(
+                new ClientInfo(null, null, "web", null, null, "web"));  // Web client (not mobile)
             when(jwtService.getAccessTokenExpirationSeconds()).thenReturn(1800);
             when(request.getRemoteAddr()).thenReturn("192.168.1.1");
-            
+
             ResponseCookie mockCookie = ResponseCookie.from("refresh_token", "refresh-token").build();
             when(cookieService.createRefreshTokenCookie("refresh-token")).thenReturn(mockCookie);
 
@@ -583,7 +586,7 @@ class AuthControllerTest {
             assertEquals("jwt-token", response.getBody().get("accessToken"));
             assertEquals(1800, response.getBody().get("expiresIn"));
             assertEquals("Bearer", response.getBody().get("tokenType"));
-            
+
             verify(userRepository).findByPhoneNumber("+1234567890");
             verify(passwordService).matches("password123", "hashedpassword");
             verify(jwtService).generateToken(testUserId.toString());
@@ -598,7 +601,7 @@ class AuthControllerTest {
             User activeUser = new User("+1234567890", "activeuser", "Active User", "hashedpassword");
             activeUser.setId(testUserId);
             activeUser.setAccountStatus(AccountStatus.ACTIVE);
-            
+
             when(userRepository.findByPhoneNumber("+1234567890")).thenReturn(Optional.of(activeUser));
             when(passwordService.matches("password123", "hashedpassword")).thenReturn(true);
             when(jwtService.generateToken(testUserId.toString())).thenReturn("jwt-token");
@@ -607,10 +610,11 @@ class AuthControllerTest {
             when(hashingService.generateSecurityHash("refresh-token")).thenReturn("security-hash");
             when(request.getHeader("X-Device-ID")).thenReturn("device-123");
             when(request.getHeader("X-Forwarded-For")).thenReturn(null);
-            when(request.getHeader("X-Client-Type")).thenReturn(null);
+            when(request.getAttribute(ClientInfo.REQUEST_ATTRIBUTE)).thenReturn(
+                new ClientInfo(null, null, "web", null, null, "web"));  // Web client (not mobile)
             when(jwtService.getAccessTokenExpirationSeconds()).thenReturn(1800);
             when(request.getRemoteAddr()).thenReturn("192.168.1.1");
-            
+
             ResponseCookie mockCookie = ResponseCookie.from("refresh_token", "refresh-token").build();
             when(cookieService.createRefreshTokenCookie("refresh-token")).thenReturn(mockCookie);
 
@@ -1416,7 +1420,8 @@ class AuthControllerTest {
             String tokenHash = "hash";
             String securityHash = "secHash";
 
-            when(request.getHeader("X-Client-Type")).thenReturn("mobile");
+            when(request.getAttribute(ClientInfo.REQUEST_ATTRIBUTE)).thenReturn(
+                new ClientInfo(null, null, "mobile", null, null, "mobile"));  // Mobile client
             when(request.getHeader("X-Device-ID")).thenReturn("device-123");
             when(request.getHeader("X-Forwarded-For")).thenReturn(null);
             when(request.getRemoteAddr()).thenReturn("192.168.1.1");
@@ -1459,7 +1464,8 @@ class AuthControllerTest {
             String refreshToken = "refresh.token";
             ResponseCookie cookie = ResponseCookie.from("refreshToken", refreshToken).build();
 
-            when(request.getHeader("X-Client-Type")).thenReturn("web");
+            when(request.getAttribute(ClientInfo.REQUEST_ATTRIBUTE)).thenReturn(
+                new ClientInfo(null, null, "web", null, null, "web"));  // Web client
             when(request.getHeader("X-Device-ID")).thenReturn("device-456");
             when(request.getHeader("X-Forwarded-For")).thenReturn(null);
             when(request.getRemoteAddr()).thenReturn("10.0.0.1");
