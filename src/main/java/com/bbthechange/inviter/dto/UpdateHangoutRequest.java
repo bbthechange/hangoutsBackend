@@ -17,4 +17,9 @@ public class UpdateHangoutRequest {
     private String ticketLink;
     private Boolean ticketsRequired;
     private String discountCode;
+
+    // External source fields
+    private String externalId;          // ID from external source (Ticketmaster, Yelp, etc.)
+    private String externalSource;      // Source system name
+    private Boolean isGeneratedTitle;   // Whether title was auto-generated
 }

@@ -29,6 +29,11 @@ public class EventSeries extends BaseItem {
     private Long endTimestamp;          // Timestamp of the last event in the series
     private List<String> hangoutIds;   // List of hangout IDs that are part of this series
     private Long version;               // Optimistic locking
+
+    // External source fields (for integration with Ticketmaster, Yelp, etc.)
+    private String externalId;            // ID from external source
+    private String externalSource;        // Source system name (e.g., "TICKETMASTER", "YELP")
+    private Boolean isGeneratedTitle;     // Whether title was auto-generated (defaults to false)
     
     // Default constructor for DynamoDB
     public EventSeries() {
@@ -204,5 +209,34 @@ public class EventSeries extends BaseItem {
      */
     public int getHangoutCount() {
         return this.hangoutIds != null ? this.hangoutIds.size() : 0;
+    }
+
+    @DynamoDbSecondaryPartitionKey(indexNames = "ExternalIdIndex")
+    public String getExternalId() {
+        return externalId;
+    }
+
+    public void setExternalId(String externalId) {
+        this.externalId = externalId;
+        touch(); // Update timestamp
+    }
+
+    @DynamoDbSecondarySortKey(indexNames = "ExternalIdIndex")
+    public String getExternalSource() {
+        return externalSource;
+    }
+
+    public void setExternalSource(String externalSource) {
+        this.externalSource = externalSource;
+        touch(); // Update timestamp
+    }
+
+    public Boolean getIsGeneratedTitle() {
+        return isGeneratedTitle;
+    }
+
+    public void setIsGeneratedTitle(Boolean isGeneratedTitle) {
+        this.isGeneratedTitle = isGeneratedTitle;
+        touch(); // Update timestamp
     }
 }

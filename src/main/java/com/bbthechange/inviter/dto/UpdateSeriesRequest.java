@@ -35,22 +35,41 @@ public class UpdateSeriesRequest {
      * If null, the primary event ID will not be changed.
      */
     private String primaryEventId;
-    
+
+    /**
+     * External ID from external source (Ticketmaster, Yelp, etc.)
+     * If null, the external ID will not be changed.
+     */
+    private String externalId;
+
+    /**
+     * Source system name (e.g., "TICKETMASTER", "YELP").
+     * If null, the external source will not be changed.
+     */
+    private String externalSource;
+
+    /**
+     * Whether title was auto-generated.
+     * If null, the flag will not be changed.
+     */
+    private Boolean isGeneratedTitle;
+
     public UpdateSeriesRequest() {
     }
-    
+
     public UpdateSeriesRequest(Long version, String seriesTitle, String seriesDescription, String primaryEventId) {
         this.version = version;
         this.seriesTitle = seriesTitle;
         this.seriesDescription = seriesDescription;
         this.primaryEventId = primaryEventId;
     }
-    
+
     /**
      * Check if this request has any fields to update.
      * @return true if at least one field is non-null
      */
     public boolean hasUpdates() {
-        return seriesTitle != null || seriesDescription != null || primaryEventId != null;
+        return seriesTitle != null || seriesDescription != null || primaryEventId != null
+                || externalId != null || externalSource != null || isGeneratedTitle != null;
     }
 }

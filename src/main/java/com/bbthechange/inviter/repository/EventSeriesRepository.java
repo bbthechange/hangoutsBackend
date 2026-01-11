@@ -59,10 +59,20 @@ public interface EventSeriesRepository {
     /**
      * Find upcoming EventSeries for a specific group.
      * Uses the EntityTimeIndex GSI with timestamp filtering for future series only.
-     * 
+     *
      * @param groupId The group identifier
      * @param currentTimestamp Current time in epoch seconds
      * @return List of future EventSeries for the group, ordered by start timestamp
      */
     List<EventSeries> findUpcomingByGroupId(String groupId, long currentTimestamp);
+
+    /**
+     * Find an EventSeries by its external ID and external source.
+     * Uses the ExternalIdIndex GSI for efficient lookup.
+     *
+     * @param externalId The external identifier from the source system
+     * @param externalSource The source system name (e.g., "TICKETMASTER", "YELP")
+     * @return Optional containing the series if found, empty otherwise
+     */
+    Optional<EventSeries> findByExternalIdAndSource(String externalId, String externalSource);
 }

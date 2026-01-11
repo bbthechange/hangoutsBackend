@@ -1627,4 +1627,54 @@ public class HangoutRepositoryImpl implements HangoutRepository {
             }
         });
     }
+
+    // ============================================================================
+    // EXTERNAL ID LOOKUP OPERATIONS
+    // ============================================================================
+
+    @Override
+    public Optional<Hangout> findByExternalIdAndSource(String externalId, String externalSource) {
+        return performanceTracker.trackQuery("findByExternalIdAndSource", "ExternalIdIndex", () -> {
+            try {
+                if (externalId == null || externalSource == null) {
+                    return Optional.empty();
+                }
+
+                QueryRequest request = QueryRequest.builder()
+                    .tableName(TABLE_NAME)
+                    .indexName("ExternalIdIndex")
+                    .keyConditionExpression("externalId = :externalId AND externalSource = :externalSource")
+                    .expressionAttributeValues(Map.of(
+                        ":externalId", AttributeValue.builder().s(externalId).build(),
+                        ":externalSource", AttributeValue.builder().s(externalSource).build()
+                    ))
+                    .limit(1) // We only expect one result
+                    .build();
+
+                QueryResponse response = dynamoDbClient.query(request);
+
+                if (response.items().isEmpty()) {
+                    logger.debug("No hangout found for externalId={}, externalSource={}", externalId, externalSource);
+                    return Optional.empty();
+                }
+
+                // Filter to only return Hangout items (not EventSeries)
+                for (Map<String, AttributeValue> item : response.items()) {
+                    String pk = item.get("pk").s();
+                    if (pk != null && pk.startsWith("EVENT#")) {
+                        Hangout hangout = hangoutSchema.mapToItem(item);
+                        logger.debug("Found hangout {} for externalId={}, externalSource={}",
+                            hangout.getHangoutId(), externalId, externalSource);
+                        return Optional.of(hangout);
+                    }
+                }
+
+                return Optional.empty();
+
+            } catch (DynamoDbException e) {
+                logger.error("Failed to find hangout by externalId={}, externalSource={}", externalId, externalSource, e);
+                throw new RepositoryException("Failed to query hangout by external ID", e);
+            }
+        });
+    }
 }

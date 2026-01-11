@@ -752,7 +752,23 @@ public class EventSeriesServiceImpl implements EventSeriesService {
             series.setPrimaryEventId(updateRequest.getPrimaryEventId());
             hasChanges = true;
         }
-        
+
+        // External source fields
+        if (updateRequest.getExternalId() != null) {
+            series.setExternalId(updateRequest.getExternalId());
+            hasChanges = true;
+        }
+
+        if (updateRequest.getExternalSource() != null) {
+            series.setExternalSource(updateRequest.getExternalSource());
+            hasChanges = true;
+        }
+
+        if (updateRequest.getIsGeneratedTitle() != null) {
+            series.setIsGeneratedTitle(updateRequest.getIsGeneratedTitle());
+            hasChanges = true;
+        }
+
         if (!hasChanges) {
             logger.debug("No actual changes detected for series {}", seriesId);
             return series;

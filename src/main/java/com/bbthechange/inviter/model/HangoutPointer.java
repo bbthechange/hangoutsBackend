@@ -67,6 +67,11 @@ public class HangoutPointer extends BaseItem {
     private Boolean ticketsRequired;                       // From Hangout canonical
     private String discountCode;                           // From Hangout canonical
 
+    // External source fields (denormalized from Hangout)
+    private String externalId;                             // ID from external source (Ticketmaster, Yelp, etc.)
+    private String externalSource;                         // Source system name
+    private Boolean isGeneratedTitle;                      // Whether title was auto-generated
+
     // Default constructor for DynamoDB
     public HangoutPointer() {
         super();
@@ -393,6 +398,37 @@ public class HangoutPointer extends BaseItem {
 
     public void setDiscountCode(String discountCode) {
         this.discountCode = discountCode;
+        touch();
+    }
+
+    // ============================================================================
+    // EXTERNAL SOURCE FIELDS (Denormalized from canonical Hangout)
+    // ============================================================================
+
+    public String getExternalId() {
+        return externalId;
+    }
+
+    public void setExternalId(String externalId) {
+        this.externalId = externalId;
+        touch();
+    }
+
+    public String getExternalSource() {
+        return externalSource;
+    }
+
+    public void setExternalSource(String externalSource) {
+        this.externalSource = externalSource;
+        touch();
+    }
+
+    public Boolean getIsGeneratedTitle() {
+        return isGeneratedTitle;
+    }
+
+    public void setIsGeneratedTitle(Boolean isGeneratedTitle) {
+        this.isGeneratedTitle = isGeneratedTitle;
         touch();
     }
 }

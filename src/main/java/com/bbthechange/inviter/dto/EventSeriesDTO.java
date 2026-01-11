@@ -22,10 +22,15 @@ public class EventSeriesDTO {
     private Long version;
     private Instant createdAt;
     private Instant updatedAt;
-    
+
+    // External source fields
+    private String externalId;
+    private String externalSource;
+    private Boolean isGeneratedTitle;
+
     public EventSeriesDTO() {
     }
-    
+
     /**
      * Constructor from EventSeries model.
      */
@@ -41,6 +46,11 @@ public class EventSeriesDTO {
         this.version = eventSeries.getVersion();
         this.createdAt = eventSeries.getCreatedAt();
         this.updatedAt = eventSeries.getUpdatedAt();
+
+        // External source fields
+        this.externalId = eventSeries.getExternalId();
+        this.externalSource = eventSeries.getExternalSource();
+        this.isGeneratedTitle = eventSeries.getIsGeneratedTitle();
     }
     
     public String getSeriesId() {
@@ -126,8 +136,32 @@ public class EventSeriesDTO {
     public Instant getUpdatedAt() {
         return updatedAt;
     }
-    
+
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public String getExternalId() {
+        return externalId;
+    }
+
+    public void setExternalId(String externalId) {
+        this.externalId = externalId;
+    }
+
+    public String getExternalSource() {
+        return externalSource;
+    }
+
+    public void setExternalSource(String externalSource) {
+        this.externalSource = externalSource;
+    }
+
+    public Boolean getIsGeneratedTitle() {
+        return isGeneratedTitle;
+    }
+
+    public void setIsGeneratedTitle(Boolean isGeneratedTitle) {
+        this.isGeneratedTitle = isGeneratedTitle;
     }
 }

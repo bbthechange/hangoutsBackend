@@ -104,6 +104,11 @@ public class HangoutServiceImpl implements HangoutService {
                 pointer.setTicketsRequired(hangout.getTicketsRequired());
                 pointer.setDiscountCode(hangout.getDiscountCode());
 
+                // Denormalize external source fields
+                pointer.setExternalId(hangout.getExternalId());
+                pointer.setExternalSource(hangout.getExternalSource());
+                pointer.setIsGeneratedTitle(hangout.getIsGeneratedTitle());
+
                 // NEW: Initialize empty collections (already done in constructor, but explicit here)
                 // polls, pollOptions, votes, cars, carRiders, needsRide are initialized in HangoutPointer()
 
@@ -230,6 +235,11 @@ public class HangoutServiceImpl implements HangoutService {
         hangout.setTicketLink(request.getTicketLink());
         hangout.setTicketsRequired(request.getTicketsRequired());
         hangout.setDiscountCode(request.getDiscountCode());
+
+        // Set external source fields
+        hangout.setExternalId(request.getExternalId());
+        hangout.setExternalSource(request.getExternalSource());
+        hangout.setIsGeneratedTitle(request.getIsGeneratedTitle() != null ? request.getIsGeneratedTitle() : false);
 
         // Verify user is in all specified groups
         if (request.getAssociatedGroups() != null) {
@@ -396,6 +406,22 @@ public class HangoutServiceImpl implements HangoutService {
 
         if (request.getDiscountCode() != null && !request.getDiscountCode().equals(hangout.getDiscountCode())) {
             hangout.setDiscountCode(request.getDiscountCode());
+            needsPointerUpdate = true;
+        }
+
+        // External source fields
+        if (request.getExternalId() != null && !request.getExternalId().equals(hangout.getExternalId())) {
+            hangout.setExternalId(request.getExternalId());
+            needsPointerUpdate = true;
+        }
+
+        if (request.getExternalSource() != null && !request.getExternalSource().equals(hangout.getExternalSource())) {
+            hangout.setExternalSource(request.getExternalSource());
+            needsPointerUpdate = true;
+        }
+
+        if (request.getIsGeneratedTitle() != null && !request.getIsGeneratedTitle().equals(hangout.getIsGeneratedTitle())) {
+            hangout.setIsGeneratedTitle(request.getIsGeneratedTitle());
             needsPointerUpdate = true;
         }
 
@@ -681,6 +707,11 @@ public class HangoutServiceImpl implements HangoutService {
             pointer.setCarpoolEnabled(hangout.isCarpoolEnabled());
             pointer.setMainImagePath(hangout.getMainImagePath());
 
+            // Denormalize external source fields
+            pointer.setExternalId(hangout.getExternalId());
+            pointer.setExternalSource(hangout.getExternalSource());
+            pointer.setIsGeneratedTitle(hangout.getIsGeneratedTitle());
+
             // Denormalize existing polls, votes, attributes, and interest levels
             // Get all existing data from hangout detail
             HangoutDetailData detailData = hangoutRepository.getHangoutDetailData(eventId);
@@ -765,6 +796,11 @@ public class HangoutServiceImpl implements HangoutService {
                 pointer.setTicketLink(hangout.getTicketLink());
                 pointer.setTicketsRequired(hangout.getTicketsRequired());
                 pointer.setDiscountCode(hangout.getDiscountCode());
+
+                // Update external source fields
+                pointer.setExternalId(hangout.getExternalId());
+                pointer.setExternalSource(hangout.getExternalSource());
+                pointer.setIsGeneratedTitle(hangout.getIsGeneratedTitle());
             }, "basic fields");
         }
     }
@@ -1247,6 +1283,11 @@ public class HangoutServiceImpl implements HangoutService {
 
                 // Update interest levels
                 pointer.setInterestLevels(new ArrayList<>(detailData.getAttendance()));
+
+                // Update external source fields
+                pointer.setExternalId(hangout.getExternalId());
+                pointer.setExternalSource(hangout.getExternalSource());
+                pointer.setIsGeneratedTitle(hangout.getIsGeneratedTitle());
             }, "complete resync");
         }
 

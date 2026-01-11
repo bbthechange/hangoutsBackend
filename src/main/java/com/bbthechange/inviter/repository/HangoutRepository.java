@@ -216,4 +216,14 @@ public interface HangoutRepository {
      * @param hangoutId The hangout ID
      */
     void clearReminderSentAt(String hangoutId);
+
+    /**
+     * Find a hangout by its external ID and external source.
+     * Uses the ExternalIdIndex GSI for efficient lookup.
+     *
+     * @param externalId The external identifier from the source system
+     * @param externalSource The source system name (e.g., "TICKETMASTER", "YELP")
+     * @return Optional containing the hangout if found, empty otherwise
+     */
+    Optional<Hangout> findByExternalIdAndSource(String externalId, String externalSource);
 }

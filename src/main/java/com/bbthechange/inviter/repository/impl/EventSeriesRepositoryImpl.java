@@ -167,7 +167,7 @@ public class EventSeriesRepositoryImpl implements EventSeriesRepository {
         return performanceTracker.trackQuery("findUpcomingEventSeriesByGroupId", "EntityTimeIndex", () -> {
             try {
                 String participantKey = InviterKeyFactory.getGroupPk(groupId);
-                
+
                 QueryRequest request = QueryRequest.builder()
                     .tableName(TABLE_NAME)
                     .indexName("EntityTimeIndex")
@@ -180,16 +180,61 @@ public class EventSeriesRepositoryImpl implements EventSeriesRepository {
                     ))
                     .scanIndexForward(true) // Sort by timestamp ascending (chronological order)
                     .build();
-                
+
                 QueryResponse response = dynamoDbClient.query(request);
-                
+
                 return response.items().stream()
                     .map(eventSeriesSchema::mapToItem)
                     .collect(Collectors.toList());
-                    
+
             } catch (DynamoDbException e) {
                 logger.error("Failed to query upcoming EventSeries for group {}", groupId, e);
                 throw new RepositoryException("Failed to query upcoming EventSeries by group ID", e);
+            }
+        });
+    }
+
+    @Override
+    public Optional<EventSeries> findByExternalIdAndSource(String externalId, String externalSource) {
+        return performanceTracker.trackQuery("findEventSeriesByExternalIdAndSource", "ExternalIdIndex", () -> {
+            try {
+                if (externalId == null || externalSource == null) {
+                    return Optional.empty();
+                }
+
+                QueryRequest request = QueryRequest.builder()
+                    .tableName(TABLE_NAME)
+                    .indexName("ExternalIdIndex")
+                    .keyConditionExpression("externalId = :externalId AND externalSource = :externalSource")
+                    .expressionAttributeValues(Map.of(
+                        ":externalId", AttributeValue.builder().s(externalId).build(),
+                        ":externalSource", AttributeValue.builder().s(externalSource).build()
+                    ))
+                    .build();
+
+                QueryResponse response = dynamoDbClient.query(request);
+
+                if (response.items().isEmpty()) {
+                    logger.debug("No EventSeries found for externalId={}, externalSource={}", externalId, externalSource);
+                    return Optional.empty();
+                }
+
+                // Filter to only return EventSeries items (not Hangouts)
+                for (Map<String, AttributeValue> item : response.items()) {
+                    String pk = item.get("pk").s();
+                    if (pk != null && pk.startsWith("SERIES#")) {
+                        EventSeries series = eventSeriesSchema.mapToItem(item);
+                        logger.debug("Found EventSeries {} for externalId={}, externalSource={}",
+                            series.getSeriesId(), externalId, externalSource);
+                        return Optional.of(series);
+                    }
+                }
+
+                return Optional.empty();
+
+            } catch (DynamoDbException e) {
+                logger.error("Failed to find EventSeries by externalId={}, externalSource={}", externalId, externalSource, e);
+                throw new RepositoryException("Failed to query EventSeries by external ID", e);
             }
         });
     }

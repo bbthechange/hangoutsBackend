@@ -75,6 +75,12 @@ public class HangoutSummaryDTO implements FeedItem {
     private Boolean ticketsRequired;
     private String discountCode;
 
+    // External source fields (denormalized from HangoutPointer)
+    private String externalId;
+    private String externalSource;
+    @Builder.Default
+    private Boolean isGeneratedTitle = false;
+
     /**
      * Create HangoutSummaryDTO from HangoutPointer with transformed nested data.
      *
@@ -136,6 +142,11 @@ public class HangoutSummaryDTO implements FeedItem {
         this.ticketLink = pointer.getTicketLink();
         this.ticketsRequired = pointer.getTicketsRequired();
         this.discountCode = pointer.getDiscountCode();
+
+        // External source fields (denormalized from pointer)
+        this.externalId = pointer.getExternalId();
+        this.externalSource = pointer.getExternalSource();
+        this.isGeneratedTitle = pointer.getIsGeneratedTitle() != null ? pointer.getIsGeneratedTitle() : false;
     }
     
     public String getHangoutId() {
@@ -332,5 +343,31 @@ public class HangoutSummaryDTO implements FeedItem {
 
     public void setDiscountCode(String discountCode) {
         this.discountCode = discountCode;
+    }
+
+    // External source field getters/setters
+
+    public String getExternalId() {
+        return externalId;
+    }
+
+    public void setExternalId(String externalId) {
+        this.externalId = externalId;
+    }
+
+    public String getExternalSource() {
+        return externalSource;
+    }
+
+    public void setExternalSource(String externalSource) {
+        this.externalSource = externalSource;
+    }
+
+    public Boolean getIsGeneratedTitle() {
+        return isGeneratedTitle;
+    }
+
+    public void setIsGeneratedTitle(Boolean isGeneratedTitle) {
+        this.isGeneratedTitle = isGeneratedTitle;
     }
 }

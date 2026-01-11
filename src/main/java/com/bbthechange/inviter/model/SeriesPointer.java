@@ -34,6 +34,11 @@ public class SeriesPointer extends BaseItem {
     private List<String> hangoutIds;   // List of hangout IDs that are part of this series
     private List<HangoutPointer> parts; // Denormalized list of HangoutPointer objects for each part
     private Long version;               // Copy of series version for consistency
+
+    // External source fields (denormalized from EventSeries)
+    private String externalId;          // ID from external source (Ticketmaster, Yelp, etc.)
+    private String externalSource;      // Source system name
+    private Boolean isGeneratedTitle;   // Whether title was auto-generated
     
     // Default constructor for DynamoDB
     public SeriesPointer() {
@@ -80,6 +85,11 @@ public class SeriesPointer extends BaseItem {
         pointer.setEndTimestamp(series.getEndTimestamp());
         pointer.setHangoutIds(series.getHangoutIds() != null ? new ArrayList<>(series.getHangoutIds()) : new ArrayList<>());
         pointer.setVersion(series.getVersion());
+
+        // Copy external source fields
+        pointer.setExternalId(series.getExternalId());
+        pointer.setExternalSource(series.getExternalSource());
+        pointer.setIsGeneratedTitle(series.getIsGeneratedTitle());
 
         return pointer;
     }
@@ -215,6 +225,11 @@ public class SeriesPointer extends BaseItem {
         setEndTimestamp(series.getEndTimestamp());
         setHangoutIds(series.getHangoutIds() != null ? new ArrayList<>(series.getHangoutIds()) : new ArrayList<>());
         setVersion(series.getVersion());
+
+        // Sync external source fields
+        setExternalId(series.getExternalId());
+        setExternalSource(series.getExternalSource());
+        setIsGeneratedTitle(series.getIsGeneratedTitle());
     }
     
     /**
@@ -258,5 +273,36 @@ public class SeriesPointer extends BaseItem {
      */
     public int getPartsCount() {
         return this.parts != null ? this.parts.size() : 0;
+    }
+
+    // ============================================================================
+    // EXTERNAL SOURCE FIELDS (Denormalized from canonical EventSeries)
+    // ============================================================================
+
+    public String getExternalId() {
+        return externalId;
+    }
+
+    public void setExternalId(String externalId) {
+        this.externalId = externalId;
+        touch();
+    }
+
+    public String getExternalSource() {
+        return externalSource;
+    }
+
+    public void setExternalSource(String externalSource) {
+        this.externalSource = externalSource;
+        touch();
+    }
+
+    public Boolean getIsGeneratedTitle() {
+        return isGeneratedTitle;
+    }
+
+    public void setIsGeneratedTitle(Boolean isGeneratedTitle) {
+        this.isGeneratedTitle = isGeneratedTitle;
+        touch();
     }
 }

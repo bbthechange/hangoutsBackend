@@ -18,7 +18,12 @@ public class SeriesSummaryDTO implements FeedItem {
     private List<HangoutSummaryDTO> parts; // Individual events in the series
     private int totalParts;
     private String type = "series"; // Type discriminator for client-side handling
-    
+
+    // External source fields (denormalized from SeriesPointer)
+    private String externalId;
+    private String externalSource;
+    private Boolean isGeneratedTitle;
+
     public SeriesSummaryDTO() {
     }
     
@@ -98,8 +103,32 @@ public class SeriesSummaryDTO implements FeedItem {
     public String getType() {
         return type;
     }
-    
+
     public void setType(String type) {
         this.type = type;
+    }
+
+    public String getExternalId() {
+        return externalId;
+    }
+
+    public void setExternalId(String externalId) {
+        this.externalId = externalId;
+    }
+
+    public String getExternalSource() {
+        return externalSource;
+    }
+
+    public void setExternalSource(String externalSource) {
+        this.externalSource = externalSource;
+    }
+
+    public Boolean getIsGeneratedTitle() {
+        return isGeneratedTitle;
+    }
+
+    public void setIsGeneratedTitle(Boolean isGeneratedTitle) {
+        this.isGeneratedTitle = isGeneratedTitle;
     }
 }

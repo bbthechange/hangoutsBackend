@@ -47,6 +47,11 @@ public class Hangout extends BaseItem {
     private String reminderScheduleName;  // EventBridge schedule name (e.g., "hangout-{id}") for updates/deletion
     private Long reminderSentAt;          // Epoch millis when reminder was sent (idempotency flag)
 
+    // External source fields (for integration with Ticketmaster, Yelp, etc.)
+    private String externalId;            // ID from external source
+    private String externalSource;        // Source system name (e.g., "TICKETMASTER", "YELP")
+    private Boolean isGeneratedTitle;     // Whether title was auto-generated (defaults to false)
+
     // Default constructor for DynamoDB
     public Hangout() {
         super();
@@ -289,6 +294,35 @@ public class Hangout extends BaseItem {
 
     public void setReminderSentAt(Long reminderSentAt) {
         this.reminderSentAt = reminderSentAt;
+        touch(); // Update timestamp
+    }
+
+    @DynamoDbSecondaryPartitionKey(indexNames = "ExternalIdIndex")
+    public String getExternalId() {
+        return externalId;
+    }
+
+    public void setExternalId(String externalId) {
+        this.externalId = externalId;
+        touch(); // Update timestamp
+    }
+
+    @DynamoDbSecondarySortKey(indexNames = "ExternalIdIndex")
+    public String getExternalSource() {
+        return externalSource;
+    }
+
+    public void setExternalSource(String externalSource) {
+        this.externalSource = externalSource;
+        touch(); // Update timestamp
+    }
+
+    public Boolean getIsGeneratedTitle() {
+        return isGeneratedTitle;
+    }
+
+    public void setIsGeneratedTitle(Boolean isGeneratedTitle) {
+        this.isGeneratedTitle = isGeneratedTitle;
         touch(); // Update timestamp
     }
 }
