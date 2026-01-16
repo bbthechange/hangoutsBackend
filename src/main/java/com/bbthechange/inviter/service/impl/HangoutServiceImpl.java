@@ -109,6 +109,9 @@ public class HangoutServiceImpl implements HangoutService {
                 pointer.setExternalSource(hangout.getExternalSource());
                 pointer.setIsGeneratedTitle(hangout.getIsGeneratedTitle());
 
+                // Denormalize host at place field
+                pointer.setHostAtPlaceUserId(hangout.getHostAtPlaceUserId());
+
                 // NEW: Initialize empty collections (already done in constructor, but explicit here)
                 // polls, pollOptions, votes, cars, carRiders, needsRide are initialized in HangoutPointer()
 
@@ -241,6 +244,13 @@ public class HangoutServiceImpl implements HangoutService {
         hangout.setExternalSource(request.getExternalSource());
         hangout.setIsGeneratedTitle(request.getIsGeneratedTitle() != null ? request.getIsGeneratedTitle() : false);
 
+        // Validate and set host at place
+        if (request.getHostAtPlaceUserId() != null) {
+            userService.getUserSummary(UUID.fromString(request.getHostAtPlaceUserId()))
+                .orElseThrow(() -> new ValidationException("Invalid hostAtPlaceUserId: user not found"));
+            hangout.setHostAtPlaceUserId(request.getHostAtPlaceUserId());
+        }
+
         // Verify user is in all specified groups
         if (request.getAssociatedGroups() != null) {
             for (String groupId : request.getAssociatedGroups()) {
@@ -311,7 +321,8 @@ public class HangoutServiceImpl implements HangoutService {
         List<InterestLevel> attendance = HangoutDataTransformer.transformAttendanceForBackwardCompatibility(
                 hangoutDetail.getAttendance(), attendanceBackwardCompatEnabled);
 
-        return HangoutDetailDTO.builder()
+        // Build the DTO
+        HangoutDetailDTO.HangoutDetailDTOBuilder dtoBuilder = HangoutDetailDTO.builder()
                 .withHangout(hangout)
                 .withAttributes(attributeDTOs)
                 .withPolls(pollsWithOptions)
@@ -321,8 +332,18 @@ public class HangoutServiceImpl implements HangoutService {
                 .withCarRiders(hangoutDetail.getCarRiders())
                 .withNeedsRide(needsRideDTOs)
                 .withParticipations(participationDTOs)
-                .withReservationOffers(offerDTOs)
-                .build();
+                .withReservationOffers(offerDTOs);
+
+        // Resolve host at place display name and image
+        if (hangout.getHostAtPlaceUserId() != null) {
+            userService.getUserSummary(UUID.fromString(hangout.getHostAtPlaceUserId()))
+                .ifPresent(user -> {
+                    dtoBuilder.withHostAtPlaceDisplayName(user.getDisplayName());
+                    dtoBuilder.withHostAtPlaceImagePath(user.getMainImagePath());
+                });
+        }
+
+        return dtoBuilder.build();
     }
     
     @Override
@@ -422,6 +443,18 @@ public class HangoutServiceImpl implements HangoutService {
 
         if (request.getIsGeneratedTitle() != null && !request.getIsGeneratedTitle().equals(hangout.getIsGeneratedTitle())) {
             hangout.setIsGeneratedTitle(request.getIsGeneratedTitle());
+            needsPointerUpdate = true;
+        }
+
+        // Host at place field - supports clearing (null) and changing
+        if (request.getHostAtPlaceUserId() != null) {
+            // Validate new user exists
+            userService.getUserSummary(UUID.fromString(request.getHostAtPlaceUserId()))
+                .orElseThrow(() -> new ValidationException("Invalid hostAtPlaceUserId: user not found"));
+        }
+        // Always check for change (including null → value or value → different value)
+        if (!Objects.equals(request.getHostAtPlaceUserId(), hangout.getHostAtPlaceUserId())) {
+            hangout.setHostAtPlaceUserId(request.getHostAtPlaceUserId());
             needsPointerUpdate = true;
         }
 
@@ -712,6 +745,9 @@ public class HangoutServiceImpl implements HangoutService {
             pointer.setExternalSource(hangout.getExternalSource());
             pointer.setIsGeneratedTitle(hangout.getIsGeneratedTitle());
 
+            // Denormalize host at place field
+            pointer.setHostAtPlaceUserId(hangout.getHostAtPlaceUserId());
+
             // Denormalize existing polls, votes, attributes, and interest levels
             // Get all existing data from hangout detail
             HangoutDetailData detailData = hangoutRepository.getHangoutDetailData(eventId);
@@ -801,6 +837,9 @@ public class HangoutServiceImpl implements HangoutService {
                 pointer.setExternalId(hangout.getExternalId());
                 pointer.setExternalSource(hangout.getExternalSource());
                 pointer.setIsGeneratedTitle(hangout.getIsGeneratedTitle());
+
+                // Update host at place field
+                pointer.setHostAtPlaceUserId(hangout.getHostAtPlaceUserId());
             }, "basic fields");
         }
     }
@@ -889,6 +928,9 @@ public class HangoutServiceImpl implements HangoutService {
         List<InterestLevel> transformedInterestLevels = HangoutDataTransformer.transformAttendanceForBackwardCompatibility(
                 summary.getInterestLevels(), attendanceBackwardCompatEnabled);
         summary.setInterestLevels(transformedInterestLevels);
+
+        // Enrich host at place info
+        enrichHostAtPlaceInfo(summary);
 
         return summary;
     }
@@ -1288,10 +1330,24 @@ public class HangoutServiceImpl implements HangoutService {
                 pointer.setExternalId(hangout.getExternalId());
                 pointer.setExternalSource(hangout.getExternalSource());
                 pointer.setIsGeneratedTitle(hangout.getIsGeneratedTitle());
+
+                // Update host at place field
+                pointer.setHostAtPlaceUserId(hangout.getHostAtPlaceUserId());
             }, "complete resync");
         }
 
         logger.info("Successfully resynced {} pointer(s) for hangout {}", associatedGroups.size(), hangoutId);
+    }
+
+    @Override
+    public void enrichHostAtPlaceInfo(HangoutSummaryDTO dto) {
+        if (dto.getHostAtPlaceUserId() != null) {
+            userService.getUserSummary(UUID.fromString(dto.getHostAtPlaceUserId()))
+                .ifPresent(user -> {
+                    dto.setHostAtPlaceDisplayName(user.getDisplayName());
+                    dto.setHostAtPlaceImagePath(user.getMainImagePath());
+                });
+        }
     }
 
 }

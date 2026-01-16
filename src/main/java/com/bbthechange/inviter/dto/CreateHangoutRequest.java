@@ -27,4 +27,7 @@ public class CreateHangoutRequest {
     private String externalId;          // ID from external source (Ticketmaster, Yelp, etc.)
     private String externalSource;      // Source system name
     private Boolean isGeneratedTitle;   // Whether title was auto-generated (defaults to false)
+
+    // Host at place field
+    private String hostAtPlaceUserId;   // User ID when hosting at their place
 }

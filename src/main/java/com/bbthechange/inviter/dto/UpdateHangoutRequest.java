@@ -22,4 +22,7 @@ public class UpdateHangoutRequest {
     private String externalId;          // ID from external source (Ticketmaster, Yelp, etc.)
     private String externalSource;      // Source system name
     private Boolean isGeneratedTitle;   // Whether title was auto-generated
+
+    // Host at place field
+    private String hostAtPlaceUserId;   // User ID when hosting at their place (null to clear)
 }

@@ -81,6 +81,11 @@ public class HangoutSummaryDTO implements FeedItem {
     @Builder.Default
     private Boolean isGeneratedTitle = false;
 
+    // Host at place fields (resolved from cache at read time)
+    private String hostAtPlaceUserId;
+    private String hostAtPlaceDisplayName;
+    private String hostAtPlaceImagePath;
+
     /**
      * Create HangoutSummaryDTO from HangoutPointer with transformed nested data.
      *
@@ -147,6 +152,9 @@ public class HangoutSummaryDTO implements FeedItem {
         this.externalId = pointer.getExternalId();
         this.externalSource = pointer.getExternalSource();
         this.isGeneratedTitle = pointer.getIsGeneratedTitle() != null ? pointer.getIsGeneratedTitle() : false;
+
+        // Host at place field (display name and image path set by service layer enrichment)
+        this.hostAtPlaceUserId = pointer.getHostAtPlaceUserId();
     }
     
     public String getHangoutId() {
@@ -369,5 +377,31 @@ public class HangoutSummaryDTO implements FeedItem {
 
     public void setIsGeneratedTitle(Boolean isGeneratedTitle) {
         this.isGeneratedTitle = isGeneratedTitle;
+    }
+
+    // Host at place field getters/setters
+
+    public String getHostAtPlaceUserId() {
+        return hostAtPlaceUserId;
+    }
+
+    public void setHostAtPlaceUserId(String hostAtPlaceUserId) {
+        this.hostAtPlaceUserId = hostAtPlaceUserId;
+    }
+
+    public String getHostAtPlaceDisplayName() {
+        return hostAtPlaceDisplayName;
+    }
+
+    public void setHostAtPlaceDisplayName(String hostAtPlaceDisplayName) {
+        this.hostAtPlaceDisplayName = hostAtPlaceDisplayName;
+    }
+
+    public String getHostAtPlaceImagePath() {
+        return hostAtPlaceImagePath;
+    }
+
+    public void setHostAtPlaceImagePath(String hostAtPlaceImagePath) {
+        this.hostAtPlaceImagePath = hostAtPlaceImagePath;
     }
 }

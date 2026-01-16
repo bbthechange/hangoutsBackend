@@ -52,6 +52,9 @@ public class Hangout extends BaseItem {
     private String externalSource;        // Source system name (e.g., "TICKETMASTER", "YELP")
     private Boolean isGeneratedTitle;     // Whether title was auto-generated (defaults to false)
 
+    // Host at place field (records who is hosting when "my place" is selected)
+    private String hostAtPlaceUserId;
+
     // Default constructor for DynamoDB
     public Hangout() {
         super();
@@ -323,6 +326,15 @@ public class Hangout extends BaseItem {
 
     public void setIsGeneratedTitle(Boolean isGeneratedTitle) {
         this.isGeneratedTitle = isGeneratedTitle;
+        touch(); // Update timestamp
+    }
+
+    public String getHostAtPlaceUserId() {
+        return hostAtPlaceUserId;
+    }
+
+    public void setHostAtPlaceUserId(String hostAtPlaceUserId) {
+        this.hostAtPlaceUserId = hostAtPlaceUserId;
         touch(); // Update timestamp
     }
 }

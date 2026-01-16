@@ -7,6 +7,7 @@ import com.bbthechange.inviter.repository.UserRepository;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.exception.*;
+import com.bbthechange.inviter.service.HangoutService;
 import com.bbthechange.inviter.service.InviteService;
 import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.UserService;
@@ -50,6 +51,9 @@ class GroupServiceImplTest {
 
     @Mock
     private NotificationService notificationService;
+
+    @Mock
+    private HangoutService hangoutService;
 
     @Mock
     private UserService userService;

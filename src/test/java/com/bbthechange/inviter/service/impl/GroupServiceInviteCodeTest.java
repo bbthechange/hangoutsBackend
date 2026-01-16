@@ -11,6 +11,7 @@ import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.InviteCodeRepository;
 import com.bbthechange.inviter.repository.UserRepository;
+import com.bbthechange.inviter.service.HangoutService;
 import com.bbthechange.inviter.service.InviteService;
 import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.S3Service;
@@ -61,6 +62,9 @@ class GroupServiceInviteCodeTest {
     private NotificationService notificationService;
 
     @Mock
+    private HangoutService hangoutService;
+
+    @Mock
     private S3Service s3Service;
 
     @Mock
@@ -77,6 +81,7 @@ class GroupServiceInviteCodeTest {
             userService,
             inviteService,
             notificationService,
+            hangoutService,
             s3Service,
             inviteCodeRepository,
             APP_BASE_URL

@@ -118,4 +118,13 @@ public interface HangoutService {
      */
     void resyncHangoutPointers(String hangoutId);
 
+    /**
+     * Enriches a HangoutSummaryDTO with host at place display name and image.
+     * Looks up the user by hostAtPlaceUserId and sets the display name and image path.
+     * Used by GroupServiceImpl to enrich feed items without direct UserService access.
+     *
+     * @param dto The HangoutSummaryDTO to enrich (modified in place)
+     */
+    void enrichHostAtPlaceInfo(HangoutSummaryDTO dto);
+
 }

@@ -42,4 +42,8 @@ public class HangoutDetailDTO {
     private List<ParticipationDTO> participations = List.of();
     @Builder.Default
     private List<ReservationOfferDTO> reservationOffers = List.of();
+
+    // Host at place resolved fields (fetched from user cache)
+    private String hostAtPlaceDisplayName;
+    private String hostAtPlaceImagePath;
 }

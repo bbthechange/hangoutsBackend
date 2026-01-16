@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.service.impl;
 
 import com.bbthechange.inviter.service.GroupService;
+import com.bbthechange.inviter.service.HangoutService;
 import com.bbthechange.inviter.service.S3Service;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.repository.HangoutRepository;
@@ -15,6 +16,7 @@ import com.bbthechange.inviter.service.UserService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -53,6 +55,7 @@ public class GroupServiceImpl implements GroupService {
     private final UserService userService;
     private final InviteService inviteService;
     private final NotificationService notificationService;
+    private final HangoutService hangoutService;
     private final S3Service s3Service;
     private final InviteCodeRepository inviteCodeRepository;
     private final String appBaseUrl;
@@ -63,8 +66,8 @@ public class GroupServiceImpl implements GroupService {
     @Autowired
     public GroupServiceImpl(GroupRepository groupRepository, HangoutRepository hangoutRepository,
                            UserRepository userRepository, UserService userService, InviteService inviteService,
-                           NotificationService notificationService, S3Service s3Service,
-                           InviteCodeRepository inviteCodeRepository,
+                           NotificationService notificationService, @Lazy HangoutService hangoutService,
+                           S3Service s3Service, InviteCodeRepository inviteCodeRepository,
                            @Value("${app.base-url}") String appBaseUrl) {
         this.groupRepository = groupRepository;
         this.hangoutRepository = hangoutRepository;
@@ -72,6 +75,7 @@ public class GroupServiceImpl implements GroupService {
         this.userService = userService;
         this.inviteService = inviteService;
         this.notificationService = notificationService;
+        this.hangoutService = hangoutService;
         this.s3Service = s3Service;
         this.inviteCodeRepository = inviteCodeRepository;
         this.appBaseUrl = appBaseUrl;
@@ -619,6 +623,8 @@ public class GroupServiceImpl implements GroupService {
                     // Apply backward compatibility transformation for interest levels
                     hangoutDTO.setInterestLevels(HangoutDataTransformer.transformAttendanceForBackwardCompatibility(
                             hangoutDTO.getInterestLevels(), attendanceBackwardCompatEnabled));
+                    // Enrich host at place info
+                    hangoutService.enrichHostAtPlaceInfo(hangoutDTO);
                     feedItems.add(hangoutDTO);
                 }
                 // If it's part of a series, ignore it (already included in SeriesSummaryDTO)
@@ -656,6 +662,8 @@ public class GroupServiceImpl implements GroupService {
                 // Apply backward compatibility transformation for interest levels
                 partDTO.setInterestLevels(HangoutDataTransformer.transformAttendanceForBackwardCompatibility(
                         partDTO.getInterestLevels(), attendanceBackwardCompatEnabled));
+                // Enrich host at place info
+                hangoutService.enrichHostAtPlaceInfo(partDTO);
                 parts.add(partDTO);
             }
         }
