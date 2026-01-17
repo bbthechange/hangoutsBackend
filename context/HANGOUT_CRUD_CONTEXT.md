@@ -107,3 +107,28 @@ The `Hangout` entity is deeply connected to the `EventSeries` feature.
 -   **Creation:** A hangout can be created as a new part of an existing series via the `SeriesController`. In this case, its `seriesId` is set upon creation.
 -   **Updates:** As mentioned in the update flow, modifying a hangout's time or title can trigger a cascading update to the parent `EventSeries` and its `SeriesPointer` to ensure denormalized data remains consistent.
 -   **Deletion:** Deleting a hangout that is part of a series is a more complex operation handled by the `EventSeriesService` to ensure the integrity of the series record.
+
+## 6. TV Watch Party Fields
+
+Hangouts that are part of a TV watch party series have additional fields. See `TV_WATCH_PARTY_CONTEXT.md` for full details.
+
+### Additional Hangout Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `titleNotificationSent` | Boolean | True after first title update notification sent |
+| `combinedExternalIds` | List<String> | All TVMaze episode IDs if this is a combined episode hangout |
+
+### How Watch Party Hangouts Are Created
+
+Watch party hangouts are created by `WatchPartyService` (not `HangoutService`) with:
+- `externalId` = TVMaze episode ID
+- `externalSource` = "TVMAZE"
+- `isGeneratedTitle` = true (unless user edits)
+- `seriesId` linking to the parent `EventSeries`
+
+### Title Update Protection
+
+When `isGeneratedTitle=true`, the background polling system may update the hangout title when TVMaze updates the episode name. The `titleNotificationSent` flag ensures only one notification is sent per hangout.
+
+If the user manually edits the title, `isGeneratedTitle` is set to `false` and the title will never be auto-updated.

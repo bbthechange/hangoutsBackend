@@ -75,3 +75,50 @@ This is the primary method for creating a series.
     *   Gathers a list of all records associated with the series: the `EventSeries` itself, all `Hangout` records within it, all `HangoutPointer`s for those hangouts, and the `SeriesPointer`.
 3.  **Repository:** `SeriesTransactionRepository.deleteEntireSeriesWithAllHangouts()`:
     *   Executes a `TransactWriteItems` request to atomically delete every record collected by the service.
+
+## 4. Watch Party Series (TV Watch Party Feature)
+
+A specialized type of EventSeries used for TV show watch parties. See `TV_WATCH_PARTY_CONTEXT.md` for full details.
+
+### Identifying Watch Party Series
+
+```java
+// EventSeries and SeriesPointer have:
+private String eventSeriesType;  // "WATCH_PARTY" for TV watch parties
+
+public boolean isWatchParty() {
+    return "WATCH_PARTY".equals(eventSeriesType);
+}
+```
+
+### Additional Watch Party Fields on EventSeries
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `eventSeriesType` | String | "WATCH_PARTY" discriminator |
+| `seasonId` | String | Reference to Season record |
+| `defaultHostId` | String | Default host for new episodes |
+| `defaultTime` | String | "HH:mm" format |
+| `dayOverride` | Integer | 0=Sun...6=Sat |
+| `timezone` | String | IANA timezone |
+| `deletedEpisodeIds` | Set<String> | User-deleted episode IDs |
+
+### Additional Watch Party Fields on SeriesPointer
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `interestLevels` | List<InterestLevel> | Series-level interest for notifications |
+
+### Version Filtering
+
+Watch party series are filtered from group feeds for old app versions (< 2.0.0):
+
+```java
+if (seriesPointer.isWatchParty() && !clientInfo.isVersionAtLeast("2.0.0")) {
+    continue; // Filter out
+}
+```
+
+### Watch Party CRUD
+
+Watch parties use separate endpoints (`/groups/{groupId}/watch-parties`) handled by `WatchPartyController`, not the standard series endpoints. The `WatchPartyService` handles creation, updates, and deletion with TV-specific logic like episode combination and DST-aware scheduling.

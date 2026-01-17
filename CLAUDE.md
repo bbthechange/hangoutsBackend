@@ -62,6 +62,7 @@ eb deploy                     # Deploy to production
 | **Carpooling** | `context/CARPOOLING_CONTEXT.md` | Ride coordination, driver/passenger management |
 | **Calendar Subscriptions** | `context/CALENDAR_SUBSCRIPTION_CONTEXT.md` | ICS calendar feeds, token-based subscriptions, HTTP caching |
 | **Notifications** | `context/NOTIFICATIONS_CONTEXT.md` | Push notifications, device registration |
+| **TV Watch Party** | `context/TV_WATCH_PARTY_CONTEXT.md` | TV show watch parties, TVMaze integration, background polling |
 | **Adding Attributes** | `context/ATTRIBUTE_ADDITION_GUIDE.md` | Guide for adding fields to User/Group/Hangout |
 | **Unit tests** | `context/UNIT_TESTING_PATTERNS.md` | Guide for unit tests |
 

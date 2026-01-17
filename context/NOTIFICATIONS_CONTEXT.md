@@ -293,7 +293,43 @@ aws sqs receive-message \
 
 Messages are acknowledged (deleted) even on most errors to prevent infinite retry loops. Only transient infrastructure errors (DynamoDB unavailable) result in message redelivery.
 
-## 5. Adding New Notification Types
+## 5. Watch Party Notifications
+
+TV watch party feature adds notifications for episode-level events. See `TV_WATCH_PARTY_CONTEXT.md` for full details.
+
+### Notification Types
+
+| Event | Recipients | Message |
+|-------|------------|---------|
+| New episode added | GOING/INTERESTED on series | "New episode added: {title}" |
+| Title updated | GOING/INTERESTED on series | "Episode renamed: {newTitle}" |
+| Episode removed | GOING/INTERESTED on series | "{title} has been removed" |
+
+### Methods
+
+```java
+// NotificationServiceImpl
+void notifyWatchPartyNewEpisode(String seriesId, String groupId, Hangout hangout);
+void notifyWatchPartyTitleUpdated(String seriesId, String groupId, Hangout hangout);
+void notifyWatchPartyEpisodeRemoved(String seriesId, String groupId, String title);
+```
+
+### Targeting
+
+Watch party notifications target users based on **series-level interest** (stored in `SeriesPointer.interestLevels`), not individual hangout attendance.
+
+### Title Notification Guard
+
+The `Hangout.titleNotificationSent` flag prevents duplicate title update notifications. Once a title notification is sent, subsequent TVMaze title changes won't trigger new notifications for that hangout.
+
+### Platform Methods
+
+```java
+// FcmNotificationService & PushNotificationService
+void sendWatchPartyNotification(String deviceToken, String seriesId, String groupId, String message);
+```
+
+## 6. Adding New Notification Types
 
 To add a new notification type:
 
