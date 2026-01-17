@@ -1,5 +1,7 @@
 package com.bbthechange.inviter.service.impl;
 
+import com.bbthechange.inviter.client.TvMazeClient;
+import com.bbthechange.inviter.dto.tvmaze.TvMazeEpisodeResponse;
 import com.bbthechange.inviter.dto.watchparty.*;
 import com.bbthechange.inviter.exception.ResourceNotFoundException;
 import com.bbthechange.inviter.exception.UnauthorizedException;
@@ -37,6 +39,7 @@ public class WatchPartyServiceImpl implements WatchPartyService {
     private final EventSeriesRepository eventSeriesRepository;
     private final SeasonRepository seasonRepository;
     private final GroupTimestampService groupTimestampService;
+    private final TvMazeClient tvMazeClient;
 
     @Autowired
     public WatchPartyServiceImpl(
@@ -44,12 +47,14 @@ public class WatchPartyServiceImpl implements WatchPartyService {
             HangoutRepository hangoutRepository,
             EventSeriesRepository eventSeriesRepository,
             SeasonRepository seasonRepository,
-            GroupTimestampService groupTimestampService) {
+            GroupTimestampService groupTimestampService,
+            TvMazeClient tvMazeClient) {
         this.groupRepository = groupRepository;
         this.hangoutRepository = hangoutRepository;
         this.eventSeriesRepository = eventSeriesRepository;
         this.seasonRepository = seasonRepository;
         this.groupTimestampService = groupTimestampService;
+        this.tvMazeClient = tvMazeClient;
     }
 
     @Override
@@ -60,18 +65,21 @@ public class WatchPartyServiceImpl implements WatchPartyService {
         // 2. Validate timezone is valid
         validateTimezone(request.getTimezone());
 
-        // 3. Create or update Season record
-        Season season = createOrUpdateSeason(request);
+        // 3. Resolve episodes (fetch from TVMaze or use provided)
+        List<CreateWatchPartyEpisodeRequest> episodes = resolveEpisodes(request);
 
-        // 4. Apply episode combination logic
-        List<CombinedEpisode> combinedEpisodes = combineEpisodes(request.getEpisodes());
-        logger.info("Combined {} episodes into {} groups", request.getEpisodes().size(), combinedEpisodes.size());
+        // 4. Create or update Season record (using resolved episodes)
+        Season season = createOrUpdateSeason(request, episodes);
 
-        // 5. Create EventSeries
+        // 5. Apply episode combination logic
+        List<CombinedEpisode> combinedEpisodes = combineEpisodes(episodes);
+        logger.info("Combined {} episodes into {} groups", episodes.size(), combinedEpisodes.size());
+
+        // 6. Create EventSeries
         String seriesTitle = request.getShowName() + " Season " + request.getSeasonNumber();
         EventSeries eventSeries = createEventSeries(groupId, request, seriesTitle, season);
 
-        // 6. Create Hangouts and HangoutPointers for each combined episode
+        // 7. Create Hangouts and HangoutPointers for each combined episode
         List<Hangout> hangouts = new ArrayList<>();
         List<HangoutPointer> pointers = new ArrayList<>();
         List<WatchPartyHangoutSummary> hangoutSummaries = new ArrayList<>();
@@ -124,14 +132,14 @@ public class WatchPartyServiceImpl implements WatchPartyService {
         eventSeries.setStartTimestamp(minTimestamp);
         eventSeries.setEndTimestamp(maxTimestamp);
 
-        // 7. Create SeriesPointer
+        // 8. Create SeriesPointer
         SeriesPointer seriesPointer = SeriesPointer.fromEventSeries(eventSeries, groupId);
         seriesPointer.setGsi1sk(String.valueOf(minTimestamp)); // For EntityTimeIndex sorting
 
-        // 8. Save all records
+        // 9. Save all records
         saveAllRecords(season, eventSeries, hangouts, pointers, seriesPointer);
 
-        // 9. Update group timestamp for cache invalidation
+        // 10. Update group timestamp for cache invalidation
         groupTimestampService.updateGroupTimestamps(List.of(groupId));
 
         logger.info("Created watch party {} with {} hangouts for group {}",
@@ -252,6 +260,154 @@ public class WatchPartyServiceImpl implements WatchPartyService {
                 seriesId, series.getHangoutCount(), groupId);
     }
 
+    @Override
+    public WatchPartyDetailResponse updateWatchParty(String groupId, String seriesId,
+                                                      UpdateWatchPartyRequest request,
+                                                      String requestingUserId) {
+        // 1. Validate user is member of group
+        validateGroupMembership(groupId, requestingUserId);
+
+        // 2. Get EventSeries and validate
+        EventSeries series = eventSeriesRepository.findById(seriesId)
+                .orElseThrow(() -> new ResourceNotFoundException("Watch party not found: " + seriesId));
+
+        // Verify it's a watch party and belongs to this group
+        if (!WATCH_PARTY_TYPE.equals(series.getEventSeriesType())) {
+            throw new ResourceNotFoundException("Watch party not found: " + seriesId);
+        }
+        if (!groupId.equals(series.getGroupId())) {
+            throw new ResourceNotFoundException("Watch party not found in group: " + groupId);
+        }
+
+        // 3. Validate timezone if provided
+        String effectiveTimezone = request.getTimezone() != null ? request.getTimezone() : series.getTimezone();
+        if (request.getTimezone() != null) {
+            validateTimezone(request.getTimezone());
+        }
+
+        // 4. Determine effective values (use request if provided, otherwise keep existing)
+        String effectiveDefaultTime = request.getDefaultTime() != null ? request.getDefaultTime() : series.getDefaultTime();
+        Integer effectiveDayOverride = request.getDayOverride() != null ? request.getDayOverride() : series.getDayOverride();
+        String effectiveDefaultHostId = request.getDefaultHostId() != null
+                ? (request.getDefaultHostId().isEmpty() ? null : request.getDefaultHostId())
+                : series.getDefaultHostId();
+
+        // 5. Check if time-related settings changed
+        boolean timeSettingsChanged = !Objects.equals(effectiveDefaultTime, series.getDefaultTime()) ||
+                !Objects.equals(effectiveTimezone, series.getTimezone()) ||
+                !Objects.equals(effectiveDayOverride, series.getDayOverride());
+
+        boolean hostChanged = !Objects.equals(effectiveDefaultHostId, series.getDefaultHostId());
+
+        // 6. Apply settings to series
+        series.setDefaultTime(effectiveDefaultTime);
+        series.setTimezone(effectiveTimezone);
+        series.setDayOverride(effectiveDayOverride);
+        series.setDefaultHostId(effectiveDefaultHostId);
+
+        // 7. If cascade is enabled and time/host changed, update future hangouts
+        Boolean shouldCascade = request.getChangeExistingUpcomingHangouts();
+        if (shouldCascade == null) {
+            shouldCascade = true; // Default to true
+        }
+
+        Long minTimestamp = series.getStartTimestamp();
+        Long maxTimestamp = series.getEndTimestamp();
+
+        if (shouldCascade && (timeSettingsChanged || hostChanged) && series.getHangoutIds() != null) {
+            // Get Season to look up original air timestamps
+            Season season = getSeasonFromSeries(series);
+
+            long nowTimestamp = Instant.now().getEpochSecond();
+
+            for (String hangoutId : series.getHangoutIds()) {
+                Optional<Hangout> hangoutOpt = hangoutRepository.findHangoutById(hangoutId);
+                if (hangoutOpt.isEmpty()) {
+                    continue;
+                }
+                Hangout hangout = hangoutOpt.get();
+
+                // Only update future hangouts
+                if (hangout.getStartTimestamp() != null && hangout.getStartTimestamp() <= nowTimestamp) {
+                    continue;
+                }
+
+                boolean hangoutUpdated = false;
+
+                // Update timestamps if time settings changed
+                if (timeSettingsChanged && season != null) {
+                    // Get original air timestamp from episode
+                    Long originalAirTimestamp = getOriginalAirTimestamp(hangout, season);
+                    if (originalAirTimestamp != null) {
+                        // Preserve duration
+                        long originalDuration = (hangout.getEndTimestamp() != null && hangout.getStartTimestamp() != null)
+                                ? hangout.getEndTimestamp() - hangout.getStartTimestamp()
+                                : 3600L; // Default 1 hour if not set
+
+                        // Calculate new timestamp
+                        long newStartTimestamp = calculateStartTimestamp(
+                                originalAirTimestamp,
+                                effectiveDefaultTime,
+                                effectiveTimezone,
+                                effectiveDayOverride
+                        );
+                        long newEndTimestamp = newStartTimestamp + originalDuration;
+
+                        hangout.setStartTimestamp(newStartTimestamp);
+                        hangout.setEndTimestamp(newEndTimestamp);
+                        hangoutUpdated = true;
+
+                        // Track min/max for series timestamps
+                        if (minTimestamp == null || newStartTimestamp < minTimestamp) {
+                            minTimestamp = newStartTimestamp;
+                        }
+                        if (maxTimestamp == null || newEndTimestamp > maxTimestamp) {
+                            maxTimestamp = newEndTimestamp;
+                        }
+                    }
+                }
+
+                // Update host if changed
+                if (hostChanged) {
+                    hangout.setHostAtPlaceUserId(effectiveDefaultHostId);
+                    hangoutUpdated = true;
+                }
+
+                if (hangoutUpdated) {
+                    // Save hangout
+                    hangoutRepository.save(hangout);
+
+                    // Update HangoutPointer
+                    updateHangoutPointer(hangout, groupId);
+                }
+            }
+        }
+
+        // 8. Update series timestamps if needed
+        if (minTimestamp != null) {
+            series.setStartTimestamp(minTimestamp);
+        }
+        if (maxTimestamp != null) {
+            series.setEndTimestamp(maxTimestamp);
+        }
+
+        // 9. Save series
+        eventSeriesRepository.save(series);
+
+        // 10. Update series pointer
+        SeriesPointer seriesPointer = SeriesPointer.fromEventSeries(series, groupId);
+        seriesPointer.setGsi1sk(String.valueOf(series.getStartTimestamp()));
+        groupRepository.saveSeriesPointer(seriesPointer);
+
+        // 11. Update group timestamp for cache invalidation
+        groupTimestampService.updateGroupTimestamps(List.of(groupId));
+
+        logger.info("Updated watch party {} in group {} with cascade={}", seriesId, groupId, shouldCascade);
+
+        // Return updated details using existing getWatchParty method
+        return getWatchParty(groupId, seriesId, requestingUserId);
+    }
+
     // ============================================================================
     // HELPER METHODS - VALIDATION
     // ============================================================================
@@ -271,6 +427,57 @@ public class WatchPartyServiceImpl implements WatchPartyService {
     }
 
     // ============================================================================
+    // HELPER METHODS - EPISODE RESOLUTION
+    // ============================================================================
+
+    /**
+     * Resolve episodes for a watch party request.
+     * If tvmazeSeasonId is provided and episodes are empty, fetches from TVMaze.
+     * Otherwise, uses the provided episodes.
+     *
+     * @param request The watch party request
+     * @return List of episode requests to use for creating the watch party
+     * @throws ValidationException if neither episodes nor tvmazeSeasonId is provided
+     */
+    private List<CreateWatchPartyEpisodeRequest> resolveEpisodes(CreateWatchPartyRequest request) {
+        if (request.shouldFetchFromTvMaze()) {
+            logger.info("Fetching episodes from TVMaze for season {}", request.getTvmazeSeasonId());
+            List<TvMazeEpisodeResponse> tvMazeEpisodes = tvMazeClient.getEpisodes(request.getTvmazeSeasonId());
+            List<CreateWatchPartyEpisodeRequest> episodes = convertTvMazeEpisodes(tvMazeEpisodes);
+            if (episodes.isEmpty()) {
+                throw new ValidationException("No episodes with valid air dates found for TVMaze season " + request.getTvmazeSeasonId());
+            }
+            return episodes;
+        }
+
+        // Use provided episodes
+        if (request.getEpisodes() == null || request.getEpisodes().isEmpty()) {
+            throw new ValidationException("Either tvmazeSeasonId or episodes must be provided");
+        }
+
+        return request.getEpisodes();
+    }
+
+    /**
+     * Convert TVMaze episode responses to CreateWatchPartyEpisodeRequest objects.
+     *
+     * @param tvMazeEpisodes Episodes from TVMaze API
+     * @return List of episode requests for watch party creation
+     */
+    private List<CreateWatchPartyEpisodeRequest> convertTvMazeEpisodes(List<TvMazeEpisodeResponse> tvMazeEpisodes) {
+        return tvMazeEpisodes.stream()
+                .filter(ep -> TvMazeClient.parseAirstamp(ep.getAirstamp()) != null) // Exclude episodes without air dates
+                .map(ep -> CreateWatchPartyEpisodeRequest.builder()
+                        .episodeId(ep.getId())
+                        .episodeNumber(ep.getNumber())
+                        .title(ep.getName())
+                        .airTimestamp(TvMazeClient.parseAirstamp(ep.getAirstamp()))
+                        .runtime(ep.getRuntime())
+                        .build())
+                .collect(Collectors.toList());
+    }
+
+    // ============================================================================
     // HELPER METHODS - EPISODE COMBINATION
     // ============================================================================
 
@@ -283,10 +490,15 @@ public class WatchPartyServiceImpl implements WatchPartyService {
             return List.of();
         }
 
-        // Sort by air timestamp
+        // Filter out episodes without air timestamps and sort
         List<CreateWatchPartyEpisodeRequest> sorted = episodes.stream()
+                .filter(ep -> ep.getAirTimestamp() != null)
                 .sorted(Comparator.comparing(CreateWatchPartyEpisodeRequest::getAirTimestamp))
                 .collect(Collectors.toList());
+
+        if (sorted.isEmpty()) {
+            return List.of();
+        }
 
         List<CombinedEpisode> result = new ArrayList<>();
         List<CreateWatchPartyEpisodeRequest> currentGroup = new ArrayList<>();
@@ -426,7 +638,7 @@ public class WatchPartyServiceImpl implements WatchPartyService {
     // HELPER METHODS - RECORD CREATION
     // ============================================================================
 
-    private Season createOrUpdateSeason(CreateWatchPartyRequest request) {
+    private Season createOrUpdateSeason(CreateWatchPartyRequest request, List<CreateWatchPartyEpisodeRequest> episodes) {
         // Check if season already exists
         Optional<Season> existing = seasonRepository.findByShowIdAndSeasonNumber(
                 request.getShowId(), request.getSeasonNumber());
@@ -440,16 +652,18 @@ public class WatchPartyServiceImpl implements WatchPartyService {
         // Create new Season
         Season season = new Season(request.getShowId(), request.getSeasonNumber(), request.getShowName());
 
-        // Add episodes from request
-        for (CreateWatchPartyEpisodeRequest ep : request.getEpisodes()) {
-            Episode episode = new Episode(ep.getEpisodeId(), 0, ep.getTitle()); // episodeNumber not in Phase 2 request
+        // Add episodes (either from request or fetched from TVMaze)
+        for (CreateWatchPartyEpisodeRequest ep : episodes) {
+            int episodeNumber = ep.getEpisodeNumber() != null ? ep.getEpisodeNumber() : 0;
+            Episode episode = new Episode(ep.getEpisodeId(), episodeNumber, ep.getTitle());
             episode.setAirTimestamp(ep.getAirTimestamp());
             episode.setRuntime(ep.getRuntime());
             episode.setType("regular");
             season.addEpisode(episode);
         }
 
-        return seasonRepository.save(season);
+        // Note: Season is saved later in saveAllRecords() to avoid duplicate writes
+        return season;
     }
 
     private EventSeries createEventSeries(String groupId, CreateWatchPartyRequest request, String seriesTitle, Season season) {
@@ -581,6 +795,96 @@ public class WatchPartyServiceImpl implements WatchPartyService {
             logger.warn("Failed to parse seasonNumber from sk: {}", sk);
         }
         return null;
+    }
+
+    // ============================================================================
+    // HELPER METHODS - UPDATE OPERATIONS
+    // ============================================================================
+
+    /**
+     * Get the Season record associated with an EventSeries.
+     * Parses the seasonId field to look up showId and seasonNumber.
+     *
+     * @param series The EventSeries to get Season for
+     * @return The Season record, or null if not found
+     */
+    private Season getSeasonFromSeries(EventSeries series) {
+        if (series.getSeasonId() == null) {
+            return null;
+        }
+
+        // Parse seasonId: "TVMAZE#SHOW#{showId}|SEASON#{seasonNumber}"
+        String[] parts = series.getSeasonId().split("\\|");
+        if (parts.length != 2) {
+            logger.warn("Invalid seasonId format: {}", series.getSeasonId());
+            return null;
+        }
+
+        Integer showId = parseShowIdFromPk(parts[0]);
+        Integer seasonNumber = parseSeasonNumberFromSk(parts[1]);
+
+        if (showId == null || seasonNumber == null) {
+            return null;
+        }
+
+        return seasonRepository.findByShowIdAndSeasonNumber(showId, seasonNumber).orElse(null);
+    }
+
+    /**
+     * Get the original air timestamp for a hangout from its episode.
+     * Uses the hangout's externalId to find the matching episode in the Season.
+     *
+     * @param hangout The hangout to get air timestamp for
+     * @param season The Season containing episode data
+     * @return The original air timestamp, or null if not found
+     */
+    private Long getOriginalAirTimestamp(Hangout hangout, Season season) {
+        if (hangout.getExternalId() == null || season.getEpisodes() == null) {
+            return null;
+        }
+
+        try {
+            // externalId is the TVMaze episode ID
+            Integer episodeId = Integer.parseInt(hangout.getExternalId());
+            return season.findEpisodeById(episodeId)
+                    .map(Episode::getAirTimestamp)
+                    .orElse(null);
+        } catch (NumberFormatException e) {
+            logger.warn("Failed to parse episode ID from externalId: {}", hangout.getExternalId());
+            return null;
+        }
+    }
+
+    /**
+     * Update the HangoutPointer to match the canonical Hangout record.
+     * This keeps the denormalized data in sync after updates.
+     *
+     * @param hangout The updated Hangout
+     * @param groupId The group the hangout belongs to
+     */
+    private void updateHangoutPointer(Hangout hangout, String groupId) {
+        HangoutPointer pointer = new HangoutPointer(groupId, hangout.getHangoutId(), hangout.getTitle());
+
+        // Denormalize fields from hangout
+        pointer.setDescription(hangout.getDescription());
+        pointer.setStartTimestamp(hangout.getStartTimestamp());
+        pointer.setEndTimestamp(hangout.getEndTimestamp());
+        pointer.setVisibility(hangout.getVisibility());
+        pointer.setSeriesId(hangout.getSeriesId());
+        pointer.setMainImagePath(hangout.getMainImagePath());
+        pointer.setCarpoolEnabled(hangout.isCarpoolEnabled());
+        pointer.setHostAtPlaceUserId(hangout.getHostAtPlaceUserId());
+
+        // External source fields
+        pointer.setExternalId(hangout.getExternalId());
+        pointer.setExternalSource(hangout.getExternalSource());
+        pointer.setIsGeneratedTitle(hangout.getIsGeneratedTitle());
+
+        // GSI keys for EntityTimeIndex
+        pointer.setGsi1pk(InviterKeyFactory.getGroupPk(groupId));
+        pointer.setGsi1sk(String.valueOf(hangout.getStartTimestamp()));
+
+        groupRepository.saveHangoutPointer(pointer);
     }
 
     // ============================================================================

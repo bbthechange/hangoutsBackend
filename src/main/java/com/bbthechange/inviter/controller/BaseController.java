@@ -209,7 +209,14 @@ public abstract class BaseController {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
             .body(new ErrorResponse("PARTICIPATION_NOT_FOUND", e.getMessage()));
     }
-    
+
+    @ExceptionHandler(TvMazeException.class)
+    public ResponseEntity<ErrorResponse> handleTvMazeException(TvMazeException e) {
+        logger.warn("TVMaze error ({}): {}", e.getErrorType(), e.getMessage());
+        return ResponseEntity.status(e.getHttpStatus())
+            .body(new ErrorResponse("TVMAZE_" + e.getErrorType().name(), e.getMessage()));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGeneral(Exception e) {
         logger.error("Unexpected error: {}", e.getMessage(), e);

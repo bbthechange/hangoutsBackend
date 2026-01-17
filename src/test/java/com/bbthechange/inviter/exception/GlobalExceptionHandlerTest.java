@@ -238,4 +238,55 @@ class GlobalExceptionHandlerTest {
                     .doesNotContain("IllegalStateException");
         }
     }
+
+    @Nested
+    @DisplayName("handleTvMazeException")
+    class TvMazeExceptionTests {
+
+        @Test
+        @DisplayName("Should return 404 Not Found for SEASON_NOT_FOUND error type")
+        void handleTvMazeException_SeasonNotFound_Returns404() {
+            // Given
+            TvMazeException exception = TvMazeException.seasonNotFound(999);
+
+            // When
+            ResponseEntity<Map<String, Object>> response = handler.handleTvMazeException(exception);
+
+            // Then
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+            assertThat(response.getBody()).isNotNull();
+            assertThat(response.getBody().get("error")).isEqualTo("TVMAZE_SEASON_NOT_FOUND");
+            assertThat(response.getBody().get("seasonId")).isEqualTo(999);
+        }
+
+        @Test
+        @DisplayName("Should return 503 Service Unavailable for SERVICE_UNAVAILABLE error type")
+        void handleTvMazeException_ServiceUnavailable_Returns503() {
+            // Given
+            TvMazeException exception = TvMazeException.serviceUnavailable(83, new RuntimeException("test"));
+
+            // When
+            ResponseEntity<Map<String, Object>> response = handler.handleTvMazeException(exception);
+
+            // Then
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+            assertThat(response.getBody()).isNotNull();
+            assertThat(response.getBody().get("error")).isEqualTo("TVMAZE_SERVICE_UNAVAILABLE");
+        }
+
+        @Test
+        @DisplayName("Should return 400 Bad Request for NO_EPISODES error type")
+        void handleTvMazeException_NoEpisodes_Returns400() {
+            // Given
+            TvMazeException exception = TvMazeException.noEpisodes(83);
+
+            // When
+            ResponseEntity<Map<String, Object>> response = handler.handleTvMazeException(exception);
+
+            // Then
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(response.getBody()).isNotNull();
+            assertThat(response.getBody().get("error")).isEqualTo("TVMAZE_NO_EPISODES");
+        }
+    }
 }

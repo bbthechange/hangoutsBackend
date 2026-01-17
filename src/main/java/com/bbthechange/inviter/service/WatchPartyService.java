@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.service;
 
 import com.bbthechange.inviter.dto.watchparty.CreateWatchPartyRequest;
+import com.bbthechange.inviter.dto.watchparty.UpdateWatchPartyRequest;
 import com.bbthechange.inviter.dto.watchparty.WatchPartyDetailResponse;
 import com.bbthechange.inviter.dto.watchparty.WatchPartyResponse;
 
@@ -44,6 +45,30 @@ public interface WatchPartyService {
      * @throws com.bbthechange.inviter.exception.UnauthorizedException if user is not in group
      */
     WatchPartyDetailResponse getWatchParty(String groupId, String seriesId, String requestingUserId);
+
+    /**
+     * Update watch party series settings.
+     *
+     * Processing:
+     * 1. Validate user is member of group
+     * 2. Fetch and validate series (must be WATCH_PARTY type, belong to group)
+     * 3. Validate timezone if provided
+     * 4. Apply settings to series
+     * 5. If changeExistingUpcomingHangouts=true, cascade changes to future hangouts
+     * 6. Update series pointer and group timestamp for cache invalidation
+     *
+     * @param groupId The group the watch party belongs to
+     * @param seriesId The watch party series ID to update
+     * @param request Update request with new settings
+     * @param requestingUserId The user requesting the update
+     * @return Updated watch party details
+     * @throws com.bbthechange.inviter.exception.ResourceNotFoundException if series not found
+     * @throws com.bbthechange.inviter.exception.UnauthorizedException if user is not in group
+     * @throws com.bbthechange.inviter.exception.ValidationException if request is invalid
+     */
+    WatchPartyDetailResponse updateWatchParty(String groupId, String seriesId,
+                                               UpdateWatchPartyRequest request,
+                                               String requestingUserId);
 
     /**
      * Delete a watch party series and all its hangouts.

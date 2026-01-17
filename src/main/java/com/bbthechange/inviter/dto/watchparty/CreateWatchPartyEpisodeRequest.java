@@ -21,6 +21,12 @@ public class CreateWatchPartyEpisodeRequest {
     private Integer episodeId;
 
     /**
+     * Episode number within the season (1-based).
+     * Optional for Phase 2, populated from TVMaze in Phase 3.
+     */
+    private Integer episodeNumber;
+
+    /**
      * Episode title (may be "TBA").
      */
     private String title;

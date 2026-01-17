@@ -58,16 +58,31 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(EventNotFoundException.class)
     public ResponseEntity<Map<String, Object>> handleEventNotFoundException(EventNotFoundException e) {
         logger.warn("Event not found: {}", e.getMessage());
-        
+
         Map<String, Object> errorResponse = new HashMap<>();
         errorResponse.put("error", "EVENT_NOT_FOUND");
         errorResponse.put("message", e.getMessage());
         errorResponse.put("timestamp", System.currentTimeMillis());
-        
+
         // Return 404 Not Found for missing events
         return new ResponseEntity<>(errorResponse, HttpStatus.NOT_FOUND);
     }
-    
+
+    @ExceptionHandler(TvMazeException.class)
+    public ResponseEntity<Map<String, Object>> handleTvMazeException(TvMazeException e) {
+        logger.warn("TVMaze error ({}): {}", e.getErrorType(), e.getMessage());
+
+        Map<String, Object> errorResponse = new HashMap<>();
+        errorResponse.put("error", "TVMAZE_" + e.getErrorType().name());
+        errorResponse.put("message", e.getMessage());
+        errorResponse.put("timestamp", System.currentTimeMillis());
+        if (e.getSeasonId() != null) {
+            errorResponse.put("seasonId", e.getSeasonId());
+        }
+
+        return new ResponseEntity<>(errorResponse, e.getHttpStatus());
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGenericException(Exception e) {
         logger.error("Unexpected error: {}", e.getMessage(), e);

@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.controller;
 
 import com.bbthechange.inviter.dto.watchparty.CreateWatchPartyRequest;
+import com.bbthechange.inviter.dto.watchparty.UpdateWatchPartyRequest;
 import com.bbthechange.inviter.dto.watchparty.WatchPartyDetailResponse;
 import com.bbthechange.inviter.dto.watchparty.WatchPartyResponse;
 import com.bbthechange.inviter.service.WatchPartyService;
@@ -79,6 +80,37 @@ public class WatchPartyController extends BaseController {
 
         logger.info("Successfully retrieved watch party {} with {} hangouts",
                 seriesId, response.getHangouts().size());
+
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Update watch party series settings.
+     *
+     * Optionally cascades changes to existing upcoming hangouts.
+     * By default, time and host changes will update all future hangouts.
+     * Set changeExistingUpcomingHangouts=false to only update series settings.
+     *
+     * @param groupId The group the watch party belongs to
+     * @param seriesId The watch party series ID to update
+     * @param request Update request with new settings
+     * @return Updated watch party information
+     */
+    @PutMapping("/{seriesId}")
+    public ResponseEntity<WatchPartyDetailResponse> updateWatchParty(
+            @PathVariable String groupId,
+            @PathVariable String seriesId,
+            @Valid @RequestBody UpdateWatchPartyRequest request,
+            HttpServletRequest httpRequest) {
+
+        String requestingUserId = extractUserId(httpRequest);
+        logger.info("Updating watch party {} in group {} by user {} with cascade={}",
+                seriesId, groupId, requestingUserId, request.getChangeExistingUpcomingHangouts());
+
+        WatchPartyDetailResponse response = watchPartyService.updateWatchParty(
+                groupId, seriesId, request, requestingUserId);
+
+        logger.info("Successfully updated watch party {}", seriesId);
 
         return ResponseEntity.ok(response);
     }

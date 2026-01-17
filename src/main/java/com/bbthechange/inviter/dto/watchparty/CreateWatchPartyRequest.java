@@ -1,5 +1,7 @@
 package com.bbthechange.inviter.dto.watchparty;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
@@ -15,7 +17,9 @@ import java.util.List;
  * Request to create a TV Watch Party series.
  *
  * Phase 2: Episodes are provided directly in the request.
- * Phase 3: Episodes will be fetched from TVMaze using tvmazeSeasonId.
+ * Phase 3: Episodes can be fetched from TVMaze using tvmazeSeasonId.
+ *
+ * Either tvmazeSeasonId OR episodes must be provided.
  */
 @Data
 @Builder
@@ -59,6 +63,8 @@ public class CreateWatchPartyRequest {
      * Optional day of week override (0=Sunday, 6=Saturday).
      * If set, hangouts are scheduled on this day on or after the air date.
      */
+    @Min(value = 0, message = "dayOverride must be between 0 (Sunday) and 6 (Saturday)")
+    @Max(value = 6, message = "dayOverride must be between 0 (Sunday) and 6 (Saturday)")
     private Integer dayOverride;
 
     /**
@@ -67,9 +73,23 @@ public class CreateWatchPartyRequest {
     private String defaultHostId;
 
     /**
-     * Episode list for Phase 2 (temporary - will be removed in Phase 3).
-     * In Phase 3, episodes are fetched from TVMaze.
+     * TVMaze season ID for Phase 3.
+     * When provided, episodes are fetched from TVMaze API.
+     * If not provided, episodes must be supplied directly.
      */
-    @NotEmpty(message = "episodes list is required for Phase 2")
+    private Integer tvmazeSeasonId;
+
+    /**
+     * Episode list for Phase 2 (optional when tvmazeSeasonId is provided).
+     * In Phase 3, episodes can be fetched from TVMaze using tvmazeSeasonId.
+     */
     private List<CreateWatchPartyEpisodeRequest> episodes;
+
+    /**
+     * Check if episodes should be fetched from TVMaze.
+     * Returns true if tvmazeSeasonId is provided and episodes list is null/empty.
+     */
+    public boolean shouldFetchFromTvMaze() {
+        return tvmazeSeasonId != null && (episodes == null || episodes.isEmpty());
+    }
 }

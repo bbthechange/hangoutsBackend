@@ -24,12 +24,13 @@ import static org.hamcrest.Matchers.*;
 class WatchPartyTvMazeTests extends StagingTestBase {
 
     // Game of Thrones Season 1 - stable, completed show with known episode data
+    // TVMaze: show ID 82, season 1 has season ID 307 (not 83, which is The Last Ship)
     private static final int GOT_SHOW_ID = 82;
     private static final int GOT_SEASON_NUMBER = 1;
-    private static final int GOT_TVMAZE_SEASON_ID = 83;
+    private static final int GOT_TVMAZE_SEASON_ID = 307;
     private static final int GOT_EXPECTED_EPISODE_COUNT = 10;
     private static final String GOT_SHOW_NAME = "Game of Thrones";
-    private static final String GOT_FIRST_EPISODE_TITLE = "Winter Is Coming";
+    private static final String GOT_FIRST_EPISODE_TITLE = "Winter is Coming";
 
     @Test
     @Order(1)
@@ -132,19 +133,26 @@ class WatchPartyTvMazeTests extends StagingTestBase {
             """;
 
         // Act & Assert
-        given()
+        var response = given()
             .header("Authorization", "Bearer " + testUserToken)
             .contentType("application/json")
             .body(requestBody)
         .when()
             .post("/groups/" + groupId + "/watch-parties")
         .then()
-            .statusCode(404)
-            .body("error", anyOf(
-                containsString("not found"),
-                containsString("Not found"),
-                containsString("NOT_FOUND")
-            ));
+            .extract()
+            .response();
+
+        // Log response for debugging
+        System.out.println("Response status: " + response.statusCode());
+        System.out.println("Response body: " + response.body().asString());
+
+        // Verify 404 is returned for invalid TVMaze season
+        Assertions.assertEquals(404, response.statusCode(),
+            "Expected 404 for invalid TVMaze season ID, got: " + response.body().asString());
+        Assertions.assertTrue(
+            response.body().asString().toLowerCase().contains("not_found"),
+            "Response should contain 'not_found'");
     }
 
     @Test
