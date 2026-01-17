@@ -18,6 +18,8 @@ public abstract class StagingTestBase {
 
     protected List<String> createdGroupIds = new ArrayList<>();
     protected List<String> createdHangoutIds = new ArrayList<>();
+    protected List<String> createdSeriesIds = new ArrayList<>();
+    protected Map<String, String> seriesGroupMap = new HashMap<>(); // seriesId -> groupId
 
     @BeforeAll
     static void setupConfig() {
@@ -35,11 +37,21 @@ public abstract class StagingTestBase {
     void setup() {
         createdGroupIds.clear();
         createdHangoutIds.clear();
+        createdSeriesIds.clear();
+        seriesGroupMap.clear();
     }
 
     @AfterEach
     void cleanup() {
-        // Delete hangouts first (foreign key constraints)
+        // Delete watch party series first (cascades to their hangouts)
+        for (String seriesId : createdSeriesIds) {
+            String groupId = seriesGroupMap.get(seriesId);
+            if (groupId != null) {
+                retryCleanup(() -> deleteWatchParty(groupId, seriesId), "watch-party", seriesId);
+            }
+        }
+
+        // Delete hangouts (non-watch-party)
         for (String hangoutId : createdHangoutIds) {
             retryCleanup(() -> deleteHangout(hangoutId), "hangout", hangoutId);
         }
@@ -49,6 +61,8 @@ public abstract class StagingTestBase {
             retryCleanup(() -> deleteGroup(groupId), "group", groupId);
         }
 
+        createdSeriesIds.clear();
+        seriesGroupMap.clear();
         createdHangoutIds.clear();
         createdGroupIds.clear();
     }
@@ -195,6 +209,54 @@ public abstract class StagingTestBase {
             .header("Authorization", "Bearer " + testUserToken)
         .when()
             .delete("/hangouts/" + hangoutId)
+        .then()
+            .statusCode(204);
+    }
+
+    protected String createTestWatchParty(String groupId, String showName) {
+        return createTestWatchPartyWithTime(groupId, showName, "20:00");
+    }
+
+    protected String createTestWatchPartyWithTime(String groupId, String showName, String defaultTime) {
+        long futureTimestamp = java.time.Instant.now().plusSeconds(86400 * 7).getEpochSecond();
+        int showId = ((showName.hashCode() & 0x7FFFFFFF) % 90000) + 10000;
+        String uniqueShowName = showName + " " + UUID.randomUUID().toString().substring(0, 8);
+
+        String requestBody = String.format("""
+            {
+              "showId": %d,
+              "seasonNumber": 1,
+              "showName": "%s",
+              "defaultTime": "%s",
+              "timezone": "America/Los_Angeles",
+              "episodes": [
+                { "episodeId": 1, "title": "Test Episode", "airTimestamp": %d, "runtime": 60 }
+              ]
+            }
+            """, showId, uniqueShowName, defaultTime, futureTimestamp);
+
+        String seriesId = given()
+            .header("Authorization", "Bearer " + testUserToken)
+            .contentType("application/json")
+            .body(requestBody)
+        .when()
+            .post("/groups/" + groupId + "/watch-parties")
+        .then()
+            .statusCode(201)
+        .extract()
+            .jsonPath().getString("seriesId");
+
+        createdSeriesIds.add(seriesId);
+        seriesGroupMap.put(seriesId, groupId);
+        return seriesId;
+    }
+
+
+    protected void deleteWatchParty(String groupId, String seriesId) {
+        given()
+            .header("Authorization", "Bearer " + testUserToken)
+        .when()
+            .delete("/groups/" + groupId + "/watch-parties/" + seriesId)
         .then()
             .statusCode(204);
     }
