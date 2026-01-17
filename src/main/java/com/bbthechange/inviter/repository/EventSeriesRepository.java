@@ -75,4 +75,15 @@ public interface EventSeriesRepository {
      * @return Optional containing the series if found, empty otherwise
      */
     Optional<EventSeries> findByExternalIdAndSource(String externalId, String externalSource);
+
+    /**
+     * Find all EventSeries by their external ID and external source.
+     * Uses the ExternalIdIndex GSI for efficient lookup.
+     * Returns all matching series (multiple groups may watch the same show).
+     *
+     * @param externalId The external identifier from the source system
+     * @param externalSource The source system name (e.g., "TVMAZE")
+     * @return List of all matching EventSeries
+     */
+    List<EventSeries> findAllByExternalIdAndSource(String externalId, String externalSource);
 }

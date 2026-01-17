@@ -610,10 +610,13 @@ public class GroupServiceImpl implements GroupService {
         for (BaseItem item : baseItems) {
             if (item instanceof SeriesPointer seriesPointer) {
                 // Add all hangout IDs from the series' denormalized parts list
-                if (seriesPointer.getParts() != null) {
+                // Use hangoutIds as fallback for older data that may not have parts populated
+                if (seriesPointer.getParts() != null && !seriesPointer.getParts().isEmpty()) {
                     for (HangoutPointer part : seriesPointer.getParts()) {
                         hangoutIdsInSeries.add(part.getHangoutId());
                     }
+                } else if (seriesPointer.getHangoutIds() != null) {
+                    hangoutIdsInSeries.addAll(seriesPointer.getHangoutIds());
                 }
             }
         }

@@ -57,4 +57,14 @@ public interface NotificationService {
      * @param hangout The hangout to send reminders for
      */
     void sendHangoutReminder(com.bbthechange.inviter.model.Hangout hangout);
+
+    /**
+     * Notify users about a Watch Party update.
+     * Used for new episode notifications, title changes, and episode cancellations.
+     *
+     * @param userIds Set of user IDs to notify
+     * @param seriesId The EventSeries ID for deep linking
+     * @param message The notification message
+     */
+    void notifyWatchPartyUpdate(Set<String> userIds, String seriesId, String message);
 }

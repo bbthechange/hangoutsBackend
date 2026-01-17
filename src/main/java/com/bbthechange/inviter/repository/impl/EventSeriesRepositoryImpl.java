@@ -238,4 +238,50 @@ public class EventSeriesRepositoryImpl implements EventSeriesRepository {
             }
         });
     }
+
+    @Override
+    public List<EventSeries> findAllByExternalIdAndSource(String externalId, String externalSource) {
+        return performanceTracker.trackQuery("findAllEventSeriesByExternalIdAndSource", "ExternalIdIndex", () -> {
+            try {
+                if (externalId == null || externalSource == null) {
+                    return List.of();
+                }
+
+                QueryRequest request = QueryRequest.builder()
+                    .tableName(TABLE_NAME)
+                    .indexName("ExternalIdIndex")
+                    .keyConditionExpression("externalId = :externalId AND externalSource = :externalSource")
+                    .expressionAttributeValues(Map.of(
+                        ":externalId", AttributeValue.builder().s(externalId).build(),
+                        ":externalSource", AttributeValue.builder().s(externalSource).build()
+                    ))
+                    .build();
+
+                QueryResponse response = dynamoDbClient.query(request);
+
+                if (response.items().isEmpty()) {
+                    logger.debug("No EventSeries found for externalId={}, externalSource={}", externalId, externalSource);
+                    return List.of();
+                }
+
+                // Filter to only return EventSeries items (not Hangouts)
+                List<EventSeries> result = new ArrayList<>();
+                for (Map<String, AttributeValue> item : response.items()) {
+                    AttributeValue pkAttr = item.get("pk");
+                    if (pkAttr != null && pkAttr.s() != null && pkAttr.s().startsWith("SERIES#")) {
+                        EventSeries series = eventSeriesSchema.mapToItem(item);
+                        result.add(series);
+                    }
+                }
+
+                logger.debug("Found {} EventSeries for externalId={}, externalSource={}",
+                    result.size(), externalId, externalSource);
+                return result;
+
+            } catch (DynamoDbException e) {
+                logger.error("Failed to find all EventSeries by externalId={}, externalSource={}", externalId, externalSource, e);
+                throw new RepositoryException("Failed to query all EventSeries by external ID", e);
+            }
+        });
+    }
 }

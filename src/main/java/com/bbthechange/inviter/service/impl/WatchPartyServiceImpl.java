@@ -138,6 +138,7 @@ public class WatchPartyServiceImpl implements WatchPartyService {
         // 8. Create SeriesPointer
         SeriesPointer seriesPointer = SeriesPointer.fromEventSeries(eventSeries, groupId);
         seriesPointer.setGsi1sk(String.valueOf(minTimestamp)); // For EntityTimeIndex sorting
+        seriesPointer.setParts(pointers); // Denormalize hangout pointers for feed filtering
 
         // 9. Save all records
         saveAllRecords(season, eventSeries, hangouts, pointers, seriesPointer);

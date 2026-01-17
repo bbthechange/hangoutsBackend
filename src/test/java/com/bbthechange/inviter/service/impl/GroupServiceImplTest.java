@@ -1485,4 +1485,86 @@ class GroupServiceImplTest {
         );
     }
 
+    // ==================== Version Filtering Tests ====================
+
+    private static final String SERIES_ID_1 = "11111111-1111-1111-1111-111111111111";
+    private static final String SERIES_ID_2 = "22222222-2222-2222-2222-222222222222";
+    private static final String SERIES_ID_3 = "33333333-3333-3333-3333-333333333333";
+    private static final String SERIES_ID_4 = "44444444-4444-4444-4444-444444444444";
+
+    @Test
+    void hydrateFeed_OldAppVersion_FiltersOutWatchParties() {
+        // Given: A watch party series pointer
+        SeriesPointer watchParty = new SeriesPointer(GROUP_ID, SERIES_ID_1, "Watch Party Series");
+        watchParty.setEventSeriesType("WATCH_PARTY");
+        watchParty.setStartTimestamp(System.currentTimeMillis() / 1000 + 86400);
+        List<BaseItem> items = List.of(watchParty);
+
+        // And: ClientInfo with old version (1.9.0 < 2.0.0)
+        com.bbthechange.inviter.config.ClientInfo oldClientInfo =
+            new com.bbthechange.inviter.config.ClientInfo("1.9.0", null, "ios", null, null, "ios");
+
+        // When: hydrateFeed is called with old version
+        List<FeedItem> result = groupService.hydrateFeed(items, USER_ID, oldClientInfo);
+
+        // Then: Watch party should be filtered out
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void hydrateFeed_NewAppVersion_IncludesWatchParties() {
+        // Given: A watch party series pointer
+        SeriesPointer watchParty = new SeriesPointer(GROUP_ID, SERIES_ID_2, "Watch Party Series");
+        watchParty.setEventSeriesType("WATCH_PARTY");
+        watchParty.setStartTimestamp(System.currentTimeMillis() / 1000 + 86400);
+        List<BaseItem> items = List.of(watchParty);
+
+        // And: ClientInfo with new version (2.0.0)
+        com.bbthechange.inviter.config.ClientInfo newClientInfo =
+            new com.bbthechange.inviter.config.ClientInfo("2.0.0", null, "ios", null, null, "ios");
+
+        // When: hydrateFeed is called with new version
+        List<FeedItem> result = groupService.hydrateFeed(items, USER_ID, newClientInfo);
+
+        // Then: Watch party should be included
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0)).isInstanceOf(SeriesSummaryDTO.class);
+    }
+
+    @Test
+    void hydrateFeed_NullClientInfo_IncludesWatchParties() {
+        // Given: A watch party series pointer
+        SeriesPointer watchParty = new SeriesPointer(GROUP_ID, SERIES_ID_3, "Watch Party Series");
+        watchParty.setEventSeriesType("WATCH_PARTY");
+        watchParty.setStartTimestamp(System.currentTimeMillis() / 1000 + 86400);
+        List<BaseItem> items = List.of(watchParty);
+
+        // When: hydrateFeed is called with null clientInfo (web client)
+        List<FeedItem> result = groupService.hydrateFeed(items, USER_ID, null);
+
+        // Then: Watch party should be included (assume latest version)
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0)).isInstanceOf(SeriesSummaryDTO.class);
+    }
+
+    @Test
+    void hydrateFeed_OldAppVersion_KeepsRegularSeries() {
+        // Given: A regular series pointer (not a watch party)
+        SeriesPointer regularSeries = new SeriesPointer(GROUP_ID, SERIES_ID_4, "Regular Series");
+        regularSeries.setEventSeriesType(null); // Not a watch party
+        regularSeries.setStartTimestamp(System.currentTimeMillis() / 1000 + 86400);
+        List<BaseItem> items = List.of(regularSeries);
+
+        // And: ClientInfo with old version
+        com.bbthechange.inviter.config.ClientInfo oldClientInfo =
+            new com.bbthechange.inviter.config.ClientInfo("1.9.0", null, "ios", null, null, "ios");
+
+        // When: hydrateFeed is called with old version
+        List<FeedItem> result = groupService.hydrateFeed(items, USER_ID, oldClientInfo);
+
+        // Then: Regular series should still be included
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0)).isInstanceOf(SeriesSummaryDTO.class);
+    }
+
 }

@@ -257,10 +257,11 @@ class WatchPartyTvMazeTests extends StagingTestBase {
         // Create pagination token to query past events
         // GoT S1 aired in 2011, so hangouts have past timestamps
         // The feed requires endingBefore param to return past events
+        // Use the same token format that GroupFeedPaginationToken.encode() produces
         long nowTimestamp = System.currentTimeMillis() / 1000;
-        String pastEventsToken = java.util.Base64.getEncoder().encodeToString(
-            String.format("{\"lastEventId\":null,\"lastTimestamp\":%d,\"isForward\":false}", nowTimestamp).getBytes()
-        );
+        com.bbthechange.inviter.util.GroupFeedPaginationToken token =
+            new com.bbthechange.inviter.util.GroupFeedPaginationToken(null, nowTimestamp, false);
+        String pastEventsToken = token.encode();
 
         // Assert - wait for GSI propagation and verify in feed's past events section
         await()

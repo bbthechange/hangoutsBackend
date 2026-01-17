@@ -226,4 +226,15 @@ public interface HangoutRepository {
      * @return Optional containing the hangout if found, empty otherwise
      */
     Optional<Hangout> findByExternalIdAndSource(String externalId, String externalSource);
+
+    /**
+     * Find all hangouts by their external ID and external source.
+     * Uses the ExternalIdIndex GSI for efficient lookup.
+     * Returns all matching hangouts (same episode may exist in multiple groups).
+     *
+     * @param externalId The external identifier from the source system
+     * @param externalSource The source system name (e.g., "TVMAZE")
+     * @return List of all matching Hangouts
+     */
+    List<Hangout> findAllByExternalIdAndSource(String externalId, String externalSource);
 }

@@ -531,4 +531,79 @@ public class NotificationServiceImpl implements NotificationService {
             return false;
         }
     }
+
+    @Override
+    public void notifyWatchPartyUpdate(Set<String> userIds, String seriesId, String message) {
+        if (userIds == null || userIds.isEmpty()) {
+            logger.debug("No users to notify for watch party update on series {}", seriesId);
+            return;
+        }
+
+        logger.info("Sending watch party update notifications for series {} to {} users", seriesId, userIds.size());
+
+        int successCount = 0;
+        int failureCount = 0;
+
+        for (String userId : userIds) {
+            try {
+                boolean sent = sendWatchPartyUpdateToUser(userId, seriesId, message);
+                if (sent) {
+                    successCount++;
+                }
+            } catch (Exception e) {
+                failureCount++;
+                logger.warn("Failed to send watch party update to user {}: {}", userId, e.getMessage());
+            }
+        }
+
+        // Note: successCount will be 0 until push notifications are implemented
+        // Only log/count when there's something to report
+        if (successCount > 0 || failureCount > 0) {
+            logger.info("Watch party update summary for series {}: {} sent, {} failed",
+                    seriesId, successCount, failureCount);
+
+            if (successCount > 0) {
+                meterRegistry.counter("watchparty_notification_total",
+                        "status", "success").increment(successCount);
+            }
+            if (failureCount > 0) {
+                meterRegistry.counter("watchparty_notification_total",
+                        "status", "failure").increment(failureCount);
+            }
+        } else {
+            // All users processed but no notifications sent (not yet implemented)
+            logger.debug("Watch party update for series {} processed for {} users (notifications not yet implemented)",
+                    seriesId, userIds.size());
+            meterRegistry.counter("watchparty_notification_total",
+                    "status", "skipped").increment(userIds.size());
+        }
+    }
+
+    /**
+     * Send watch party update notification to all active devices for a single user.
+     * Returns true if at least one notification was sent successfully.
+     *
+     * NOTE: Currently a placeholder - returns false until push notification methods
+     * are added for watch party updates.
+     */
+    private boolean sendWatchPartyUpdateToUser(String userId, String seriesId, String message) {
+        try {
+            List<Device> devices = deviceService.getActiveDevicesForUser(UUID.fromString(userId));
+
+            if (devices.isEmpty()) {
+                logger.debug("No active devices for user {}", userId);
+                return false;
+            }
+
+            // TODO: Implement actual push notifications for watch party updates
+            // For now, just log that we would have sent to these devices
+            logger.debug("Would send watch party notification to {} devices for user {} (not yet implemented)",
+                    devices.size(), userId);
+            return false;
+
+        } catch (Exception e) {
+            logger.warn("Failed to send watch party update to user {}: {}", userId, e.getMessage());
+            return false;
+        }
+    }
 }
