@@ -6,6 +6,7 @@ import com.bbthechange.inviter.model.Group;
 import com.bbthechange.inviter.model.GroupMembership;
 import com.bbthechange.inviter.model.Hangout;
 import com.bbthechange.inviter.model.InterestLevel;
+import com.bbthechange.inviter.repository.EventSeriesRepository;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.dto.UserSummaryDTO;
@@ -37,6 +38,7 @@ public class NotificationServiceImpl implements NotificationService {
 
     private final GroupRepository groupRepository;
     private final HangoutRepository hangoutRepository;
+    private final EventSeriesRepository eventSeriesRepository;
     private final DeviceService deviceService;
     private final PushNotificationService pushNotificationService;
     private final FcmNotificationService fcmNotificationService;
@@ -46,6 +48,7 @@ public class NotificationServiceImpl implements NotificationService {
     @Autowired
     public NotificationServiceImpl(GroupRepository groupRepository,
                                    HangoutRepository hangoutRepository,
+                                   EventSeriesRepository eventSeriesRepository,
                                    DeviceService deviceService,
                                    PushNotificationService pushNotificationService,
                                    FcmNotificationService fcmNotificationService,
@@ -53,6 +56,7 @@ public class NotificationServiceImpl implements NotificationService {
                                    MeterRegistry meterRegistry) {
         this.groupRepository = groupRepository;
         this.hangoutRepository = hangoutRepository;
+        this.eventSeriesRepository = eventSeriesRepository;
         this.deviceService = deviceService;
         this.pushNotificationService = pushNotificationService;
         this.fcmNotificationService = fcmNotificationService;
@@ -541,12 +545,23 @@ public class NotificationServiceImpl implements NotificationService {
 
         logger.info("Sending watch party update notifications for series {} to {} users", seriesId, userIds.size());
 
+        // Fetch groupId once for all users (optimization to avoid N lookups)
+        String groupId = null;
+        try {
+            Optional<com.bbthechange.inviter.model.EventSeries> seriesOpt = eventSeriesRepository.findById(seriesId);
+            if (seriesOpt.isPresent()) {
+                groupId = seriesOpt.get().getGroupId();
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to get groupId for seriesId {}: {}", seriesId, e.getMessage());
+        }
+
         int successCount = 0;
         int failureCount = 0;
 
         for (String userId : userIds) {
             try {
-                boolean sent = sendWatchPartyUpdateToUser(userId, seriesId, message);
+                boolean sent = sendWatchPartyUpdateToUser(userId, seriesId, groupId, message);
                 if (sent) {
                     successCount++;
                 }
@@ -556,37 +571,24 @@ public class NotificationServiceImpl implements NotificationService {
             }
         }
 
-        // Note: successCount will be 0 until push notifications are implemented
-        // Only log/count when there's something to report
-        if (successCount > 0 || failureCount > 0) {
-            logger.info("Watch party update summary for series {}: {} sent, {} failed",
-                    seriesId, successCount, failureCount);
+        logger.info("Watch party update summary for series {}: {} sent, {} failed",
+                seriesId, successCount, failureCount);
 
-            if (successCount > 0) {
-                meterRegistry.counter("watchparty_notification_total",
-                        "status", "success").increment(successCount);
-            }
-            if (failureCount > 0) {
-                meterRegistry.counter("watchparty_notification_total",
-                        "status", "failure").increment(failureCount);
-            }
-        } else {
-            // All users processed but no notifications sent (not yet implemented)
-            logger.debug("Watch party update for series {} processed for {} users (notifications not yet implemented)",
-                    seriesId, userIds.size());
+        if (successCount > 0) {
             meterRegistry.counter("watchparty_notification_total",
-                    "status", "skipped").increment(userIds.size());
+                    "status", "success").increment(successCount);
+        }
+        if (failureCount > 0) {
+            meterRegistry.counter("watchparty_notification_total",
+                    "status", "failure").increment(failureCount);
         }
     }
 
     /**
      * Send watch party update notification to all active devices for a single user.
      * Returns true if at least one notification was sent successfully.
-     *
-     * NOTE: Currently a placeholder - returns false until push notification methods
-     * are added for watch party updates.
      */
-    private boolean sendWatchPartyUpdateToUser(String userId, String seriesId, String message) {
+    private boolean sendWatchPartyUpdateToUser(String userId, String seriesId, String groupId, String message) {
         try {
             List<Device> devices = deviceService.getActiveDevicesForUser(UUID.fromString(userId));
 
@@ -595,11 +597,35 @@ public class NotificationServiceImpl implements NotificationService {
                 return false;
             }
 
-            // TODO: Implement actual push notifications for watch party updates
-            // For now, just log that we would have sent to these devices
-            logger.debug("Would send watch party notification to {} devices for user {} (not yet implemented)",
-                    devices.size(), userId);
-            return false;
+            boolean anySent = false;
+
+            for (Device device : devices) {
+                try {
+                    if (device.getPlatform() == Device.Platform.IOS) {
+                        pushNotificationService.sendWatchPartyNotification(
+                            device.getToken(),
+                            seriesId,
+                            groupId,
+                            message
+                        );
+                        anySent = true;
+                    } else if (device.getPlatform() == Device.Platform.ANDROID) {
+                        fcmNotificationService.sendWatchPartyNotification(
+                            device.getToken(),
+                            seriesId,
+                            groupId,
+                            message
+                        );
+                        anySent = true;
+                    }
+                } catch (Exception e) {
+                    logger.error("Failed to send watch party notification to device {}: {}",
+                        device.getToken().substring(0, Math.min(8, device.getToken().length())),
+                        e.getMessage());
+                }
+            }
+
+            return anySent;
 
         } catch (Exception e) {
             logger.warn("Failed to send watch party update to user {}: {}", userId, e.getMessage());

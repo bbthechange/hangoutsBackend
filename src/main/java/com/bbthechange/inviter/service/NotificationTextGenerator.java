@@ -14,6 +14,12 @@ public class NotificationTextGenerator {
     public static final String HANGOUT_UPDATED_TITLE = "Hangout Updated";
     public static final String HANGOUT_REMINDER_TITLE = "Starting Soon!";
 
+    // Watch Party notification titles
+    public static final String WATCH_PARTY_NEW_EPISODE_TITLE = "New Episode Available";
+    public static final String WATCH_PARTY_TITLE_UPDATED_TITLE = "Episode Renamed";
+    public static final String WATCH_PARTY_EPISODE_REMOVED_TITLE = "Episode Removed";
+    public static final String WATCH_PARTY_NEEDS_HOST_TITLE = "Host Needed";
+
     /**
      * Generate body text for new hangout notification.
      * @param creatorName Name of user who created the hangout (can be null)
@@ -70,5 +76,36 @@ public class NotificationTextGenerator {
      */
     public String getHangoutReminderBody(String hangoutTitle) {
         return hangoutTitle + " starts in 2 hours";
+    }
+
+    /**
+     * Determine the appropriate title for a watch party notification based on message content.
+     * @param message The notification message
+     * @return Appropriate notification title
+     */
+    public String getWatchPartyTitle(String message) {
+        if (message == null) {
+            return WATCH_PARTY_NEW_EPISODE_TITLE;
+        }
+        String lowerMessage = message.toLowerCase();
+        if (lowerMessage.contains("cancelled") || lowerMessage.contains("removed")) {
+            return WATCH_PARTY_EPISODE_REMOVED_TITLE;
+        }
+        if (lowerMessage.contains("renamed") || lowerMessage.contains("title changed")) {
+            return WATCH_PARTY_TITLE_UPDATED_TITLE;
+        }
+        if (lowerMessage.contains("needs a host") || lowerMessage.contains("volunteer")) {
+            return WATCH_PARTY_NEEDS_HOST_TITLE;
+        }
+        return WATCH_PARTY_NEW_EPISODE_TITLE;
+    }
+
+    /**
+     * Get the body text for a watch party notification.
+     * @param message The notification message
+     * @return Notification body text
+     */
+    public String getWatchPartyBody(String message) {
+        return message != null ? message : "Check the app for details";
     }
 }

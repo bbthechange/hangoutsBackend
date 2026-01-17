@@ -273,6 +273,50 @@ class WatchPartyBackgroundServiceImplTest {
         verify(meterRegistry).counter("watchparty_background_total", "action", "update_title", "status", "no_hangouts");
     }
 
+    @Test
+    void processUpdateTitle_WithValidHangout_NotifiesInterestedUsers() {
+        // Given
+        UpdateTitleMessage message = new UpdateTitleMessage("456", "New Episode Title");
+
+        String seriesId = "d7e8f9a0-b1c2-43d4-a5f6-7c8d9e0f1a2b";
+        String groupId = "c8c3f5d4-5e8b-4c2a-a9f2-b3c2d1e4f5a6";
+
+        Hangout hangout = new Hangout();
+        hangout.setHangoutId("a1b2c3d4-e5f6-47c8-9d1e-2f3a4b5c6d7e");
+        hangout.setTitle("Old Title");
+        hangout.setIsGeneratedTitle(true);
+        hangout.setTitleNotificationSent(false);
+        hangout.setStartTimestamp(System.currentTimeMillis() / 1000 + 3600); // Future hangout
+        hangout.setAssociatedGroups(List.of(groupId));
+        hangout.setSeriesId(seriesId);
+
+        EventSeries series = new EventSeries("Test Series", null, groupId);
+        series.setSeriesId(seriesId);
+
+        SeriesPointer pointer = new SeriesPointer();
+        InterestLevel interestLevel = new InterestLevel();
+        interestLevel.setUserId("b4c5d6e7-f8a9-4b0c-1d2e-3f4a5b6c7d8e");
+        interestLevel.setStatus("GOING");
+        pointer.setInterestLevels(List.of(interestLevel));
+
+        when(hangoutRepository.findAllByExternalIdAndSource("456", "TVMAZE"))
+                .thenReturn(List.of(hangout));
+        when(eventSeriesRepository.findById(seriesId))
+                .thenReturn(Optional.of(series));
+        when(groupRepository.findSeriesPointer(groupId, seriesId))
+                .thenReturn(Optional.of(pointer));
+
+        // When
+        service.processUpdateTitle(message);
+
+        // Then
+        verify(notificationService).notifyWatchPartyUpdate(
+            anySet(),
+            eq(seriesId),
+            contains("renamed")
+        );
+    }
+
     // ============================================================================
     // processRemoveEpisode Tests
     // ============================================================================

@@ -284,4 +284,48 @@ public class EventSeriesRepositoryImpl implements EventSeriesRepository {
             }
         });
     }
+
+    @Override
+    public List<EventSeries> findAllWatchPartySeries() {
+        return performanceTracker.trackQuery("findAllWatchPartySeries", TABLE_NAME, () -> {
+            try {
+                List<EventSeries> result = new ArrayList<>();
+                Map<String, AttributeValue> lastKey = null;
+
+                do {
+                    ScanRequest.Builder requestBuilder = ScanRequest.builder()
+                        .tableName(TABLE_NAME)
+                        .filterExpression("itemType = :itemType AND eventSeriesType = :seriesType")
+                        .expressionAttributeValues(Map.of(
+                            ":itemType", AttributeValue.builder().s("EVENT_SERIES").build(),
+                            ":seriesType", AttributeValue.builder().s("WATCH_PARTY").build()
+                        ));
+
+                    if (lastKey != null && !lastKey.isEmpty()) {
+                        requestBuilder.exclusiveStartKey(lastKey);
+                    }
+
+                    ScanResponse response = dynamoDbClient.scan(requestBuilder.build());
+
+                    for (Map<String, AttributeValue> item : response.items()) {
+                        try {
+                            EventSeries series = eventSeriesSchema.mapToItem(item);
+                            result.add(series);
+                        } catch (Exception e) {
+                            logger.warn("Failed to map EventSeries item: {}", e.getMessage());
+                        }
+                    }
+
+                    lastKey = response.lastEvaluatedKey();
+                } while (lastKey != null && !lastKey.isEmpty());
+
+                logger.debug("Found {} Watch Party EventSeries", result.size());
+                return result;
+
+            } catch (DynamoDbException e) {
+                logger.error("Failed to scan for Watch Party EventSeries", e);
+                throw new RepositoryException("Failed to scan for Watch Party EventSeries", e);
+            }
+        });
+    }
 }

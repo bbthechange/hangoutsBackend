@@ -336,6 +336,58 @@ public class PushNotificationService {
         }
     }
 
+    public void sendWatchPartyNotification(String deviceToken, String seriesId, String groupId, String message) {
+        if (apnsClient == null) {
+            logger.info("APNs not configured - skipping push notification for watch party update");
+            return;
+        }
+
+        try {
+            SimpleApnsPayloadBuilder payloadBuilder = new SimpleApnsPayloadBuilder();
+            payloadBuilder.setAlertTitle(textGenerator.getWatchPartyTitle(message));
+            payloadBuilder.setAlertBody(textGenerator.getWatchPartyBody(message));
+            payloadBuilder.setBadgeNumber(1);
+            payloadBuilder.setSound("default");
+            payloadBuilder.addCustomProperty("type", "watch_party_update");
+            payloadBuilder.addCustomProperty("seriesId", seriesId);
+            if (groupId != null) {
+                payloadBuilder.addCustomProperty("groupId", groupId);
+            }
+
+            String payload = payloadBuilder.build();
+            String token = TokenUtil.sanitizeTokenString(deviceToken);
+
+            SimpleApnsPushNotification pushNotification = new SimpleApnsPushNotification(token, bundleId, payload);
+
+            PushNotificationResponse<SimpleApnsPushNotification> response = apnsClient.sendNotification(pushNotification).get();
+
+            if (response.isAccepted()) {
+                logger.info("Watch party notification sent successfully to device: {}", deviceToken.substring(0, 8) + "...");
+                meterRegistry.counter("apns_notification_total", "status", "success", "type", "watch_party_update").increment();
+            } else {
+                Optional<String> rejectionReason = response.getRejectionReason();
+                String reason = rejectionReason.orElse("unknown");
+                logger.error("Watch party notification failed for device: {}. Reason: {}",
+                    deviceToken.substring(0, 8) + "...", reason);
+                meterRegistry.counter("apns_notification_total",
+                        "status", "rejected", "type", "watch_party_update",
+                        "reason", reason, "category", categorizeApnsRejection(reason)).increment();
+            }
+
+        } catch (ExecutionException | InterruptedException e) {
+            logger.error("Error sending watch party notification to device: {}", deviceToken.substring(0, 8) + "...", e);
+            meterRegistry.counter("apns_notification_total",
+                    "status", "error", "type", "watch_party_update",
+                    "error_type", "execution", "category", "transient").increment();
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            logger.error("Unexpected error sending watch party notification", e);
+            meterRegistry.counter("apns_notification_total",
+                    "status", "error", "type", "watch_party_update",
+                    "error_type", "unexpected", "category", "unexpected").increment();
+        }
+    }
+
     /**
      * Categorize APNs rejection reason as expected or unexpected.
      * Expected: User/device issues (app uninstalled, token expired)

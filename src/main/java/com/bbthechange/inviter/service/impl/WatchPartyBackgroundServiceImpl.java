@@ -183,6 +183,11 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
                 updated++;
                 logger.debug("Updated hangout {} title from '{}' to '{}'",
                         hangout.getHangoutId(), oldTitle, message.getNewTitle());
+
+                // Notify interested users about title change
+                if (hangout.getSeriesId() != null) {
+                    notifyTitleUpdate(hangout.getSeriesId(), oldTitle, message.getNewTitle());
+                }
             }
 
             // Update group timestamps
@@ -440,6 +445,36 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
             }
         } catch (Exception e) {
             logger.warn("Failed to notify users for series {}: {}", series.getSeriesId(), e.getMessage());
+        }
+    }
+
+    private void notifyTitleUpdate(String seriesId, String oldTitle, String newTitle) {
+        try {
+            Optional<EventSeries> seriesOpt = eventSeriesRepository.findById(seriesId);
+            if (seriesOpt.isEmpty()) {
+                logger.debug("Series {} not found for title update notification", seriesId);
+                return;
+            }
+
+            EventSeries series = seriesOpt.get();
+            String groupId = series.getGroupId();
+
+            Optional<SeriesPointer> pointerOpt = groupRepository.findSeriesPointer(groupId, seriesId);
+            if (pointerOpt.isEmpty() || pointerOpt.get().getInterestLevels() == null) {
+                return;
+            }
+
+            Set<String> userIds = pointerOpt.get().getInterestLevels().stream()
+                    .filter(il -> "GOING".equals(il.getStatus()) || "INTERESTED".equals(il.getStatus()))
+                    .map(InterestLevel::getUserId)
+                    .collect(Collectors.toSet());
+
+            if (!userIds.isEmpty()) {
+                String message = String.format("Episode renamed: '%s' is now '%s'", oldTitle, newTitle);
+                notificationService.notifyWatchPartyUpdate(userIds, seriesId, message);
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to notify users about title update for series {}: {}", seriesId, e.getMessage());
         }
     }
 

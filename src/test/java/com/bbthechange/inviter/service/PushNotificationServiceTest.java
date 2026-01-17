@@ -709,4 +709,109 @@ class PushNotificationServiceTest {
                 "status", "rejected", "type", "invite",
                 "reason", "unknown", "category", "unexpected");
     }
+
+    // ========== sendWatchPartyNotification Tests ==========
+
+    private static final String TEST_SERIES_ID = "series-123";
+    private static final String TEST_WATCH_PARTY_MESSAGE = "New episode: Breaking Bad S5E3";
+
+    @Test
+    void sendWatchPartyNotification_ApnsClientNull_SkipsQuietly() {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", null);
+
+        // When
+        pushNotificationService.sendWatchPartyNotification(TEST_DEVICE_TOKEN, TEST_SERIES_ID, TEST_GROUP_ID, TEST_WATCH_PARTY_MESSAGE);
+
+        // Then
+        verifyNoInteractions(apnsClient);
+        verifyNoInteractions(meterRegistry);
+    }
+
+    @Test
+    void sendWatchPartyNotification_Success_EmitsSuccessMetric() throws ExecutionException, InterruptedException {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", apnsClient);
+        when(textGenerator.getWatchPartyTitle(TEST_WATCH_PARTY_MESSAGE))
+                .thenReturn("New Episode Available");
+        when(textGenerator.getWatchPartyBody(TEST_WATCH_PARTY_MESSAGE))
+                .thenReturn(TEST_WATCH_PARTY_MESSAGE);
+        when(apnsClient.sendNotification(any(SimpleApnsPushNotification.class))).thenReturn(pushNotificationFuture);
+        when(pushNotificationFuture.get()).thenReturn(pushNotificationResponse);
+        when(pushNotificationResponse.isAccepted()).thenReturn(true);
+
+        // When
+        pushNotificationService.sendWatchPartyNotification(TEST_DEVICE_TOKEN, TEST_SERIES_ID, TEST_GROUP_ID, TEST_WATCH_PARTY_MESSAGE);
+
+        // Then
+        verify(apnsClient).sendNotification(any(SimpleApnsPushNotification.class));
+        verify(pushNotificationResponse).isAccepted();
+        verify(meterRegistry).counter("apns_notification_total", "status", "success", "type", "watch_party_update");
+    }
+
+    @Test
+    void sendWatchPartyNotification_Rejected_EmitsRejectedMetric() throws ExecutionException, InterruptedException {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", apnsClient);
+        when(textGenerator.getWatchPartyTitle(TEST_WATCH_PARTY_MESSAGE))
+                .thenReturn("New Episode Available");
+        when(textGenerator.getWatchPartyBody(TEST_WATCH_PARTY_MESSAGE))
+                .thenReturn(TEST_WATCH_PARTY_MESSAGE);
+        when(apnsClient.sendNotification(any(SimpleApnsPushNotification.class))).thenReturn(pushNotificationFuture);
+        when(pushNotificationFuture.get()).thenReturn(pushNotificationResponse);
+        when(pushNotificationResponse.isAccepted()).thenReturn(false);
+        when(pushNotificationResponse.getRejectionReason()).thenReturn(Optional.of("BadDeviceToken"));
+
+        // When
+        pushNotificationService.sendWatchPartyNotification(TEST_DEVICE_TOKEN, TEST_SERIES_ID, TEST_GROUP_ID, TEST_WATCH_PARTY_MESSAGE);
+
+        // Then
+        verify(apnsClient).sendNotification(any(SimpleApnsPushNotification.class));
+        verify(pushNotificationResponse).isAccepted();
+        verify(pushNotificationResponse).getRejectionReason();
+        verify(meterRegistry).counter("apns_notification_total",
+                "status", "rejected", "type", "watch_party_update",
+                "reason", "BadDeviceToken", "category", "expected");
+    }
+
+    @Test
+    void sendWatchPartyNotification_ExecutionException_EmitsErrorMetric() throws ExecutionException, InterruptedException {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", apnsClient);
+        when(textGenerator.getWatchPartyTitle(TEST_WATCH_PARTY_MESSAGE))
+                .thenReturn("New Episode Available");
+        when(textGenerator.getWatchPartyBody(TEST_WATCH_PARTY_MESSAGE))
+                .thenReturn(TEST_WATCH_PARTY_MESSAGE);
+        when(apnsClient.sendNotification(any(SimpleApnsPushNotification.class))).thenReturn(pushNotificationFuture);
+        when(pushNotificationFuture.get()).thenThrow(new ExecutionException("Network error", new RuntimeException()));
+
+        // When
+        pushNotificationService.sendWatchPartyNotification(TEST_DEVICE_TOKEN, TEST_SERIES_ID, TEST_GROUP_ID, TEST_WATCH_PARTY_MESSAGE);
+
+        // Then
+        verify(apnsClient).sendNotification(any(SimpleApnsPushNotification.class));
+        verify(meterRegistry).counter("apns_notification_total",
+                "status", "error", "type", "watch_party_update",
+                "error_type", "execution", "category", "transient");
+    }
+
+    @Test
+    void sendWatchPartyNotification_WithNullGroupId_SendsWithoutGroupId() throws ExecutionException, InterruptedException {
+        // Given
+        ReflectionTestUtils.setField(pushNotificationService, "apnsClient", apnsClient);
+        when(textGenerator.getWatchPartyTitle(TEST_WATCH_PARTY_MESSAGE))
+                .thenReturn("New Episode Available");
+        when(textGenerator.getWatchPartyBody(TEST_WATCH_PARTY_MESSAGE))
+                .thenReturn(TEST_WATCH_PARTY_MESSAGE);
+        when(apnsClient.sendNotification(any(SimpleApnsPushNotification.class))).thenReturn(pushNotificationFuture);
+        when(pushNotificationFuture.get()).thenReturn(pushNotificationResponse);
+        when(pushNotificationResponse.isAccepted()).thenReturn(true);
+
+        // When
+        pushNotificationService.sendWatchPartyNotification(TEST_DEVICE_TOKEN, TEST_SERIES_ID, null, TEST_WATCH_PARTY_MESSAGE);
+
+        // Then
+        verify(apnsClient).sendNotification(any(SimpleApnsPushNotification.class));
+        verify(meterRegistry).counter("apns_notification_total", "status", "success", "type", "watch_party_update");
+    }
 }

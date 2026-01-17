@@ -3,6 +3,7 @@ package com.bbthechange.inviter.service.impl;
 import com.bbthechange.inviter.dto.HangoutDetailData;
 import com.bbthechange.inviter.dto.UserSummaryDTO;
 import com.bbthechange.inviter.model.*;
+import com.bbthechange.inviter.repository.EventSeriesRepository;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.service.DeviceService;
@@ -32,6 +33,9 @@ class NotificationServiceImplTest {
 
     @Mock(lenient = true)
     private HangoutRepository hangoutRepository;
+
+    @Mock(lenient = true)
+    private EventSeriesRepository eventSeriesRepository;
 
     @Mock(lenient = true)
     private DeviceService deviceService;
@@ -1149,6 +1153,203 @@ class NotificationServiceImplTest {
             verify(meterRegistry).counter("hangout_reminder_notification_total",
                 "status", "error", "error_type", "unexpected");
             verify(mockCounter).increment();
+        }
+    }
+
+    // ================= Watch Party Update Notification Tests =================
+
+    @Nested
+    class NotifyWatchPartyUpdateTests {
+
+        private static final String SERIES_ID = "00000000-0000-0000-0000-000000000300";
+        private static final String GROUP_ID = "00000000-0000-0000-0000-000000000201";
+        private static final String USER_1_ID = "00000000-0000-0000-0000-000000000002";
+        private static final String USER_2_ID = "00000000-0000-0000-0000-000000000003";
+        private static final String TEST_MESSAGE = "New episode: Breaking Bad S5E3";
+
+        private Device createDevice(String token, Device.Platform platform) {
+            Device device = new Device();
+            device.setToken(token);
+            device.setPlatform(platform);
+            device.setActive(true);
+            return device;
+        }
+
+        @Test
+        void notifyWatchPartyUpdate_WithIosDevices_SendsViaPushNotificationService() {
+            // Given
+            Set<String> userIds = new HashSet<>(Set.of(USER_1_ID));
+            Device iosDevice = createDevice("ios-token-123", Device.Platform.IOS);
+
+            EventSeries series = new EventSeries();
+            series.setSeriesId(SERIES_ID);
+            series.setGroupId(GROUP_ID);
+
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(USER_1_ID)))
+                .thenReturn(List.of(iosDevice));
+            when(eventSeriesRepository.findById(SERIES_ID))
+                .thenReturn(Optional.of(series));
+            when(meterRegistry.counter(anyString(), any(String[].class))).thenReturn(mockCounter);
+
+            // When
+            notificationService.notifyWatchPartyUpdate(userIds, SERIES_ID, TEST_MESSAGE);
+
+            // Then
+            verify(pushNotificationService).sendWatchPartyNotification(
+                eq("ios-token-123"),
+                eq(SERIES_ID),
+                eq(GROUP_ID),
+                eq(TEST_MESSAGE)
+            );
+            verify(fcmNotificationService, never()).sendWatchPartyNotification(
+                anyString(), anyString(), anyString(), anyString());
+        }
+
+        @Test
+        void notifyWatchPartyUpdate_WithAndroidDevices_SendsViaFcmNotificationService() {
+            // Given
+            Set<String> userIds = new HashSet<>(Set.of(USER_1_ID));
+            Device androidDevice = createDevice("android-token-456", Device.Platform.ANDROID);
+
+            EventSeries series = new EventSeries();
+            series.setSeriesId(SERIES_ID);
+            series.setGroupId(GROUP_ID);
+
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(USER_1_ID)))
+                .thenReturn(List.of(androidDevice));
+            when(eventSeriesRepository.findById(SERIES_ID))
+                .thenReturn(Optional.of(series));
+            when(meterRegistry.counter(anyString(), any(String[].class))).thenReturn(mockCounter);
+
+            // When
+            notificationService.notifyWatchPartyUpdate(userIds, SERIES_ID, TEST_MESSAGE);
+
+            // Then
+            verify(fcmNotificationService).sendWatchPartyNotification(
+                eq("android-token-456"),
+                eq(SERIES_ID),
+                eq(GROUP_ID),
+                eq(TEST_MESSAGE)
+            );
+            verify(pushNotificationService, never()).sendWatchPartyNotification(
+                anyString(), anyString(), anyString(), anyString());
+        }
+
+        @Test
+        void notifyWatchPartyUpdate_WithMixedDevices_SendsToBothPlatforms() {
+            // Given
+            Set<String> userIds = new HashSet<>(Set.of(USER_1_ID));
+            Device iosDevice = createDevice("ios-token-123", Device.Platform.IOS);
+            Device androidDevice = createDevice("android-token-456", Device.Platform.ANDROID);
+
+            EventSeries series = new EventSeries();
+            series.setSeriesId(SERIES_ID);
+            series.setGroupId(GROUP_ID);
+
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(USER_1_ID)))
+                .thenReturn(List.of(iosDevice, androidDevice));
+            when(eventSeriesRepository.findById(SERIES_ID))
+                .thenReturn(Optional.of(series));
+            when(meterRegistry.counter(anyString(), any(String[].class))).thenReturn(mockCounter);
+
+            // When
+            notificationService.notifyWatchPartyUpdate(userIds, SERIES_ID, TEST_MESSAGE);
+
+            // Then
+            verify(pushNotificationService).sendWatchPartyNotification(
+                eq("ios-token-123"), eq(SERIES_ID), eq(GROUP_ID), eq(TEST_MESSAGE));
+            verify(fcmNotificationService).sendWatchPartyNotification(
+                eq("android-token-456"), eq(SERIES_ID), eq(GROUP_ID), eq(TEST_MESSAGE));
+        }
+
+        @Test
+        void notifyWatchPartyUpdate_WithNullUserIds_DoesNothing() {
+            // When
+            notificationService.notifyWatchPartyUpdate(null, SERIES_ID, TEST_MESSAGE);
+
+            // Then
+            verifyNoInteractions(deviceService);
+            verifyNoInteractions(pushNotificationService);
+            verifyNoInteractions(fcmNotificationService);
+        }
+
+        @Test
+        void notifyWatchPartyUpdate_WithEmptyUserIds_DoesNothing() {
+            // When
+            notificationService.notifyWatchPartyUpdate(new HashSet<>(), SERIES_ID, TEST_MESSAGE);
+
+            // Then
+            verifyNoInteractions(deviceService);
+            verifyNoInteractions(pushNotificationService);
+            verifyNoInteractions(fcmNotificationService);
+        }
+
+        @Test
+        void notifyWatchPartyUpdate_WithNoDevices_ContinuesGracefully() {
+            // Given
+            Set<String> userIds = new HashSet<>(Set.of(USER_1_ID));
+
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(USER_1_ID)))
+                .thenReturn(List.of());
+            when(meterRegistry.counter(anyString(), any(String[].class))).thenReturn(mockCounter);
+
+            // When
+            notificationService.notifyWatchPartyUpdate(userIds, SERIES_ID, TEST_MESSAGE);
+
+            // Then
+            verifyNoInteractions(pushNotificationService);
+            verifyNoInteractions(fcmNotificationService);
+        }
+
+        @Test
+        void notifyWatchPartyUpdate_WhenSeriesNotFound_SendsWithNullGroupId() {
+            // Given
+            Set<String> userIds = new HashSet<>(Set.of(USER_1_ID));
+            Device iosDevice = createDevice("ios-token-123", Device.Platform.IOS);
+
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(USER_1_ID)))
+                .thenReturn(List.of(iosDevice));
+            when(eventSeriesRepository.findById(SERIES_ID))
+                .thenReturn(Optional.empty());
+            when(meterRegistry.counter(anyString(), any(String[].class))).thenReturn(mockCounter);
+
+            // When
+            notificationService.notifyWatchPartyUpdate(userIds, SERIES_ID, TEST_MESSAGE);
+
+            // Then
+            verify(pushNotificationService).sendWatchPartyNotification(
+                eq("ios-token-123"),
+                eq(SERIES_ID),
+                isNull(),
+                eq(TEST_MESSAGE)
+            );
+        }
+
+        @Test
+        void notifyWatchPartyUpdate_WithMultipleUsers_SendsToEachUser() {
+            // Given
+            Set<String> userIds = new HashSet<>(Set.of(USER_1_ID, USER_2_ID));
+            Device device1 = createDevice("ios-token-1", Device.Platform.IOS);
+            Device device2 = createDevice("ios-token-2", Device.Platform.IOS);
+
+            EventSeries series = new EventSeries();
+            series.setSeriesId(SERIES_ID);
+            series.setGroupId(GROUP_ID);
+
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(USER_1_ID)))
+                .thenReturn(List.of(device1));
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(USER_2_ID)))
+                .thenReturn(List.of(device2));
+            when(eventSeriesRepository.findById(SERIES_ID))
+                .thenReturn(Optional.of(series));
+            when(meterRegistry.counter(anyString(), any(String[].class))).thenReturn(mockCounter);
+
+            // When
+            notificationService.notifyWatchPartyUpdate(userIds, SERIES_ID, TEST_MESSAGE);
+
+            // Then
+            verify(pushNotificationService, times(2)).sendWatchPartyNotification(
+                anyString(), eq(SERIES_ID), eq(GROUP_ID), eq(TEST_MESSAGE));
         }
     }
 }

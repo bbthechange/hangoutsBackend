@@ -168,6 +168,38 @@ public class FcmNotificationService {
         }
     }
 
+    public void sendWatchPartyNotification(String deviceToken, String seriesId, String groupId, String message) {
+        if (firebaseApp == null) {
+            logger.info("FCM not configured - skipping push notification for watch party update");
+            return;
+        }
+
+        String tokenPrefix = deviceToken.substring(0, Math.min(8, deviceToken.length())) + "...";
+
+        try {
+            Message.Builder messageBuilder = Message.builder()
+                    .setToken(deviceToken)
+                    .setNotification(Notification.builder()
+                            .setTitle(textGenerator.getWatchPartyTitle(message))
+                            .setBody(textGenerator.getWatchPartyBody(message))
+                            .build())
+                    .putData("type", "watch_party_update")
+                    .putData("seriesId", seriesId);
+
+            if (groupId != null) {
+                messageBuilder.putData("groupId", groupId);
+            }
+
+            String messageId = FirebaseMessaging.getInstance(firebaseApp).send(messageBuilder.build());
+            logger.info("Watch party notification sent successfully to device: {}, messageId: {}",
+                    tokenPrefix, messageId);
+            meterRegistry.counter("fcm_notification_total", "status", "success", "type", "watch_party_update").increment();
+
+        } catch (FirebaseMessagingException e) {
+            handleFcmError(e, deviceToken, tokenPrefix);
+        }
+    }
+
     /**
      * Handle FCM errors and clean up invalid tokens.
      */

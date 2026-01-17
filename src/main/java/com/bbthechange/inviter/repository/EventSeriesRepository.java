@@ -86,4 +86,13 @@ public interface EventSeriesRepository {
      * @return List of all matching EventSeries
      */
     List<EventSeries> findAllByExternalIdAndSource(String externalId, String externalSource);
+
+    /**
+     * Find all Watch Party EventSeries.
+     * Performs a scan with filter on eventSeriesType = "WATCH_PARTY".
+     * Use sparingly as scans are expensive operations.
+     *
+     * @return List of all Watch Party EventSeries
+     */
+    List<EventSeries> findAllWatchPartySeries();
 }
