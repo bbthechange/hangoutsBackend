@@ -39,13 +39,23 @@ public class SeriesPointer extends BaseItem {
     private String externalId;          // ID from external source (Ticketmaster, Yelp, etc.)
     private String externalSource;      // Source system name
     private Boolean isGeneratedTitle;   // Whether title was auto-generated
-    
+
+    // Watch Party fields (denormalized from EventSeries)
+    private String eventSeriesType;     // "WATCH_PARTY" discriminator, null for regular series
+    private String seasonId;            // Reference: "TVMAZE#SHOW#{showId}|SEASON#{seasonNumber}"
+    private String defaultHostId;       // Optional default host user ID
+    private String defaultTime;         // Default time in "HH:mm" format
+    private Integer dayOverride;        // Day of week override (0=Sunday, 6=Saturday)
+    private String timezone;            // IANA timezone (e.g., "America/Los_Angeles")
+    private List<InterestLevel> interestLevels; // Series-level interest/attendance
+
     // Default constructor for DynamoDB
     public SeriesPointer() {
         super();
         setItemType("SERIES_POINTER");
         this.hangoutIds = new ArrayList<>();
         this.parts = new ArrayList<>();
+        this.interestLevels = new ArrayList<>();
         this.version = 1L;
     }
     
@@ -60,12 +70,13 @@ public class SeriesPointer extends BaseItem {
         this.seriesTitle = seriesTitle;
         this.hangoutIds = new ArrayList<>();
         this.parts = new ArrayList<>();
+        this.interestLevels = new ArrayList<>();
         this.version = 1L;
-        
+
         // Set keys using InviterKeyFactory
         setPk(InviterKeyFactory.getGroupPk(groupId));
         setSk(InviterKeyFactory.getSeriesSk(seriesId));
-        
+
         // Set GSI keys for EntityTimeIndex (same pattern as HangoutPointer)
         setGsi1pk(InviterKeyFactory.getGroupPk(groupId));
     }
@@ -90,6 +101,14 @@ public class SeriesPointer extends BaseItem {
         pointer.setExternalId(series.getExternalId());
         pointer.setExternalSource(series.getExternalSource());
         pointer.setIsGeneratedTitle(series.getIsGeneratedTitle());
+
+        // Copy watch party fields
+        pointer.setEventSeriesType(series.getEventSeriesType());
+        pointer.setSeasonId(series.getSeasonId());
+        pointer.setDefaultHostId(series.getDefaultHostId());
+        pointer.setDefaultTime(series.getDefaultTime());
+        pointer.setDayOverride(series.getDayOverride());
+        pointer.setTimezone(series.getTimezone());
 
         return pointer;
     }
@@ -230,6 +249,14 @@ public class SeriesPointer extends BaseItem {
         setExternalId(series.getExternalId());
         setExternalSource(series.getExternalSource());
         setIsGeneratedTitle(series.getIsGeneratedTitle());
+
+        // Sync watch party fields
+        setEventSeriesType(series.getEventSeriesType());
+        setSeasonId(series.getSeasonId());
+        setDefaultHostId(series.getDefaultHostId());
+        setDefaultTime(series.getDefaultTime());
+        setDayOverride(series.getDayOverride());
+        setTimezone(series.getTimezone());
     }
     
     /**
@@ -304,5 +331,103 @@ public class SeriesPointer extends BaseItem {
     public void setIsGeneratedTitle(Boolean isGeneratedTitle) {
         this.isGeneratedTitle = isGeneratedTitle;
         touch();
+    }
+
+    // ============================================================================
+    // WATCH PARTY FIELDS (Denormalized from canonical EventSeries)
+    // ============================================================================
+
+    public String getEventSeriesType() {
+        return eventSeriesType;
+    }
+
+    public void setEventSeriesType(String eventSeriesType) {
+        this.eventSeriesType = eventSeriesType;
+        touch();
+    }
+
+    public String getSeasonId() {
+        return seasonId;
+    }
+
+    public void setSeasonId(String seasonId) {
+        this.seasonId = seasonId;
+        touch();
+    }
+
+    public String getDefaultHostId() {
+        return defaultHostId;
+    }
+
+    public void setDefaultHostId(String defaultHostId) {
+        this.defaultHostId = defaultHostId;
+        touch();
+    }
+
+    public String getDefaultTime() {
+        return defaultTime;
+    }
+
+    public void setDefaultTime(String defaultTime) {
+        this.defaultTime = defaultTime;
+        touch();
+    }
+
+    public Integer getDayOverride() {
+        return dayOverride;
+    }
+
+    public void setDayOverride(Integer dayOverride) {
+        this.dayOverride = dayOverride;
+        touch();
+    }
+
+    public String getTimezone() {
+        return timezone;
+    }
+
+    public void setTimezone(String timezone) {
+        this.timezone = timezone;
+        touch();
+    }
+
+    public List<InterestLevel> getInterestLevels() {
+        return interestLevels;
+    }
+
+    public void setInterestLevels(List<InterestLevel> interestLevels) {
+        this.interestLevels = interestLevels != null ? interestLevels : new ArrayList<>();
+        touch();
+    }
+
+    /**
+     * Check if this series pointer is for a Watch Party series.
+     */
+    public boolean isWatchParty() {
+        return "WATCH_PARTY".equals(eventSeriesType);
+    }
+
+    /**
+     * Add an interest level to the series.
+     * Prevents duplicates based on userId.
+     */
+    public void addInterestLevel(InterestLevel interestLevel) {
+        if (this.interestLevels == null) {
+            this.interestLevels = new ArrayList<>();
+        }
+        // Check for existing interest level from same user
+        boolean exists = this.interestLevels.stream()
+            .anyMatch(il -> il.getUserId() != null && il.getUserId().equals(interestLevel.getUserId()));
+        if (!exists) {
+            this.interestLevels.add(interestLevel);
+            touch();
+        }
+    }
+
+    /**
+     * Get the count of interest levels.
+     */
+    public int getInterestLevelsCount() {
+        return this.interestLevels != null ? this.interestLevels.size() : 0;
     }
 }

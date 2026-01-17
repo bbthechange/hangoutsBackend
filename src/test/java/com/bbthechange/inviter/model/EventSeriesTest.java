@@ -169,4 +169,155 @@ class EventSeriesTest {
         // Then
         assertThat(series.getStartTimestamp()).isEqualTo(timestamp);
     }
+
+    // ============================================================================
+    // WATCH PARTY FIELDS TESTS
+    // ============================================================================
+
+    @Test
+    void defaultConstructor_ShouldInitializeDeletedEpisodeIds() {
+        // When
+        EventSeries series = new EventSeries();
+
+        // Then
+        assertThat(series.getDeletedEpisodeIds()).isNotNull().isEmpty();
+    }
+
+    @Test
+    void parameterizedConstructor_ShouldInitializeDeletedEpisodeIds() {
+        // Given
+        String groupId = "550e8400-e29b-41d4-a716-446655440000";
+
+        // When
+        EventSeries series = new EventSeries("Title", "Description", groupId);
+
+        // Then
+        assertThat(series.getDeletedEpisodeIds()).isNotNull().isEmpty();
+    }
+
+    @Test
+    void isWatchParty_WithWatchPartyType_ShouldReturnTrue() {
+        // Given
+        EventSeries series = new EventSeries();
+        series.setEventSeriesType("WATCH_PARTY");
+
+        // Then
+        assertThat(series.isWatchParty()).isTrue();
+    }
+
+    @Test
+    void isWatchParty_WithNullType_ShouldReturnFalse() {
+        // Given
+        EventSeries series = new EventSeries();
+        series.setEventSeriesType(null);
+
+        // Then
+        assertThat(series.isWatchParty()).isFalse();
+    }
+
+    @Test
+    void isWatchParty_WithOtherType_ShouldReturnFalse() {
+        // Given
+        EventSeries series = new EventSeries();
+        series.setEventSeriesType("REGULAR");
+
+        // Then
+        assertThat(series.isWatchParty()).isFalse();
+    }
+
+    @Test
+    void addDeletedEpisodeId_ShouldAddToSet() {
+        // Given
+        EventSeries series = new EventSeries();
+        String episodeId = "episode-123";
+
+        // When
+        series.addDeletedEpisodeId(episodeId);
+
+        // Then
+        assertThat(series.getDeletedEpisodeIds()).contains(episodeId);
+        assertThat(series.isEpisodeDeleted(episodeId)).isTrue();
+    }
+
+    @Test
+    void addDeletedEpisodeId_WithNullSet_ShouldInitializeAndAdd() {
+        // Given
+        EventSeries series = new EventSeries();
+        series.setDeletedEpisodeIds(null);
+
+        // When
+        series.addDeletedEpisodeId("episode-456");
+
+        // Then
+        assertThat(series.getDeletedEpisodeIds()).contains("episode-456");
+    }
+
+    @Test
+    void isEpisodeDeleted_WithNonDeletedEpisode_ShouldReturnFalse() {
+        // Given
+        EventSeries series = new EventSeries();
+        series.addDeletedEpisodeId("episode-123");
+
+        // Then
+        assertThat(series.isEpisodeDeleted("episode-456")).isFalse();
+    }
+
+    @Test
+    void isEpisodeDeleted_WithNullSet_ShouldReturnFalse() {
+        // Given
+        EventSeries series = new EventSeries();
+        series.setDeletedEpisodeIds(null);
+
+        // Then
+        assertThat(series.isEpisodeDeleted("episode-123")).isFalse();
+    }
+
+    @Test
+    void removeDeletedEpisodeId_ShouldRemoveFromSet() {
+        // Given
+        EventSeries series = new EventSeries();
+        series.addDeletedEpisodeId("episode-123");
+        assertThat(series.isEpisodeDeleted("episode-123")).isTrue();
+
+        // When
+        series.removeDeletedEpisodeId("episode-123");
+
+        // Then
+        assertThat(series.isEpisodeDeleted("episode-123")).isFalse();
+    }
+
+    @Test
+    void setWatchPartyFields_ShouldWorkCorrectly() {
+        // Given
+        EventSeries series = new EventSeries();
+
+        // When
+        series.setEventSeriesType("WATCH_PARTY");
+        series.setSeasonId("TVMAZE#SHOW#123|SEASON#2");
+        series.setDefaultHostId("host-user-id");
+        series.setDefaultTime("19:30");
+        series.setDayOverride(5); // Friday
+        series.setTimezone("America/Los_Angeles");
+
+        // Then
+        assertThat(series.getEventSeriesType()).isEqualTo("WATCH_PARTY");
+        assertThat(series.getSeasonId()).isEqualTo("TVMAZE#SHOW#123|SEASON#2");
+        assertThat(series.getDefaultHostId()).isEqualTo("host-user-id");
+        assertThat(series.getDefaultTime()).isEqualTo("19:30");
+        assertThat(series.getDayOverride()).isEqualTo(5);
+        assertThat(series.getTimezone()).isEqualTo("America/Los_Angeles");
+        assertThat(series.isWatchParty()).isTrue();
+    }
+
+    @Test
+    void setDeletedEpisodeIds_WithNull_ShouldInitializeEmptySet() {
+        // Given
+        EventSeries series = new EventSeries();
+
+        // When
+        series.setDeletedEpisodeIds(null);
+
+        // Then
+        assertThat(series.getDeletedEpisodeIds()).isNotNull().isEmpty();
+    }
 }

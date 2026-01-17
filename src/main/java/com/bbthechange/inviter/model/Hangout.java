@@ -55,11 +55,16 @@ public class Hangout extends BaseItem {
     // Host at place field (records who is hosting when "my place" is selected)
     private String hostAtPlaceUserId;
 
+    // Watch Party fields
+    private Boolean titleNotificationSent;  // Track if title notification has been sent
+    private List<String> combinedExternalIds; // External IDs of episodes combined into this hangout
+
     // Default constructor for DynamoDB
     public Hangout() {
         super();
         setItemType(InviterKeyFactory.HANGOUT_PREFIX);
         this.associatedGroups = new ArrayList<>();
+        this.combinedExternalIds = new ArrayList<>();
         this.carpoolEnabled = false;
         this.version = 1L;
     }
@@ -81,8 +86,9 @@ public class Hangout extends BaseItem {
         this.mainImagePath = mainImagePath;
         this.version = 1L;
         this.associatedGroups = new ArrayList<>();
+        this.combinedExternalIds = new ArrayList<>();
         this.carpoolEnabled = false;
-        
+
         // Set keys using InviterKeyFactory
         setPk(InviterKeyFactory.getEventPk(this.hangoutId));
         setSk(InviterKeyFactory.getMetadataSk());
@@ -336,5 +342,75 @@ public class Hangout extends BaseItem {
     public void setHostAtPlaceUserId(String hostAtPlaceUserId) {
         this.hostAtPlaceUserId = hostAtPlaceUserId;
         touch(); // Update timestamp
+    }
+
+    // ============================================================================
+    // WATCH PARTY FIELDS
+    // ============================================================================
+
+    public Boolean getTitleNotificationSent() {
+        return titleNotificationSent;
+    }
+
+    public void setTitleNotificationSent(Boolean titleNotificationSent) {
+        this.titleNotificationSent = titleNotificationSent;
+        touch();
+    }
+
+    public List<String> getCombinedExternalIds() {
+        return combinedExternalIds;
+    }
+
+    public void setCombinedExternalIds(List<String> combinedExternalIds) {
+        this.combinedExternalIds = combinedExternalIds != null ? combinedExternalIds : new ArrayList<>();
+        touch();
+    }
+
+    // ============================================================================
+    // WATCH PARTY HELPER METHODS
+    // ============================================================================
+
+    /**
+     * Check if this hangout has combined episodes (multi-episode watch party).
+     *
+     * @return true if there are combined external IDs
+     */
+    public boolean hasCombinedEpisodes() {
+        return this.combinedExternalIds != null && !this.combinedExternalIds.isEmpty();
+    }
+
+    /**
+     * Add an external ID to the combined episodes list.
+     *
+     * @param externalId The external ID to add
+     */
+    public void addCombinedExternalId(String externalId) {
+        if (this.combinedExternalIds == null) {
+            this.combinedExternalIds = new ArrayList<>();
+        }
+        if (!this.combinedExternalIds.contains(externalId)) {
+            this.combinedExternalIds.add(externalId);
+            touch();
+        }
+    }
+
+    /**
+     * Remove an external ID from the combined episodes list.
+     *
+     * @param externalId The external ID to remove
+     */
+    public void removeCombinedExternalId(String externalId) {
+        if (this.combinedExternalIds != null && this.combinedExternalIds.remove(externalId)) {
+            touch();
+        }
+    }
+
+    /**
+     * Get the count of combined episodes.
+     *
+     * @return The number of combined external IDs
+     */
+    public int getCombinedEpisodesCount() {
+        return this.combinedExternalIds != null ? this.combinedExternalIds.size() : 0;
     }
 }

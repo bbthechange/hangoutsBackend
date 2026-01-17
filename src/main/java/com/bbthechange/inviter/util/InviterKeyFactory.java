@@ -41,6 +41,11 @@ public final class InviterKeyFactory {
     public static final String PARTICIPATION_PREFIX = "PARTICIPATION";
     public static final String RESERVEOFFER_PREFIX = "RESERVEOFFER";
 
+    // TVMaze Season prefixes
+    public static final String TVMAZE_PREFIX = "TVMAZE";
+    public static final String SHOW_PREFIX = "SHOW";
+    public static final String SEASON_PREFIX = "SEASON";
+
     // Status constants
     public static final String STATUS_ACTIVE = "ACTIVE";
     public static final String STATUS_ARCHIVED = "ARCHIVED";
@@ -325,5 +330,65 @@ public final class InviterKeyFactory {
 
     public static boolean isInviteCode(String sortKey) {
         return sortKey != null && METADATA_SUFFIX.equals(sortKey);
+    }
+
+    // ============================================================================
+    // TVMaze Season Keys
+    // ============================================================================
+
+    /**
+     * Generate partition key for a TVMaze Season.
+     * Format: TVMAZE#SHOW#{showId}
+     *
+     * @param showId The TVMaze show ID
+     * @return The partition key for the season
+     */
+    public static String getSeasonPk(Integer showId) {
+        if (showId == null) {
+            throw new InvalidKeyException("Show ID cannot be null");
+        }
+        return String.join(DELIMITER, TVMAZE_PREFIX, SHOW_PREFIX, showId.toString());
+    }
+
+    /**
+     * Generate sort key for a TVMaze Season.
+     * Format: SEASON#{seasonNumber}
+     *
+     * @param seasonNumber The season number (1-based)
+     * @return The sort key for the season
+     */
+    public static String getSeasonSk(Integer seasonNumber) {
+        if (seasonNumber == null) {
+            throw new InvalidKeyException("Season number cannot be null");
+        }
+        return SEASON_PREFIX + DELIMITER + seasonNumber.toString();
+    }
+
+    /**
+     * Generate a reference string for a Season that can be used as a foreign key.
+     * Format: TVMAZE#SHOW#{showId}|SEASON#{seasonNumber}
+     *
+     * @param showId The TVMaze show ID
+     * @param seasonNumber The season number
+     * @return A composite reference string
+     */
+    public static String getSeasonReference(Integer showId, Integer seasonNumber) {
+        if (showId == null) {
+            throw new InvalidKeyException("Show ID cannot be null");
+        }
+        if (seasonNumber == null) {
+            throw new InvalidKeyException("Season number cannot be null");
+        }
+        return getSeasonPk(showId) + "|" + getSeasonSk(seasonNumber);
+    }
+
+    /**
+     * Check if a sort key represents a Season item.
+     *
+     * @param sortKey The sort key to check
+     * @return true if the sort key represents a Season item
+     */
+    public static boolean isSeasonItem(String sortKey) {
+        return sortKey != null && sortKey.startsWith(SEASON_PREFIX + DELIMITER);
     }
 }

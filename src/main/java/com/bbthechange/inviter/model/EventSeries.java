@@ -6,7 +6,9 @@ import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSecon
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSecondarySortKey;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -34,12 +36,22 @@ public class EventSeries extends BaseItem {
     private String externalId;            // ID from external source
     private String externalSource;        // Source system name (e.g., "TICKETMASTER", "YELP")
     private Boolean isGeneratedTitle;     // Whether title was auto-generated (defaults to false)
-    
+
+    // Watch Party fields (for TV Watch Party feature)
+    private String eventSeriesType;       // "WATCH_PARTY" discriminator, null for regular series
+    private String seasonId;              // Reference: "TVMAZE#SHOW#{showId}|SEASON#{seasonNumber}"
+    private String defaultHostId;         // Optional default host user ID
+    private String defaultTime;           // Default time in "HH:mm" format
+    private Integer dayOverride;          // Day of week override (0=Sunday, 6=Saturday)
+    private String timezone;              // IANA timezone (e.g., "America/Los_Angeles")
+    private Set<String> deletedEpisodeIds; // Episode IDs that user has deleted from series
+
     // Default constructor for DynamoDB
     public EventSeries() {
         super();
         setItemType("EVENT_SERIES");
         this.hangoutIds = new ArrayList<>();
+        this.deletedEpisodeIds = new HashSet<>();
         this.version = 1L;
     }
 
@@ -54,12 +66,13 @@ public class EventSeries extends BaseItem {
         this.seriesDescription = seriesDescription;
         this.groupId = groupId;
         this.hangoutIds = new ArrayList<>();
+        this.deletedEpisodeIds = new HashSet<>();
         this.version = 1L;
-        
+
         // Set keys using InviterKeyFactory
         setPk(InviterKeyFactory.getSeriesPk(this.seriesId));
         setSk(InviterKeyFactory.getMetadataSk());
-        
+
         // Set GSI keys for EntityTimeIndex
         setGsi1pk(InviterKeyFactory.getGroupPk(groupId));
     }
@@ -238,5 +251,117 @@ public class EventSeries extends BaseItem {
     public void setIsGeneratedTitle(Boolean isGeneratedTitle) {
         this.isGeneratedTitle = isGeneratedTitle;
         touch(); // Update timestamp
+    }
+
+    // ============================================================================
+    // WATCH PARTY FIELDS
+    // ============================================================================
+
+    public String getEventSeriesType() {
+        return eventSeriesType;
+    }
+
+    public void setEventSeriesType(String eventSeriesType) {
+        this.eventSeriesType = eventSeriesType;
+        touch();
+    }
+
+    public String getSeasonId() {
+        return seasonId;
+    }
+
+    public void setSeasonId(String seasonId) {
+        this.seasonId = seasonId;
+        touch();
+    }
+
+    public String getDefaultHostId() {
+        return defaultHostId;
+    }
+
+    public void setDefaultHostId(String defaultHostId) {
+        this.defaultHostId = defaultHostId;
+        touch();
+    }
+
+    public String getDefaultTime() {
+        return defaultTime;
+    }
+
+    public void setDefaultTime(String defaultTime) {
+        this.defaultTime = defaultTime;
+        touch();
+    }
+
+    public Integer getDayOverride() {
+        return dayOverride;
+    }
+
+    public void setDayOverride(Integer dayOverride) {
+        this.dayOverride = dayOverride;
+        touch();
+    }
+
+    public String getTimezone() {
+        return timezone;
+    }
+
+    public void setTimezone(String timezone) {
+        this.timezone = timezone;
+        touch();
+    }
+
+    public Set<String> getDeletedEpisodeIds() {
+        return deletedEpisodeIds;
+    }
+
+    public void setDeletedEpisodeIds(Set<String> deletedEpisodeIds) {
+        this.deletedEpisodeIds = deletedEpisodeIds != null ? deletedEpisodeIds : new HashSet<>();
+        touch();
+    }
+
+    // ============================================================================
+    // WATCH PARTY HELPER METHODS
+    // ============================================================================
+
+    /**
+     * Check if this series is a Watch Party series.
+     */
+    public boolean isWatchParty() {
+        return "WATCH_PARTY".equals(eventSeriesType);
+    }
+
+    /**
+     * Add an episode ID to the deleted set.
+     *
+     * @param episodeId The episode ID to mark as deleted
+     */
+    public void addDeletedEpisodeId(String episodeId) {
+        if (this.deletedEpisodeIds == null) {
+            this.deletedEpisodeIds = new HashSet<>();
+        }
+        this.deletedEpisodeIds.add(episodeId);
+        touch();
+    }
+
+    /**
+     * Check if an episode has been deleted from this series.
+     *
+     * @param episodeId The episode ID to check
+     * @return true if the episode has been deleted
+     */
+    public boolean isEpisodeDeleted(String episodeId) {
+        return this.deletedEpisodeIds != null && this.deletedEpisodeIds.contains(episodeId);
+    }
+
+    /**
+     * Remove an episode ID from the deleted set (restore it).
+     *
+     * @param episodeId The episode ID to restore
+     */
+    public void removeDeletedEpisodeId(String episodeId) {
+        if (this.deletedEpisodeIds != null && this.deletedEpisodeIds.remove(episodeId)) {
+            touch();
+        }
     }
 }

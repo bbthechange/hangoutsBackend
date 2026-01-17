@@ -309,6 +309,182 @@ class SeriesPointerTest {
         assertThat(pointer.getMainImagePath()).isEqualTo("/new.jpg");
     }
 
+    // ============================================================================
+    // WATCH PARTY FIELDS TESTS
+    // ============================================================================
+
+    @Test
+    void defaultConstructor_ShouldInitializeInterestLevels() {
+        // When
+        SeriesPointer pointer = new SeriesPointer();
+
+        // Then
+        assertThat(pointer.getInterestLevels()).isNotNull().isEmpty();
+    }
+
+    @Test
+    void parameterizedConstructor_ShouldInitializeInterestLevels() {
+        // When
+        SeriesPointer pointer = new SeriesPointer(
+            "12345678-1234-1234-1234-123456789012",
+            "12345678-1234-1234-1234-123456789013",
+            "Test Series"
+        );
+
+        // Then
+        assertThat(pointer.getInterestLevels()).isNotNull().isEmpty();
+    }
+
+    @Test
+    void fromEventSeries_CopiesWatchPartyFields() {
+        // Given
+        EventSeries series = createTestEventSeries();
+        series.setEventSeriesType("WATCH_PARTY");
+        series.setSeasonId("TVMAZE#SHOW#123|SEASON#2");
+        series.setDefaultHostId("host-user-id");
+        series.setDefaultTime("19:30");
+        series.setDayOverride(5);
+        series.setTimezone("America/Los_Angeles");
+
+        // When
+        SeriesPointer pointer = SeriesPointer.fromEventSeries(series, "12345678-1234-1234-1234-123456789012");
+
+        // Then
+        assertThat(pointer.getEventSeriesType()).isEqualTo("WATCH_PARTY");
+        assertThat(pointer.getSeasonId()).isEqualTo("TVMAZE#SHOW#123|SEASON#2");
+        assertThat(pointer.getDefaultHostId()).isEqualTo("host-user-id");
+        assertThat(pointer.getDefaultTime()).isEqualTo("19:30");
+        assertThat(pointer.getDayOverride()).isEqualTo(5);
+        assertThat(pointer.getTimezone()).isEqualTo("America/Los_Angeles");
+        assertThat(pointer.isWatchParty()).isTrue();
+    }
+
+    @Test
+    void syncWithEventSeries_SyncsWatchPartyFields() {
+        // Given
+        SeriesPointer pointer = new SeriesPointer();
+        EventSeries series = createTestEventSeries();
+        series.setEventSeriesType("WATCH_PARTY");
+        series.setSeasonId("TVMAZE#SHOW#456|SEASON#3");
+        series.setDefaultHostId("new-host-id");
+        series.setDefaultTime("20:00");
+        series.setDayOverride(6);
+        series.setTimezone("America/New_York");
+
+        // When
+        pointer.syncWithEventSeries(series);
+
+        // Then
+        assertThat(pointer.getEventSeriesType()).isEqualTo("WATCH_PARTY");
+        assertThat(pointer.getSeasonId()).isEqualTo("TVMAZE#SHOW#456|SEASON#3");
+        assertThat(pointer.getDefaultHostId()).isEqualTo("new-host-id");
+        assertThat(pointer.getDefaultTime()).isEqualTo("20:00");
+        assertThat(pointer.getDayOverride()).isEqualTo(6);
+        assertThat(pointer.getTimezone()).isEqualTo("America/New_York");
+    }
+
+    @Test
+    void isWatchParty_WithWatchPartyType_ShouldReturnTrue() {
+        // Given
+        SeriesPointer pointer = new SeriesPointer();
+        pointer.setEventSeriesType("WATCH_PARTY");
+
+        // Then
+        assertThat(pointer.isWatchParty()).isTrue();
+    }
+
+    @Test
+    void isWatchParty_WithNullType_ShouldReturnFalse() {
+        // Given
+        SeriesPointer pointer = new SeriesPointer();
+        pointer.setEventSeriesType(null);
+
+        // Then
+        assertThat(pointer.isWatchParty()).isFalse();
+    }
+
+    @Test
+    void addInterestLevel_ShouldAddToList() {
+        // Given
+        SeriesPointer pointer = new SeriesPointer();
+        InterestLevel interestLevel = new InterestLevel(
+            "12345678-1234-1234-1234-123456789015",
+            "12345678-1234-1234-1234-123456789016",
+            "John",
+            "GOING"
+        );
+
+        // When
+        pointer.addInterestLevel(interestLevel);
+
+        // Then
+        assertThat(pointer.getInterestLevels()).hasSize(1);
+        assertThat(pointer.getInterestLevelsCount()).isEqualTo(1);
+    }
+
+    @Test
+    void addInterestLevel_WithNullList_ShouldInitializeAndAdd() {
+        // Given
+        SeriesPointer pointer = new SeriesPointer();
+        pointer.setInterestLevels(null);
+        InterestLevel interestLevel = new InterestLevel(
+            "12345678-1234-1234-1234-123456789015",
+            "12345678-1234-1234-1234-123456789016",
+            "John",
+            "INTERESTED"
+        );
+
+        // When
+        pointer.addInterestLevel(interestLevel);
+
+        // Then
+        assertThat(pointer.getInterestLevels()).hasSize(1);
+    }
+
+    @Test
+    void getInterestLevelsCount_WithNullList_ShouldReturnZero() {
+        // Given
+        SeriesPointer pointer = new SeriesPointer();
+        pointer.setInterestLevels(null);
+
+        // Then
+        assertThat(pointer.getInterestLevelsCount()).isEqualTo(0);
+    }
+
+    @Test
+    void setInterestLevels_WithNull_ShouldInitializeEmptyList() {
+        // Given
+        SeriesPointer pointer = new SeriesPointer();
+
+        // When
+        pointer.setInterestLevels(null);
+
+        // Then
+        assertThat(pointer.getInterestLevels()).isNotNull().isEmpty();
+    }
+
+    @Test
+    void setWatchPartyFields_ShouldWorkCorrectly() {
+        // Given
+        SeriesPointer pointer = new SeriesPointer();
+
+        // When
+        pointer.setEventSeriesType("WATCH_PARTY");
+        pointer.setSeasonId("TVMAZE#SHOW#789|SEASON#1");
+        pointer.setDefaultHostId("default-host");
+        pointer.setDefaultTime("18:00");
+        pointer.setDayOverride(3);
+        pointer.setTimezone("Europe/London");
+
+        // Then
+        assertThat(pointer.getEventSeriesType()).isEqualTo("WATCH_PARTY");
+        assertThat(pointer.getSeasonId()).isEqualTo("TVMAZE#SHOW#789|SEASON#1");
+        assertThat(pointer.getDefaultHostId()).isEqualTo("default-host");
+        assertThat(pointer.getDefaultTime()).isEqualTo("18:00");
+        assertThat(pointer.getDayOverride()).isEqualTo(3);
+        assertThat(pointer.getTimezone()).isEqualTo("Europe/London");
+    }
+
     // Helper methods
     private HangoutPointer createTestHangoutPointer(String hangoutId) {
         return createHangoutPointerWithTimestamp(hangoutId, null);
