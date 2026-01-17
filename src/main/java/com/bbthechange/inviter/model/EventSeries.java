@@ -51,7 +51,6 @@ public class EventSeries extends BaseItem {
         super();
         setItemType("EVENT_SERIES");
         this.hangoutIds = new ArrayList<>();
-        this.deletedEpisodeIds = new HashSet<>();
         this.version = 1L;
     }
 
@@ -66,7 +65,6 @@ public class EventSeries extends BaseItem {
         this.seriesDescription = seriesDescription;
         this.groupId = groupId;
         this.hangoutIds = new ArrayList<>();
-        this.deletedEpisodeIds = new HashSet<>();
         this.version = 1L;
 
         // Set keys using InviterKeyFactory
@@ -316,7 +314,11 @@ public class EventSeries extends BaseItem {
     }
 
     public void setDeletedEpisodeIds(Set<String> deletedEpisodeIds) {
-        this.deletedEpisodeIds = deletedEpisodeIds != null ? deletedEpisodeIds : new HashSet<>();
+        if (deletedEpisodeIds == null || deletedEpisodeIds.isEmpty()) {
+            this.deletedEpisodeIds = null;
+        } else {
+            this.deletedEpisodeIds = deletedEpisodeIds;
+        }
         touch();
     }
 
@@ -361,6 +363,9 @@ public class EventSeries extends BaseItem {
      */
     public void removeDeletedEpisodeId(String episodeId) {
         if (this.deletedEpisodeIds != null && this.deletedEpisodeIds.remove(episodeId)) {
+            if (this.deletedEpisodeIds.isEmpty()) {
+                this.deletedEpisodeIds = null;
+            }
             touch();
         }
     }

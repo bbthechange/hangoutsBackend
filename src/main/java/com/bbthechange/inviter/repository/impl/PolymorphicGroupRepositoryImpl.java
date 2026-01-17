@@ -511,6 +511,28 @@ public class PolymorphicGroupRepositoryImpl implements GroupRepository {
     }
     
     @Override
+    public void deleteSeriesPointer(String groupId, String seriesId) {
+        queryTracker.trackQuery("DeleteItem", TABLE_NAME, () -> {
+            try {
+                DeleteItemRequest request = DeleteItemRequest.builder()
+                    .tableName(TABLE_NAME)
+                    .key(Map.of(
+                        "pk", AttributeValue.builder().s(InviterKeyFactory.getGroupPk(groupId)).build(),
+                        "sk", AttributeValue.builder().s(InviterKeyFactory.getSeriesSk(seriesId)).build()
+                    ))
+                    .build();
+                
+                dynamoDbClient.deleteItem(request);
+                
+            } catch (DynamoDbException e) {
+                logger.error("Failed to delete series pointer {} from group {}", seriesId, groupId, e);
+                throw new RepositoryException("Failed to delete series pointer", e);
+            }
+            return null;
+        });
+    }
+    
+    @Override
     public void createGroupWithFirstMember(Group group, GroupMembership membership) {
         queryTracker.trackQuery("TransactWriteItems", TABLE_NAME, () -> {
             try {

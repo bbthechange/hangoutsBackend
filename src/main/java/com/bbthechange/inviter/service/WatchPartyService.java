@@ -1,0 +1,60 @@
+package com.bbthechange.inviter.service;
+
+import com.bbthechange.inviter.dto.watchparty.CreateWatchPartyRequest;
+import com.bbthechange.inviter.dto.watchparty.WatchPartyDetailResponse;
+import com.bbthechange.inviter.dto.watchparty.WatchPartyResponse;
+
+/**
+ * Service interface for managing TV Watch Party series.
+ * Watch parties are event series that track TV seasons and auto-create hangouts for episodes.
+ */
+public interface WatchPartyService {
+
+    /**
+     * Create a new watch party series for a group.
+     *
+     * Phase 2: Episodes are provided directly in the request.
+     * Phase 3: Episodes will be fetched from TVMaze automatically.
+     *
+     * Processing:
+     * 1. Validate user is member of group
+     * 2. Create or update Season record
+     * 3. Apply episode combination logic (<20 hours apart)
+     * 4. Calculate timestamps using defaultTime + timezone + optional dayOverride
+     * 5. Create EventSeries with watch party fields
+     * 6. Create Hangouts for each (combined) episode
+     *
+     * @param groupId The group to create the watch party in
+     * @param request Watch party creation details
+     * @param requestingUserId The user creating the watch party
+     * @return Response with created series and hangouts
+     * @throws com.bbthechange.inviter.exception.UnauthorizedException if user is not in group
+     * @throws com.bbthechange.inviter.exception.ValidationException if request is invalid
+     */
+    WatchPartyResponse createWatchParty(String groupId, CreateWatchPartyRequest request, String requestingUserId);
+
+    /**
+     * Get detailed information about a watch party series.
+     *
+     * @param groupId The group the watch party belongs to
+     * @param seriesId The watch party series ID
+     * @param requestingUserId The user requesting the details
+     * @return Detailed watch party information
+     * @throws com.bbthechange.inviter.exception.ResourceNotFoundException if series not found
+     * @throws com.bbthechange.inviter.exception.UnauthorizedException if user is not in group
+     */
+    WatchPartyDetailResponse getWatchParty(String groupId, String seriesId, String requestingUserId);
+
+    /**
+     * Delete a watch party series and all its hangouts.
+     *
+     * Note: The Season record is NOT deleted (other groups may use it).
+     *
+     * @param groupId The group the watch party belongs to
+     * @param seriesId The watch party series ID to delete
+     * @param requestingUserId The user requesting deletion
+     * @throws com.bbthechange.inviter.exception.ResourceNotFoundException if series not found
+     * @throws com.bbthechange.inviter.exception.UnauthorizedException if user is not in group
+     */
+    void deleteWatchParty(String groupId, String seriesId, String requestingUserId);
+}

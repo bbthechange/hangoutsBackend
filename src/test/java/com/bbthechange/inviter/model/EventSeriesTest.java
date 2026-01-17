@@ -175,16 +175,16 @@ class EventSeriesTest {
     // ============================================================================
 
     @Test
-    void defaultConstructor_ShouldInitializeDeletedEpisodeIds() {
+    void defaultConstructor_ShouldHaveNullDeletedEpisodeIds() {
         // When
         EventSeries series = new EventSeries();
 
         // Then
-        assertThat(series.getDeletedEpisodeIds()).isNotNull().isEmpty();
+        assertThat(series.getDeletedEpisodeIds()).isNull();
     }
 
     @Test
-    void parameterizedConstructor_ShouldInitializeDeletedEpisodeIds() {
+    void parameterizedConstructor_ShouldHaveNullDeletedEpisodeIds() {
         // Given
         String groupId = "550e8400-e29b-41d4-a716-446655440000";
 
@@ -192,7 +192,7 @@ class EventSeriesTest {
         EventSeries series = new EventSeries("Title", "Description", groupId);
 
         // Then
-        assertThat(series.getDeletedEpisodeIds()).isNotNull().isEmpty();
+        assertThat(series.getDeletedEpisodeIds()).isNull();
     }
 
     @Test
@@ -310,7 +310,7 @@ class EventSeriesTest {
     }
 
     @Test
-    void setDeletedEpisodeIds_WithNull_ShouldInitializeEmptySet() {
+    void setDeletedEpisodeIds_WithNull_ShouldSetToNull() {
         // Given
         EventSeries series = new EventSeries();
 
@@ -318,6 +318,6 @@ class EventSeriesTest {
         series.setDeletedEpisodeIds(null);
 
         // Then
-        assertThat(series.getDeletedEpisodeIds()).isNotNull().isEmpty();
+        assertThat(series.getDeletedEpisodeIds()).isNull();
     }
 }
