@@ -66,6 +66,8 @@ public class PolymorphicGroupRepositoryImpl implements GroupRepository {
                     return membershipSchema.mapToItem(itemMap);
                 } else if (InviterKeyFactory.isHangoutPointer(sk)) {
                     return hangoutSchema.mapToItem(itemMap);
+                } else if (InviterKeyFactory.isSeriesPointer(sk)) {
+                    return seriesSchema.mapToItem(itemMap);
                 }
             }
             throw new IllegalStateException("Missing itemType discriminator and unable to determine type from SK");
@@ -79,6 +81,8 @@ public class PolymorphicGroupRepositoryImpl implements GroupRepository {
                 return membershipSchema.mapToItem(itemMap);
             case "HANGOUT_POINTER":
                 return hangoutSchema.mapToItem(itemMap);
+            case "SERIES_POINTER":
+                return seriesSchema.mapToItem(itemMap);
             default:
                 logger.warn("Unknown item type encountered: {}. Skipping deserialization.", itemType);
                 return null;
@@ -487,7 +491,37 @@ public class PolymorphicGroupRepositoryImpl implements GroupRepository {
             return null;
         });
     }
-    
+
+    @Override
+    public Optional<SeriesPointer> findSeriesPointer(String groupId, String seriesId) {
+        return queryTracker.trackQuery("GetItem", TABLE_NAME, () -> {
+            try {
+                GetItemRequest request = GetItemRequest.builder()
+                    .tableName(TABLE_NAME)
+                    .key(Map.of(
+                        "pk", AttributeValue.builder().s(InviterKeyFactory.getGroupPk(groupId)).build(),
+                        "sk", AttributeValue.builder().s(InviterKeyFactory.getSeriesSk(seriesId)).build()
+                    ))
+                    .build();
+
+                GetItemResponse response = dynamoDbClient.getItem(request);
+                if (!response.hasItem()) {
+                    return Optional.empty();
+                }
+
+                BaseItem item = deserializeItem(response.item());
+                if (item instanceof SeriesPointer) {
+                    return Optional.of((SeriesPointer) item);
+                }
+                return Optional.empty();
+
+            } catch (DynamoDbException e) {
+                logger.error("Failed to find series pointer {} for group {}", seriesId, groupId, e);
+                throw new RepositoryException("Failed to retrieve series pointer", e);
+            }
+        });
+    }
+
     @Override
     public void deleteHangoutPointer(String groupId, String hangoutId) {
         queryTracker.trackQuery("DeleteItem", TABLE_NAME, () -> {

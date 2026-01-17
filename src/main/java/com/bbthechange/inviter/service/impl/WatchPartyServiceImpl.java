@@ -38,6 +38,7 @@ public class WatchPartyServiceImpl implements WatchPartyService {
     private final HangoutRepository hangoutRepository;
     private final EventSeriesRepository eventSeriesRepository;
     private final SeasonRepository seasonRepository;
+    private final UserRepository userRepository;
     private final GroupTimestampService groupTimestampService;
     private final TvMazeClient tvMazeClient;
 
@@ -47,12 +48,14 @@ public class WatchPartyServiceImpl implements WatchPartyService {
             HangoutRepository hangoutRepository,
             EventSeriesRepository eventSeriesRepository,
             SeasonRepository seasonRepository,
+            UserRepository userRepository,
             GroupTimestampService groupTimestampService,
             TvMazeClient tvMazeClient) {
         this.groupRepository = groupRepository;
         this.hangoutRepository = hangoutRepository;
         this.eventSeriesRepository = eventSeriesRepository;
         this.seasonRepository = seasonRepository;
+        this.userRepository = userRepository;
         this.groupTimestampService = groupTimestampService;
         this.tvMazeClient = tvMazeClient;
     }
@@ -202,6 +205,15 @@ public class WatchPartyServiceImpl implements WatchPartyService {
             }
         }
 
+        // 5. Get SeriesPointer for interest levels
+        List<SeriesInterestLevelDTO> interestLevelDTOs = new ArrayList<>();
+        Optional<SeriesPointer> pointerOpt = groupRepository.findSeriesPointer(groupId, seriesId);
+        if (pointerOpt.isPresent() && pointerOpt.get().getInterestLevels() != null) {
+            interestLevelDTOs = pointerOpt.get().getInterestLevels().stream()
+                    .map(SeriesInterestLevelDTO::fromInterestLevel)
+                    .collect(Collectors.toList());
+        }
+
         return WatchPartyDetailResponse.builder()
                 .seriesId(seriesId)
                 .seriesTitle(series.getSeriesTitle())
@@ -214,6 +226,7 @@ public class WatchPartyServiceImpl implements WatchPartyService {
                 .dayOverride(series.getDayOverride())
                 .defaultHostId(series.getDefaultHostId())
                 .hangouts(hangoutSummaries)
+                .interestLevels(interestLevelDTOs)
                 .build();
     }
 
@@ -406,6 +419,57 @@ public class WatchPartyServiceImpl implements WatchPartyService {
 
         // Return updated details using existing getWatchParty method
         return getWatchParty(groupId, seriesId, requestingUserId);
+    }
+
+    @Override
+    public void setUserInterest(String seriesId, String level, String requestingUserId) {
+        // 1. Lookup EventSeries by seriesId
+        EventSeries series = eventSeriesRepository.findById(seriesId)
+                .orElseThrow(() -> new ResourceNotFoundException("Watch party series not found: " + seriesId));
+
+        // Verify it's a watch party
+        if (!WATCH_PARTY_TYPE.equals(series.getEventSeriesType())) {
+            throw new ResourceNotFoundException("Series is not a watch party: " + seriesId);
+        }
+
+        // 2. Get the groupId from the EventSeries
+        String groupId = series.getGroupId();
+        if (groupId == null) {
+            throw new ResourceNotFoundException("Watch party has no associated group: " + seriesId);
+        }
+
+        // 3. Validate user is member of the associated group
+        if (!groupRepository.isUserMemberOfGroup(groupId, requestingUserId)) {
+            throw new UnauthorizedException("User is not a member of the watch party group");
+        }
+
+        // 4. Get user profile for denormalized data
+        User user = userRepository.findById(requestingUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + requestingUserId));
+
+        // 5. Create InterestLevel with denormalized user data
+        InterestLevel interestLevel = new InterestLevel();
+        interestLevel.setUserId(requestingUserId);
+        interestLevel.setStatus(level);  // GOING, INTERESTED, NOT_GOING
+        interestLevel.setUserName(user.getDisplayName() != null ? user.getDisplayName() : user.getUsername());
+        interestLevel.setMainImagePath(user.getMainImagePath());
+
+        // 6. Find and update the SeriesPointer
+        Optional<SeriesPointer> pointerOpt = groupRepository.findSeriesPointer(groupId, seriesId);
+        if (pointerOpt.isEmpty()) {
+            throw new ResourceNotFoundException("Series pointer not found for group: " + groupId);
+        }
+
+        SeriesPointer seriesPointer = pointerOpt.get();
+        seriesPointer.setOrUpdateInterestLevel(interestLevel);
+
+        // 7. Save the updated SeriesPointer
+        groupRepository.saveSeriesPointer(seriesPointer);
+
+        // 8. Update group timestamp for ETag invalidation
+        groupTimestampService.updateGroupTimestamps(List.of(groupId));
+
+        logger.info("User {} set interest level {} on watch party series {}", requestingUserId, level, seriesId);
     }
 
     // ============================================================================

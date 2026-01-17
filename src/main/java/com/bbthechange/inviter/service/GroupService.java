@@ -1,5 +1,6 @@
 package com.bbthechange.inviter.service;
 
+import com.bbthechange.inviter.config.ClientInfo;
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.model.Group;
 import java.util.List;
@@ -79,6 +80,21 @@ public interface GroupService {
      */
     GroupFeedDTO getGroupFeed(String groupId, String requestingUserId, Integer limit,
                              String startingAfter, String endingBefore);
+
+    /**
+     * Get the group feed with client version filtering support.
+     * Watch parties are filtered out for clients with app version < 2.0.0.
+     *
+     * @param groupId The group ID
+     * @param requestingUserId The user requesting the feed (for authorization)
+     * @param limit Maximum number of events to return (null for no limit)
+     * @param startingAfter Pagination token for forward pagination (get more future events)
+     * @param endingBefore Pagination token for backward pagination (get past events)
+     * @param clientInfo Client information including app version (may be null)
+     * @return GroupFeedDTO with chronological events and pagination tokens
+     */
+    GroupFeedDTO getGroupFeed(String groupId, String requestingUserId, Integer limit,
+                             String startingAfter, String endingBefore, ClientInfo clientInfo);
 
     /**
      * Get group metadata for ETag validation.

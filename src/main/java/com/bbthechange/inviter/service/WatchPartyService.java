@@ -82,4 +82,24 @@ public interface WatchPartyService {
      * @throws com.bbthechange.inviter.exception.UnauthorizedException if user is not in group
      */
     void deleteWatchParty(String groupId, String seriesId, String requestingUserId);
+
+    /**
+     * Set series-level interest for a watch party.
+     * User can express GOING, INTERESTED, or NOT_GOING interest in the entire series.
+     *
+     * Processing:
+     * 1. Lookup EventSeries by seriesId
+     * 2. Get groupIds from the EventSeries
+     * 3. Validate user is member of at least one associated group
+     * 4. For each group, find and update SeriesPointer with new interest level
+     * 5. Save the updated SeriesPointer(s)
+     * 6. Update group timestamps for ETag invalidation
+     *
+     * @param seriesId The watch party series ID
+     * @param level Interest level: "GOING", "INTERESTED", or "NOT_GOING"
+     * @param requestingUserId The user setting the interest level
+     * @throws com.bbthechange.inviter.exception.ResourceNotFoundException if series not found
+     * @throws com.bbthechange.inviter.exception.UnauthorizedException if user is not in any associated group
+     */
+    void setUserInterest(String seriesId, String level, String requestingUserId);
 }

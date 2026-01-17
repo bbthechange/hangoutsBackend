@@ -21,6 +21,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -60,6 +61,9 @@ class WatchPartyServiceImplTest {
 
     @Mock
     private SeasonRepository seasonRepository;
+
+    @Mock
+    private UserRepository userRepository;
 
     @Mock
     private GroupTimestampService groupTimestampService;
@@ -1151,6 +1155,164 @@ class WatchPartyServiceImplTest {
             // Then - Default runtime of 60 should be used
             assertThat(result).hasSize(1);
             assertThat(result.get(0).getTotalRuntime()).isEqualTo(60);
+        }
+    }
+
+    // ============================================================================
+    // SET USER INTEREST TESTS
+    // ============================================================================
+
+    @Nested
+    class SetUserInterestTests {
+
+        private User testUser;
+        private SeriesPointer testSeriesPointer;
+
+        @BeforeEach
+        void setUpInterestTests() {
+            testUser = new User();
+            testUser.setId(UUID.fromString(USER_ID));
+            testUser.setDisplayName("Test User");
+            testUser.setMainImagePath("users/test-image.jpg");
+
+            testSeriesPointer = new SeriesPointer();
+            testSeriesPointer.setSeriesId(SERIES_ID);
+            testSeriesPointer.setGroupId(GROUP_ID);
+            testSeriesPointer.setEventSeriesType("WATCH_PARTY");
+        }
+
+        @Test
+        void setUserInterest_GoingLevel_StoresInterestLevel() {
+            // Given
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(testUser));
+            when(groupRepository.findSeriesPointer(GROUP_ID, SERIES_ID)).thenReturn(Optional.of(testSeriesPointer));
+
+            // When
+            watchPartyService.setUserInterest(SERIES_ID, "GOING", USER_ID);
+
+            // Then
+            ArgumentCaptor<SeriesPointer> pointerCaptor = ArgumentCaptor.forClass(SeriesPointer.class);
+            verify(groupRepository).saveSeriesPointer(pointerCaptor.capture());
+
+            SeriesPointer savedPointer = pointerCaptor.getValue();
+            assertThat(savedPointer.getInterestLevels()).hasSize(1);
+            assertThat(savedPointer.getInterestLevels().get(0).getUserId()).isEqualTo(USER_ID);
+            assertThat(savedPointer.getInterestLevels().get(0).getStatus()).isEqualTo("GOING");
+            assertThat(savedPointer.getInterestLevels().get(0).getUserName()).isEqualTo("Test User");
+
+            verify(groupTimestampService).updateGroupTimestamps(List.of(GROUP_ID));
+        }
+
+        @Test
+        void setUserInterest_ChangeLevel_UpdatesExistingEntry() {
+            // Given - User already has an interest level
+            InterestLevel existingLevel = new InterestLevel();
+            existingLevel.setUserId(USER_ID);
+            existingLevel.setStatus("INTERESTED");
+            existingLevel.setUserName("Test User");
+            testSeriesPointer.setInterestLevels(new ArrayList<>(List.of(existingLevel)));
+
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(testUser));
+            when(groupRepository.findSeriesPointer(GROUP_ID, SERIES_ID)).thenReturn(Optional.of(testSeriesPointer));
+
+            // When - Change from INTERESTED to NOT_GOING
+            watchPartyService.setUserInterest(SERIES_ID, "NOT_GOING", USER_ID);
+
+            // Then - Should update existing, not add new
+            ArgumentCaptor<SeriesPointer> pointerCaptor = ArgumentCaptor.forClass(SeriesPointer.class);
+            verify(groupRepository).saveSeriesPointer(pointerCaptor.capture());
+
+            SeriesPointer savedPointer = pointerCaptor.getValue();
+            assertThat(savedPointer.getInterestLevels()).hasSize(1); // Still only one entry
+            assertThat(savedPointer.getInterestLevels().get(0).getStatus()).isEqualTo("NOT_GOING");
+        }
+
+        @Test
+        void setUserInterest_NonMember_ThrowsUnauthorized() {
+            // Given
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(false);
+
+            // When/Then
+            assertThatThrownBy(() -> watchPartyService.setUserInterest(SERIES_ID, "GOING", USER_ID))
+                    .isInstanceOf(UnauthorizedException.class)
+                    .hasMessageContaining("not a member");
+        }
+
+        @Test
+        void setUserInterest_InvalidSeriesId_ThrowsNotFound() {
+            // Given
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.empty());
+
+            // When/Then
+            assertThatThrownBy(() -> watchPartyService.setUserInterest(SERIES_ID, "GOING", USER_ID))
+                    .isInstanceOf(ResourceNotFoundException.class)
+                    .hasMessageContaining("Watch party series not found");
+        }
+
+        @Test
+        void setUserInterest_NotWatchParty_ThrowsNotFound() {
+            // Given
+            testSeries.setEventSeriesType("REGULAR"); // Not a watch party
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+
+            // When/Then
+            assertThatThrownBy(() -> watchPartyService.setUserInterest(SERIES_ID, "GOING", USER_ID))
+                    .isInstanceOf(ResourceNotFoundException.class)
+                    .hasMessageContaining("not a watch party");
+        }
+
+        @Test
+        void setUserInterest_SeriesPointerNotFound_ThrowsNotFound() {
+            // Given
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(testUser));
+            when(groupRepository.findSeriesPointer(GROUP_ID, SERIES_ID)).thenReturn(Optional.empty());
+
+            // When/Then
+            assertThatThrownBy(() -> watchPartyService.setUserInterest(SERIES_ID, "GOING", USER_ID))
+                    .isInstanceOf(ResourceNotFoundException.class)
+                    .hasMessageContaining("Series pointer not found");
+        }
+
+        @Test
+        void setUserInterest_UserNotFound_ThrowsNotFound() {
+            // Given
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(userRepository.findById(USER_ID)).thenReturn(Optional.empty());
+
+            // When/Then
+            assertThatThrownBy(() -> watchPartyService.setUserInterest(SERIES_ID, "GOING", USER_ID))
+                    .isInstanceOf(ResourceNotFoundException.class)
+                    .hasMessageContaining("User not found");
+        }
+
+        @Test
+        void setUserInterest_UsesDisplayNameWithFallback() {
+            // Given - User has no display name, should use username
+            testUser.setDisplayName(null);
+            testUser.setUsername("testuser");
+
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(testUser));
+            when(groupRepository.findSeriesPointer(GROUP_ID, SERIES_ID)).thenReturn(Optional.of(testSeriesPointer));
+
+            // When
+            watchPartyService.setUserInterest(SERIES_ID, "INTERESTED", USER_ID);
+
+            // Then
+            ArgumentCaptor<SeriesPointer> pointerCaptor = ArgumentCaptor.forClass(SeriesPointer.class);
+            verify(groupRepository).saveSeriesPointer(pointerCaptor.capture());
+
+            SeriesPointer savedPointer = pointerCaptor.getValue();
+            assertThat(savedPointer.getInterestLevels().get(0).getUserName()).isEqualTo("testuser");
         }
     }
 }

@@ -223,7 +223,7 @@ class WatchPartyTvMazeTests extends StagingTestBase {
 
     @Test
     @Order(5)
-    @DisplayName("Watch party appears in group feed for version 2.0.0+ clients")
+    @DisplayName("Watch party appears in group feed (past events section) for version 2.0.0+ clients")
     void createWatchParty_AppearsInGroupFeed_ForNewVersionClients() {
         // Arrange
         String groupId = createTestGroup("WP Feed Test");
@@ -254,8 +254,15 @@ class WatchPartyTvMazeTests extends StagingTestBase {
         createdSeriesIds.add(seriesId);
         seriesGroupMap.put(seriesId, groupId);
 
-        // Assert - wait for GSI propagation and verify in feed
-        // Using 10 second timeout for staging environment stability
+        // Create pagination token to query past events
+        // GoT S1 aired in 2011, so hangouts have past timestamps
+        // The feed requires endingBefore param to return past events
+        long nowTimestamp = System.currentTimeMillis() / 1000;
+        String pastEventsToken = java.util.Base64.getEncoder().encodeToString(
+            String.format("{\"lastEventId\":null,\"lastTimestamp\":%d,\"isForward\":false}", nowTimestamp).getBytes()
+        );
+
+        // Assert - wait for GSI propagation and verify in feed's past events section
         await()
             .atMost(10, SECONDS)
             .pollInterval(500, MILLISECONDS)
@@ -263,11 +270,12 @@ class WatchPartyTvMazeTests extends StagingTestBase {
                 given()
                     .header("Authorization", "Bearer " + testUserToken)
                     .header("X-App-Version", "2.0.0")
+                    .queryParam("endingBefore", pastEventsToken)
                 .when()
                     .get("/groups/" + groupId + "/feed")
                 .then()
                     .statusCode(200)
-                    .body("find { it.seriesId == '" + seriesId + "' }", notNullValue());
+                    .body("withDay.find { it.seriesId == '" + seriesId + "' }", notNullValue());
             });
     }
 }

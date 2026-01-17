@@ -1,11 +1,13 @@
 package com.bbthechange.inviter.dto.watchparty;
 
+import com.bbthechange.inviter.model.InterestLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Detailed response for GET watch party endpoint.
@@ -71,4 +73,24 @@ public class WatchPartyDetailResponse {
      * All hangouts in this watch party.
      */
     private List<WatchPartyHangoutSummary> hangouts;
+
+    /**
+     * Series-level interest levels from users.
+     * Each entry represents a user's interest in the entire series.
+     */
+    private List<SeriesInterestLevelDTO> interestLevels;
+
+    /**
+     * Set interest levels from InterestLevel models.
+     * Converts the internal status field to the external level field.
+     *
+     * @param levels List of InterestLevel models from the SeriesPointer
+     */
+    public void setInterestLevelsFromModel(List<InterestLevel> levels) {
+        if (levels != null) {
+            this.interestLevels = levels.stream()
+                .map(SeriesInterestLevelDTO::fromInterestLevel)
+                .collect(Collectors.toList());
+        }
+    }
 }

@@ -425,6 +425,25 @@ public class SeriesPointer extends BaseItem {
     }
 
     /**
+     * Set or update an interest level for a user.
+     * If the user already has an interest level, it is replaced.
+     * If not, the new interest level is added.
+     *
+     * @param interestLevel The interest level to set or update
+     */
+    public void setOrUpdateInterestLevel(InterestLevel interestLevel) {
+        if (this.interestLevels == null) {
+            this.interestLevels = new ArrayList<>();
+        }
+        // Remove existing entry from same user if present
+        this.interestLevels.removeIf(il ->
+            il.getUserId() != null && il.getUserId().equals(interestLevel.getUserId()));
+        // Add the new entry
+        this.interestLevels.add(interestLevel);
+        touch();
+    }
+
+    /**
      * Get the count of interest levels.
      */
     public int getInterestLevelsCount() {

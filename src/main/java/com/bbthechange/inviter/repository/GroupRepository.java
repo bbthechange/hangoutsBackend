@@ -78,6 +78,7 @@ public interface GroupRepository {
     
     // Series pointer operations (simple CRUD only - business logic in service layer)
     void saveSeriesPointer(SeriesPointer pointer);
+    Optional<SeriesPointer> findSeriesPointer(String groupId, String seriesId);
     void deleteSeriesPointer(String groupId, String seriesId);
     
     /**

@@ -1,5 +1,6 @@
 package com.bbthechange.inviter.controller;
 
+import com.bbthechange.inviter.config.ClientInfo;
 import com.bbthechange.inviter.service.GroupService;
 import com.bbthechange.inviter.service.GroupFeedService;
 import com.bbthechange.inviter.service.RateLimitingService;
@@ -178,6 +179,9 @@ public class GroupController extends BaseController {
 
         String userId = extractUserId(httpRequest);
 
+        // Extract client info for version filtering (e.g., watch parties require >= 2.0.0)
+        ClientInfo clientInfo = ClientInfo.fromRequestAttribute(httpRequest);
+
         // Step 1: Cheap ETag check - just fetch Group metadata (2 RCUs: group + membership)
         Group group = groupService.getGroupForEtagCheck(groupId, userId);
         String etag = calculateETag(groupId, group.getLastHangoutModified());
@@ -191,8 +195,8 @@ public class GroupController extends BaseController {
                     .build();
         }
 
-        // Step 3: ETag doesn't match - do the expensive feed query
-        GroupFeedDTO feed = groupService.getGroupFeed(groupId, userId, limit, startingAfter, endingBefore);
+        // Step 3: ETag doesn't match - do the expensive feed query with version filtering
+        GroupFeedDTO feed = groupService.getGroupFeed(groupId, userId, limit, startingAfter, endingBefore, clientInfo);
         logger.debug("Retrieved group feed for group {} with {} chronological events",
                     groupId, feed.getWithDay().size());
 

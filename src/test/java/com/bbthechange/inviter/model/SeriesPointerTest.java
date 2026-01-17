@@ -464,6 +464,111 @@ class SeriesPointerTest {
     }
 
     @Test
+    void setOrUpdateInterestLevel_NewUser_AddsEntry() {
+        // Given
+        SeriesPointer pointer = new SeriesPointer();
+        InterestLevel interestLevel = new InterestLevel(
+            "12345678-1234-1234-1234-123456789015",
+            "12345678-1234-1234-1234-123456789016",
+            "John",
+            "GOING"
+        );
+
+        // When
+        pointer.setOrUpdateInterestLevel(interestLevel);
+
+        // Then
+        assertThat(pointer.getInterestLevels()).hasSize(1);
+        assertThat(pointer.getInterestLevels().get(0).getUserId()).isEqualTo("12345678-1234-1234-1234-123456789016");
+        assertThat(pointer.getInterestLevels().get(0).getStatus()).isEqualTo("GOING");
+    }
+
+    @Test
+    void setOrUpdateInterestLevel_ExistingUser_UpdatesEntry() {
+        // Given
+        SeriesPointer pointer = new SeriesPointer();
+        String userId = "12345678-1234-1234-1234-123456789016";
+
+        InterestLevel initial = new InterestLevel(
+            "12345678-1234-1234-1234-123456789015",
+            userId,
+            "John",
+            "INTERESTED"
+        );
+        pointer.setOrUpdateInterestLevel(initial);
+
+        // When - Update to GOING
+        InterestLevel updated = new InterestLevel(
+            "12345678-1234-1234-1234-123456789015",
+            userId,
+            "John Updated",
+            "GOING"
+        );
+        pointer.setOrUpdateInterestLevel(updated);
+
+        // Then
+        assertThat(pointer.getInterestLevels()).hasSize(1); // Still only one entry
+        assertThat(pointer.getInterestLevels().get(0).getStatus()).isEqualTo("GOING");
+        assertThat(pointer.getInterestLevels().get(0).getUserName()).isEqualTo("John Updated");
+    }
+
+    @Test
+    void setOrUpdateInterestLevel_ExistingUser_NoDuplicates() {
+        // Given
+        SeriesPointer pointer = new SeriesPointer();
+        String userId = "12345678-1234-1234-1234-123456789016";
+        String user1Id = "11111111-1111-1111-1111-111111111111";
+        String user3Id = "33333333-3333-3333-3333-333333333333";
+        String eventId = "44444444-4444-4444-4444-444444444444";
+
+        // Add interest level from multiple users using valid UUIDs
+        InterestLevel user1 = new InterestLevel(eventId, user1Id, "User 1", "GOING");
+        InterestLevel user2 = new InterestLevel(eventId, userId, "User 2", "INTERESTED");
+        InterestLevel user3 = new InterestLevel(eventId, user3Id, "User 3", "NOT_GOING");
+
+        pointer.setOrUpdateInterestLevel(user1);
+        pointer.setOrUpdateInterestLevel(user2);
+        pointer.setOrUpdateInterestLevel(user3);
+
+        assertThat(pointer.getInterestLevels()).hasSize(3);
+
+        // When - Update user2's interest
+        InterestLevel user2Updated = new InterestLevel(eventId, userId, "User 2 Updated", "GOING");
+        pointer.setOrUpdateInterestLevel(user2Updated);
+
+        // Then - Still 3 entries, no duplicates
+        assertThat(pointer.getInterestLevels()).hasSize(3);
+
+        // Find user2's entry
+        InterestLevel found = pointer.getInterestLevels().stream()
+            .filter(il -> userId.equals(il.getUserId()))
+            .findFirst()
+            .orElse(null);
+
+        assertThat(found).isNotNull();
+        assertThat(found.getStatus()).isEqualTo("GOING");
+    }
+
+    @Test
+    void setOrUpdateInterestLevel_WithNullList_ShouldInitializeAndAdd() {
+        // Given
+        SeriesPointer pointer = new SeriesPointer();
+        pointer.setInterestLevels(null);
+
+        // Use setter-based approach to avoid key validation
+        InterestLevel interestLevel = new InterestLevel();
+        interestLevel.setUserId("12345678-1234-1234-1234-123456789012");
+        interestLevel.setUserName("John");
+        interestLevel.setStatus("GOING");
+
+        // When
+        pointer.setOrUpdateInterestLevel(interestLevel);
+
+        // Then
+        assertThat(pointer.getInterestLevels()).hasSize(1);
+    }
+
+    @Test
     void setWatchPartyFields_ShouldWorkCorrectly() {
         // Given
         SeriesPointer pointer = new SeriesPointer();

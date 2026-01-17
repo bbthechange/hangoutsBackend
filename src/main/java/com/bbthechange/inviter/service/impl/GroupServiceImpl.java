@@ -1,5 +1,6 @@
 package com.bbthechange.inviter.service.impl;
 
+import com.bbthechange.inviter.config.ClientInfo;
 import com.bbthechange.inviter.service.GroupService;
 import com.bbthechange.inviter.service.HangoutService;
 import com.bbthechange.inviter.service.S3Service;
@@ -48,7 +49,13 @@ public class GroupServiceImpl implements GroupService {
     
     private static final Logger logger = LoggerFactory.getLogger(GroupServiceImpl.class);
     private static final ObjectMapper objectMapper = new ObjectMapper();
-    
+
+    /**
+     * Minimum app version required to see watch party series in the feed.
+     * Clients with versions < 2.0.0 will have watch parties filtered out.
+     */
+    private static final String WATCH_PARTY_MIN_VERSION = "2.0.0";
+
     private final GroupRepository groupRepository;
     private final HangoutRepository hangoutRepository;
     private final UserRepository userRepository;
@@ -370,22 +377,29 @@ public class GroupServiceImpl implements GroupService {
     }
     
     @Override
-    public GroupFeedDTO getGroupFeed(String groupId, String requestingUserId, Integer limit, 
+    public GroupFeedDTO getGroupFeed(String groupId, String requestingUserId, Integer limit,
                                     String startingAfter, String endingBefore) {
+        // Delegate to version with null clientInfo (backwards compatibility)
+        return getGroupFeed(groupId, requestingUserId, limit, startingAfter, endingBefore, null);
+    }
+
+    @Override
+    public GroupFeedDTO getGroupFeed(String groupId, String requestingUserId, Integer limit,
+                                    String startingAfter, String endingBefore, ClientInfo clientInfo) {
         // Authorization check
         if (!isUserInGroup(requestingUserId, groupId)) {
             throw new UnauthorizedException("User not in group");
         }
-        
+
         long nowTimestamp = System.currentTimeMillis() / 1000; // Unix timestamp in seconds
-        
+
         // Determine query type based on pagination parameters
         if (endingBefore != null) {
             // Backward pagination - get past events
-            return getPastEvents(groupId, nowTimestamp, limit, endingBefore, requestingUserId);
+            return getPastEvents(groupId, nowTimestamp, limit, endingBefore, requestingUserId, clientInfo);
         } else {
             // Default or forward pagination - get current/future events
-            return getCurrentAndFutureEvents(groupId, nowTimestamp, limit, startingAfter, requestingUserId);
+            return getCurrentAndFutureEvents(groupId, nowTimestamp, limit, startingAfter, requestingUserId, clientInfo);
         }
     }
 
@@ -394,7 +408,7 @@ public class GroupServiceImpl implements GroupService {
      * Now includes hydration logic to support both standalone hangouts and multi-part series.
      */
     private GroupFeedDTO getCurrentAndFutureEvents(String groupId, long nowTimestamp,
-                                                  Integer limit, String startingAfter, String requestingUserId) {
+                                                  Integer limit, String startingAfter, String requestingUserId, ClientInfo clientInfo) {
         try {
             // Parallel queries for maximum efficiency
             CompletableFuture<PaginatedResult<BaseItem>> futureEventsFuture = 
@@ -414,8 +428,8 @@ public class GroupServiceImpl implements GroupService {
             allItems.addAll(futureEvents.getResults());
             allItems.addAll(inProgressEvents.getResults());
 
-            // Hydrate the mixed feed into FeedItem objects
-            List<FeedItem> allFeedItems = hydrateFeed(allItems, requestingUserId);
+            // Hydrate the mixed feed into FeedItem objects (with version filtering)
+            List<FeedItem> allFeedItems = hydrateFeed(allItems, requestingUserId, clientInfo);
             
             // Split into withDay (scheduled) and needsDay (unscheduled)
             List<FeedItem> feedItems = new ArrayList<>();
@@ -464,7 +478,7 @@ public class GroupServiceImpl implements GroupService {
      * Get past events for backward pagination.
      * Now supports both standalone hangouts and multi-part series.
      */
-    private GroupFeedDTO getPastEvents(String groupId, long nowTimestamp, Integer limit, String endingBefore, String requestingUserId) {
+    private GroupFeedDTO getPastEvents(String groupId, long nowTimestamp, Integer limit, String endingBefore, String requestingUserId, ClientInfo clientInfo) {
         try {
             // Convert our custom pagination token to the format the repository expects
             String repositoryToken = getRepositoryToken(endingBefore, groupId);
@@ -472,8 +486,8 @@ public class GroupServiceImpl implements GroupService {
             PaginatedResult<BaseItem> pastEvents =
                 hangoutRepository.getPastEventsPage(groupId, nowTimestamp, limit, repositoryToken);
 
-            // Hydrate the mixed feed into FeedItem objects
-            List<FeedItem> feedItems = hydrateFeed(pastEvents.getResults(), requestingUserId);
+            // Hydrate the mixed feed into FeedItem objects (with version filtering)
+            List<FeedItem> feedItems = hydrateFeed(pastEvents.getResults(), requestingUserId, clientInfo);
             
             // For past events, needsDay is empty (past events must have timestamps)
             List<HangoutSummaryDTO> needsDay = List.of();
@@ -590,12 +604,11 @@ public class GroupServiceImpl implements GroupService {
      * @param requestingUserId User ID for calculating poll voting status
      * @return List of transformed feed items
      */
-    List<FeedItem> hydrateFeed(List<BaseItem> baseItems, String requestingUserId) {
+    List<FeedItem> hydrateFeed(List<BaseItem> baseItems, String requestingUserId, ClientInfo clientInfo) {
         // First Pass: Identify all hangouts that are part of series
         Set<String> hangoutIdsInSeries = new HashSet<>();
         for (BaseItem item : baseItems) {
-            if (item instanceof SeriesPointer) {
-                SeriesPointer seriesPointer = (SeriesPointer) item;
+            if (item instanceof SeriesPointer seriesPointer) {
                 // Add all hangout IDs from the series' denormalized parts list
                 if (seriesPointer.getParts() != null) {
                     for (HangoutPointer part : seriesPointer.getParts()) {
@@ -606,17 +619,24 @@ public class GroupServiceImpl implements GroupService {
         }
         
         // Second Pass: Build the final feed list
+        // Determine if client supports watch parties (version >= 2.0.0 or null/unknown version)
+        boolean supportsWatchParty = clientInfo == null || clientInfo.isVersionAtLeast(WATCH_PARTY_MIN_VERSION);
+
         List<FeedItem> feedItems = new ArrayList<>();
         for (BaseItem item : baseItems) {
-            if (item instanceof SeriesPointer) {
+            if (item instanceof SeriesPointer seriesPointer) {
+                // Filter out watch parties for old clients
+                if (seriesPointer.isWatchParty() && !supportsWatchParty) {
+                    logger.debug("Filtering watch party {} for client version < {}",
+                        seriesPointer.getSeriesId(), WATCH_PARTY_MIN_VERSION);
+                    continue;
+                }
+
                 // Convert SeriesPointer to SeriesSummaryDTO
-                SeriesPointer seriesPointer = (SeriesPointer) item;
                 SeriesSummaryDTO seriesDTO = createSeriesSummaryDTO(seriesPointer, requestingUserId);
                 feedItems.add(seriesDTO);
 
-            } else if (item instanceof HangoutPointer) {
-                HangoutPointer hangoutPointer = (HangoutPointer) item;
-
+            } else if (item instanceof HangoutPointer hangoutPointer) {
                 // Only include standalone hangouts (not already part of a series)
                 if (!hangoutIdsInSeries.contains(hangoutPointer.getHangoutId())) {
                     HangoutSummaryDTO hangoutDTO = new HangoutSummaryDTO(hangoutPointer, requestingUserId);
