@@ -95,4 +95,27 @@ public class TvMazeException extends RuntimeException {
                 "No includable episodes found for TVMaze season: " + seasonId
         );
     }
+
+    /**
+     * Factory method for service unavailable (for operations without seasonId).
+     */
+    public static TvMazeException serviceUnavailable(String message, Throwable cause) {
+        return new TvMazeException(
+                ErrorType.SERVICE_UNAVAILABLE,
+                null,
+                message,
+                cause
+        );
+    }
+
+    /**
+     * Factory method for service unavailable (for operations without seasonId, no cause).
+     */
+    public static TvMazeException serviceUnavailable(String message) {
+        return new TvMazeException(
+                ErrorType.SERVICE_UNAVAILABLE,
+                null,
+                message
+        );
+    }
 }

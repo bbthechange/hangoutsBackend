@@ -15,10 +15,12 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -300,6 +302,179 @@ class TvMazeClientTest {
                     .build();
 
             assertThat(episode.isIncludable()).isFalse();
+        }
+    }
+
+    @Nested
+    @DisplayName("getShowUpdates")
+    class GetShowUpdatesTests {
+
+        @Test
+        @DisplayName("should parse valid response correctly")
+        void getShowUpdates_ValidResponse_ParsesCorrectly() throws Exception {
+            // Given
+            String jsonResponse = """
+                {
+                    "1526": 1766280973,
+                    "2345": 1766198432,
+                    "9999": 1766100000
+                }
+                """;
+
+            when(httpClient.send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofString())))
+                    .thenReturn(httpResponse);
+            when(httpResponse.statusCode()).thenReturn(200);
+            when(httpResponse.body()).thenReturn(jsonResponse);
+
+            // When
+            Map<Integer, Long> updates = tvMazeClient.getShowUpdates("day");
+
+            // Then
+            assertThat(updates).hasSize(3);
+            assertThat(updates.get(1526)).isEqualTo(1766280973L);
+            assertThat(updates.get(2345)).isEqualTo(1766198432L);
+            assertThat(updates.get(9999)).isEqualTo(1766100000L);
+        }
+
+        @Test
+        @DisplayName("should retry on rate limit and succeed")
+        void getShowUpdates_RateLimited_RetriesWithBackoff() throws Exception {
+            // Given
+            String jsonResponse = """
+                {"100": 1700000000}
+                """;
+
+            HttpResponse<String> rateLimitResponse = mock(HttpResponse.class);
+            when(rateLimitResponse.statusCode()).thenReturn(429);
+
+            HttpResponse<String> successResponse = mock(HttpResponse.class);
+            when(successResponse.statusCode()).thenReturn(200);
+            when(successResponse.body()).thenReturn(jsonResponse);
+
+            when(httpClient.send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofString())))
+                    .thenReturn(rateLimitResponse)
+                    .thenReturn(successResponse);
+
+            // Spy to skip actual sleep
+            TvMazeClient spyClient = spy(tvMazeClient);
+            doNothing().when(spyClient).sleep(anyLong());
+
+            // When
+            Map<Integer, Long> updates = spyClient.getShowUpdates("day");
+
+            // Then
+            assertThat(updates).hasSize(1);
+            assertThat(updates.get(100)).isEqualTo(1700000000L);
+            verify(httpClient, times(2)).send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofString()));
+            verify(spyClient).sleep(2000L);
+        }
+
+        @Test
+        @DisplayName("should throw TvMazeException after max retries on rate limit")
+        void getShowUpdates_RateLimitExhausted_ThrowsException() throws Exception {
+            // Given
+            when(httpClient.send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofString())))
+                    .thenReturn(httpResponse);
+            when(httpResponse.statusCode()).thenReturn(429);
+
+            TvMazeClient spyClient = spy(tvMazeClient);
+            doNothing().when(spyClient).sleep(anyLong());
+
+            // When/Then
+            assertThatThrownBy(() -> spyClient.getShowUpdates("day"))
+                    .isInstanceOf(TvMazeException.class)
+                    .hasMessageContaining("unavailable");
+
+            verify(httpClient, times(3)).send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofString()));
+        }
+
+        @Test
+        @DisplayName("should skip invalid show IDs in response")
+        void getShowUpdates_InvalidShowId_SkipsEntry() throws Exception {
+            // Given - includes an invalid key "abc"
+            String jsonResponse = """
+                {
+                    "1526": 1766280973,
+                    "abc": 1766198432,
+                    "9999": 1766100000
+                }
+                """;
+
+            when(httpClient.send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofString())))
+                    .thenReturn(httpResponse);
+            when(httpResponse.statusCode()).thenReturn(200);
+            when(httpResponse.body()).thenReturn(jsonResponse);
+
+            // When
+            Map<Integer, Long> updates = tvMazeClient.getShowUpdates("day");
+
+            // Then - only valid entries are returned
+            assertThat(updates).hasSize(2);
+            assertThat(updates).containsKey(1526);
+            assertThat(updates).containsKey(9999);
+            assertThat(updates).doesNotContainKey(null);
+        }
+
+        @Test
+        @DisplayName("should handle empty response")
+        void getShowUpdates_EmptyResponse_ReturnsEmptyMap() throws Exception {
+            // Given
+            String jsonResponse = "{}";
+
+            when(httpClient.send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofString())))
+                    .thenReturn(httpResponse);
+            when(httpResponse.statusCode()).thenReturn(200);
+            when(httpResponse.body()).thenReturn(jsonResponse);
+
+            // When
+            Map<Integer, Long> updates = tvMazeClient.getShowUpdates("day");
+
+            // Then
+            assertThat(updates).isEmpty();
+        }
+
+        @Test
+        @DisplayName("should throw TvMazeException on network error")
+        void getShowUpdates_NetworkError_ThrowsException() throws Exception {
+            // Given
+            when(httpClient.send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofString())))
+                    .thenThrow(new RuntimeException("Connection refused"));
+
+            // When/Then
+            assertThatThrownBy(() -> tvMazeClient.getShowUpdates("day"))
+                    .isInstanceOf(TvMazeException.class)
+                    .hasMessageContaining("unavailable");
+        }
+
+        @Test
+        @DisplayName("should use correct URL with since parameter")
+        void getShowUpdates_UsesCorrectUrl() throws Exception {
+            // Given
+            when(httpClient.send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofString())))
+                    .thenReturn(httpResponse);
+            when(httpResponse.statusCode()).thenReturn(200);
+            when(httpResponse.body()).thenReturn("{}");
+
+            // When
+            tvMazeClient.getShowUpdates("week");
+
+            // Then
+            verify(httpClient).send(argThat(request ->
+                    request.uri().toString().equals("https://api.tvmaze.com/updates/shows?since=week")
+            ), eq(HttpResponse.BodyHandlers.ofString()));
+        }
+
+        @Test
+        @DisplayName("should throw IllegalArgumentException for invalid since period")
+        void getShowUpdates_InvalidSincePeriod_ThrowsException() {
+            // When/Then
+            assertThatThrownBy(() -> tvMazeClient.getShowUpdates("invalid"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Invalid since period")
+                    .hasMessageContaining("invalid");
+
+            // Verify no HTTP call was made
+            verifyNoInteractions(httpClient);
         }
     }
 }

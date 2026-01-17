@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.HashSet;
 
 /**
  * Implementation of SeasonRepository for managing TV seasons for Watch Party features.
@@ -182,6 +183,54 @@ public class SeasonRepositoryImpl implements SeasonRepository {
                 logger.error("Failed to update lastCheckedTimestamp for show {} season {}",
                     showId, seasonNumber, e);
                 throw new RepositoryException("Failed to update Season lastCheckedTimestamp", e);
+            }
+        });
+    }
+
+    @Override
+    public Set<Integer> findAllDistinctShowIds() {
+        return performanceTracker.trackQuery("findAllDistinctShowIds", TABLE_NAME, () -> {
+            try {
+                Set<Integer> showIds = new HashSet<>();
+                Map<String, AttributeValue> lastEvaluatedKey = null;
+
+                do {
+                    // Scan for SEASON items, projecting only showId to minimize reads
+                    ScanRequest.Builder requestBuilder = ScanRequest.builder()
+                        .tableName(TABLE_NAME)
+                        .filterExpression("itemType = :itemType")
+                        .expressionAttributeValues(Map.of(
+                            ":itemType", AttributeValue.builder().s("SEASON").build()
+                        ))
+                        .projectionExpression("showId");
+
+                    if (lastEvaluatedKey != null) {
+                        requestBuilder.exclusiveStartKey(lastEvaluatedKey);
+                    }
+
+                    ScanResponse response = dynamoDbClient.scan(requestBuilder.build());
+
+                    // Extract showIds from scan results
+                    for (Map<String, AttributeValue> item : response.items()) {
+                        AttributeValue showIdAttr = item.get("showId");
+                        if (showIdAttr != null && showIdAttr.n() != null) {
+                            try {
+                                showIds.add(Integer.parseInt(showIdAttr.n()));
+                            } catch (NumberFormatException e) {
+                                logger.warn("Invalid showId in scan result: {}", showIdAttr.n());
+                            }
+                        }
+                    }
+
+                    lastEvaluatedKey = response.lastEvaluatedKey();
+                } while (lastEvaluatedKey != null && !lastEvaluatedKey.isEmpty());
+
+                logger.debug("Found {} distinct show IDs", showIds.size());
+                return showIds;
+
+            } catch (DynamoDbException e) {
+                logger.error("Failed to scan for distinct show IDs", e);
+                throw new RepositoryException("Failed to find distinct show IDs", e);
             }
         });
     }

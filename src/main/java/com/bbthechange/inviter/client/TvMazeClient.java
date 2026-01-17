@@ -16,7 +16,10 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -32,6 +35,7 @@ public class TvMazeClient {
     private static final String USER_AGENT = "HangoutsApp/1.0";
     private static final int MAX_RETRIES = 3;
     private static final long[] RETRY_DELAYS_MS = {2000, 3000, 4500}; // Exponential backoff
+    private static final Set<String> VALID_SINCE_PERIODS = Set.of("day", "week", "month");
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
@@ -84,6 +88,100 @@ public class TvMazeClient {
         }
 
         return includableEpisodes;
+    }
+
+    /**
+     * Fetch show updates from TVMaze.
+     * Returns a map of showId -> lastUpdatedTimestamp for shows that have been updated.
+     *
+     * @param since Period to fetch updates for: "day", "week", or "month"
+     * @return Map of showId to lastUpdatedTimestamp (Unix epoch seconds)
+     * @throws IllegalArgumentException if since is not a valid period
+     * @throws TvMazeException if the API is unavailable
+     */
+    public Map<Integer, Long> getShowUpdates(String since) {
+        if (!VALID_SINCE_PERIODS.contains(since)) {
+            throw new IllegalArgumentException(
+                    "Invalid since period: " + since + ". Must be one of: " + VALID_SINCE_PERIODS);
+        }
+
+        logger.info("Fetching show updates from TVMaze for period: {}", since);
+
+        String url = baseUrl + "/updates/shows?since=" + since;
+        return fetchShowUpdatesWithRetry(url);
+    }
+
+    /**
+     * Fetch show updates with retry logic for rate limiting (HTTP 429).
+     */
+    private Map<Integer, Long> fetchShowUpdatesWithRetry(String url) {
+        int attempt = 0;
+        Exception lastException = null;
+
+        while (attempt < MAX_RETRIES) {
+            try {
+                return fetchShowUpdates(url);
+            } catch (RateLimitException e) {
+                attempt++;
+                lastException = e;
+
+                if (attempt < MAX_RETRIES) {
+                    long delayMs = RETRY_DELAYS_MS[attempt - 1];
+                    logger.warn("Rate limited by TVMaze (attempt {}/{}). Retrying in {}ms",
+                            attempt, MAX_RETRIES, delayMs);
+                    sleep(delayMs);
+                }
+            } catch (Exception e) {
+                throw TvMazeException.serviceUnavailable("TVMaze API unavailable for show updates", e);
+            }
+        }
+
+        throw TvMazeException.serviceUnavailable("TVMaze API unavailable after " + MAX_RETRIES + " retries", lastException);
+    }
+
+    /**
+     * Make HTTP request to TVMaze show updates API.
+     */
+    private Map<Integer, Long> fetchShowUpdates(String url) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .header("User-Agent", USER_AGENT)
+                .timeout(Duration.ofSeconds(60)) // Longer timeout for large response
+                .GET()
+                .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+        int statusCode = response.statusCode();
+        logger.debug("TVMaze show updates API response status: {}", statusCode);
+
+        if (statusCode == 429) {
+            throw new RateLimitException("Rate limited by TVMaze");
+        }
+
+        if (statusCode < 200 || statusCode >= 300) {
+            throw new RuntimeException("TVMaze API returned status " + statusCode);
+        }
+
+        // Parse response: {"1526": 1766280973, "2345": 1766198432, ...}
+        Map<String, Long> rawUpdates = objectMapper.readValue(
+                response.body(),
+                new TypeReference<Map<String, Long>>() {}
+        );
+
+        // Convert String keys to Integer, skipping any invalid entries
+        Map<Integer, Long> updates = new HashMap<>();
+        for (Map.Entry<String, Long> entry : rawUpdates.entrySet()) {
+            try {
+                Integer showId = Integer.parseInt(entry.getKey());
+                updates.put(showId, entry.getValue());
+            } catch (NumberFormatException e) {
+                logger.warn("Skipping invalid show ID in updates: {}", entry.getKey());
+            }
+        }
+
+        logger.info("Fetched {} show updates from TVMaze", updates.size());
+        return updates;
     }
 
     /**

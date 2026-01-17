@@ -4,6 +4,7 @@ import com.bbthechange.inviter.model.Season;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Repository interface for Season management operations in the InviterTable.
@@ -56,4 +57,12 @@ public interface SeasonRepository {
      * @param timestamp The new timestamp (epoch millis)
      */
     void updateLastCheckedTimestamp(Integer showId, Integer seasonNumber, Long timestamp);
+
+    /**
+     * Get all distinct show IDs that have at least one Season record.
+     * Used for polling TVMaze for updates to tracked shows.
+     *
+     * @return Set of TVMaze show IDs we're tracking
+     */
+    Set<Integer> findAllDistinctShowIds();
 }

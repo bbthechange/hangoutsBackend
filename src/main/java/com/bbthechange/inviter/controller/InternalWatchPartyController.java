@@ -1,6 +1,8 @@
 package com.bbthechange.inviter.controller;
 
+import com.bbthechange.inviter.dto.watchparty.PollResult;
 import com.bbthechange.inviter.dto.watchparty.sqs.*;
+import com.bbthechange.inviter.service.TvMazePollingService;
 import com.bbthechange.inviter.service.WatchPartySqsService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -11,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -30,14 +33,17 @@ public class InternalWatchPartyController {
     private final WatchPartySqsService sqsService;
     private final ObjectMapper objectMapper;
     private final MeterRegistry meterRegistry;
+    private final Optional<TvMazePollingService> pollingService;
 
     public InternalWatchPartyController(
             WatchPartySqsService sqsService,
             ObjectMapper objectMapper,
-            MeterRegistry meterRegistry) {
+            MeterRegistry meterRegistry,
+            Optional<TvMazePollingService> pollingService) {
         this.sqsService = sqsService;
         this.objectMapper = objectMapper;
         this.meterRegistry = meterRegistry;
+        this.pollingService = pollingService;
     }
 
     /**
@@ -124,6 +130,50 @@ public class InternalWatchPartyController {
                 "messageId", message.getMessageId(),
                 "showId", showId.toString()
         ));
+    }
+
+    /**
+     * Trigger a poll for TVMaze updates.
+     * Checks for updates to all tracked shows and emits SHOW_UPDATED messages.
+     *
+     * This endpoint is designed to be called by EventBridge Scheduler every 2 hours.
+     *
+     * @return 200 OK with poll statistics, or 503 if polling is not enabled
+     */
+    @PostMapping("/trigger-poll")
+    public ResponseEntity<Map<String, Object>> triggerPoll() {
+        logger.info("Received trigger-poll request");
+
+        if (pollingService.isEmpty()) {
+            logger.warn("Polling service not available - watchparty.polling.enabled=false");
+            return ResponseEntity.status(503).body(Map.of(
+                    "error", "Polling service not enabled",
+                    "hint", "Set watchparty.polling.enabled=true to enable polling"
+            ));
+        }
+
+        try {
+            PollResult result = pollingService.get().pollForUpdates();
+
+            meterRegistry.counter("watchparty_poll_trigger_total", "status", "success").increment();
+
+            return ResponseEntity.ok(Map.of(
+                    "status", "completed",
+                    "totalTrackedShows", result.getTotalTrackedShows(),
+                    "updatedShowsFound", result.getUpdatedShowsFound(),
+                    "messagesEmitted", result.getMessagesEmitted(),
+                    "durationMs", result.getDurationMs()
+            ));
+
+        } catch (Exception e) {
+            logger.error("Trigger poll failed", e);
+            meterRegistry.counter("watchparty_poll_trigger_total", "status", "error").increment();
+
+            return ResponseEntity.internalServerError().body(Map.of(
+                    "status", "error",
+                    "error", e.getMessage() != null ? e.getMessage() : "Unknown error"
+            ));
+        }
     }
 
     private WatchPartyMessage parseMessage(String messageBody) throws Exception {
