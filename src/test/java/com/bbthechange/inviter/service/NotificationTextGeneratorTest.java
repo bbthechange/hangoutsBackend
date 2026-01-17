@@ -201,4 +201,104 @@ class NotificationTextGeneratorTest {
         // Verify the title constant
         assertThat(NotificationTextGenerator.HANGOUT_REMINDER_TITLE).isEqualTo("Starting Soon!");
     }
+
+    // ========== Watch Party Title Tests ==========
+
+    @Test
+    void getWatchPartyTitle_WithCancelledMessage_ReturnsEpisodeRemovedTitle() {
+        // Given
+        String message = "Episode 5 has been cancelled";
+
+        // When
+        String result = textGenerator.getWatchPartyTitle(message);
+
+        // Then
+        assertThat(result).isEqualTo(NotificationTextGenerator.WATCH_PARTY_EPISODE_REMOVED_TITLE);
+    }
+
+    @Test
+    void getWatchPartyTitle_WithRemovedMessage_ReturnsEpisodeRemovedTitle() {
+        // Given
+        String message = "Episode 3 was removed from the watch party";
+
+        // When
+        String result = textGenerator.getWatchPartyTitle(message);
+
+        // Then
+        assertThat(result).isEqualTo(NotificationTextGenerator.WATCH_PARTY_EPISODE_REMOVED_TITLE);
+    }
+
+    @Test
+    void getWatchPartyTitle_WithRenamedMessage_ReturnsTitleUpdatedTitle() {
+        // Given
+        String message = "Episode renamed to 'The Final Chapter'";
+
+        // When
+        String result = textGenerator.getWatchPartyTitle(message);
+
+        // Then
+        assertThat(result).isEqualTo(NotificationTextGenerator.WATCH_PARTY_TITLE_UPDATED_TITLE);
+    }
+
+    @Test
+    void getWatchPartyTitle_WithNeedsHostMessage_ReturnsNeedsHostTitle() {
+        // Given
+        String message = "The watch party needs a host for next week";
+
+        // When
+        String result = textGenerator.getWatchPartyTitle(message);
+
+        // Then
+        assertThat(result).isEqualTo(NotificationTextGenerator.WATCH_PARTY_NEEDS_HOST_TITLE);
+    }
+
+    @Test
+    void getWatchPartyTitle_WithNewEpisodeMessage_ReturnsNewEpisodeTitle() {
+        // Given
+        String message = "New episode available: Season 2 Episode 1";
+
+        // When
+        String result = textGenerator.getWatchPartyTitle(message);
+
+        // Then
+        assertThat(result).isEqualTo(NotificationTextGenerator.WATCH_PARTY_NEW_EPISODE_TITLE);
+    }
+
+    @Test
+    void getWatchPartyTitle_WithNullMessage_ReturnsNewEpisodeTitle() {
+        // Given
+        String message = null;
+
+        // When
+        String result = textGenerator.getWatchPartyTitle(message);
+
+        // Then
+        assertThat(result).isEqualTo(NotificationTextGenerator.WATCH_PARTY_NEW_EPISODE_TITLE);
+    }
+
+    // ========== Watch Party Body Tests ==========
+
+    @Test
+    void getWatchPartyBody_WithValidMessage_ReturnsMessage() {
+        // Given
+        String message = "Episode 5: The Great Adventure is now available";
+
+        // When
+        String result = textGenerator.getWatchPartyBody(message);
+
+        // Then
+        assertThat(result).isEqualTo(message);
+    }
+
+    @Test
+    void getWatchPartyBody_WithNullMessage_ReturnsDefaultBody() {
+        // Given
+        String message = null;
+
+        // When
+        String result = textGenerator.getWatchPartyBody(message);
+
+        // Then
+        assertThat(result).isEqualTo("Check the app for details");
+    }
 }

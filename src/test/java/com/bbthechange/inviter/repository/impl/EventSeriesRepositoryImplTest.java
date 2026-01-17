@@ -1,5 +1,6 @@
 package com.bbthechange.inviter.repository.impl;
 
+import com.bbthechange.inviter.exception.RepositoryException;
 import com.bbthechange.inviter.model.EventSeries;
 import com.bbthechange.inviter.util.QueryPerformanceTracker;
 import com.bbthechange.inviter.util.InviterKeyFactory;
@@ -227,7 +228,7 @@ class EventSeriesRepositoryImplTest {
         QueryResponse mockResponse = QueryResponse.builder()
             .items(Collections.emptyList())
             .build();
-        
+
         when(dynamoDbClient.query(any(QueryRequest.class))).thenReturn(mockResponse);
 
         // When
@@ -236,14 +237,158 @@ class EventSeriesRepositoryImplTest {
         // Then
         assertThat(result).isNotNull();
         assertThat(result).isEmpty();
-        
+
         verify(dynamoDbClient).query(any(QueryRequest.class));
+    }
+
+    // ============================================================================
+    // findAllWatchPartySeries Tests
+    // ============================================================================
+
+    @Test
+    void findAllWatchPartySeries_WithNoWatchParties_ReturnsEmptyList() {
+        // Given
+        ScanResponse mockResponse = ScanResponse.builder()
+            .items(Collections.emptyList())
+            .lastEvaluatedKey(Collections.emptyMap())
+            .build();
+
+        when(dynamoDbClient.scan(any(ScanRequest.class))).thenReturn(mockResponse);
+
+        // When
+        List<EventSeries> result = repository.findAllWatchPartySeries();
+
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result).isEmpty();
+
+        ArgumentCaptor<ScanRequest> captor = ArgumentCaptor.forClass(ScanRequest.class);
+        verify(dynamoDbClient).scan(captor.capture());
+
+        ScanRequest request = captor.getValue();
+        assertThat(request.tableName()).isEqualTo("InviterTable");
+        assertThat(request.filterExpression()).isEqualTo("itemType = :itemType AND eventSeriesType = :seriesType");
+        assertThat(request.expressionAttributeValues().get(":itemType").s()).isEqualTo("EVENT_SERIES");
+        assertThat(request.expressionAttributeValues().get(":seriesType").s()).isEqualTo("WATCH_PARTY");
+    }
+
+    @Test
+    void findAllWatchPartySeries_WithWatchParties_ReturnsAllSeries() {
+        // Given
+        String series1Id = UUID.randomUUID().toString();
+        String series2Id = UUID.randomUUID().toString();
+        String group1Id = UUID.randomUUID().toString();
+        String group2Id = UUID.randomUUID().toString();
+
+        List<Map<String, AttributeValue>> mockItems = Arrays.asList(
+            createMockWatchPartySeriesItem(series1Id, group1Id, "Breaking Bad Watch Party"),
+            createMockWatchPartySeriesItem(series2Id, group2Id, "The Office Watch Party")
+        );
+
+        ScanResponse mockResponse = ScanResponse.builder()
+            .items(mockItems)
+            .lastEvaluatedKey(Collections.emptyMap())
+            .build();
+
+        when(dynamoDbClient.scan(any(ScanRequest.class))).thenReturn(mockResponse);
+
+        // When
+        List<EventSeries> result = repository.findAllWatchPartySeries();
+
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result).hasSize(2);
+
+        verify(dynamoDbClient, times(1)).scan(any(ScanRequest.class));
+    }
+
+    @Test
+    void findAllWatchPartySeries_WithPagination_ReturnsAllPages() {
+        // Given
+        String series1Id = UUID.randomUUID().toString();
+        String series2Id = UUID.randomUUID().toString();
+        String group1Id = UUID.randomUUID().toString();
+        String group2Id = UUID.randomUUID().toString();
+
+        // First page with lastEvaluatedKey indicating more pages
+        List<Map<String, AttributeValue>> firstPageItems = Arrays.asList(
+            createMockWatchPartySeriesItem(series1Id, group1Id, "Breaking Bad Watch Party")
+        );
+        Map<String, AttributeValue> lastKey = Map.of(
+            "pk", AttributeValue.builder().s("SERIES#" + series1Id).build(),
+            "sk", AttributeValue.builder().s("METADATA").build()
+        );
+        ScanResponse firstPageResponse = ScanResponse.builder()
+            .items(firstPageItems)
+            .lastEvaluatedKey(lastKey)
+            .build();
+
+        // Second page with no more pages
+        List<Map<String, AttributeValue>> secondPageItems = Arrays.asList(
+            createMockWatchPartySeriesItem(series2Id, group2Id, "The Office Watch Party")
+        );
+        ScanResponse secondPageResponse = ScanResponse.builder()
+            .items(secondPageItems)
+            .lastEvaluatedKey(Collections.emptyMap())
+            .build();
+
+        when(dynamoDbClient.scan(any(ScanRequest.class)))
+            .thenReturn(firstPageResponse)
+            .thenReturn(secondPageResponse);
+
+        // When
+        List<EventSeries> result = repository.findAllWatchPartySeries();
+
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result).hasSize(2);
+
+        // Verify scan was called twice (for both pages)
+        ArgumentCaptor<ScanRequest> captor = ArgumentCaptor.forClass(ScanRequest.class);
+        verify(dynamoDbClient, times(2)).scan(captor.capture());
+
+        List<ScanRequest> requests = captor.getAllValues();
+
+        // First request should not have exclusiveStartKey
+        assertThat(requests.get(0).exclusiveStartKey()).isNullOrEmpty();
+
+        // Second request should have exclusiveStartKey from first response
+        assertThat(requests.get(1).exclusiveStartKey()).isNotNull();
+        assertThat(requests.get(1).exclusiveStartKey().get("pk").s()).isEqualTo("SERIES#" + series1Id);
+    }
+
+    @Test
+    void findAllWatchPartySeries_WithDynamoDbException_ThrowsRepositoryException() {
+        // Given
+        DynamoDbException dynamoDbException = (DynamoDbException) DynamoDbException.builder()
+            .message("DynamoDB scan failed")
+            .build();
+
+        when(dynamoDbClient.scan(any(ScanRequest.class))).thenThrow(dynamoDbException);
+
+        // When/Then
+        // The performanceTracker mock wraps exceptions in RuntimeException,
+        // which contains RepositoryException as cause, which contains DynamoDbException as root cause
+        assertThatThrownBy(() -> repository.findAllWatchPartySeries())
+            .isInstanceOf(RuntimeException.class)
+            .hasCauseInstanceOf(RepositoryException.class)
+            .hasRootCauseInstanceOf(DynamoDbException.class);
+
+        // Verify the RepositoryException message
+        try {
+            repository.findAllWatchPartySeries();
+        } catch (RuntimeException e) {
+            assertThat(e.getCause()).isInstanceOf(RepositoryException.class);
+            assertThat(e.getCause().getMessage()).isEqualTo("Failed to scan for Watch Party EventSeries");
+        }
+
+        verify(dynamoDbClient, times(2)).scan(any(ScanRequest.class));
     }
 
     /**
      * Helper method to create mock EventSeries items in DynamoDB attribute format.
      */
-    private Map<String, AttributeValue> createMockSeriesItem(String seriesId, String groupId, 
+    private Map<String, AttributeValue> createMockSeriesItem(String seriesId, String groupId,
                                                            String title, Long startTimestamp) {
         return Map.of(
             "pk", AttributeValue.builder().s(InviterKeyFactory.getSeriesPk(seriesId)).build(),
@@ -256,5 +401,23 @@ class EventSeriesRepositoryImplTest {
             "startTimestamp", AttributeValue.builder().n(startTimestamp.toString()).build(),
             "gsi1pk", AttributeValue.builder().s(InviterKeyFactory.getGroupPk(groupId)).build()
         );
+    }
+
+    /**
+     * Helper method to create mock Watch Party EventSeries items in DynamoDB attribute format.
+     */
+    private Map<String, AttributeValue> createMockWatchPartySeriesItem(String seriesId, String groupId,
+                                                                       String title) {
+        Map<String, AttributeValue> item = new HashMap<>();
+        item.put("pk", AttributeValue.builder().s(InviterKeyFactory.getSeriesPk(seriesId)).build());
+        item.put("sk", AttributeValue.builder().s(InviterKeyFactory.getMetadataSk()).build());
+        item.put("itemType", AttributeValue.builder().s("EVENT_SERIES").build());
+        item.put("eventSeriesType", AttributeValue.builder().s("WATCH_PARTY").build());
+        item.put("seriesId", AttributeValue.builder().s(seriesId).build());
+        item.put("groupId", AttributeValue.builder().s(groupId).build());
+        item.put("seriesTitle", AttributeValue.builder().s(title).build());
+        item.put("seriesDescription", AttributeValue.builder().s("Test watch party description").build());
+        item.put("gsi1pk", AttributeValue.builder().s(InviterKeyFactory.getGroupPk(groupId)).build());
+        return item;
     }
 }

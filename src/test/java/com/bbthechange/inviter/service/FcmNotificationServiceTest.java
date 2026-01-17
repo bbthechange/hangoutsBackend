@@ -401,4 +401,104 @@ class FcmNotificationServiceTest {
                     "category", "transient");
         }
     }
+
+    // ========== sendWatchPartyNotification Tests ==========
+
+    private static final String TEST_SERIES_ID = "series-789";
+    private static final String TEST_WATCH_PARTY_MESSAGE = "New episode available: S01E05";
+    private static final String TEST_WATCH_PARTY_TITLE = "New Episode Available";
+    private static final String TEST_WATCH_PARTY_BODY = "New episode available: S01E05";
+
+    @Test
+    void sendWatchPartyNotification_FirebaseAppNull_SkipsQuietly() {
+        // Given: FCM not configured
+        FcmNotificationService serviceWithoutFirebase = new FcmNotificationService(
+                null, textGenerator, deviceService, meterRegistry);
+
+        // When
+        serviceWithoutFirebase.sendWatchPartyNotification(
+                TEST_DEVICE_TOKEN, TEST_SERIES_ID, TEST_GROUP_ID, TEST_WATCH_PARTY_MESSAGE);
+
+        // Then - should not throw and should not interact with dependencies
+        verifyNoInteractions(textGenerator);
+        verifyNoInteractions(deviceService);
+    }
+
+    @Test
+    void sendWatchPartyNotification_Success_EmitsSuccessMetric() throws FirebaseMessagingException {
+        // Given
+        when(textGenerator.getWatchPartyTitle(TEST_WATCH_PARTY_MESSAGE))
+                .thenReturn(TEST_WATCH_PARTY_TITLE);
+        when(textGenerator.getWatchPartyBody(TEST_WATCH_PARTY_MESSAGE))
+                .thenReturn(TEST_WATCH_PARTY_BODY);
+
+        try (MockedStatic<FirebaseMessaging> mockedStatic = mockStatic(FirebaseMessaging.class)) {
+            mockedStatic.when(() -> FirebaseMessaging.getInstance(firebaseApp)).thenReturn(firebaseMessaging);
+            when(firebaseMessaging.send(any(Message.class))).thenReturn("message-id-watch-party");
+
+            // When
+            fcmNotificationService.sendWatchPartyNotification(
+                    TEST_DEVICE_TOKEN, TEST_SERIES_ID, TEST_GROUP_ID, TEST_WATCH_PARTY_MESSAGE);
+
+            // Then
+            verify(textGenerator).getWatchPartyTitle(TEST_WATCH_PARTY_MESSAGE);
+            verify(textGenerator).getWatchPartyBody(TEST_WATCH_PARTY_MESSAGE);
+            verify(firebaseMessaging).send(any(Message.class));
+            verify(meterRegistry).counter("fcm_notification_total", "status", "success", "type", "watch_party_update");
+            verifyNoInteractions(deviceService); // No error, so no device cleanup
+        }
+    }
+
+    @Test
+    void sendWatchPartyNotification_WithNullGroupId_SendsWithoutGroupId() throws FirebaseMessagingException {
+        // Given
+        when(textGenerator.getWatchPartyTitle(TEST_WATCH_PARTY_MESSAGE))
+                .thenReturn(TEST_WATCH_PARTY_TITLE);
+        when(textGenerator.getWatchPartyBody(TEST_WATCH_PARTY_MESSAGE))
+                .thenReturn(TEST_WATCH_PARTY_BODY);
+
+        try (MockedStatic<FirebaseMessaging> mockedStatic = mockStatic(FirebaseMessaging.class)) {
+            mockedStatic.when(() -> FirebaseMessaging.getInstance(firebaseApp)).thenReturn(firebaseMessaging);
+            when(firebaseMessaging.send(any(Message.class))).thenReturn("message-id-watch-party-no-group");
+
+            // When - pass null groupId
+            fcmNotificationService.sendWatchPartyNotification(
+                    TEST_DEVICE_TOKEN, TEST_SERIES_ID, null, TEST_WATCH_PARTY_MESSAGE);
+
+            // Then - should still send successfully
+            verify(textGenerator).getWatchPartyTitle(TEST_WATCH_PARTY_MESSAGE);
+            verify(textGenerator).getWatchPartyBody(TEST_WATCH_PARTY_MESSAGE);
+            verify(firebaseMessaging).send(any(Message.class));
+            verify(meterRegistry).counter("fcm_notification_total", "status", "success", "type", "watch_party_update");
+            verifyNoInteractions(deviceService); // No error, so no device cleanup
+        }
+    }
+
+    @Test
+    void sendWatchPartyNotification_FirebaseMessagingException_HandlesGracefully() throws FirebaseMessagingException {
+        // Given
+        when(textGenerator.getWatchPartyTitle(TEST_WATCH_PARTY_MESSAGE))
+                .thenReturn(TEST_WATCH_PARTY_TITLE);
+        when(textGenerator.getWatchPartyBody(TEST_WATCH_PARTY_MESSAGE))
+                .thenReturn(TEST_WATCH_PARTY_BODY);
+
+        FirebaseMessagingException unavailableException = mock(FirebaseMessagingException.class);
+        when(unavailableException.getMessagingErrorCode()).thenReturn(MessagingErrorCode.UNAVAILABLE);
+
+        try (MockedStatic<FirebaseMessaging> mockedStatic = mockStatic(FirebaseMessaging.class)) {
+            mockedStatic.when(() -> FirebaseMessaging.getInstance(firebaseApp)).thenReturn(firebaseMessaging);
+            when(firebaseMessaging.send(any(Message.class))).thenThrow(unavailableException);
+
+            // When
+            fcmNotificationService.sendWatchPartyNotification(
+                    TEST_DEVICE_TOKEN, TEST_SERIES_ID, TEST_GROUP_ID, TEST_WATCH_PARTY_MESSAGE);
+
+            // Then - should not throw, should emit error metric
+            verifyNoInteractions(deviceService); // Transient error, don't delete device
+            verify(meterRegistry).counter("fcm_notification_total",
+                    "status", "error",
+                    "error_code", "UNAVAILABLE",
+                    "category", "transient");
+        }
+    }
 }

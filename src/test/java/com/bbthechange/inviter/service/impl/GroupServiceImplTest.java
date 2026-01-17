@@ -1567,4 +1567,52 @@ class GroupServiceImplTest {
         assertThat(result.get(0)).isInstanceOf(SeriesSummaryDTO.class);
     }
 
+    @Test
+    void hydrateFeed_OldAppVersion_MixedContent_FiltersOnlyWatchParties() {
+        // Given: A watch party series pointer
+        String watchPartySeriesId = "55555555-5555-5555-5555-555555555555";
+        SeriesPointer watchParty = new SeriesPointer(GROUP_ID, watchPartySeriesId, "Watch Party");
+        watchParty.setEventSeriesType("WATCH_PARTY");
+        watchParty.setStartTimestamp(System.currentTimeMillis() / 1000 + 86400); // Future timestamp
+
+        // And: A regular series pointer (not a watch party)
+        String regularSeriesId = "66666666-6666-6666-6666-666666666666";
+        SeriesPointer regularSeries = new SeriesPointer(GROUP_ID, regularSeriesId, "Regular Series");
+        regularSeries.setEventSeriesType(null); // Not a watch party
+        regularSeries.setStartTimestamp(System.currentTimeMillis() / 1000 + 86400); // Future timestamp
+
+        // And: A standalone hangout pointer
+        HangoutPointer standaloneHangout = createTestHangoutPointer("standalone-hangout");
+
+        // And: ClientInfo with old version (1.5.0 < 2.0.0)
+        com.bbthechange.inviter.config.ClientInfo oldClientInfo =
+            new com.bbthechange.inviter.config.ClientInfo("1.5.0", null, "ios", null, null, "ios");
+
+        // When: hydrateFeed is called with mixed content and old client version
+        List<BaseItem> items = List.of(watchParty, regularSeries, standaloneHangout);
+        List<FeedItem> result = groupService.hydrateFeed(items, USER_ID, oldClientInfo);
+
+        // Then: Result should have size 2 (watch party filtered out)
+        assertThat(result).hasSize(2);
+
+        // And: Result should contain 1 SeriesSummaryDTO (the regular series)
+        long seriesCount = result.stream()
+            .filter(item -> item instanceof SeriesSummaryDTO)
+            .count();
+        assertThat(seriesCount).isEqualTo(1);
+
+        // And: Result should contain 1 HangoutSummaryDTO (the standalone hangout)
+        long hangoutCount = result.stream()
+            .filter(item -> item instanceof HangoutSummaryDTO)
+            .count();
+        assertThat(hangoutCount).isEqualTo(1);
+
+        // And: No item in result should have seriesId matching the watch party's ID
+        boolean containsWatchParty = result.stream()
+            .filter(item -> item instanceof SeriesSummaryDTO)
+            .map(item -> (SeriesSummaryDTO) item)
+            .anyMatch(series -> watchPartySeriesId.equals(series.getSeriesId()));
+        assertThat(containsWatchParty).isFalse();
+    }
+
 }
