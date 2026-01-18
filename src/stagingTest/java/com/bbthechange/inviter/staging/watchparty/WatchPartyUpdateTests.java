@@ -169,8 +169,12 @@ class WatchPartyUpdateTests extends StagingTestBase {
 
         String groupId = createTestGroup("WP Past Protected");
 
-        // Create with a past episode (1 day ago) and future episode (1 week out)
-        long pastTimestamp = Instant.now().minusSeconds(86400).getEpochSecond();
+        // Create with a past episode (3 days ago) and future episode (1 week out)
+        // Note: We use 3 days ago (not 1 day) to ensure the hangout's startTimestamp
+        // is definitively in the past. The startTimestamp is calculated from the air date
+        // plus defaultTime in the configured timezone, so 1 day ago can result in a
+        // hangout that's still in the future depending on when the test runs.
+        long pastTimestamp = Instant.now().minusSeconds(86400 * 3).getEpochSecond();
         long futureTimestamp = Instant.now().plusSeconds(86400 * 7).getEpochSecond();
         int showId = Math.abs("Past Test".hashCode() % 90000) + 10000;
         String uniqueShowName = "Past Test " + UUID.randomUUID().toString().substring(0, 8);
