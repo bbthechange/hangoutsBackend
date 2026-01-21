@@ -144,7 +144,7 @@ class WatchPartyInterestTests extends StagingTestBase {
 
     @Test
     @Order(4)
-    @DisplayName("Old app version (< 2.0.0) does not see watch party in group feed")
+    @DisplayName("Old app version (< 2.0.0) does not see watch party series in group feed, but hangouts appear standalone")
     void groupFeed_OldAppVersion_FiltersOutWatchParties() {
         // Arrange - create watch party
         String groupId = createTestGroup("WP Version Filter Old");
@@ -166,14 +166,35 @@ class WatchPartyInterestTests extends StagingTestBase {
                 .extract()
                     .response();
 
-                // Assert - watch party should NOT be in feed
-                String responseBody = response.getBody().asString();
+                // Assert - watch party SERIES should NOT be in feed as a top-level item
+                // But individual hangouts CAN appear (they'll have seriesId set to reference the parent)
+                List<Map<String, Object>> feedItems = response.jsonPath().getList("feedItems");
 
-                // Look for the seriesId in the response - it should NOT be there
+                // Check that no feed item is the watch party series itself
+                // Series items have seriesId at root level AND have "parts" field
+                // Hangouts have hangoutId at root level and seriesId references their parent
+                boolean hasWatchPartySeries = feedItems.stream()
+                    .anyMatch(item ->
+                        seriesId.equals(item.get("seriesId")) &&
+                        item.containsKey("parts")  // Series have parts, hangouts don't
+                    );
+
                 Assertions.assertFalse(
-                    responseBody.contains(seriesId),
-                    "Old app version should NOT see watch party in feed. " +
-                    "SeriesId '" + seriesId + "' should not appear in response"
+                    hasWatchPartySeries,
+                    "Old app version should NOT see watch party SERIES in feed. " +
+                    "SeriesId '" + seriesId + "' should not appear as a series item"
+                );
+
+                // Verify hangouts DO appear as standalone items (they have hangoutId and reference seriesId)
+                boolean hasStandaloneHangouts = feedItems.stream()
+                    .anyMatch(item ->
+                        item.containsKey("hangoutId") &&
+                        seriesId.equals(item.get("seriesId"))
+                    );
+
+                Assertions.assertTrue(
+                    hasStandaloneHangouts,
+                    "Old app version SHOULD see individual hangouts as standalone items"
                 );
             });
     }
