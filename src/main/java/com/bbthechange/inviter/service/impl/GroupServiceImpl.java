@@ -605,10 +605,20 @@ public class GroupServiceImpl implements GroupService {
      * @return List of transformed feed items
      */
     List<FeedItem> hydrateFeed(List<BaseItem> baseItems, String requestingUserId, ClientInfo clientInfo) {
-        // First Pass: Identify all hangouts that are part of series
+        // Determine if client supports watch parties (version >= 2.0.0 or null/unknown version)
+        boolean supportsWatchParty = clientInfo == null || clientInfo.isVersionAtLeast(WATCH_PARTY_MIN_VERSION);
+
+        // First Pass: Identify all hangouts that are part of series that will be shown
+        // For watch parties with old clients, we DON'T add their hangouts here so they
+        // appear as standalone items in the feed instead of being hidden
         Set<String> hangoutIdsInSeries = new HashSet<>();
         for (BaseItem item : baseItems) {
             if (item instanceof SeriesPointer seriesPointer) {
+                // Skip watch party series for old clients - their hangouts should appear standalone
+                if (seriesPointer.isWatchParty() && !supportsWatchParty) {
+                    continue;
+                }
+
                 // Add all hangout IDs from the series' denormalized parts list
                 // Use hangoutIds as fallback for older data that may not have parts populated
                 if (seriesPointer.getParts() != null && !seriesPointer.getParts().isEmpty()) {
@@ -620,10 +630,8 @@ public class GroupServiceImpl implements GroupService {
                 }
             }
         }
-        
+
         // Second Pass: Build the final feed list
-        // Determine if client supports watch parties (version >= 2.0.0 or null/unknown version)
-        boolean supportsWatchParty = clientInfo == null || clientInfo.isVersionAtLeast(WATCH_PARTY_MIN_VERSION);
 
         List<FeedItem> feedItems = new ArrayList<>();
         for (BaseItem item : baseItems) {

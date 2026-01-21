@@ -1615,4 +1615,81 @@ class GroupServiceImplTest {
         assertThat(containsWatchParty).isFalse();
     }
 
+    @Test
+    void hydrateFeed_OldAppVersion_WatchPartyHangoutsAppearAsStandalone() {
+        // Given: A watch party series pointer with hangout parts
+        String watchPartySeriesId = "77777777-7777-7777-7777-777777777777";
+        String hangoutId1 = "hangout-wp-1";
+        String hangoutId2 = "hangout-wp-2";
+
+        // Create hangout pointers that are part of the watch party
+        HangoutPointer hangoutPart1 = createTestHangoutPointer(hangoutId1);
+        hangoutPart1.setSeriesId(watchPartySeriesId);
+        HangoutPointer hangoutPart2 = createTestHangoutPointer(hangoutId2);
+        hangoutPart2.setSeriesId(watchPartySeriesId);
+
+        // Create watch party series with these hangouts as parts
+        SeriesPointer watchParty = new SeriesPointer(GROUP_ID, watchPartySeriesId, "Watch Party");
+        watchParty.setEventSeriesType("WATCH_PARTY");
+        watchParty.setStartTimestamp(System.currentTimeMillis() / 1000 + 86400);
+        watchParty.setParts(List.of(hangoutPart1, hangoutPart2));
+
+        // And: ClientInfo with old version (1.5.0 < 2.0.0)
+        com.bbthechange.inviter.config.ClientInfo oldClientInfo =
+            new com.bbthechange.inviter.config.ClientInfo("1.5.0", null, "ios", null, null, "ios");
+
+        // When: hydrateFeed is called with watch party and its hangouts
+        // The feed would contain both the series pointer AND the individual hangout pointers
+        List<BaseItem> items = List.of(watchParty, hangoutPart1, hangoutPart2);
+        List<FeedItem> result = groupService.hydrateFeed(items, USER_ID, oldClientInfo);
+
+        // Then: Watch party series should be filtered out, but hangouts should appear as standalone
+        assertThat(result).hasSize(2);
+
+        // And: Both items should be HangoutSummaryDTO (not SeriesSummaryDTO)
+        assertThat(result).allMatch(item -> item instanceof HangoutSummaryDTO);
+
+        // And: The hangout IDs should match the watch party's hangouts
+        List<String> resultHangoutIds = result.stream()
+            .map(item -> ((HangoutSummaryDTO) item).getHangoutId())
+            .toList();
+        assertThat(resultHangoutIds).containsExactlyInAnyOrder(hangoutId1, hangoutId2);
+    }
+
+    @Test
+    void hydrateFeed_NewAppVersion_WatchPartyHangoutsNotDuplicated() {
+        // Given: A watch party series pointer with hangout parts
+        String watchPartySeriesId = "88888888-8888-8888-8888-888888888888";
+        String hangoutId1 = "hangout-wp-3";
+        String hangoutId2 = "hangout-wp-4";
+
+        // Create hangout pointers that are part of the watch party
+        HangoutPointer hangoutPart1 = createTestHangoutPointer(hangoutId1);
+        hangoutPart1.setSeriesId(watchPartySeriesId);
+        HangoutPointer hangoutPart2 = createTestHangoutPointer(hangoutId2);
+        hangoutPart2.setSeriesId(watchPartySeriesId);
+
+        // Create watch party series with these hangouts as parts
+        SeriesPointer watchParty = new SeriesPointer(GROUP_ID, watchPartySeriesId, "Watch Party");
+        watchParty.setEventSeriesType("WATCH_PARTY");
+        watchParty.setStartTimestamp(System.currentTimeMillis() / 1000 + 86400);
+        watchParty.setParts(List.of(hangoutPart1, hangoutPart2));
+
+        // And: ClientInfo with new version (2.0.0)
+        com.bbthechange.inviter.config.ClientInfo newClientInfo =
+            new com.bbthechange.inviter.config.ClientInfo("2.0.0", null, "ios", null, null, "ios");
+
+        // When: hydrateFeed is called with watch party and its hangouts
+        List<BaseItem> items = List.of(watchParty, hangoutPart1, hangoutPart2);
+        List<FeedItem> result = groupService.hydrateFeed(items, USER_ID, newClientInfo);
+
+        // Then: Only the watch party series should appear (hangouts are nested inside)
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0)).isInstanceOf(SeriesSummaryDTO.class);
+
+        // And: The series should contain the hangouts as parts
+        SeriesSummaryDTO series = (SeriesSummaryDTO) result.get(0);
+        assertThat(series.getParts()).hasSize(2);
+    }
+
 }
