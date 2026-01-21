@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.service.impl;
 
 import com.bbthechange.inviter.client.TvMazeClient;
+import com.bbthechange.inviter.dto.TimeInfo;
 import com.bbthechange.inviter.dto.watchparty.*;
 import com.bbthechange.inviter.exception.ResourceNotFoundException;
 import com.bbthechange.inviter.exception.UnauthorizedException;
@@ -1313,6 +1314,496 @@ class WatchPartyServiceImplTest {
 
             SeriesPointer savedPointer = pointerCaptor.getValue();
             assertThat(savedPointer.getInterestLevels().get(0).getUserName()).isEqualTo("testuser");
+        }
+    }
+
+    // ============================================================================
+    // TIME INFO ISO-8601 FORMATTING TESTS
+    // ============================================================================
+
+    @Nested
+    class TimeInfoFormattingTests {
+
+        @Test
+        void createHangout_setsTimeInfoWithCorrectISO8601StartTime() {
+            // Given - March 15, 2024 at 21:00:00 UTC (epoch seconds)
+            long startTimestamp = 1710543600L;
+            long endTimestamp = startTimestamp + 3600L; // 1 hour later
+
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(seasonRepository.findByShowIdAndSeasonNumber(SHOW_ID, SEASON_NUMBER))
+                    .thenReturn(Optional.empty());
+
+            List<CreateWatchPartyEpisodeRequest> episodes = List.of(
+                    createEpisode(101, "Pilot", startTimestamp, 60)
+            );
+            CreateWatchPartyRequest request = CreateWatchPartyRequest.builder()
+                    .showId(SHOW_ID)
+                    .seasonNumber(SEASON_NUMBER)
+                    .showName(SHOW_NAME)
+                    .defaultTime("20:00")
+                    .timezone("America/Chicago")
+                    .episodes(episodes)
+                    .build();
+
+            // When
+            watchPartyService.createWatchParty(GROUP_ID, request, USER_ID);
+
+            // Then - Verify hangout has TimeInfo with ISO-8601 formatted startTime
+            ArgumentCaptor<Hangout> hangoutCaptor = ArgumentCaptor.forClass(Hangout.class);
+            verify(hangoutRepository).save(hangoutCaptor.capture());
+            Hangout savedHangout = hangoutCaptor.getValue();
+
+            assertThat(savedHangout.getTimeInput()).isNotNull();
+            assertThat(savedHangout.getTimeInput().getStartTime()).isNotNull();
+            // Verify ISO-8601 format with timezone offset (e.g., "2024-03-15T20:00:00-05:00")
+            assertThat(savedHangout.getTimeInput().getStartTime()).containsPattern("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}[+-]\\d{2}:\\d{2}");
+        }
+
+        @Test
+        void createHangout_setsTimeInfoWithCorrectISO8601EndTime() {
+            // Given - March 15, 2024 at 21:00:00 UTC (epoch seconds)
+            long startTimestamp = 1710547200L;
+
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(seasonRepository.findByShowIdAndSeasonNumber(SHOW_ID, SEASON_NUMBER))
+                    .thenReturn(Optional.empty());
+
+            List<CreateWatchPartyEpisodeRequest> episodes = List.of(
+                    createEpisode(101, "Pilot", startTimestamp, 60)
+            );
+            CreateWatchPartyRequest request = CreateWatchPartyRequest.builder()
+                    .showId(SHOW_ID)
+                    .seasonNumber(SEASON_NUMBER)
+                    .showName(SHOW_NAME)
+                    .defaultTime("21:00")
+                    .timezone("America/New_York")
+                    .episodes(episodes)
+                    .build();
+
+            // When
+            watchPartyService.createWatchParty(GROUP_ID, request, USER_ID);
+
+            // Then - Verify hangout has TimeInfo with ISO-8601 formatted endTime
+            ArgumentCaptor<Hangout> hangoutCaptor = ArgumentCaptor.forClass(Hangout.class);
+            verify(hangoutRepository).save(hangoutCaptor.capture());
+            Hangout savedHangout = hangoutCaptor.getValue();
+
+            assertThat(savedHangout.getTimeInput()).isNotNull();
+            assertThat(savedHangout.getTimeInput().getEndTime()).isNotNull();
+            // Verify ISO-8601 format with Eastern timezone offset
+            assertThat(savedHangout.getTimeInput().getEndTime()).containsPattern("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}[+-]\\d{2}:\\d{2}");
+        }
+
+        @Test
+        void createHangout_handlesDifferentTimezonesCorrectly() {
+            // Given - Same epoch timestamp, different timezones
+            long timestamp = 1710543600L; // March 15, 2024 21:00:00 UTC
+
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(seasonRepository.findByShowIdAndSeasonNumber(SHOW_ID, SEASON_NUMBER))
+                    .thenReturn(Optional.empty());
+
+            // Create with Los Angeles timezone first
+            List<CreateWatchPartyEpisodeRequest> episodes = List.of(
+                    createEpisode(101, "Pilot", timestamp, 60)
+            );
+            CreateWatchPartyRequest laRequest = CreateWatchPartyRequest.builder()
+                    .showId(SHOW_ID)
+                    .seasonNumber(SEASON_NUMBER)
+                    .showName(SHOW_NAME)
+                    .defaultTime("20:00")
+                    .timezone("America/Los_Angeles")
+                    .episodes(episodes)
+                    .build();
+
+            // When - Create watch party with LA timezone
+            watchPartyService.createWatchParty(GROUP_ID, laRequest, USER_ID);
+
+            // Then - Verify LA timezone shows Pacific offset (-07:00 or -08:00 depending on DST)
+            ArgumentCaptor<Hangout> hangoutCaptor = ArgumentCaptor.forClass(Hangout.class);
+            verify(hangoutRepository).save(hangoutCaptor.capture());
+            Hangout laHangout = hangoutCaptor.getValue();
+
+            assertThat(laHangout.getTimeInput().getStartTime()).isNotNull();
+            // March 15, 2024 is during PDT (-07:00)
+            assertThat(laHangout.getTimeInput().getStartTime()).contains("-07:00");
+        }
+
+        @Test
+        void timeInfoStartTime_matchesStartTimestampValue() {
+            // Given
+            long knownStartTimestamp = 1710543600L; // March 15, 2024 21:00:00 UTC
+
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(seasonRepository.findByShowIdAndSeasonNumber(SHOW_ID, SEASON_NUMBER))
+                    .thenReturn(Optional.empty());
+
+            List<CreateWatchPartyEpisodeRequest> episodes = List.of(
+                    createEpisode(101, "Pilot", knownStartTimestamp, 60)
+            );
+            CreateWatchPartyRequest request = CreateWatchPartyRequest.builder()
+                    .showId(SHOW_ID)
+                    .seasonNumber(SEASON_NUMBER)
+                    .showName(SHOW_NAME)
+                    .defaultTime("20:00")
+                    .timezone("UTC")
+                    .episodes(episodes)
+                    .build();
+
+            // When
+            watchPartyService.createWatchParty(GROUP_ID, request, USER_ID);
+
+            // Then - Parse timeInfo.startTime back to epoch and verify it matches hangout.startTimestamp
+            ArgumentCaptor<Hangout> hangoutCaptor = ArgumentCaptor.forClass(Hangout.class);
+            verify(hangoutRepository).save(hangoutCaptor.capture());
+            Hangout savedHangout = hangoutCaptor.getValue();
+
+            String isoStartTime = savedHangout.getTimeInput().getStartTime();
+            java.time.ZonedDateTime parsed = java.time.ZonedDateTime.parse(isoStartTime);
+            long parsedEpoch = parsed.toEpochSecond();
+
+            assertThat(parsedEpoch).isEqualTo(savedHangout.getStartTimestamp());
+        }
+    }
+
+    // ============================================================================
+    // HANGOUT POINTER FIELD COPYING TESTS
+    // ============================================================================
+
+    @Nested
+    class HangoutPointerFieldCopyingTests {
+
+        @Test
+        void createHangoutPointer_setsStatusToActive() {
+            // Given
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(seasonRepository.findByShowIdAndSeasonNumber(SHOW_ID, SEASON_NUMBER))
+                    .thenReturn(Optional.empty());
+
+            List<CreateWatchPartyEpisodeRequest> episodes = List.of(
+                    createEpisode(101, "Pilot", BASE_TIMESTAMP, 60)
+            );
+            CreateWatchPartyRequest request = createValidRequest(episodes);
+
+            // When
+            watchPartyService.createWatchParty(GROUP_ID, request, USER_ID);
+
+            // Then - Verify pointer has status="ACTIVE"
+            ArgumentCaptor<HangoutPointer> pointerCaptor = ArgumentCaptor.forClass(HangoutPointer.class);
+            verify(groupRepository).saveHangoutPointer(pointerCaptor.capture());
+            HangoutPointer savedPointer = pointerCaptor.getValue();
+
+            assertThat(savedPointer.getStatus()).isEqualTo("ACTIVE");
+        }
+
+        @Test
+        void createHangoutPointer_copiesTimeInputFromHangout() {
+            // Given
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(seasonRepository.findByShowIdAndSeasonNumber(SHOW_ID, SEASON_NUMBER))
+                    .thenReturn(Optional.empty());
+
+            List<CreateWatchPartyEpisodeRequest> episodes = List.of(
+                    createEpisode(101, "Pilot", BASE_TIMESTAMP, 60)
+            );
+            CreateWatchPartyRequest request = createValidRequest(episodes);
+
+            // When
+            watchPartyService.createWatchParty(GROUP_ID, request, USER_ID);
+
+            // Then - Verify pointer has same timeInput as hangout
+            ArgumentCaptor<Hangout> hangoutCaptor = ArgumentCaptor.forClass(Hangout.class);
+            ArgumentCaptor<HangoutPointer> pointerCaptor = ArgumentCaptor.forClass(HangoutPointer.class);
+            verify(hangoutRepository).save(hangoutCaptor.capture());
+            verify(groupRepository).saveHangoutPointer(pointerCaptor.capture());
+
+            Hangout savedHangout = hangoutCaptor.getValue();
+            HangoutPointer savedPointer = pointerCaptor.getValue();
+
+            assertThat(savedPointer.getTimeInput()).isNotNull();
+            assertThat(savedPointer.getTimeInput().getStartTime())
+                    .isEqualTo(savedHangout.getTimeInput().getStartTime());
+            assertThat(savedPointer.getTimeInput().getEndTime())
+                    .isEqualTo(savedHangout.getTimeInput().getEndTime());
+        }
+
+        @Test
+        void createHangoutPointer_copiesNullLocationFromHangout() {
+            // Given - Watch party hangouts have null location by default
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(seasonRepository.findByShowIdAndSeasonNumber(SHOW_ID, SEASON_NUMBER))
+                    .thenReturn(Optional.empty());
+
+            List<CreateWatchPartyEpisodeRequest> episodes = List.of(
+                    createEpisode(101, "Pilot", BASE_TIMESTAMP, 60)
+            );
+            CreateWatchPartyRequest request = createValidRequest(episodes);
+
+            // When
+            watchPartyService.createWatchParty(GROUP_ID, request, USER_ID);
+
+            // Then - Verify pointer has null location (same as hangout)
+            ArgumentCaptor<Hangout> hangoutCaptor = ArgumentCaptor.forClass(Hangout.class);
+            ArgumentCaptor<HangoutPointer> pointerCaptor = ArgumentCaptor.forClass(HangoutPointer.class);
+            verify(hangoutRepository).save(hangoutCaptor.capture());
+            verify(groupRepository).saveHangoutPointer(pointerCaptor.capture());
+
+            Hangout savedHangout = hangoutCaptor.getValue();
+            HangoutPointer savedPointer = pointerCaptor.getValue();
+
+            assertThat(savedHangout.getLocation()).isNull();
+            assertThat(savedPointer.getLocation()).isNull();
+        }
+
+        @Test
+        void updateHangoutPointer_setsStatusToActive() {
+            // Given
+            UpdateWatchPartyRequest request = UpdateWatchPartyRequest.builder()
+                    .defaultHostId(DEFAULT_HOST_ID)
+                    .changeExistingUpcomingHangouts(true)
+                    .build();
+
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(testHangout));
+
+            // When
+            watchPartyService.updateWatchParty(GROUP_ID, SERIES_ID, request, USER_ID);
+
+            // Then - Verify pointer has status="ACTIVE"
+            ArgumentCaptor<HangoutPointer> pointerCaptor = ArgumentCaptor.forClass(HangoutPointer.class);
+            verify(groupRepository).saveHangoutPointer(pointerCaptor.capture());
+            HangoutPointer savedPointer = pointerCaptor.getValue();
+
+            assertThat(savedPointer.getStatus()).isEqualTo("ACTIVE");
+        }
+
+        @Test
+        void updateHangoutPointer_copiesTimeInput() {
+            // Given - Set up hangout with TimeInfo
+            TimeInfo originalTimeInfo = new TimeInfo();
+            originalTimeInfo.setStartTime("2024-03-15T20:00:00-05:00");
+            originalTimeInfo.setEndTime("2024-03-15T21:00:00-05:00");
+            testHangout.setTimeInput(originalTimeInfo);
+
+            UpdateWatchPartyRequest request = UpdateWatchPartyRequest.builder()
+                    .defaultHostId(DEFAULT_HOST_ID)
+                    .changeExistingUpcomingHangouts(true)
+                    .build();
+
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(testHangout));
+
+            // When
+            watchPartyService.updateWatchParty(GROUP_ID, SERIES_ID, request, USER_ID);
+
+            // Then - Verify pointer has same timeInput as hangout
+            ArgumentCaptor<HangoutPointer> pointerCaptor = ArgumentCaptor.forClass(HangoutPointer.class);
+            verify(groupRepository).saveHangoutPointer(pointerCaptor.capture());
+            HangoutPointer savedPointer = pointerCaptor.getValue();
+
+            assertThat(savedPointer.getTimeInput()).isNotNull();
+            assertThat(savedPointer.getTimeInput().getStartTime())
+                    .isEqualTo(originalTimeInfo.getStartTime());
+            assertThat(savedPointer.getTimeInput().getEndTime())
+                    .isEqualTo(originalTimeInfo.getEndTime());
+        }
+
+        @Test
+        void updateHangoutPointer_copiesLocation() {
+            // Given - Set up hangout with location
+            com.bbthechange.inviter.dto.Address location = new com.bbthechange.inviter.dto.Address();
+            location.setName("Test Location");
+            location.setStreetAddress("123 Main St");
+            location.setCity("Chicago");
+            location.setState("IL");
+            testHangout.setLocation(location);
+
+            UpdateWatchPartyRequest request = UpdateWatchPartyRequest.builder()
+                    .defaultHostId(DEFAULT_HOST_ID)
+                    .changeExistingUpcomingHangouts(true)
+                    .build();
+
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(testHangout));
+
+            // When
+            watchPartyService.updateWatchParty(GROUP_ID, SERIES_ID, request, USER_ID);
+
+            // Then - Verify pointer has same location as hangout
+            ArgumentCaptor<HangoutPointer> pointerCaptor = ArgumentCaptor.forClass(HangoutPointer.class);
+            verify(groupRepository).saveHangoutPointer(pointerCaptor.capture());
+            HangoutPointer savedPointer = pointerCaptor.getValue();
+
+            assertThat(savedPointer.getLocation()).isNotNull();
+            assertThat(savedPointer.getLocation().getName()).isEqualTo("Test Location");
+            assertThat(savedPointer.getLocation().getStreetAddress()).isEqualTo("123 Main St");
+        }
+    }
+
+    // ============================================================================
+    // UPDATE WATCH PARTY TIME INFO CASCADE TESTS
+    // ============================================================================
+
+    @Nested
+    class UpdateWatchPartyTimeInfoCascadeTests {
+
+        @Test
+        void updateWatchParty_updatesTimeInfoWhenTimestampsChange() {
+            // Given - Set up existing hangout with old TimeInfo
+            TimeInfo oldTimeInfo = new TimeInfo();
+            oldTimeInfo.setStartTime("2024-03-15T20:00:00-05:00");
+            oldTimeInfo.setEndTime("2024-03-15T21:00:00-05:00");
+            testHangout.setTimeInput(oldTimeInfo);
+
+            UpdateWatchPartyRequest request = UpdateWatchPartyRequest.builder()
+                    .defaultTime("21:00") // Change time from 20:00 to 21:00
+                    .changeExistingUpcomingHangouts(true)
+                    .build();
+
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(seasonRepository.findByShowIdAndSeasonNumber(123, 1)).thenReturn(Optional.of(testSeason));
+            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(testHangout));
+
+            // When
+            watchPartyService.updateWatchParty(GROUP_ID, SERIES_ID, request, USER_ID);
+
+            // Then - Verify hangout TimeInfo was updated
+            ArgumentCaptor<Hangout> hangoutCaptor = ArgumentCaptor.forClass(Hangout.class);
+            verify(hangoutRepository).save(hangoutCaptor.capture());
+            Hangout savedHangout = hangoutCaptor.getValue();
+
+            assertThat(savedHangout.getTimeInput()).isNotNull();
+            // The new startTime should reflect 21:00 instead of 20:00
+            assertThat(savedHangout.getTimeInput().getStartTime()).contains("21:00:00");
+        }
+
+        @Test
+        void updateWatchParty_timeInfoMatchesNewStartTimestamp() {
+            // Given
+            testHangout.setStartTimestamp(Instant.now().getEpochSecond() + 86400); // Tomorrow
+            testHangout.setEndTimestamp(Instant.now().getEpochSecond() + 86400 + 3600);
+
+            UpdateWatchPartyRequest request = UpdateWatchPartyRequest.builder()
+                    .defaultTime("21:00")
+                    .changeExistingUpcomingHangouts(true)
+                    .build();
+
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(seasonRepository.findByShowIdAndSeasonNumber(123, 1)).thenReturn(Optional.of(testSeason));
+            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(testHangout));
+
+            // When
+            watchPartyService.updateWatchParty(GROUP_ID, SERIES_ID, request, USER_ID);
+
+            // Then - Verify TimeInfo startTime can be parsed back to match startTimestamp
+            ArgumentCaptor<Hangout> hangoutCaptor = ArgumentCaptor.forClass(Hangout.class);
+            verify(hangoutRepository).save(hangoutCaptor.capture());
+            Hangout savedHangout = hangoutCaptor.getValue();
+
+            String isoStartTime = savedHangout.getTimeInput().getStartTime();
+            java.time.ZonedDateTime parsed = java.time.ZonedDateTime.parse(isoStartTime);
+            long parsedEpoch = parsed.toEpochSecond();
+
+            assertThat(parsedEpoch).isEqualTo(savedHangout.getStartTimestamp());
+        }
+    }
+
+    // ============================================================================
+    // END-TO-END FIELD POPULATION TESTS
+    // ============================================================================
+
+    @Nested
+    class EndToEndFieldPopulationTests {
+
+        @Test
+        void createWatchParty_createsEpisodesWithAllRequiredFieldsPopulated() {
+            // Given
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(seasonRepository.findByShowIdAndSeasonNumber(SHOW_ID, SEASON_NUMBER))
+                    .thenReturn(Optional.empty());
+
+            List<CreateWatchPartyEpisodeRequest> episodes = List.of(
+                    createEpisode(101, "Pilot", BASE_TIMESTAMP, 60),
+                    createEpisode(102, "Episode 2", BASE_TIMESTAMP + (25 * ONE_HOUR), 45)
+            );
+            CreateWatchPartyRequest request = createValidRequest(episodes);
+
+            // When
+            WatchPartyResponse response = watchPartyService.createWatchParty(GROUP_ID, request, USER_ID);
+
+            // Then - Verify all HangoutPointers have required fields
+            ArgumentCaptor<HangoutPointer> pointerCaptor = ArgumentCaptor.forClass(HangoutPointer.class);
+            verify(groupRepository, times(2)).saveHangoutPointer(pointerCaptor.capture());
+
+            List<HangoutPointer> savedPointers = pointerCaptor.getAllValues();
+            for (HangoutPointer pointer : savedPointers) {
+                // CRITICAL: status must be "ACTIVE"
+                assertThat(pointer.getStatus())
+                        .as("Pointer for hangout %s should have status=ACTIVE", pointer.getHangoutId())
+                        .isEqualTo("ACTIVE");
+
+                // CRITICAL: timeInput must be non-null with valid ISO-8601 times
+                assertThat(pointer.getTimeInput())
+                        .as("Pointer for hangout %s should have non-null timeInput", pointer.getHangoutId())
+                        .isNotNull();
+                assertThat(pointer.getTimeInput().getStartTime())
+                        .as("Pointer for hangout %s should have non-null startTime", pointer.getHangoutId())
+                        .isNotNull();
+                assertThat(pointer.getTimeInput().getEndTime())
+                        .as("Pointer for hangout %s should have non-null endTime", pointer.getHangoutId())
+                        .isNotNull();
+
+                // Verify ISO-8601 format
+                assertThat(pointer.getTimeInput().getStartTime())
+                        .containsPattern("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}[+-]\\d{2}:\\d{2}");
+
+                // Location can be null for watch parties, but should be explicitly set
+                // (the field exists on the pointer even if null)
+            }
+
+            // Verify response has correct number of hangouts
+            assertThat(response.getHangouts()).hasSize(2);
+        }
+
+        @Test
+        void createWatchParty_hangoutAndPointerTimestampsAreConsistent() {
+            // Given
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(seasonRepository.findByShowIdAndSeasonNumber(SHOW_ID, SEASON_NUMBER))
+                    .thenReturn(Optional.empty());
+
+            List<CreateWatchPartyEpisodeRequest> episodes = List.of(
+                    createEpisode(101, "Pilot", BASE_TIMESTAMP, 60)
+            );
+            CreateWatchPartyRequest request = createValidRequest(episodes);
+
+            // When
+            watchPartyService.createWatchParty(GROUP_ID, request, USER_ID);
+
+            // Then - Verify hangout and pointer timestamps match
+            ArgumentCaptor<Hangout> hangoutCaptor = ArgumentCaptor.forClass(Hangout.class);
+            ArgumentCaptor<HangoutPointer> pointerCaptor = ArgumentCaptor.forClass(HangoutPointer.class);
+            verify(hangoutRepository).save(hangoutCaptor.capture());
+            verify(groupRepository).saveHangoutPointer(pointerCaptor.capture());
+
+            Hangout savedHangout = hangoutCaptor.getValue();
+            HangoutPointer savedPointer = pointerCaptor.getValue();
+
+            // Epoch timestamps should match
+            assertThat(savedPointer.getStartTimestamp()).isEqualTo(savedHangout.getStartTimestamp());
+            assertThat(savedPointer.getEndTimestamp()).isEqualTo(savedHangout.getEndTimestamp());
+
+            // TimeInfo ISO strings should also match
+            assertThat(savedPointer.getTimeInput().getStartTime())
+                    .isEqualTo(savedHangout.getTimeInput().getStartTime());
+            assertThat(savedPointer.getTimeInput().getEndTime())
+                    .isEqualTo(savedHangout.getTimeInput().getEndTime());
         }
     }
 }

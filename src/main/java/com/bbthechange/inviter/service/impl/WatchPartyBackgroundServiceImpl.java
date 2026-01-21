@@ -107,6 +107,9 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
                 updateSeriesTimestamps(series, hangout);
                 eventSeriesRepository.save(series);
 
+                // Update SeriesPointer.parts with the new HangoutPointer
+                updateSeriesPointerWithNewPart(series, pointer);
+
                 hangoutsCreated++;
                 groupsToUpdate.add(series.getGroupId());
 
@@ -175,8 +178,14 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
                 // Update HangoutPointer
                 if (hangout.getAssociatedGroups() != null) {
                     for (String groupId : hangout.getAssociatedGroups()) {
-                        updateHangoutPointer(hangout, groupId);
+                        HangoutPointer updatedPointer = createHangoutPointer(hangout, groupId);
+                        groupRepository.saveHangoutPointer(updatedPointer);
                         groupsToUpdate.add(groupId);
+
+                        // Update the corresponding part in SeriesPointer.parts
+                        if (hangout.getSeriesId() != null) {
+                            updateHangoutInSeriesPointer(groupId, hangout.getSeriesId(), updatedPointer);
+                        }
                     }
                 }
 
@@ -238,11 +247,14 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
                 // Delete hangout
                 hangoutRepository.deleteHangout(hangoutId);
 
-                // Remove from series
+                // Remove from series and update SeriesPointer
                 if (seriesId != null) {
                     eventSeriesRepository.findById(seriesId).ifPresent(series -> {
                         series.removeHangout(hangoutId);
                         eventSeriesRepository.save(series);
+
+                        // Update SeriesPointer.parts to remove the deleted hangout
+                        removeHangoutFromSeriesPointer(series, hangoutId);
                     });
                 }
 
@@ -377,6 +389,171 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
             if (series.getEndTimestamp() == null || hangout.getEndTimestamp() > series.getEndTimestamp()) {
                 series.setEndTimestamp(hangout.getEndTimestamp());
             }
+        }
+    }
+
+    /**
+     * Update SeriesPointer.parts with a new HangoutPointer.
+     * This ensures the denormalized parts list stays in sync with new episodes.
+     */
+    private void updateSeriesPointerWithNewPart(EventSeries series, HangoutPointer newPointer) {
+        try {
+            Optional<SeriesPointer> existingPointer = groupRepository.findSeriesPointer(
+                    series.getGroupId(), series.getSeriesId());
+
+            if (existingPointer.isPresent()) {
+                SeriesPointer seriesPointer = existingPointer.get();
+
+                // Add the new HangoutPointer to the parts list
+                seriesPointer.addPart(newPointer);
+
+                // Sync timestamps with the series
+                seriesPointer.setStartTimestamp(series.getStartTimestamp());
+                seriesPointer.setEndTimestamp(series.getEndTimestamp());
+
+                // Also sync the hangoutIds list
+                seriesPointer.setHangoutIds(series.getHangoutIds() != null
+                        ? new ArrayList<>(series.getHangoutIds()) : new ArrayList<>());
+
+                // Save updated SeriesPointer
+                groupRepository.saveSeriesPointer(seriesPointer);
+
+                logger.debug("Updated SeriesPointer parts for series {} with new hangout {}",
+                        series.getSeriesId(), newPointer.getHangoutId());
+            } else {
+                logger.warn("SeriesPointer not found for series {} in group {}, cannot add new part",
+                        series.getSeriesId(), series.getGroupId());
+            }
+        } catch (Exception e) {
+            logger.error("Failed to update SeriesPointer for series {}: {}",
+                    series.getSeriesId(), e.getMessage());
+            // Don't rethrow - the hangout was already saved, this is a denormalization issue
+            // that can be fixed by a repair job if needed
+        }
+    }
+
+    /**
+     * Remove a HangoutPointer from SeriesPointer.parts when an episode is deleted.
+     * This ensures the denormalized parts list stays in sync.
+     */
+    private void removeHangoutFromSeriesPointer(EventSeries series, String hangoutId) {
+        try {
+            Optional<SeriesPointer> existingPointer = groupRepository.findSeriesPointer(
+                    series.getGroupId(), series.getSeriesId());
+
+            if (existingPointer.isPresent()) {
+                SeriesPointer seriesPointer = existingPointer.get();
+
+                // Remove the HangoutPointer from the parts list
+                List<HangoutPointer> parts = seriesPointer.getParts();
+                if (parts != null) {
+                    parts.removeIf(part -> hangoutId.equals(part.getHangoutId()));
+                    seriesPointer.setParts(parts);
+                }
+
+                // Sync hangoutIds list
+                seriesPointer.setHangoutIds(series.getHangoutIds() != null
+                        ? new ArrayList<>(series.getHangoutIds()) : new ArrayList<>());
+
+                // Recalculate timestamps based on remaining parts
+                recalculateSeriesPointerTimestamps(seriesPointer);
+
+                // Save updated SeriesPointer
+                groupRepository.saveSeriesPointer(seriesPointer);
+
+                logger.debug("Removed hangout {} from SeriesPointer parts for series {}",
+                        hangoutId, series.getSeriesId());
+            } else {
+                logger.warn("SeriesPointer not found for series {} in group {}, cannot remove part",
+                        series.getSeriesId(), series.getGroupId());
+            }
+        } catch (Exception e) {
+            logger.error("Failed to remove hangout from SeriesPointer for series {}: {}",
+                    series.getSeriesId(), e.getMessage());
+            // Don't rethrow - this is a denormalization issue that can be fixed by a repair job
+        }
+    }
+
+    /**
+     * Recalculate SeriesPointer timestamps based on remaining parts.
+     */
+    private void recalculateSeriesPointerTimestamps(SeriesPointer seriesPointer) {
+        List<HangoutPointer> parts = seriesPointer.getParts();
+        if (parts == null || parts.isEmpty()) {
+            seriesPointer.setStartTimestamp(null);
+            seriesPointer.setEndTimestamp(null);
+            return;
+        }
+
+        Long earliestStart = null;
+        Long latestEnd = null;
+
+        for (HangoutPointer part : parts) {
+            if (part.getStartTimestamp() != null) {
+                if (earliestStart == null || part.getStartTimestamp() < earliestStart) {
+                    earliestStart = part.getStartTimestamp();
+                }
+            }
+            if (part.getEndTimestamp() != null) {
+                if (latestEnd == null || part.getEndTimestamp() > latestEnd) {
+                    latestEnd = part.getEndTimestamp();
+                }
+            }
+        }
+
+        seriesPointer.setStartTimestamp(earliestStart);
+        seriesPointer.setEndTimestamp(latestEnd);
+    }
+
+    /**
+     * Update a HangoutPointer within SeriesPointer.parts when the hangout is modified.
+     * This ensures the denormalized parts list stays in sync with title and other updates.
+     * Note: This method assumes timestamps haven't changed (used for title updates).
+     * If timestamps change, recalculateSeriesPointerTimestamps should be called after.
+     */
+    private void updateHangoutInSeriesPointer(String groupId, String seriesId, HangoutPointer updatedPointer) {
+        try {
+            Optional<SeriesPointer> existingPointer = groupRepository.findSeriesPointer(groupId, seriesId);
+
+            if (existingPointer.isPresent()) {
+                SeriesPointer seriesPointer = existingPointer.get();
+
+                // Find and replace the matching HangoutPointer in parts
+                List<HangoutPointer> parts = seriesPointer.getParts();
+                if (parts == null) {
+                    parts = new ArrayList<>();
+                    logger.warn("SeriesPointer {} had null parts list, initialized it", seriesId);
+                }
+
+                boolean found = false;
+                for (int i = 0; i < parts.size(); i++) {
+                    if (updatedPointer.getHangoutId().equals(parts.get(i).getHangoutId())) {
+                        parts.set(i, updatedPointer);
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    // Hangout wasn't in parts - this shouldn't happen but add it to be safe
+                    parts.add(updatedPointer);
+                    logger.warn("HangoutPointer {} wasn't found in SeriesPointer parts, added it",
+                            updatedPointer.getHangoutId());
+                }
+                seriesPointer.setParts(parts);
+
+                // Save updated SeriesPointer
+                groupRepository.saveSeriesPointer(seriesPointer);
+
+                logger.debug("Updated HangoutPointer {} in SeriesPointer parts for series {}",
+                        updatedPointer.getHangoutId(), seriesId);
+            } else {
+                logger.warn("SeriesPointer not found for series {} in group {}, cannot update part",
+                        seriesId, groupId);
+            }
+        } catch (Exception e) {
+            logger.error("Failed to update HangoutPointer in SeriesPointer for series {}: {}",
+                    seriesId, e.getMessage());
+            // Don't rethrow - this is a denormalization issue that can be fixed by a repair job
         }
     }
 

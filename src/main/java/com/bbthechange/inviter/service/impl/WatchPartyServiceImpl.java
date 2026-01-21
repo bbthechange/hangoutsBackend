@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.service.impl;
 
 import com.bbthechange.inviter.client.TvMazeClient;
+import com.bbthechange.inviter.dto.TimeInfo;
 import com.bbthechange.inviter.dto.tvmaze.TvMazeEpisodeResponse;
 import com.bbthechange.inviter.dto.watchparty.*;
 import com.bbthechange.inviter.exception.ResourceNotFoundException;
@@ -110,7 +111,7 @@ public class WatchPartyServiceImpl implements WatchPartyService {
 
             // Create Hangout
             Hangout hangout = createHangout(combined, eventSeries.getSeriesId(), groupId,
-                    startTimestamp, endTimestamp, request.getDefaultHostId());
+                    startTimestamp, endTimestamp, request.getDefaultHostId(), request.getTimezone());
             hangouts.add(hangout);
 
             // Create HangoutPointer
@@ -369,6 +370,16 @@ public class WatchPartyServiceImpl implements WatchPartyService {
 
                         hangout.setStartTimestamp(newStartTimestamp);
                         hangout.setEndTimestamp(newEndTimestamp);
+
+                        // Update TimeInfo with new ISO-8601 formatted times
+                        TimeInfo timeInfo = new TimeInfo();
+                        ZoneId zone = ZoneId.of(effectiveTimezone);
+                        ZonedDateTime startZdt = Instant.ofEpochSecond(newStartTimestamp).atZone(zone);
+                        ZonedDateTime endZdt = Instant.ofEpochSecond(newEndTimestamp).atZone(zone);
+                        timeInfo.setStartTime(startZdt.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+                        timeInfo.setEndTime(endZdt.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+                        hangout.setTimeInput(timeInfo);
+
                         hangoutUpdated = true;
 
                         // Track min/max for series timestamps
@@ -751,7 +762,8 @@ public class WatchPartyServiceImpl implements WatchPartyService {
     }
 
     private Hangout createHangout(CombinedEpisode combined, String seriesId, String groupId,
-                                  long startTimestamp, long endTimestamp, String defaultHostId) {
+                                  long startTimestamp, long endTimestamp, String defaultHostId,
+                                  String timezone) {
         Hangout hangout = new Hangout();
         hangout.setHangoutId(UUID.randomUUID().toString());
         hangout.setTitle(combined.getTitle());
@@ -777,6 +789,15 @@ public class WatchPartyServiceImpl implements WatchPartyService {
             hangout.setHostAtPlaceUserId(defaultHostId);
         }
 
+        // Set TimeInfo with ISO-8601 formatted times (required for frontend display)
+        TimeInfo timeInfo = new TimeInfo();
+        ZoneId zone = ZoneId.of(timezone);
+        ZonedDateTime startZdt = Instant.ofEpochSecond(startTimestamp).atZone(zone);
+        ZonedDateTime endZdt = Instant.ofEpochSecond(endTimestamp).atZone(zone);
+        timeInfo.setStartTime(startZdt.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+        timeInfo.setEndTime(endZdt.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+        hangout.setTimeInput(timeInfo);
+
         // Set DynamoDB keys
         hangout.setPk(InviterKeyFactory.getEventPk(hangout.getHangoutId()));
         hangout.setSk(InviterKeyFactory.getMetadataSk());
@@ -787,6 +808,9 @@ public class WatchPartyServiceImpl implements WatchPartyService {
     private HangoutPointer createHangoutPointer(Hangout hangout, String groupId) {
         HangoutPointer pointer = new HangoutPointer(groupId, hangout.getHangoutId(), hangout.getTitle());
 
+        // CRITICAL: Set status (required for frontend)
+        pointer.setStatus("ACTIVE");
+
         // Denormalize fields from hangout
         pointer.setDescription(hangout.getDescription());
         pointer.setStartTimestamp(hangout.getStartTimestamp());
@@ -796,6 +820,12 @@ public class WatchPartyServiceImpl implements WatchPartyService {
         pointer.setMainImagePath(hangout.getMainImagePath());
         pointer.setCarpoolEnabled(hangout.isCarpoolEnabled());
         pointer.setHostAtPlaceUserId(hangout.getHostAtPlaceUserId());
+
+        // CRITICAL: Copy timeInput for API response (required for frontend)
+        pointer.setTimeInput(hangout.getTimeInput());
+
+        // Copy location (will be null for watch parties, but explicit for consistency)
+        pointer.setLocation(hangout.getLocation());
 
         // External source fields
         pointer.setExternalId(hangout.getExternalId());
@@ -930,6 +960,9 @@ public class WatchPartyServiceImpl implements WatchPartyService {
     private void updateHangoutPointer(Hangout hangout, String groupId) {
         HangoutPointer pointer = new HangoutPointer(groupId, hangout.getHangoutId(), hangout.getTitle());
 
+        // CRITICAL: Set status (required for frontend)
+        pointer.setStatus("ACTIVE");
+
         // Denormalize fields from hangout
         pointer.setDescription(hangout.getDescription());
         pointer.setStartTimestamp(hangout.getStartTimestamp());
@@ -939,6 +972,12 @@ public class WatchPartyServiceImpl implements WatchPartyService {
         pointer.setMainImagePath(hangout.getMainImagePath());
         pointer.setCarpoolEnabled(hangout.isCarpoolEnabled());
         pointer.setHostAtPlaceUserId(hangout.getHostAtPlaceUserId());
+
+        // CRITICAL: Copy timeInput for API response (required for frontend)
+        pointer.setTimeInput(hangout.getTimeInput());
+
+        // Copy location (will be null for watch parties, but explicit for consistency)
+        pointer.setLocation(hangout.getLocation());
 
         // External source fields
         pointer.setExternalId(hangout.getExternalId());
