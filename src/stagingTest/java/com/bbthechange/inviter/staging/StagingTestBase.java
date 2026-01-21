@@ -219,8 +219,8 @@ public abstract class StagingTestBase {
 
     protected String createTestWatchPartyWithTime(String groupId, String showName, String defaultTime) {
         long futureTimestamp = java.time.Instant.now().plusSeconds(86400 * 7).getEpochSecond();
-        int showId = ((showName.hashCode() & 0x7FFFFFFF) % 90000) + 10000;
         String uniqueShowName = showName + " " + UUID.randomUUID().toString().substring(0, 8);
+        int showId = ((uniqueShowName.hashCode() & 0x7FFFFFFF) % 90000) + 10000;
 
         String requestBody = String.format("""
             {

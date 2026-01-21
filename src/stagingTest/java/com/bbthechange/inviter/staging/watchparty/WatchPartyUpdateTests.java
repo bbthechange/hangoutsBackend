@@ -46,8 +46,8 @@ class WatchPartyUpdateTests extends StagingTestBase {
     private String createTestWatchPartyWithMultipleEpisodes(String groupId, String showName, String defaultTime) {
         long oneWeekOut = Instant.now().plusSeconds(86400 * 7).getEpochSecond();
         long twoWeeksOut = Instant.now().plusSeconds(86400 * 14).getEpochSecond();
-        int showId = Math.abs(showName.hashCode() % 90000) + 10000;
         String uniqueShowName = showName + " " + UUID.randomUUID().toString().substring(0, 8);
+        int showId = Math.abs(uniqueShowName.hashCode() % 90000) + 10000;
 
         String requestBody = """
             {
@@ -106,12 +106,12 @@ class WatchPartyUpdateTests extends StagingTestBase {
 
         // Assert - hangout time should shift by 2 hours (7200 seconds)
         long newStartTime = getFirstHangoutStartTime(groupId, seriesId);
-        long timeDifference = newStartTime - originalStartTime;
+        long expectedStartTime = originalStartTime + 7200; // +2 hours
 
-        // Allow small tolerance for processing time, but should be ~7200 seconds
+        // Use a small tolerance to account for any minor processing delays
         Assertions.assertTrue(
-            timeDifference >= 7190 && timeDifference <= 7210,
-            "Hangout should shift by ~2 hours (7200s), but shifted by " + timeDifference + "s"
+            Math.abs(newStartTime - expectedStartTime) <= 10,
+            "Hangout start time should have shifted by exactly 2 hours. Expected: " + expectedStartTime + ", but was: " + newStartTime
         );
     }
 

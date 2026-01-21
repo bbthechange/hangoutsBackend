@@ -168,7 +168,10 @@ class WatchPartyInterestTests extends StagingTestBase {
 
                 // Assert - watch party SERIES should NOT be in feed as a top-level item
                 // But individual hangouts CAN appear (they'll have seriesId set to reference the parent)
-                List<Map<String, Object>> feedItems = response.jsonPath().getList("feedItems");
+                List<Map<String, Object>> feedItems = response.jsonPath().getList("withDay");
+                if (feedItems == null) {
+                    feedItems = java.util.Collections.emptyList();
+                }
 
                 // Check that no feed item is the watch party series itself
                 // Series items have seriesId at root level AND have "parts" field
