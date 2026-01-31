@@ -3,7 +3,7 @@
 **This is the public documentation for the Inviter project environment architecture.**
 **For actual resource IDs and credentials, see `.claude/ENVIRONMENT_DETAILS.md` (gitignored).**
 
-Last Updated: 2025-11-15
+Last Updated: 2026-01-21
 
 ---
 
@@ -281,6 +281,21 @@ Used for scheduling hangout reminder notifications:
 
 The EB EC2 role (`aws-elasticbeanstalk-ec2-role`) has the `HangoutSchedulerManagement` policy attached, allowing the application to create, update, delete, and get schedules in the `hangout-reminders` group.
 
+### TV Watch Party Infrastructure
+
+Used for automatic TVMaze polling and episode update processing:
+
+- **SQS Queues**:
+  - `watch-party-tvmaze-updates` - Receives SHOW_UPDATED messages from polling (VisibilityTimeout=300s)
+  - `watch-party-tvmaze-updates-dlq` - Dead letter queue for failed processing
+  - `watch-party-episode-actions` - Receives NEW_EPISODE, UPDATE_TITLE, REMOVE_EPISODE messages
+  - `watch-party-episode-actions-dlq` - Dead letter queue for failed processing
+- **EventBridge Rule**: `watch-party-tvmaze-poll` - Triggers polling every 2 hours via API Destination
+- **API Destination**: `watch-party-poll-api` - Invokes `/internal/watch-party/trigger-poll` endpoint
+- **Connection**: Uses existing `hangout-api-connection` with X-Api-Key authentication
+
+The EB EC2 role has `WatchPartyQueues` and `InternalApiKeyAccess` policies attached for SQS access and SSM parameter retrieval.
+
 ### IAM Roles
 - `aws-elasticbeanstalk-ec2-role` - Instance profile for EC2 instances (includes HangoutSchedulerManagement policy)
 - `aws-elasticbeanstalk-service-role` - Service role for EB operations
@@ -429,6 +444,9 @@ This allows tracking which git commit is deployed in each environment.
 | **Twilio SMS** | ✅ | ✅ | ✅ |
 | **Ticketmaster API** | ✅ | ✅ | ✅ |
 | **EventBridge Scheduler** | ❌ | ✅ Configured | ✅ Configured |
+| **Watch Party SQS** | ❌ | ✅ 4 queues | ✅ 4 queues |
+| **Watch Party Polling** | ❌ | ✅ EventBridge Rule (2hr) | ✅ EventBridge Rule (2hr) |
+| **Watch Party Host Check** | ❌ | ✅ @Scheduled (10am UTC) | ✅ @Scheduled (10am UTC) |
 
 ---
 
@@ -490,6 +508,60 @@ If you need to recreate the staging environment from scratch:
    # }
 
    # Add HangoutSchedulerManagement policy to aws-elasticbeanstalk-ec2-role
+   ```
+
+8. Set up TV Watch Party infrastructure:
+   ```bash
+   # Create SQS queues for watch party
+   aws sqs create-queue --queue-name watch-party-tvmaze-updates \
+     --attributes '{
+       "VisibilityTimeout": "300",
+       "MessageRetentionPeriod": "345600",
+       "ReceiveMessageWaitTimeSeconds": "0"
+     }'
+   aws sqs create-queue --queue-name watch-party-tvmaze-updates-dlq
+   aws sqs create-queue --queue-name watch-party-episode-actions \
+     --attributes '{
+       "VisibilityTimeout": "120",
+       "MessageRetentionPeriod": "345600"
+     }'
+   aws sqs create-queue --queue-name watch-party-episode-actions-dlq
+
+   # Configure redrive policies for DLQs
+   # (See .claude/ENVIRONMENT_DETAILS.md for specific ARNs)
+
+   # Create API Destination for polling endpoint
+   aws events create-api-destination \
+     --name watch-party-poll-api \
+     --connection-arn "{CONNECTION_ARN}" \
+     --invocation-endpoint "https://{API_GATEWAY}/internal/watch-party/trigger-poll" \
+     --http-method POST \
+     --invocation-rate-limit-per-second 1
+
+   # Create EventBridge Rule for 2-hour polling
+   aws events put-rule \
+     --name watch-party-tvmaze-poll \
+     --schedule-expression "rate(2 hours)" \
+     --state ENABLED \
+     --description "Triggers TVMaze polling every 2 hours"
+
+   # Attach API Destination target to rule
+   aws events put-targets \
+     --rule watch-party-tvmaze-poll \
+     --targets '[{
+       "Id": "watch-party-poll-target",
+       "Arn": "{API_DESTINATION_ARN}",
+       "RoleArn": "{EVENTBRIDGE_ROLE_ARN}",
+       "RetryPolicy": {
+         "MaximumEventAgeInSeconds": 3600,
+         "MaximumRetryAttempts": 3
+       }
+     }]'
+
+   # Update IAM trust policy to allow events.amazonaws.com
+   # Update IAM permissions to allow InvokeApiDestination on watch-party-poll-api
+   # Add WatchPartyQueues policy to aws-elasticbeanstalk-ec2-role
+   # Add InternalApiKeyAccess policy to aws-elasticbeanstalk-ec2-role
    ```
 
 #### 3. Application Deployment
@@ -738,4 +810,4 @@ aws cloudfront create-invalidation \
 **For actual resource identifiers, account numbers, and credentials, refer to:**
 `.claude/ENVIRONMENT_DETAILS.md` (gitignored, not in version control)
 
-**Last Updated**: 2025-12-28
+**Last Updated**: 2026-01-21
