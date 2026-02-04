@@ -176,8 +176,8 @@ class WatchPartyUpdateTests extends StagingTestBase {
         // hangout that's still in the future depending on when the test runs.
         long pastTimestamp = Instant.now().minusSeconds(86400 * 3).getEpochSecond();
         long futureTimestamp = Instant.now().plusSeconds(86400 * 7).getEpochSecond();
-        int showId = Math.abs("Past Test".hashCode() % 90000) + 10000;
         String uniqueShowName = "Past Test " + UUID.randomUUID().toString().substring(0, 8);
+        int showId = Math.abs(uniqueShowName.hashCode() % 90000) + 10000;
 
         String requestBody = """
             {
