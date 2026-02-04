@@ -727,6 +727,7 @@ public class WatchPartyServiceImpl implements WatchPartyService {
 
         // Create new Season
         Season season = new Season(request.getShowId(), request.getSeasonNumber(), request.getShowName());
+        season.setTvmazeSeasonId(request.getTvmazeSeasonId());
 
         // Add episodes (either from request or fetched from TVMaze)
         for (CreateWatchPartyEpisodeRequest ep : episodes) {

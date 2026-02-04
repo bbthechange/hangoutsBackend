@@ -519,6 +519,69 @@ class WatchPartyServiceImplTest {
             // Then
             assertThat(response.getSeriesTitle()).isEqualTo("Breaking Bad Season 3");
         }
+
+        @Test
+        void createWatchParty_SetsTvmazeSeasonIdOnNewSeason() {
+            // Given
+            Integer tvmazeSeasonId = 12345;
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+
+            CreateWatchPartyRequest request = CreateWatchPartyRequest.builder()
+                    .showId(SHOW_ID)
+                    .seasonNumber(SEASON_NUMBER)
+                    .showName(SHOW_NAME)
+                    .defaultTime(DEFAULT_TIME)
+                    .timezone(TIMEZONE)
+                    .tvmazeSeasonId(tvmazeSeasonId)
+                    .episodes(List.of(createEpisode(101, "Pilot", BASE_TIMESTAMP, 60)))
+                    .build();
+
+            // Mock season repository to return empty (new season)
+            when(seasonRepository.findByShowIdAndSeasonNumber(SHOW_ID, SEASON_NUMBER))
+                    .thenReturn(Optional.empty());
+
+            // When
+            watchPartyService.createWatchParty(GROUP_ID, request, USER_ID);
+
+            // Then - Capture the Season object passed to seasonRepository.save()
+            ArgumentCaptor<Season> seasonCaptor = ArgumentCaptor.forClass(Season.class);
+            verify(seasonRepository).save(seasonCaptor.capture());
+            Season savedSeason = seasonCaptor.getValue();
+
+            // Verify tvmazeSeasonId is set correctly from the request
+            assertThat(savedSeason.getTvmazeSeasonId()).isEqualTo(tvmazeSeasonId);
+        }
+
+        @Test
+        void createWatchParty_PreservesNullTvmazeSeasonId() {
+            // Given - request with null tvmazeSeasonId
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+
+            CreateWatchPartyRequest request = CreateWatchPartyRequest.builder()
+                    .showId(SHOW_ID)
+                    .seasonNumber(SEASON_NUMBER)
+                    .showName(SHOW_NAME)
+                    .defaultTime(DEFAULT_TIME)
+                    .timezone(TIMEZONE)
+                    .tvmazeSeasonId(null) // Explicitly null
+                    .episodes(List.of(createEpisode(101, "Pilot", BASE_TIMESTAMP, 60)))
+                    .build();
+
+            // Mock season repository to return empty (new season)
+            when(seasonRepository.findByShowIdAndSeasonNumber(SHOW_ID, SEASON_NUMBER))
+                    .thenReturn(Optional.empty());
+
+            // When
+            watchPartyService.createWatchParty(GROUP_ID, request, USER_ID);
+
+            // Then - Capture the Season object passed to seasonRepository.save()
+            ArgumentCaptor<Season> seasonCaptor = ArgumentCaptor.forClass(Season.class);
+            verify(seasonRepository).save(seasonCaptor.capture());
+            Season savedSeason = seasonCaptor.getValue();
+
+            // Verify tvmazeSeasonId is null (graceful handling)
+            assertThat(savedSeason.getTvmazeSeasonId()).isNull();
+        }
     }
 
     // ============================================================================
