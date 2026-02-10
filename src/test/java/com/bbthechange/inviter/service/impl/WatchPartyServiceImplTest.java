@@ -1070,6 +1070,118 @@ class WatchPartyServiceImplTest {
             // Then - should cascade by default
             verify(hangoutRepository).save(any(Hangout.class));
         }
+
+        @Test
+        void updateWatchParty_PreservesExistingParts() {
+            // Given - Set up a SeriesPointer with existing parts and interestLevels
+            HangoutPointer existingPart = new HangoutPointer(GROUP_ID, HANGOUT_ID, "Pilot");
+            existingPart.setStatus("ACTIVE");
+            existingPart.setStartTimestamp(testHangout.getStartTimestamp());
+            existingPart.setEndTimestamp(testHangout.getEndTimestamp());
+
+            InterestLevel interestLevel = new InterestLevel();
+            interestLevel.setUserId(USER_ID);
+            interestLevel.setStatus("GOING");
+
+            SeriesPointer existingPointer = SeriesPointer.fromEventSeries(testSeries, GROUP_ID);
+            existingPointer.setParts(new ArrayList<>(List.of(existingPart)));
+            existingPointer.setInterestLevels(new ArrayList<>(List.of(interestLevel)));
+
+            UpdateWatchPartyRequest request = UpdateWatchPartyRequest.builder()
+                    .defaultHostId(DEFAULT_HOST_ID)
+                    .changeExistingUpcomingHangouts(true)
+                    .build();
+
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(testHangout));
+            when(groupRepository.findSeriesPointer(GROUP_ID, SERIES_ID)).thenReturn(Optional.of(existingPointer));
+
+            // When
+            watchPartyService.updateWatchParty(GROUP_ID, SERIES_ID, request, USER_ID);
+
+            // Then - Verify SeriesPointer was saved with parts and interestLevels preserved
+            ArgumentCaptor<SeriesPointer> pointerCaptor = ArgumentCaptor.forClass(SeriesPointer.class);
+            verify(groupRepository).saveSeriesPointer(pointerCaptor.capture());
+
+            SeriesPointer savedPointer = pointerCaptor.getValue();
+            assertThat(savedPointer.getParts()).isNotNull();
+            assertThat(savedPointer.getParts()).hasSize(1);
+            assertThat(savedPointer.getParts().get(0).getHangoutId()).isEqualTo(HANGOUT_ID);
+
+            assertThat(savedPointer.getInterestLevels()).isNotNull();
+            assertThat(savedPointer.getInterestLevels()).hasSize(1);
+            assertThat(savedPointer.getInterestLevels().get(0).getUserId()).isEqualTo(USER_ID);
+            assertThat(savedPointer.getInterestLevels().get(0).getStatus()).isEqualTo("GOING");
+        }
+
+        @Test
+        void updateWatchParty_WhenSeriesPointerMissing_CreatesNewPointer() {
+            // Given - SeriesPointer not found, should create new one as fallback
+            UpdateWatchPartyRequest request = UpdateWatchPartyRequest.builder()
+                    .defaultHostId(DEFAULT_HOST_ID)
+                    .changeExistingUpcomingHangouts(true)
+                    .build();
+
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(testHangout));
+            when(groupRepository.findSeriesPointer(GROUP_ID, SERIES_ID)).thenReturn(Optional.empty());
+
+            // When - should not throw
+            watchPartyService.updateWatchParty(GROUP_ID, SERIES_ID, request, USER_ID);
+
+            // Then - a SeriesPointer is still saved (fallback creates new)
+            ArgumentCaptor<SeriesPointer> pointerCaptor = ArgumentCaptor.forClass(SeriesPointer.class);
+            verify(groupRepository).saveSeriesPointer(pointerCaptor.capture());
+
+            SeriesPointer savedPointer = pointerCaptor.getValue();
+            assertThat(savedPointer).isNotNull();
+            assertThat(savedPointer.getSeriesId()).isEqualTo(SERIES_ID);
+            assertThat(savedPointer.getGroupId()).isEqualTo(GROUP_ID);
+        }
+
+        @Test
+        void updateWatchParty_PreservesInterestLevelsWithNoCascade() {
+            // Given - SeriesPointer with 2 interestLevels (one GOING, one INTERESTED)
+            InterestLevel goingLevel = new InterestLevel();
+            goingLevel.setUserId(USER_ID);
+            goingLevel.setStatus("GOING");
+
+            InterestLevel interestedLevel = new InterestLevel();
+            interestedLevel.setUserId("another-user-id-456");
+            interestedLevel.setStatus("INTERESTED");
+
+            SeriesPointer existingPointer = SeriesPointer.fromEventSeries(testSeries, GROUP_ID);
+            existingPointer.setInterestLevels(new ArrayList<>(List.of(goingLevel, interestedLevel)));
+
+            UpdateWatchPartyRequest request = UpdateWatchPartyRequest.builder()
+                    .defaultHostId(DEFAULT_HOST_ID)
+                    .changeExistingUpcomingHangouts(false) // No cascade
+                    .build();
+
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(testHangout));
+            when(groupRepository.findSeriesPointer(GROUP_ID, SERIES_ID)).thenReturn(Optional.of(existingPointer));
+
+            // When
+            watchPartyService.updateWatchParty(GROUP_ID, SERIES_ID, request, USER_ID);
+
+            // Then - Both interestLevels are preserved in the saved SeriesPointer
+            ArgumentCaptor<SeriesPointer> pointerCaptor = ArgumentCaptor.forClass(SeriesPointer.class);
+            verify(groupRepository).saveSeriesPointer(pointerCaptor.capture());
+
+            SeriesPointer savedPointer = pointerCaptor.getValue();
+            assertThat(savedPointer.getInterestLevels()).isNotNull();
+            assertThat(savedPointer.getInterestLevels()).hasSize(2);
+            assertThat(savedPointer.getInterestLevels())
+                    .extracting(InterestLevel::getStatus)
+                    .containsExactlyInAnyOrder("GOING", "INTERESTED");
+            assertThat(savedPointer.getInterestLevels())
+                    .extracting(InterestLevel::getUserId)
+                    .containsExactlyInAnyOrder(USER_ID, "another-user-id-456");
+        }
     }
 
     // ============================================================================

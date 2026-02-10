@@ -158,24 +158,33 @@ public class EventSeriesServiceImpl implements EventSeriesService {
                 newHangout.getHangoutId(),
                 newHangout.getTitle()
             );
+            newPointer.setStatus("ACTIVE");
             newPointer.setSeriesId(seriesId);
+            newPointer.setDescription(newHangout.getDescription());
             newPointer.setTimeInput(newHangout.getTimeInput());
-            newPointer.setMainImagePath(newHangout.getMainImagePath()); // Denormalize image path
+            newPointer.setMainImagePath(newHangout.getMainImagePath());
+            newPointer.setVisibility(newHangout.getVisibility());
+            newPointer.setCarpoolEnabled(newHangout.isCarpoolEnabled());
+            newPointer.setHostAtPlaceUserId(newHangout.getHostAtPlaceUserId());
+            newPointer.setExternalId(newHangout.getExternalId());
+            newPointer.setExternalSource(newHangout.getExternalSource());
+            newPointer.setIsGeneratedTitle(newHangout.getIsGeneratedTitle());
             // Copy timestamps from hangout if available
             if (newHangout.getStartTimestamp() != null) {
                 newPointer.setStartTimestamp(newHangout.getStartTimestamp());
                 newPointer.setEndTimestamp(newHangout.getEndTimestamp());
+                newPointer.setGsi1sk(String.valueOf(newHangout.getStartTimestamp()));
             }
             if (newHangout.getLocation() != null) {
                 newPointer.setLocation(newHangout.getLocation());
             }
-            
+
             // Set GSI1PK for the pointer (required for EntityTimeIndex)
             newPointer.setGsi1pk(InviterKeyFactory.getGroupPk(groupId));
-            
+
             newPointers.add(newPointer);
         }
-        
+
         // Update existing hangout with series ID
         existingHangout.setSeriesId(seriesId);
         
@@ -282,24 +291,33 @@ public class EventSeriesServiceImpl implements EventSeriesService {
                 newHangout.getHangoutId(),
                 newHangout.getTitle()
             );
+            newPointer.setStatus("ACTIVE");
             newPointer.setSeriesId(seriesId);
+            newPointer.setDescription(newHangout.getDescription());
             newPointer.setTimeInput(newHangout.getTimeInput());
-            newPointer.setMainImagePath(newHangout.getMainImagePath()); // Denormalize image path
+            newPointer.setMainImagePath(newHangout.getMainImagePath());
+            newPointer.setVisibility(newHangout.getVisibility());
+            newPointer.setCarpoolEnabled(newHangout.isCarpoolEnabled());
+            newPointer.setHostAtPlaceUserId(newHangout.getHostAtPlaceUserId());
+            newPointer.setExternalId(newHangout.getExternalId());
+            newPointer.setExternalSource(newHangout.getExternalSource());
+            newPointer.setIsGeneratedTitle(newHangout.getIsGeneratedTitle());
             // Copy timestamps from hangout if available
             if (newHangout.getStartTimestamp() != null) {
                 newPointer.setStartTimestamp(newHangout.getStartTimestamp());
                 newPointer.setEndTimestamp(newHangout.getEndTimestamp());
+                newPointer.setGsi1sk(String.valueOf(newHangout.getStartTimestamp()));
             }
             if (newHangout.getLocation() != null) {
                 newPointer.setLocation(newHangout.getLocation());
             }
-            
+
             // Set GSI1PK for the pointer (required for EntityTimeIndex)
             newPointer.setGsi1pk(InviterKeyFactory.getGroupPk(groupId));
-            
+
             newPointers.add(newPointer);
         }
-        
+
         // Create updated SeriesPointers for all groups
         // We need to update all SeriesPointers to include the new hangout ID
         // Since SeriesPointers are denormalized, we create updated versions with the new hangout added

@@ -176,9 +176,14 @@ class EventSeriesServiceImplTest {
         capturedNewPointers.forEach(pointer -> {
             assertThat(pointer.getSeriesId()).isEqualTo(capturedSeries.getSeriesId());
             assertThat(pointer.getHangoutId()).isEqualTo(capturedNewHangout.getHangoutId());
+            // Verify denormalized fields are populated
+            assertThat(pointer.getStatus()).isEqualTo("ACTIVE");
+            assertThat(pointer.getDescription()).isEqualTo(capturedNewHangout.getDescription());
+            assertThat(pointer.getVisibility()).isEqualTo(capturedNewHangout.getVisibility());
+            assertThat(pointer.isCarpoolEnabled()).isEqualTo(capturedNewHangout.isCarpoolEnabled());
         });
     }
-    
+
     @Test
     void convertToSeriesWithNewMember_HangoutNotFound() {
         // Given
@@ -378,9 +383,17 @@ class EventSeriesServiceImplTest {
         capturedNewPointers.forEach(pointer -> {
             assertThat(pointer.getSeriesId()).isEqualTo(seriesId);
             assertThat(pointer.getHangoutId()).isEqualTo(capturedNewHangout.getHangoutId());
+            // Verify denormalized fields are populated
+            assertThat(pointer.getStatus()).isEqualTo("ACTIVE");
+            assertThat(pointer.getVisibility()).isEqualTo(capturedNewHangout.getVisibility());
+            assertThat(pointer.isCarpoolEnabled()).isEqualTo(capturedNewHangout.isCarpoolEnabled());
+            // Verify gsi1sk is set when startTimestamp is present
+            if (capturedNewHangout.getStartTimestamp() != null) {
+                assertThat(pointer.getGsi1sk()).isEqualTo(String.valueOf(capturedNewHangout.getStartTimestamp()));
+            }
         });
     }
-    
+
     @Test
     void createHangoutInExistingSeries_SeriesNotFound() {
         // Given
@@ -3053,5 +3066,137 @@ class EventSeriesServiceImplTest {
 
         // Verify groupTimestampService is NEVER called on failure
         verify(groupTimestampService, never()).updateGroupTimestamps(any());
+    }
+
+    // ============================================================================
+    // HangoutPointer Denormalization Tests
+    // ============================================================================
+
+    @Test
+    void convertToSeriesWithNewMember_PointersHaveGsi1skWhenTimestampPresent() {
+        // Given
+        String existingHangoutId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        CreateHangoutRequest newMemberRequest = new CreateHangoutRequest();
+        newMemberRequest.setTitle("New Member Hangout");
+        String group1Id = UUID.randomUUID().toString();
+        String group2Id = UUID.randomUUID().toString();
+        newMemberRequest.setAssociatedGroups(Arrays.asList(group1Id, group2Id));
+
+        Long startTimestamp = 1735689600L; // January 1, 2025, 00:00 UTC
+
+        Hangout existingHangout = HangoutTestBuilder.aHangout()
+            .withId(existingHangoutId)
+            .withTitle("Movie Night")
+            .withGroups(group1Id, group2Id)
+            .withStartTimestamp(startTimestamp)
+            .build();
+
+        List<HangoutPointer> existingPointers = Arrays.asList(
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(group1Id)
+                .forHangout(existingHangoutId)
+                .build(),
+            HangoutPointerTestBuilder.aPointer()
+                .forGroup(group2Id)
+                .forHangout(existingHangoutId)
+                .build()
+        );
+
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+
+        Hangout newHangout = HangoutTestBuilder.aHangout()
+            .withTitle("New Member Hangout")
+            .withGroups(group1Id, group2Id)
+            .withStartTimestamp(startTimestamp + 86400L) // Next day
+            .build();
+
+        when(hangoutRepository.findHangoutById(existingHangoutId))
+            .thenReturn(Optional.of(existingHangout));
+        when(hangoutRepository.findPointersForHangout(existingHangout))
+            .thenReturn(existingPointers);
+        when(userRepository.findById(userId))
+            .thenReturn(Optional.of(user));
+        when(hangoutService.hangoutFromHangoutRequest(newMemberRequest, userId))
+            .thenReturn(newHangout);
+
+        // When
+        eventSeriesService.convertToSeriesWithNewMember(existingHangoutId, newMemberRequest, userId);
+
+        // Then - Verify all new HangoutPointers have gsi1sk set to String.valueOf(startTimestamp)
+        ArgumentCaptor<List<HangoutPointer>> newPointersCaptor = ArgumentCaptor.forClass(List.class);
+
+        verify(seriesTransactionRepository).createSeriesWithNewPart(
+            any(EventSeries.class),
+            any(Hangout.class),
+            any(List.class),
+            any(Hangout.class),
+            newPointersCaptor.capture(),
+            any(List.class)
+        );
+
+        List<HangoutPointer> capturedNewPointers = newPointersCaptor.getValue();
+        assertThat(capturedNewPointers).isNotEmpty();
+        capturedNewPointers.forEach(pointer -> {
+            assertThat(pointer.getGsi1sk())
+                .as("HangoutPointer gsi1sk for group %s", pointer.getGroupId())
+                .isNotNull()
+                .isEqualTo(String.valueOf(newHangout.getStartTimestamp()));
+        });
+    }
+
+    @Test
+    void createHangoutInExistingSeries_PointerHasStatusActive() {
+        // Given
+        String seriesId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        CreateHangoutRequest newMemberRequest = new CreateHangoutRequest();
+        newMemberRequest.setTitle("New Event");
+        String group1Id = UUID.randomUUID().toString();
+        String group2Id = UUID.randomUUID().toString();
+        newMemberRequest.setAssociatedGroups(Arrays.asList(group1Id, group2Id));
+
+        EventSeries existingSeries = new EventSeries();
+        existingSeries.setSeriesId(seriesId);
+        String existingHangoutId = UUID.randomUUID().toString();
+        existingSeries.setHangoutIds(new ArrayList<>(Arrays.asList(existingHangoutId)));
+
+        User user = new User();
+        user.setId(UUID.fromString(userId));
+
+        Hangout newHangout = new Hangout();
+        newHangout.setHangoutId(UUID.randomUUID().toString());
+        newHangout.setTitle("New Event");
+        newHangout.setAssociatedGroups(Arrays.asList(group1Id, group2Id));
+        newHangout.setStartTimestamp(System.currentTimeMillis() / 1000);
+
+        when(eventSeriesRepository.findById(seriesId))
+            .thenReturn(Optional.of(existingSeries));
+        when(userRepository.findById(userId))
+            .thenReturn(Optional.of(user));
+        when(hangoutService.hangoutFromHangoutRequest(newMemberRequest, userId))
+            .thenReturn(newHangout);
+
+        // When
+        eventSeriesService.createHangoutInExistingSeries(seriesId, newMemberRequest, userId);
+
+        // Then - Verify all new HangoutPointers have status="ACTIVE"
+        ArgumentCaptor<List<HangoutPointer>> newPointersCaptor = ArgumentCaptor.forClass(List.class);
+
+        verify(seriesTransactionRepository).addPartToExistingSeries(
+            any(String.class),
+            any(Hangout.class),
+            newPointersCaptor.capture(),
+            any(List.class)
+        );
+
+        List<HangoutPointer> capturedNewPointers = newPointersCaptor.getValue();
+        assertThat(capturedNewPointers).hasSize(2);
+        capturedNewPointers.forEach(pointer -> {
+            assertThat(pointer.getStatus())
+                .as("HangoutPointer status for group %s", pointer.getGroupId())
+                .isEqualTo("ACTIVE");
+        });
     }
 }

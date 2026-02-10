@@ -1,5 +1,6 @@
 package com.bbthechange.inviter.service.impl;
 
+import com.bbthechange.inviter.dto.TimeInfo;
 import com.bbthechange.inviter.dto.watchparty.sqs.EpisodeData;
 import com.bbthechange.inviter.dto.watchparty.sqs.NewEpisodeMessage;
 import com.bbthechange.inviter.dto.watchparty.sqs.RemoveEpisodeMessage;
@@ -100,11 +101,19 @@ class WatchPartyBackgroundServiceImplTest {
         service.processNewEpisode(message);
 
         // Then
+        ArgumentCaptor<HangoutPointer> pointerCaptor = ArgumentCaptor.forClass(HangoutPointer.class);
         verify(hangoutRepository).save(any(Hangout.class));
-        verify(groupRepository).saveHangoutPointer(any(HangoutPointer.class));
+        verify(groupRepository).saveHangoutPointer(pointerCaptor.capture());
         verify(eventSeriesRepository).save(any(EventSeries.class));
         verify(groupTimestampService).updateGroupTimestamps(anyList());
         verify(meterRegistry).counter("watchparty_background_total", "action", "new_episode", "status", "success");
+
+        // Verify pointer has all required fields
+        HangoutPointer savedPointer = pointerCaptor.getValue();
+        assertEquals("ACTIVE", savedPointer.getStatus());
+        assertNotNull(savedPointer.getTimeInput());
+        assertNotNull(savedPointer.getTimeInput().getStartTime());
+        assertNotNull(savedPointer.getTimeInput().getEndTime());
     }
 
     @Test
@@ -157,6 +166,41 @@ class WatchPartyBackgroundServiceImplTest {
         verify(meterRegistry).counter("watchparty_background_total", "action", "new_episode", "status", "invalid_key");
     }
 
+    @Test
+    void processNewEpisode_HangoutHasTimeInput() {
+        // Given
+        EpisodeData episode = new EpisodeData(456, "Drag Queens For Change", 1705363200L);
+        episode.setRuntime(90);
+
+        NewEpisodeMessage message = new NewEpisodeMessage("TVMAZE#SHOW#123|SEASON#1", episode);
+
+        EventSeries series = new EventSeries("RuPaul Season 18", null, "c8c3f5d4-5e8b-4c2a-a9f2-b3c2d1e4f5a6");
+        series.setDefaultTime("20:00");
+        series.setTimezone("America/New_York");
+        series.setHangoutIds(new ArrayList<>());
+
+        when(eventSeriesRepository.findAllByExternalIdAndSource("123", "TVMAZE"))
+                .thenReturn(List.of(series));
+
+        // When
+        service.processNewEpisode(message);
+
+        // Then - Verify the Hangout created has timeInput populated with ISO-8601 strings
+        ArgumentCaptor<Hangout> hangoutCaptor = ArgumentCaptor.forClass(Hangout.class);
+        verify(hangoutRepository).save(hangoutCaptor.capture());
+
+        Hangout savedHangout = hangoutCaptor.getValue();
+        assertNotNull(savedHangout.getTimeInput(), "Hangout should have timeInput set");
+        assertNotNull(savedHangout.getTimeInput().getStartTime(), "timeInput.startTime should be set");
+        assertNotNull(savedHangout.getTimeInput().getEndTime(), "timeInput.endTime should be set");
+
+        // Verify ISO-8601 format
+        assertTrue(savedHangout.getTimeInput().getStartTime().contains("T"),
+                "startTime should be ISO-8601 format");
+        assertTrue(savedHangout.getTimeInput().getEndTime().contains("T"),
+                "endTime should be ISO-8601 format");
+    }
+
     // ============================================================================
     // processUpdateTitle Tests
     // ============================================================================
@@ -166,13 +210,19 @@ class WatchPartyBackgroundServiceImplTest {
         // Given
         UpdateTitleMessage message = new UpdateTitleMessage("456", "New Episode Title");
 
+        TimeInfo timeInfo = new TimeInfo();
+        timeInfo.setStartTime("2025-02-14T20:00:00-05:00");
+        timeInfo.setEndTime("2025-02-14T21:00:00-05:00");
+
         Hangout hangout = new Hangout();
         hangout.setHangoutId("a1b2c3d4-e5f6-47c8-9d1e-2f3a4b5c6d7e");
         hangout.setTitle("Old Title");
         hangout.setIsGeneratedTitle(true);
         hangout.setTitleNotificationSent(false);
         hangout.setStartTimestamp(System.currentTimeMillis() / 1000 + 3600); // Future hangout
+        hangout.setEndTimestamp(System.currentTimeMillis() / 1000 + 7200);
         hangout.setAssociatedGroups(List.of("c8c3f5d4-5e8b-4c2a-a9f2-b3c2d1e4f5a6"));
+        hangout.setTimeInput(timeInfo);
 
         when(hangoutRepository.findAllByExternalIdAndSource("456", "TVMAZE"))
                 .thenReturn(List.of(hangout));
@@ -188,7 +238,16 @@ class WatchPartyBackgroundServiceImplTest {
         assertEquals("New Episode Title", savedHangout.getTitle());
         assertTrue(savedHangout.getTitleNotificationSent());
 
-        verify(groupRepository).saveHangoutPointer(any(HangoutPointer.class));
+        ArgumentCaptor<HangoutPointer> pointerCaptor = ArgumentCaptor.forClass(HangoutPointer.class);
+        verify(groupRepository).saveHangoutPointer(pointerCaptor.capture());
+
+        // Verify pointer has status, timeInput, and location
+        HangoutPointer savedPointer = pointerCaptor.getValue();
+        assertEquals("ACTIVE", savedPointer.getStatus());
+        assertNotNull(savedPointer.getTimeInput());
+        assertNotNull(savedPointer.getTimeInput().getStartTime());
+        assertNotNull(savedPointer.getTimeInput().getEndTime());
+
         verify(meterRegistry).counter("watchparty_background_total", "action", "update_title", "status", "success");
     }
 
@@ -397,5 +456,122 @@ class WatchPartyBackgroundServiceImplTest {
 
         // Then
         verify(notificationService).notifyWatchPartyUpdate(anySet(), eq("d7e8f9a0-b1c2-43d4-a5f6-7c8d9e0f1a2b"), contains("cancelled"));
+    }
+
+    // ============================================================================
+    // processNewEpisode Pointer Denormalization Tests
+    // ============================================================================
+
+    @Test
+    void processNewEpisode_WithNullTimezone_SkipsTimeInfoCreation() {
+        // Given
+        EpisodeData episode = new EpisodeData(456, "Pilot", 1705363200L);
+        episode.setRuntime(60);
+
+        NewEpisodeMessage message = new NewEpisodeMessage("TVMAZE#SHOW#123|SEASON#1", episode);
+
+        EventSeries series = new EventSeries("Test Show Season 1", null, "c8c3f5d4-5e8b-4c2a-a9f2-b3c2d1e4f5a6");
+        series.setDefaultTime("20:00");
+        series.setTimezone(null); // Null timezone
+        series.setHangoutIds(new ArrayList<>());
+
+        when(eventSeriesRepository.findAllByExternalIdAndSource("123", "TVMAZE"))
+                .thenReturn(List.of(series));
+
+        // When
+        service.processNewEpisode(message);
+
+        // Then - Hangout is saved but timeInput is null (graceful fallback)
+        ArgumentCaptor<Hangout> hangoutCaptor = ArgumentCaptor.forClass(Hangout.class);
+        verify(hangoutRepository).save(hangoutCaptor.capture());
+
+        Hangout savedHangout = hangoutCaptor.getValue();
+        assertNull(savedHangout.getTimeInput(), "Hangout timeInput should be null when timezone is null");
+
+        // Verify HangoutPointer's timeInput is also null
+        ArgumentCaptor<HangoutPointer> pointerCaptor = ArgumentCaptor.forClass(HangoutPointer.class);
+        verify(groupRepository).saveHangoutPointer(pointerCaptor.capture());
+
+        HangoutPointer savedPointer = pointerCaptor.getValue();
+        assertNull(savedPointer.getTimeInput(), "HangoutPointer timeInput should be null when timezone is null");
+        assertEquals("ACTIVE", savedPointer.getStatus(), "HangoutPointer status should still be ACTIVE");
+    }
+
+    @Test
+    void processNewEpisode_PointerHasCorrectGsi1sk() {
+        // Given
+        EpisodeData episode = new EpisodeData(456, "Pilot", 1705363200L);
+        episode.setRuntime(60);
+
+        NewEpisodeMessage message = new NewEpisodeMessage("TVMAZE#SHOW#123|SEASON#1", episode);
+
+        EventSeries series = new EventSeries("Test Show Season 1", null, "c8c3f5d4-5e8b-4c2a-a9f2-b3c2d1e4f5a6");
+        series.setDefaultTime("20:00");
+        series.setTimezone("America/New_York");
+        series.setHangoutIds(new ArrayList<>());
+
+        when(eventSeriesRepository.findAllByExternalIdAndSource("123", "TVMAZE"))
+                .thenReturn(List.of(series));
+
+        // When
+        service.processNewEpisode(message);
+
+        // Then - Verify gsi1sk is a valid numeric string (not "null")
+        ArgumentCaptor<Hangout> hangoutCaptor = ArgumentCaptor.forClass(Hangout.class);
+        verify(hangoutRepository).save(hangoutCaptor.capture());
+
+        ArgumentCaptor<HangoutPointer> pointerCaptor = ArgumentCaptor.forClass(HangoutPointer.class);
+        verify(groupRepository).saveHangoutPointer(pointerCaptor.capture());
+
+        Hangout savedHangout = hangoutCaptor.getValue();
+        HangoutPointer savedPointer = pointerCaptor.getValue();
+
+        assertNotNull(savedPointer.getGsi1sk(), "HangoutPointer gsi1sk should not be null");
+        assertNotEquals("null", savedPointer.getGsi1sk(), "HangoutPointer gsi1sk should not be the string 'null'");
+
+        // gsi1sk should match the hangout's startTimestamp
+        assertEquals(String.valueOf(savedHangout.getStartTimestamp()), savedPointer.getGsi1sk(),
+                "HangoutPointer gsi1sk should match hangout startTimestamp");
+    }
+
+    // ============================================================================
+    // processUpdateTitle Pointer Denormalization Tests
+    // ============================================================================
+
+    @Test
+    void processUpdateTitle_PointerPreservesExistingTimeInput() {
+        // Given
+        UpdateTitleMessage message = new UpdateTitleMessage("456", "New Episode Title");
+
+        TimeInfo timeInfo = new TimeInfo();
+        timeInfo.setStartTime("2025-02-14T20:00:00-05:00");
+        timeInfo.setEndTime("2025-02-14T21:00:00-05:00");
+
+        Hangout hangout = new Hangout();
+        hangout.setHangoutId("a1b2c3d4-e5f6-47c8-9d1e-2f3a4b5c6d7e");
+        hangout.setTitle("Old Title");
+        hangout.setIsGeneratedTitle(true);
+        hangout.setTitleNotificationSent(false);
+        hangout.setStartTimestamp(System.currentTimeMillis() / 1000 + 3600); // Future hangout
+        hangout.setEndTimestamp(System.currentTimeMillis() / 1000 + 7200);
+        hangout.setAssociatedGroups(List.of("c8c3f5d4-5e8b-4c2a-a9f2-b3c2d1e4f5a6"));
+        hangout.setTimeInput(timeInfo);
+
+        when(hangoutRepository.findAllByExternalIdAndSource("456", "TVMAZE"))
+                .thenReturn(List.of(hangout));
+
+        // When
+        service.processUpdateTitle(message);
+
+        // Then - Verify the saved HangoutPointer has the same timeInput as the hangout
+        ArgumentCaptor<HangoutPointer> pointerCaptor = ArgumentCaptor.forClass(HangoutPointer.class);
+        verify(groupRepository).saveHangoutPointer(pointerCaptor.capture());
+
+        HangoutPointer savedPointer = pointerCaptor.getValue();
+        assertNotNull(savedPointer.getTimeInput(), "Pointer timeInput should not be null");
+        assertEquals("2025-02-14T20:00:00-05:00", savedPointer.getTimeInput().getStartTime(),
+                "Pointer timeInput.startTime should match hangout's value");
+        assertEquals("2025-02-14T21:00:00-05:00", savedPointer.getTimeInput().getEndTime(),
+                "Pointer timeInput.endTime should match hangout's value");
     }
 }

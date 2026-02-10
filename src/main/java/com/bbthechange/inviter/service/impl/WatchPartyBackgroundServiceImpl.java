@@ -1,5 +1,6 @@
 package com.bbthechange.inviter.service.impl;
 
+import com.bbthechange.inviter.dto.TimeInfo;
 import com.bbthechange.inviter.dto.watchparty.sqs.*;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.*;
@@ -330,6 +331,17 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
 
             hangout.setStartTimestamp(startTimestamp);
             hangout.setEndTimestamp(endTimestamp);
+
+            // Set TimeInfo with ISO-8601 formatted times (matches WatchPartyServiceImpl pattern)
+            if (series.getTimezone() != null) {
+                TimeInfo timeInfo = new TimeInfo();
+                ZoneId zone = ZoneId.of(series.getTimezone());
+                ZonedDateTime startZdt = Instant.ofEpochSecond(startTimestamp).atZone(zone);
+                ZonedDateTime endZdt = Instant.ofEpochSecond(endTimestamp).atZone(zone);
+                timeInfo.setStartTime(startZdt.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+                timeInfo.setEndTime(endZdt.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+                hangout.setTimeInput(timeInfo);
+            }
         }
 
         // Combined episodes
@@ -355,6 +367,7 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
     private HangoutPointer createHangoutPointer(Hangout hangout, String groupId) {
         HangoutPointer pointer = new HangoutPointer(groupId, hangout.getHangoutId(), hangout.getTitle());
 
+        pointer.setStatus("ACTIVE");
         pointer.setDescription(hangout.getDescription());
         pointer.setStartTimestamp(hangout.getStartTimestamp());
         pointer.setEndTimestamp(hangout.getEndTimestamp());
@@ -364,12 +377,17 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
         pointer.setCarpoolEnabled(hangout.isCarpoolEnabled());
         pointer.setHostAtPlaceUserId(hangout.getHostAtPlaceUserId());
 
+        pointer.setTimeInput(hangout.getTimeInput());
+        pointer.setLocation(hangout.getLocation());
+
         pointer.setExternalId(hangout.getExternalId());
         pointer.setExternalSource(hangout.getExternalSource());
         pointer.setIsGeneratedTitle(hangout.getIsGeneratedTitle());
 
         pointer.setGsi1pk(InviterKeyFactory.getGroupPk(groupId));
-        pointer.setGsi1sk(String.valueOf(hangout.getStartTimestamp()));
+        if (hangout.getStartTimestamp() != null) {
+            pointer.setGsi1sk(String.valueOf(hangout.getStartTimestamp()));
+        }
 
         return pointer;
     }

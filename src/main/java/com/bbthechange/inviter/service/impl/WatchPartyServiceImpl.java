@@ -419,8 +419,48 @@ public class WatchPartyServiceImpl implements WatchPartyService {
         // 9. Save series
         eventSeriesRepository.save(series);
 
-        // 10. Update series pointer
-        SeriesPointer seriesPointer = SeriesPointer.fromEventSeries(series, groupId);
+        // 10. Update series pointer (preserve existing parts and interestLevels)
+        Optional<SeriesPointer> existingPointerOpt = groupRepository.findSeriesPointer(groupId, seriesId);
+        SeriesPointer seriesPointer;
+        if (existingPointerOpt.isPresent()) {
+            seriesPointer = existingPointerOpt.get();
+            // Update mutable fields from series
+            seriesPointer.setSeriesTitle(series.getSeriesTitle());
+            seriesPointer.setSeriesDescription(series.getSeriesDescription());
+            seriesPointer.setStartTimestamp(series.getStartTimestamp());
+            seriesPointer.setEndTimestamp(series.getEndTimestamp());
+            seriesPointer.setHangoutIds(series.getHangoutIds() != null ? new ArrayList<>(series.getHangoutIds()) : new ArrayList<>());
+            seriesPointer.setDefaultTime(series.getDefaultTime());
+            seriesPointer.setDayOverride(series.getDayOverride());
+            seriesPointer.setTimezone(series.getTimezone());
+            seriesPointer.setDefaultHostId(series.getDefaultHostId());
+            seriesPointer.setMainImagePath(series.getMainImagePath());
+
+            // Update parts for any hangouts that were modified in the cascade loop
+            if (seriesPointer.getParts() != null && shouldCascade && (timeSettingsChanged || hostChanged)) {
+                for (int i = 0; i < seriesPointer.getParts().size(); i++) {
+                    HangoutPointer part = seriesPointer.getParts().get(i);
+                    String partHangoutId = part.getHangoutId();
+                    // Re-fetch the pointer that was saved during the cascade
+                    if (partHangoutId != null) {
+                        Optional<Hangout> updatedHangoutOpt = hangoutRepository.findHangoutById(partHangoutId);
+                        if (updatedHangoutOpt.isPresent()) {
+                            Hangout updatedHangout = updatedHangoutOpt.get();
+                            part.setTitle(updatedHangout.getTitle());
+                            part.setStartTimestamp(updatedHangout.getStartTimestamp());
+                            part.setEndTimestamp(updatedHangout.getEndTimestamp());
+                            part.setTimeInput(updatedHangout.getTimeInput());
+                            part.setHostAtPlaceUserId(updatedHangout.getHostAtPlaceUserId());
+                            part.setGsi1sk(String.valueOf(updatedHangout.getStartTimestamp()));
+                        }
+                    }
+                }
+            }
+        } else {
+            logger.warn("SeriesPointer not found for series {} in group {}, creating new (parts/interestLevels will be empty)",
+                    seriesId, groupId);
+            seriesPointer = SeriesPointer.fromEventSeries(series, groupId);
+        }
         seriesPointer.setGsi1sk(String.valueOf(series.getStartTimestamp()));
         groupRepository.saveSeriesPointer(seriesPointer);
 
