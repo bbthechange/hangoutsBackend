@@ -16,14 +16,18 @@ Models:
 □ Pointer records + denorm comment
 □ SeriesPointer static methods
 
+For Hangout attributes specifically:
+□ Add to HangoutPointerFactory.applyHangoutFields()
+  (This is the ONLY place — all creation and update sites pick it up automatically)
+
 DTOs:
 □ Request DTOs + hasUpdates()
 □ Response DTOs + all constructors
 □ Feed DTOs (HangoutSummary, SeriesSummary)
 
 Service:
-□ Create: denormalize to pointers
-□ Update: check changed, propagate
+□ Create: denormalize to pointers (for Hangout: handled by HangoutPointerFactory)
+□ Update: check changed, propagate (for Hangout: handled by HangoutPointerFactory)
 □ Add member: denormalize current values
 □ Feed population methods
 
@@ -92,6 +96,11 @@ public void setNewAttribute(String newAttribute) {
 
 1. **HangoutPointer.java** - Group feed display, denormalized from Hangout
    - Add field with getter/setter
+   - **CRITICAL**: Add to `HangoutPointerFactory.applyHangoutFields()`:
+     ```java
+     pointer.setNewAttribute(hangout.getNewAttribute()); // ADD THIS
+     ```
+     This single change propagates to all 9+ pointer creation and update sites automatically.
 
 2. **SeriesPointer.java** - Group feed display, denormalized from EventSeries
    - Add field with getter/setter
@@ -223,13 +232,13 @@ public EntityDTO createEntity(CreateEntityRequest request, String userId) {
 
 **Example from HangoutServiceImpl.createHangout()**:
 ```java
-// When creating HangoutPointer records
+// HangoutPointer creation is centralized in HangoutPointerFactory.
+// All Hangout fields are automatically denormalized — no manual field-setting needed.
 for (String groupId : request.getAssociatedGroups()) {
-    HangoutPointer pointer = new HangoutPointer(groupId, hangout.getHangoutId(), hangout.getTitle());
-    pointer.setStatus("ACTIVE");
-    pointer.setMainImagePath(hangout.getMainImagePath()); // Denormalize
+    HangoutPointer pointer = HangoutPointerFactory.fromHangout(hangout, groupId);
     pointers.add(pointer);
 }
+// To add a new field: just add it to HangoutPointerFactory.applyHangoutFields()
 ```
 
 ### Pattern 2: Entity Update with Denormalization
@@ -349,9 +358,9 @@ newSeries.setSeriesTitle(existingHangout.getTitle());
 newSeries.setPrimaryEventId(existingHangoutId);
 newSeries.setMainImagePath(existingHangout.getMainImagePath()); // Copy from primary
 
-// When creating HangoutPointers for series parts
-newPointer.setSeriesId(seriesId);
-newPointer.setMainImagePath(newHangout.getMainImagePath()); // Denormalize
+// HangoutPointers for series parts use the centralized factory:
+HangoutPointer newPointer = HangoutPointerFactory.fromHangout(newHangout, groupId);
+// seriesId is already set on newHangout before this call, so it's automatically copied
 ```
 
 **Files to Update:**

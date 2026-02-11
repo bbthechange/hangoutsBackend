@@ -72,6 +72,9 @@ class WatchPartyServiceImplTest {
     @Mock
     private TvMazeClient tvMazeClient;
 
+    @Mock
+    private PointerUpdateService pointerUpdateService;
+
     @InjectMocks
     private WatchPartyServiceImpl watchPartyService;
 
@@ -803,8 +806,9 @@ class WatchPartyServiceImplTest {
             Hangout savedHangout = hangoutCaptor.getValue();
             assertThat(savedHangout.getHangoutId()).isEqualTo(HANGOUT_ID);
 
-            // Verify pointer was updated
-            verify(groupRepository).saveHangoutPointer(any(HangoutPointer.class));
+            // Verify pointer was updated via upsert (preserves collections)
+            verify(pointerUpdateService).upsertPointerWithRetry(
+                eq(GROUP_ID), eq(HANGOUT_ID), any(Hangout.class), any(), eq("watch party cascade"));
 
             // Verify series was saved
             verify(eventSeriesRepository).save(any(EventSeries.class));
@@ -836,7 +840,8 @@ class WatchPartyServiceImplTest {
             verify(hangoutRepository, never()).save(any(Hangout.class));
 
             // Verify pointer was NOT updated
-            verify(groupRepository, never()).saveHangoutPointer(any(HangoutPointer.class));
+            verify(pointerUpdateService, never()).upsertPointerWithRetry(
+                anyString(), anyString(), any(Hangout.class), any(), anyString());
 
             // Series still saved with new settings
             verify(eventSeriesRepository).save(any(EventSeries.class));
@@ -1732,7 +1737,7 @@ class WatchPartyServiceImplTest {
         }
 
         @Test
-        void updateHangoutPointer_setsStatusToActive() {
+        void updateHangoutPointer_usesUpsertToPreserveCollections() {
             // Given
             UpdateWatchPartyRequest request = UpdateWatchPartyRequest.builder()
                     .defaultHostId(DEFAULT_HOST_ID)
@@ -1746,76 +1751,9 @@ class WatchPartyServiceImplTest {
             // When
             watchPartyService.updateWatchParty(GROUP_ID, SERIES_ID, request, USER_ID);
 
-            // Then - Verify pointer has status="ACTIVE"
-            ArgumentCaptor<HangoutPointer> pointerCaptor = ArgumentCaptor.forClass(HangoutPointer.class);
-            verify(groupRepository).saveHangoutPointer(pointerCaptor.capture());
-            HangoutPointer savedPointer = pointerCaptor.getValue();
-
-            assertThat(savedPointer.getStatus()).isEqualTo("ACTIVE");
-        }
-
-        @Test
-        void updateHangoutPointer_copiesTimeInput() {
-            // Given - Set up hangout with TimeInfo
-            TimeInfo originalTimeInfo = new TimeInfo();
-            originalTimeInfo.setStartTime("2024-03-15T20:00:00-05:00");
-            originalTimeInfo.setEndTime("2024-03-15T21:00:00-05:00");
-            testHangout.setTimeInput(originalTimeInfo);
-
-            UpdateWatchPartyRequest request = UpdateWatchPartyRequest.builder()
-                    .defaultHostId(DEFAULT_HOST_ID)
-                    .changeExistingUpcomingHangouts(true)
-                    .build();
-
-            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
-            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
-            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(testHangout));
-
-            // When
-            watchPartyService.updateWatchParty(GROUP_ID, SERIES_ID, request, USER_ID);
-
-            // Then - Verify pointer has same timeInput as hangout
-            ArgumentCaptor<HangoutPointer> pointerCaptor = ArgumentCaptor.forClass(HangoutPointer.class);
-            verify(groupRepository).saveHangoutPointer(pointerCaptor.capture());
-            HangoutPointer savedPointer = pointerCaptor.getValue();
-
-            assertThat(savedPointer.getTimeInput()).isNotNull();
-            assertThat(savedPointer.getTimeInput().getStartTime())
-                    .isEqualTo(originalTimeInfo.getStartTime());
-            assertThat(savedPointer.getTimeInput().getEndTime())
-                    .isEqualTo(originalTimeInfo.getEndTime());
-        }
-
-        @Test
-        void updateHangoutPointer_copiesLocation() {
-            // Given - Set up hangout with location
-            com.bbthechange.inviter.dto.Address location = new com.bbthechange.inviter.dto.Address();
-            location.setName("Test Location");
-            location.setStreetAddress("123 Main St");
-            location.setCity("Chicago");
-            location.setState("IL");
-            testHangout.setLocation(location);
-
-            UpdateWatchPartyRequest request = UpdateWatchPartyRequest.builder()
-                    .defaultHostId(DEFAULT_HOST_ID)
-                    .changeExistingUpcomingHangouts(true)
-                    .build();
-
-            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
-            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
-            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(testHangout));
-
-            // When
-            watchPartyService.updateWatchParty(GROUP_ID, SERIES_ID, request, USER_ID);
-
-            // Then - Verify pointer has same location as hangout
-            ArgumentCaptor<HangoutPointer> pointerCaptor = ArgumentCaptor.forClass(HangoutPointer.class);
-            verify(groupRepository).saveHangoutPointer(pointerCaptor.capture());
-            HangoutPointer savedPointer = pointerCaptor.getValue();
-
-            assertThat(savedPointer.getLocation()).isNotNull();
-            assertThat(savedPointer.getLocation().getName()).isEqualTo("Test Location");
-            assertThat(savedPointer.getLocation().getStreetAddress()).isEqualTo("123 Main St");
+            // Then - Verify pointer update uses upsert (read-modify-write) instead of PutItem
+            verify(pointerUpdateService).upsertPointerWithRetry(
+                eq(GROUP_ID), eq(HANGOUT_ID), eq(testHangout), any(), eq("watch party cascade"));
         }
     }
 

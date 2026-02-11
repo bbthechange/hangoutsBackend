@@ -1,7 +1,9 @@
 package com.bbthechange.inviter.service.impl;
 
+import com.bbthechange.inviter.model.Hangout;
 import com.bbthechange.inviter.model.HangoutPointer;
 import com.bbthechange.inviter.repository.GroupRepository;
+import com.bbthechange.inviter.util.HangoutPointerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -105,6 +107,70 @@ public class PointerUpdateService {
                 logger.error("Failed to update pointer {} for group {} and hangout {}: {}",
                     updateType, groupId, hangoutId, e.getMessage());
                 // Continue with other pointers even if one fails
+                return;
+            }
+        }
+    }
+
+    /**
+     * Update an existing pointer, or create one if it doesn't exist.
+     * Use this when the caller cannot guarantee the pointer already exists
+     * (e.g., background jobs, cascade updates from watch party edits).
+     *
+     * @param groupId The group ID
+     * @param hangoutId The hangout ID
+     * @param hangout The canonical Hangout record (used for creation fallback)
+     * @param updateFunction The function that applies updates to the pointer
+     * @param updateType Description of what's being updated (for logging)
+     */
+    public void upsertPointerWithRetry(String groupId, String hangoutId,
+                                        Hangout hangout,
+                                        Consumer<HangoutPointer> updateFunction,
+                                        String updateType) {
+        int attempt = 0;
+        long delayMs = INITIAL_RETRY_DELAY_MS;
+
+        while (attempt < MAX_RETRY_ATTEMPTS) {
+            try {
+                HangoutPointer pointer = groupRepository.findHangoutPointer(groupId, hangoutId)
+                    .orElse(null);
+
+                if (pointer == null) {
+                    logger.info("Pointer not found for group {} and hangout {} during {} -- creating via upsert",
+                        groupId, hangoutId, updateType);
+                    pointer = HangoutPointerFactory.fromHangout(hangout, groupId);
+                }
+
+                updateFunction.accept(pointer);
+                groupRepository.saveHangoutPointer(pointer);
+
+                logger.debug("Upserted {} on pointer for group {} and hangout {} (attempt {})",
+                    updateType, groupId, hangoutId, attempt + 1);
+                return;
+
+            } catch (ConditionalCheckFailedException e) {
+                attempt++;
+                if (attempt >= MAX_RETRY_ATTEMPTS) {
+                    logger.error("Failed to upsert pointer {} for group {} and hangout {} after {} attempts",
+                        updateType, groupId, hangoutId, MAX_RETRY_ATTEMPTS);
+                    return;
+                }
+
+                logger.debug("Version conflict upserting pointer {} for group {} and hangout {}, retrying (attempt {})",
+                    updateType, groupId, hangoutId, attempt);
+
+                try {
+                    Thread.sleep(delayMs);
+                    delayMs = (long) (delayMs * RETRY_BACKOFF_MULTIPLIER);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    logger.warn("Interrupted during retry backoff for pointer upsert");
+                    return;
+                }
+
+            } catch (Exception e) {
+                logger.error("Failed to upsert pointer {} for group {} and hangout {}: {}",
+                    updateType, groupId, hangoutId, e.getMessage());
                 return;
             }
         }

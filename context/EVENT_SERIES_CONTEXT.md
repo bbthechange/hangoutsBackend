@@ -20,6 +20,7 @@ Event Series are multi-part events, where a single conceptual event (the series)
 | `SeriesTransactionRepository.java` | A specialized repository responsible for executing large, atomic `TransactWriteItems` operations that span series, hangouts, and pointers. |
 | `EventSeries.java` | The `@DynamoDbBean` for the canonical series record. Contains mainImagePath typically copied from the primary hangout. |
 | `SeriesPointer.java` | The `@DynamoDbBean` for the denormalized series pointer record. Contains a list of `HangoutPointer` objects and mainImagePath denormalized from EventSeries. |
+| `HangoutPointerFactory.java` | Centralized factory for creating HangoutPointer records for series parts via `fromHangout()`. |
 | `CreateSeriesRequest.java` | DTO for creating a new series from an existing hangout. |
 | `EventSeriesDetailDTO.java` | DTO that aggregates a series and the full `HangoutDetailDTO` for each of its parts. |
 
@@ -38,7 +39,7 @@ This is the primary method for creating a series.
     *   **In-Memory Preparation:** It constructs all the necessary records before writing to the database:
         1.  A new `EventSeries` canonical record with mainImagePath copied from the primary hangout.
         2.  A new `Hangout` canonical record for the second part.
-        3.  New `HangoutPointer` records for the new hangout with denormalized data (title, timeInfo, mainImagePath, location, timestamps).
+        3.  New `HangoutPointer` records via `HangoutPointerFactory.fromHangout()` (automatically copies all denormalized fields).
         4.  A new `SeriesPointer` record for the group feed.
     *   **Updates Existing Records:** It modifies the existing `Hangout` and its `HangoutPointer`s to link them to the new `seriesId`.
 4.  **Repository:** `SeriesTransactionRepository.createSeriesWithNewPart()`:
@@ -64,7 +65,7 @@ This is the primary method for creating a series.
 
 1.  **Endpoint:** `POST /series/{seriesId}/hangouts`
 2.  **Service:** `EventSeriesServiceImpl.createHangoutInExistingSeries()`:
-    *   Similar to creation, it prepares a new `Hangout`, its `HangoutPointer`s, and an updated `SeriesPointer` in memory.
+    *   Similar to creation, it prepares a new `Hangout`, its `HangoutPointer`s (via `HangoutPointerFactory.fromHangout()`), and an updated `SeriesPointer` in memory.
 3.  **Repository:** `SeriesTransactionRepository.addPartToExistingSeries()`:
     *   Atomically updates the `EventSeries` (to add the new `hangoutId`), and puts the new `Hangout`, `HangoutPointer`s, and updated `SeriesPointer`.
 

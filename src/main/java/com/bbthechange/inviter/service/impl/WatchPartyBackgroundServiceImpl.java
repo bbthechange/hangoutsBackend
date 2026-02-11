@@ -7,6 +7,7 @@ import com.bbthechange.inviter.repository.*;
 import com.bbthechange.inviter.service.GroupTimestampService;
 import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.WatchPartyBackgroundService;
+import com.bbthechange.inviter.util.HangoutPointerFactory;
 import com.bbthechange.inviter.util.InviterKeyFactory;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
@@ -40,6 +41,7 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
     private final GroupTimestampService groupTimestampService;
     private final NotificationService notificationService;
     private final MeterRegistry meterRegistry;
+    private final PointerUpdateService pointerUpdateService;
 
     public WatchPartyBackgroundServiceImpl(
             EventSeriesRepository eventSeriesRepository,
@@ -48,7 +50,8 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
             SeasonRepository seasonRepository,
             GroupTimestampService groupTimestampService,
             NotificationService notificationService,
-            MeterRegistry meterRegistry) {
+            MeterRegistry meterRegistry,
+            PointerUpdateService pointerUpdateService) {
         this.eventSeriesRepository = eventSeriesRepository;
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
@@ -56,6 +59,7 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
         this.groupTimestampService = groupTimestampService;
         this.notificationService = notificationService;
         this.meterRegistry = meterRegistry;
+        this.pointerUpdateService = pointerUpdateService;
     }
 
     @Override
@@ -97,7 +101,7 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
 
                 // Create hangout for this series
                 Hangout hangout = createHangoutFromEpisode(series, episode);
-                HangoutPointer pointer = createHangoutPointer(hangout, series.getGroupId());
+                HangoutPointer pointer = HangoutPointerFactory.fromHangout(hangout, series.getGroupId());
 
                 // Save records
                 hangoutRepository.save(hangout);
@@ -191,13 +195,17 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
                 // Update HangoutPointer
                 if (hangout.getAssociatedGroups() != null) {
                     for (String groupId : hangout.getAssociatedGroups()) {
-                        HangoutPointer updatedPointer = createHangoutPointer(hangout, groupId);
-                        groupRepository.saveHangoutPointer(updatedPointer);
+                        pointerUpdateService.upsertPointerWithRetry(groupId, hangout.getHangoutId(), hangout,
+                            p -> HangoutPointerFactory.applyHangoutFields(p, hangout),
+                            "title update");
                         groupsToUpdate.add(groupId);
 
                         // Update the corresponding part in SeriesPointer.parts
                         if (hangout.getSeriesId() != null) {
-                            updateHangoutInSeriesPointer(groupId, hangout.getSeriesId(), updatedPointer);
+                            // Re-fetch the pointer for SeriesPointer update
+                            groupRepository.findHangoutPointer(groupId, hangout.getHangoutId())
+                                .ifPresent(updatedPointer ->
+                                    updateHangoutInSeriesPointer(groupId, hangout.getSeriesId(), updatedPointer));
                         }
                     }
                 }
@@ -376,37 +384,10 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
         return hangout;
     }
 
-    private HangoutPointer createHangoutPointer(Hangout hangout, String groupId) {
-        HangoutPointer pointer = new HangoutPointer(groupId, hangout.getHangoutId(), hangout.getTitle());
-
-        pointer.setStatus("ACTIVE");
-        pointer.setDescription(hangout.getDescription());
-        pointer.setStartTimestamp(hangout.getStartTimestamp());
-        pointer.setEndTimestamp(hangout.getEndTimestamp());
-        pointer.setVisibility(hangout.getVisibility());
-        pointer.setSeriesId(hangout.getSeriesId());
-        pointer.setMainImagePath(hangout.getMainImagePath());
-        pointer.setCarpoolEnabled(hangout.isCarpoolEnabled());
-        pointer.setHostAtPlaceUserId(hangout.getHostAtPlaceUserId());
-
-        pointer.setTimeInput(hangout.getTimeInput());
-        pointer.setLocation(hangout.getLocation());
-
-        pointer.setExternalId(hangout.getExternalId());
-        pointer.setExternalSource(hangout.getExternalSource());
-        pointer.setIsGeneratedTitle(hangout.getIsGeneratedTitle());
-
-        pointer.setGsi1pk(InviterKeyFactory.getGroupPk(groupId));
-        if (hangout.getStartTimestamp() != null) {
-            pointer.setGsi1sk(String.valueOf(hangout.getStartTimestamp()));
-        }
-
-        return pointer;
-    }
-
     private void updateHangoutPointer(Hangout hangout, String groupId) {
-        HangoutPointer pointer = createHangoutPointer(hangout, groupId);
-        groupRepository.saveHangoutPointer(pointer);
+        pointerUpdateService.upsertPointerWithRetry(groupId, hangout.getHangoutId(), hangout,
+            pointer -> HangoutPointerFactory.applyHangoutFields(pointer, hangout),
+            "background update");
     }
 
     private void updateSeriesTimestamps(EventSeries series, Hangout hangout) {

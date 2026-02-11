@@ -59,6 +59,9 @@ class WatchPartyBackgroundServiceImplTest {
     private MeterRegistry meterRegistry;
 
     @Mock
+    private PointerUpdateService pointerUpdateService;
+
+    @Mock
     private Counter counter;
 
     private WatchPartyBackgroundServiceImpl service;
@@ -73,7 +76,8 @@ class WatchPartyBackgroundServiceImplTest {
                 seasonRepository,
                 groupTimestampService,
                 notificationService,
-                meterRegistry
+                meterRegistry,
+                pointerUpdateService
         );
     }
 
@@ -214,6 +218,8 @@ class WatchPartyBackgroundServiceImplTest {
         timeInfo.setStartTime("2025-02-14T20:00:00-05:00");
         timeInfo.setEndTime("2025-02-14T21:00:00-05:00");
 
+        String groupId = "c8c3f5d4-5e8b-4c2a-a9f2-b3c2d1e4f5a6";
+
         Hangout hangout = new Hangout();
         hangout.setHangoutId("a1b2c3d4-e5f6-47c8-9d1e-2f3a4b5c6d7e");
         hangout.setTitle("Old Title");
@@ -221,7 +227,7 @@ class WatchPartyBackgroundServiceImplTest {
         hangout.setTitleNotificationSent(false);
         hangout.setStartTimestamp(System.currentTimeMillis() / 1000 + 3600); // Future hangout
         hangout.setEndTimestamp(System.currentTimeMillis() / 1000 + 7200);
-        hangout.setAssociatedGroups(List.of("c8c3f5d4-5e8b-4c2a-a9f2-b3c2d1e4f5a6"));
+        hangout.setAssociatedGroups(List.of(groupId));
         hangout.setTimeInput(timeInfo);
 
         when(hangoutRepository.findAllByExternalIdAndSource("456", "TVMAZE"))
@@ -238,15 +244,9 @@ class WatchPartyBackgroundServiceImplTest {
         assertEquals("New Episode Title", savedHangout.getTitle());
         assertTrue(savedHangout.getTitleNotificationSent());
 
-        ArgumentCaptor<HangoutPointer> pointerCaptor = ArgumentCaptor.forClass(HangoutPointer.class);
-        verify(groupRepository).saveHangoutPointer(pointerCaptor.capture());
-
-        // Verify pointer has status, timeInput, and location
-        HangoutPointer savedPointer = pointerCaptor.getValue();
-        assertEquals("ACTIVE", savedPointer.getStatus());
-        assertNotNull(savedPointer.getTimeInput());
-        assertNotNull(savedPointer.getTimeInput().getStartTime());
-        assertNotNull(savedPointer.getTimeInput().getEndTime());
+        // Verify pointer update uses upsert (read-modify-write) instead of PutItem
+        verify(pointerUpdateService).upsertPointerWithRetry(
+            eq(groupId), eq(hangout.getHangoutId()), eq(hangout), any(), eq("title update"));
 
         verify(meterRegistry).counter("watchparty_background_total", "action", "update_title", "status", "success");
     }
@@ -572,7 +572,7 @@ class WatchPartyBackgroundServiceImplTest {
     // ============================================================================
 
     @Test
-    void processUpdateTitle_PointerPreservesExistingTimeInput() {
+    void processUpdateTitle_PointerUsesUpsertInsteadOfPutItem() {
         // Given
         UpdateTitleMessage message = new UpdateTitleMessage("456", "New Episode Title");
 
@@ -580,14 +580,17 @@ class WatchPartyBackgroundServiceImplTest {
         timeInfo.setStartTime("2025-02-14T20:00:00-05:00");
         timeInfo.setEndTime("2025-02-14T21:00:00-05:00");
 
+        String groupId = "c8c3f5d4-5e8b-4c2a-a9f2-b3c2d1e4f5a6";
+        String hangoutId = "a1b2c3d4-e5f6-47c8-9d1e-2f3a4b5c6d7e";
+
         Hangout hangout = new Hangout();
-        hangout.setHangoutId("a1b2c3d4-e5f6-47c8-9d1e-2f3a4b5c6d7e");
+        hangout.setHangoutId(hangoutId);
         hangout.setTitle("Old Title");
         hangout.setIsGeneratedTitle(true);
         hangout.setTitleNotificationSent(false);
         hangout.setStartTimestamp(System.currentTimeMillis() / 1000 + 3600); // Future hangout
         hangout.setEndTimestamp(System.currentTimeMillis() / 1000 + 7200);
-        hangout.setAssociatedGroups(List.of("c8c3f5d4-5e8b-4c2a-a9f2-b3c2d1e4f5a6"));
+        hangout.setAssociatedGroups(List.of(groupId));
         hangout.setTimeInput(timeInfo);
 
         when(hangoutRepository.findAllByExternalIdAndSource("456", "TVMAZE"))
@@ -596,16 +599,11 @@ class WatchPartyBackgroundServiceImplTest {
         // When
         service.processUpdateTitle(message);
 
-        // Then - Verify the saved HangoutPointer has the same timeInput as the hangout
-        ArgumentCaptor<HangoutPointer> pointerCaptor = ArgumentCaptor.forClass(HangoutPointer.class);
-        verify(groupRepository).saveHangoutPointer(pointerCaptor.capture());
-
-        HangoutPointer savedPointer = pointerCaptor.getValue();
-        assertNotNull(savedPointer.getTimeInput(), "Pointer timeInput should not be null");
-        assertEquals("2025-02-14T20:00:00-05:00", savedPointer.getTimeInput().getStartTime(),
-                "Pointer timeInput.startTime should match hangout's value");
-        assertEquals("2025-02-14T21:00:00-05:00", savedPointer.getTimeInput().getEndTime(),
-                "Pointer timeInput.endTime should match hangout's value");
+        // Then - Verify upsert is used (preserves collections) instead of PutItem (which wipes them)
+        verify(pointerUpdateService).upsertPointerWithRetry(
+            eq(groupId), eq(hangoutId), eq(hangout), any(), eq("title update"));
+        // Direct saveHangoutPointer should NOT be called for title updates
+        verify(groupRepository, never()).saveHangoutPointer(any(HangoutPointer.class));
     }
 
     @Test
@@ -653,6 +651,11 @@ class WatchPartyBackgroundServiceImplTest {
         when(hangoutRepository.findAllByExternalIdAndSource("456", "TVMAZE"))
                 .thenReturn(List.of(hangout));
 
+        // Create a HangoutPointer returned by findHangoutPointer after upsert
+        HangoutPointer updatedPointer = new HangoutPointer(groupId, hangoutId, "New Episode Title");
+        when(groupRepository.findHangoutPointer(groupId, hangoutId))
+                .thenReturn(Optional.of(updatedPointer));
+
         // Create a SeriesPointer with a parts list containing one HangoutPointer
         SeriesPointer seriesPointer = new SeriesPointer();
         HangoutPointer existingPart = new HangoutPointer(groupId, hangoutId, "Old Title");
@@ -667,10 +670,9 @@ class WatchPartyBackgroundServiceImplTest {
         // Then - hangout IS saved
         verify(hangoutRepository).save(any(Hangout.class));
 
-        // HangoutPointer IS updated with new title
-        ArgumentCaptor<HangoutPointer> pointerCaptor = ArgumentCaptor.forClass(HangoutPointer.class);
-        verify(groupRepository).saveHangoutPointer(pointerCaptor.capture());
-        assertEquals("New Episode Title", pointerCaptor.getValue().getTitle());
+        // HangoutPointer IS updated via upsert (not direct PutItem)
+        verify(pointerUpdateService).upsertPointerWithRetry(
+            eq(groupId), eq(hangoutId), eq(hangout), any(), eq("title update"));
 
         // SeriesPointer IS saved (denormalized parts updated)
         verify(groupRepository).saveSeriesPointer(any(SeriesPointer.class));

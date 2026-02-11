@@ -11,6 +11,7 @@ import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.*;
 import com.bbthechange.inviter.service.GroupTimestampService;
 import com.bbthechange.inviter.service.WatchPartyService;
+import com.bbthechange.inviter.util.HangoutPointerFactory;
 import com.bbthechange.inviter.util.InviterKeyFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,6 +43,7 @@ public class WatchPartyServiceImpl implements WatchPartyService {
     private final UserRepository userRepository;
     private final GroupTimestampService groupTimestampService;
     private final TvMazeClient tvMazeClient;
+    private final PointerUpdateService pointerUpdateService;
 
     @Autowired
     public WatchPartyServiceImpl(
@@ -51,7 +53,8 @@ public class WatchPartyServiceImpl implements WatchPartyService {
             SeasonRepository seasonRepository,
             UserRepository userRepository,
             GroupTimestampService groupTimestampService,
-            TvMazeClient tvMazeClient) {
+            TvMazeClient tvMazeClient,
+            PointerUpdateService pointerUpdateService) {
         this.groupRepository = groupRepository;
         this.hangoutRepository = hangoutRepository;
         this.eventSeriesRepository = eventSeriesRepository;
@@ -59,6 +62,7 @@ public class WatchPartyServiceImpl implements WatchPartyService {
         this.userRepository = userRepository;
         this.groupTimestampService = groupTimestampService;
         this.tvMazeClient = tvMazeClient;
+        this.pointerUpdateService = pointerUpdateService;
     }
 
     @Override
@@ -847,37 +851,7 @@ public class WatchPartyServiceImpl implements WatchPartyService {
     }
 
     private HangoutPointer createHangoutPointer(Hangout hangout, String groupId) {
-        HangoutPointer pointer = new HangoutPointer(groupId, hangout.getHangoutId(), hangout.getTitle());
-
-        // CRITICAL: Set status (required for frontend)
-        pointer.setStatus("ACTIVE");
-
-        // Denormalize fields from hangout
-        pointer.setDescription(hangout.getDescription());
-        pointer.setStartTimestamp(hangout.getStartTimestamp());
-        pointer.setEndTimestamp(hangout.getEndTimestamp());
-        pointer.setVisibility(hangout.getVisibility());
-        pointer.setSeriesId(hangout.getSeriesId());
-        pointer.setMainImagePath(hangout.getMainImagePath());
-        pointer.setCarpoolEnabled(hangout.isCarpoolEnabled());
-        pointer.setHostAtPlaceUserId(hangout.getHostAtPlaceUserId());
-
-        // CRITICAL: Copy timeInput for API response (required for frontend)
-        pointer.setTimeInput(hangout.getTimeInput());
-
-        // Copy location (will be null for watch parties, but explicit for consistency)
-        pointer.setLocation(hangout.getLocation());
-
-        // External source fields
-        pointer.setExternalId(hangout.getExternalId());
-        pointer.setExternalSource(hangout.getExternalSource());
-        pointer.setIsGeneratedTitle(hangout.getIsGeneratedTitle());
-
-        // GSI keys for EntityTimeIndex
-        pointer.setGsi1pk(InviterKeyFactory.getGroupPk(groupId));
-        pointer.setGsi1sk(String.valueOf(hangout.getStartTimestamp()));
-
-        return pointer;
+        return HangoutPointerFactory.fromHangout(hangout, groupId);
     }
 
     private void saveAllRecords(Season season, EventSeries eventSeries,
@@ -999,37 +973,9 @@ public class WatchPartyServiceImpl implements WatchPartyService {
      * @param groupId The group the hangout belongs to
      */
     private void updateHangoutPointer(Hangout hangout, String groupId) {
-        HangoutPointer pointer = new HangoutPointer(groupId, hangout.getHangoutId(), hangout.getTitle());
-
-        // CRITICAL: Set status (required for frontend)
-        pointer.setStatus("ACTIVE");
-
-        // Denormalize fields from hangout
-        pointer.setDescription(hangout.getDescription());
-        pointer.setStartTimestamp(hangout.getStartTimestamp());
-        pointer.setEndTimestamp(hangout.getEndTimestamp());
-        pointer.setVisibility(hangout.getVisibility());
-        pointer.setSeriesId(hangout.getSeriesId());
-        pointer.setMainImagePath(hangout.getMainImagePath());
-        pointer.setCarpoolEnabled(hangout.isCarpoolEnabled());
-        pointer.setHostAtPlaceUserId(hangout.getHostAtPlaceUserId());
-
-        // CRITICAL: Copy timeInput for API response (required for frontend)
-        pointer.setTimeInput(hangout.getTimeInput());
-
-        // Copy location (will be null for watch parties, but explicit for consistency)
-        pointer.setLocation(hangout.getLocation());
-
-        // External source fields
-        pointer.setExternalId(hangout.getExternalId());
-        pointer.setExternalSource(hangout.getExternalSource());
-        pointer.setIsGeneratedTitle(hangout.getIsGeneratedTitle());
-
-        // GSI keys for EntityTimeIndex
-        pointer.setGsi1pk(InviterKeyFactory.getGroupPk(groupId));
-        pointer.setGsi1sk(String.valueOf(hangout.getStartTimestamp()));
-
-        groupRepository.saveHangoutPointer(pointer);
+        pointerUpdateService.upsertPointerWithRetry(groupId, hangout.getHangoutId(), hangout,
+            pointer -> HangoutPointerFactory.applyHangoutFields(pointer, hangout),
+            "watch party cascade");
     }
 
     // ============================================================================

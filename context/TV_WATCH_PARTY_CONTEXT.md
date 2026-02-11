@@ -33,6 +33,8 @@ TV Watch Party allows users to schedule a series of hangouts for a TV season. Th
 | `TvMazePollingServiceImpl.java` | Polls TVMaze API for show updates |
 | `WatchPartyHostCheckService.java` | Validates host user IDs |
 | `TvMazeClient.java` | HTTP client for TVMaze API with retry logic |
+| `HangoutPointerFactory.java` | Centralized factory for creating/updating HangoutPointer records (shared with HangoutService, EventSeriesService) |
+| `PointerUpdateService.java` | Optimistic-locking retry logic for pointer updates, including `upsertPointerWithRetry()` |
 
 ### Models
 
@@ -269,9 +271,9 @@ EventBridge (2hr) ──▶ trigger-poll endpoint ──▶ TvMazePollingService
 
 **SHOW_UPDATED:** Emitted by polling when TVMaze reports a tracked show changed. Triggers fetch of latest episodes and comparison.
 
-**NEW_EPISODE:** Emitted when new episode detected. Creates hangouts for all groups watching the season.
+**NEW_EPISODE:** Emitted when new episode detected. Creates hangouts for all groups watching the season. Pointers are created via `HangoutPointerFactory.fromHangout()`.
 
-**UPDATE_TITLE:** Emitted when episode title changes. Updates hangouts where `isGeneratedTitle=true`. Only sends push notifications if `titleNotificationSent=false`.
+**UPDATE_TITLE:** Emitted when episode title changes. Updates hangouts where `isGeneratedTitle=true`. Pointers are updated via `PointerUpdateService.upsertPointerWithRetry()` with `HangoutPointerFactory.applyHangoutFields()`, which preserves existing collections (polls, votes, cars, etc.). Only sends push notifications if `titleNotificationSent=false`.
 
 **REMOVE_EPISODE:** Emitted when episode removed from TVMaze. Deletes hangouts and notifies users.
 

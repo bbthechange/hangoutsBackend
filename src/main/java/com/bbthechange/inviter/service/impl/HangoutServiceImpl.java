@@ -14,6 +14,7 @@ import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.exception.*;
 import com.bbthechange.inviter.util.HangoutDataTransformer;
+import com.bbthechange.inviter.util.HangoutPointerFactory;
 import com.bbthechange.inviter.exception.RepositoryException;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -80,44 +81,7 @@ public class HangoutServiceImpl implements HangoutService {
         List<HangoutPointer> pointers = new ArrayList<>();
         if (request.getAssociatedGroups() != null) {
             for (String groupId : request.getAssociatedGroups()) {
-                HangoutPointer pointer = new HangoutPointer(groupId, hangout.getHangoutId(), hangout.getTitle());
-                pointer.setStatus("ACTIVE");
-                pointer.setLocation(hangout.getLocation());
-                pointer.setParticipantCount(0);
-
-                // *** CRITICAL: Denormalize ALL time information ***
-                pointer.setTimeInput(hangout.getTimeInput());           // For API response
-                pointer.setGsi1pk("GROUP#" + groupId);                  // GSI primary key
-                pointer.setStartTimestamp(hangout.getStartTimestamp()); // GSI sort key
-                pointer.setEndTimestamp(hangout.getEndTimestamp());     // For completeness
-
-                // Denormalize image path
-                pointer.setMainImagePath(hangout.getMainImagePath());
-
-                // Denormalize basic hangout fields
-                pointer.setDescription(hangout.getDescription());
-                pointer.setVisibility(hangout.getVisibility());
-                pointer.setCarpoolEnabled(hangout.isCarpoolEnabled());
-
-                // Denormalize ticket-related fields
-                pointer.setTicketLink(hangout.getTicketLink());
-                pointer.setTicketsRequired(hangout.getTicketsRequired());
-                pointer.setDiscountCode(hangout.getDiscountCode());
-
-                // Denormalize external source fields
-                pointer.setExternalId(hangout.getExternalId());
-                pointer.setExternalSource(hangout.getExternalSource());
-                pointer.setIsGeneratedTitle(hangout.getIsGeneratedTitle());
-
-                // Denormalize host at place field
-                pointer.setHostAtPlaceUserId(hangout.getHostAtPlaceUserId());
-
-                // NEW: Initialize empty collections (already done in constructor, but explicit here)
-                // polls, pollOptions, votes, cars, carRiders, needsRide are initialized in HangoutPointer()
-
-                // NEW: Add attributes created with the hangout (will be set after pointer is saved)
-                // Note: attributes will be added after transaction completes
-
+                HangoutPointer pointer = HangoutPointerFactory.fromHangout(hangout, groupId);
                 pointers.add(pointer);
             }
         }
@@ -720,36 +684,20 @@ public class HangoutServiceImpl implements HangoutService {
         
         // Create hangout pointer records
         for (String groupId : groupIds) {
-            HangoutPointer pointer = new HangoutPointer(groupId, eventId, hangout.getTitle());
-            pointer.setStatus("ACTIVE"); // Default status
-            pointer.setLocation(hangout.getLocation());
-            pointer.setParticipantCount(0); // Will be updated as people respond
+            HangoutPointer pointer = HangoutPointerFactory.fromHangout(hangout, groupId);
 
-            // Set GSI fields for EntityTimeIndex
-            pointer.setGsi1pk("GROUP#" + groupId);
+            // Override timestamps via fuzzyTimeService (defensive -- hangout may have
+            // stale timestamps for relative time inputs like "this Saturday")
             if (hangout.getTimeInput() != null) {
-                pointer.setTimeInput(hangout.getTimeInput());
                 FuzzyTimeService.TimeConversionResult timeResult = fuzzyTimeService.convert(hangout.getTimeInput());
                 pointer.setStartTimestamp(timeResult.startTimestamp);
                 pointer.setEndTimestamp(timeResult.endTimestamp);
+                if (timeResult.startTimestamp != null) {
+                    pointer.setGsi1sk(String.valueOf(timeResult.startTimestamp));
+                }
             }
 
-            // Denormalize basic hangout fields (Phase 2 - denormalization plan)
-            pointer.setDescription(hangout.getDescription());
-            pointer.setVisibility(hangout.getVisibility());
-            pointer.setCarpoolEnabled(hangout.isCarpoolEnabled());
-            pointer.setMainImagePath(hangout.getMainImagePath());
-
-            // Denormalize external source fields
-            pointer.setExternalId(hangout.getExternalId());
-            pointer.setExternalSource(hangout.getExternalSource());
-            pointer.setIsGeneratedTitle(hangout.getIsGeneratedTitle());
-
-            // Denormalize host at place field
-            pointer.setHostAtPlaceUserId(hangout.getHostAtPlaceUserId());
-
-            // Denormalize existing polls, votes, attributes, and interest levels
-            // Get all existing data from hangout detail
+            // Copy existing collections from canonical records
             HangoutDetailData detailData = hangoutRepository.getHangoutDetailData(eventId);
             pointer.setPolls(detailData.getPolls());
             pointer.setPollOptions(detailData.getPollOptions());
@@ -814,33 +762,9 @@ public class HangoutServiceImpl implements HangoutService {
 
         // Update each group's pointer with optimistic locking retry
         for (String groupId : associatedGroups) {
-            pointerUpdateService.updatePointerWithRetry(groupId, hangout.getHangoutId(), pointer -> {
-                // Update all basic fields from canonical hangout
-                pointer.setTitle(hangout.getTitle());
-                pointer.setDescription(hangout.getDescription());
-                pointer.setLocation(hangout.getLocation());
-                pointer.setVisibility(hangout.getVisibility());
-                pointer.setMainImagePath(hangout.getMainImagePath());
-                pointer.setCarpoolEnabled(hangout.isCarpoolEnabled());
-
-                // Update time fields
-                pointer.setTimeInput(hangout.getTimeInput());
-                pointer.setStartTimestamp(hangout.getStartTimestamp());
-                pointer.setEndTimestamp(hangout.getEndTimestamp());
-
-                // Update ticket coordination fields
-                pointer.setTicketLink(hangout.getTicketLink());
-                pointer.setTicketsRequired(hangout.getTicketsRequired());
-                pointer.setDiscountCode(hangout.getDiscountCode());
-
-                // Update external source fields
-                pointer.setExternalId(hangout.getExternalId());
-                pointer.setExternalSource(hangout.getExternalSource());
-                pointer.setIsGeneratedTitle(hangout.getIsGeneratedTitle());
-
-                // Update host at place field
-                pointer.setHostAtPlaceUserId(hangout.getHostAtPlaceUserId());
-            }, "basic fields");
+            pointerUpdateService.updatePointerWithRetry(groupId, hangout.getHangoutId(),
+                pointer -> HangoutPointerFactory.applyHangoutFields(pointer, hangout),
+                "basic fields");
         }
     }
 
@@ -1296,43 +1220,17 @@ public class HangoutServiceImpl implements HangoutService {
         // Update each group's pointer with ALL denormalized data
         for (String groupId : associatedGroups) {
             pointerUpdateService.updatePointerWithRetry(groupId, hangoutId, pointer -> {
-                // Update basic fields
-                pointer.setTitle(hangout.getTitle());
-                pointer.setDescription(hangout.getDescription());
-                pointer.setLocation(hangout.getLocation());
-                pointer.setVisibility(hangout.getVisibility());
-                pointer.setMainImagePath(hangout.getMainImagePath());
-                pointer.setCarpoolEnabled(hangout.isCarpoolEnabled());
+                HangoutPointerFactory.applyHangoutFields(pointer, hangout);
 
-                // Update time fields
-                pointer.setTimeInput(hangout.getTimeInput());
-                pointer.setStartTimestamp(hangout.getStartTimestamp());
-                pointer.setEndTimestamp(hangout.getEndTimestamp());
-                pointer.setSeriesId(hangout.getSeriesId());
-
-                // Update poll data
+                // Collections from canonical records (not from Hangout)
                 pointer.setPolls(new ArrayList<>(detailData.getPolls()));
                 pointer.setPollOptions(new ArrayList<>(detailData.getPollOptions()));
                 pointer.setVotes(new ArrayList<>(detailData.getVotes()));
-
-                // Update carpool data
                 pointer.setCars(new ArrayList<>(detailData.getCars()));
                 pointer.setCarRiders(new ArrayList<>(detailData.getCarRiders()));
                 pointer.setNeedsRide(new ArrayList<>(detailData.getNeedsRide()));
-
-                // Update attributes
                 pointer.setAttributes(new ArrayList<>(attributes));
-
-                // Update interest levels
                 pointer.setInterestLevels(new ArrayList<>(detailData.getAttendance()));
-
-                // Update external source fields
-                pointer.setExternalId(hangout.getExternalId());
-                pointer.setExternalSource(hangout.getExternalSource());
-                pointer.setIsGeneratedTitle(hangout.getIsGeneratedTitle());
-
-                // Update host at place field
-                pointer.setHostAtPlaceUserId(hangout.getHostAtPlaceUserId());
             }, "complete resync");
         }
 

@@ -21,6 +21,7 @@ import com.bbthechange.inviter.exception.ValidationException;
 import com.bbthechange.inviter.service.HangoutService;
 import com.bbthechange.inviter.service.FuzzyTimeService;
 import com.bbthechange.inviter.service.GroupTimestampService;
+import com.bbthechange.inviter.util.HangoutPointerFactory;
 import com.bbthechange.inviter.util.InviterKeyFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -153,35 +154,7 @@ public class EventSeriesServiceImpl implements EventSeriesService {
         // Create new HangoutPointers for each group (one per associated group)
         List<HangoutPointer> newPointers = new ArrayList<>();
         for (String groupId : newHangout.getAssociatedGroups()) {
-            HangoutPointer newPointer = new HangoutPointer(
-                groupId,
-                newHangout.getHangoutId(),
-                newHangout.getTitle()
-            );
-            newPointer.setStatus("ACTIVE");
-            newPointer.setSeriesId(seriesId);
-            newPointer.setDescription(newHangout.getDescription());
-            newPointer.setTimeInput(newHangout.getTimeInput());
-            newPointer.setMainImagePath(newHangout.getMainImagePath());
-            newPointer.setVisibility(newHangout.getVisibility());
-            newPointer.setCarpoolEnabled(newHangout.isCarpoolEnabled());
-            newPointer.setHostAtPlaceUserId(newHangout.getHostAtPlaceUserId());
-            newPointer.setExternalId(newHangout.getExternalId());
-            newPointer.setExternalSource(newHangout.getExternalSource());
-            newPointer.setIsGeneratedTitle(newHangout.getIsGeneratedTitle());
-            // Copy timestamps from hangout if available
-            if (newHangout.getStartTimestamp() != null) {
-                newPointer.setStartTimestamp(newHangout.getStartTimestamp());
-                newPointer.setEndTimestamp(newHangout.getEndTimestamp());
-                newPointer.setGsi1sk(String.valueOf(newHangout.getStartTimestamp()));
-            }
-            if (newHangout.getLocation() != null) {
-                newPointer.setLocation(newHangout.getLocation());
-            }
-
-            // Set GSI1PK for the pointer (required for EntityTimeIndex)
-            newPointer.setGsi1pk(InviterKeyFactory.getGroupPk(groupId));
-
+            HangoutPointer newPointer = HangoutPointerFactory.fromHangout(newHangout, groupId);
             newPointers.add(newPointer);
         }
 
@@ -286,35 +259,7 @@ public class EventSeriesServiceImpl implements EventSeriesService {
         // Create new HangoutPointers for each group (one per associated group)
         List<HangoutPointer> newPointers = new ArrayList<>();
         for (String groupId : newHangout.getAssociatedGroups()) {
-            HangoutPointer newPointer = new HangoutPointer(
-                groupId,
-                newHangout.getHangoutId(),
-                newHangout.getTitle()
-            );
-            newPointer.setStatus("ACTIVE");
-            newPointer.setSeriesId(seriesId);
-            newPointer.setDescription(newHangout.getDescription());
-            newPointer.setTimeInput(newHangout.getTimeInput());
-            newPointer.setMainImagePath(newHangout.getMainImagePath());
-            newPointer.setVisibility(newHangout.getVisibility());
-            newPointer.setCarpoolEnabled(newHangout.isCarpoolEnabled());
-            newPointer.setHostAtPlaceUserId(newHangout.getHostAtPlaceUserId());
-            newPointer.setExternalId(newHangout.getExternalId());
-            newPointer.setExternalSource(newHangout.getExternalSource());
-            newPointer.setIsGeneratedTitle(newHangout.getIsGeneratedTitle());
-            // Copy timestamps from hangout if available
-            if (newHangout.getStartTimestamp() != null) {
-                newPointer.setStartTimestamp(newHangout.getStartTimestamp());
-                newPointer.setEndTimestamp(newHangout.getEndTimestamp());
-                newPointer.setGsi1sk(String.valueOf(newHangout.getStartTimestamp()));
-            }
-            if (newHangout.getLocation() != null) {
-                newPointer.setLocation(newHangout.getLocation());
-            }
-
-            // Set GSI1PK for the pointer (required for EntityTimeIndex)
-            newPointer.setGsi1pk(InviterKeyFactory.getGroupPk(groupId));
-
+            HangoutPointer newPointer = HangoutPointerFactory.fromHangout(newHangout, groupId);
             newPointers.add(newPointer);
         }
 

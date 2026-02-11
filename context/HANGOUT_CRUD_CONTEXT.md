@@ -18,6 +18,8 @@ The Hangout feature is the core of the application, allowing users to create, vi
 | `HangoutRepositoryImpl.java` | Handles all DynamoDB interactions for hangouts and their related entities (polls, cars, etc.). |
 | `Hangout.java` | The `@DynamoDbBean` for the canonical hangout record. Contains an optional `seriesId`. |
 | `HangoutPointer.java` | The `@DynamoDbBean` for the denormalized hangout pointer record. Also contains an optional `seriesId`. |
+| `HangoutPointerFactory.java` | **Centralized factory** for creating and updating HangoutPointer records. All Hangout→HangoutPointer field copying is defined here. See [HangoutPointerFactory](#hangoutpointerfactory) section. |
+| `PointerUpdateService.java` | Handles optimistic-locking retries for pointer updates, including `upsertPointerWithRetry()` for update-or-create semantics. |
 | `CreateHangoutRequest.java` | DTO for creating a new hangout. |
 | `UpdateHangoutRequest.java` | DTO for updating an existing hangout. |
 | `HangoutDetailDTO.java` | DTO that aggregates all data for a hangout's detail view. |
@@ -30,8 +32,8 @@ The Hangout feature is the core of the application, allowing users to create, vi
 2.  **Controller:** `HangoutController.createHangout()` receives a `CreateHangoutRequest`.
 3.  **Service:** `HangoutServiceImpl.createHangout()`:
     *   Creates a `Hangout` (canonical) entity from the request.
-    *   For each associated group, it creates a corresponding `HangoutPointer` entity.
-    *   **CRITICAL:** It denormalizes necessary data (title, time info, location, mainImagePath, GSI keys) from the `Hangout` to the `HangoutPointer`.
+    *   For each associated group, it creates a `HangoutPointer` via `HangoutPointerFactory.fromHangout(hangout, groupId)`.
+    *   The factory copies all denormalized fields (title, timestamps, timeInfo, location, mainImagePath, visibility, ticket fields, GSI keys, etc.) automatically.
 4.  **Repository:** `HangoutRepositoryImpl.createHangoutWithAttributes()`:
     *   Executes a `TransactWriteItems` operation to save the `Hangout` record and all `HangoutPointer` records atomically.
 
@@ -49,7 +51,7 @@ The Hangout feature is the core of the application, allowing users to create, vi
 1.  **Endpoint:** `PATCH /hangouts/{hangoutId}`
 2.  **Service:** `HangoutServiceImpl.updateHangout()`:
     *   **Rule: Canonical First:** It first loads and modifies the canonical `Hangout` record and saves it.
-    *   **Rule: Pointers Second:** It then determines which fields have changed (e.g., `title`, `timeInfo`, `mainImagePath`) and calls a method to update the corresponding `HangoutPointer` records.
+    *   **Rule: Pointers Second:** It then calls `PointerUpdateService.updatePointerWithRetry()` with a lambda that uses `HangoutPointerFactory.applyHangoutFields(pointer, hangout)` to update all denormalized fields on existing pointers. This preserves collections (polls, votes, cars, etc.), participantCount, and version.
     *   **Series Interaction:** Crucially, after the update, it calls `eventSeriesService.updateSeriesAfterHangoutModification()`. This service is responsible for updating the parent `EventSeries` and its `SeriesPointer` if the hangout's modification (e.g., a time change, image path change) affects the series' overall start or end time.
 
 ### Delete Hangout
@@ -132,3 +134,48 @@ Watch party hangouts are created by `WatchPartyService` (not `HangoutService`) w
 When `isGeneratedTitle=true`, the background polling system may update the hangout title when TVMaze updates the episode name. The `titleNotificationSent` flag ensures only one notification is sent per hangout.
 
 If the user manually edits the title, `isGeneratedTitle` is set to `false` and the title will never be auto-updated.
+
+## 7. HangoutPointerFactory
+
+**File:** `src/main/java/com/bbthechange/inviter/util/HangoutPointerFactory.java`
+
+All Hangout → HangoutPointer field copying is centralized in this factory. When adding a new field to both `Hangout` and `HangoutPointer`, add it to `applyHangoutFields()` in this one place.
+
+### Two Entry Points
+
+| Method | Use Case | What It Does |
+|--------|----------|--------------|
+| `fromHangout(hangout, groupId)` | **Creation** of new pointers | Creates a new `HangoutPointer` with status="ACTIVE", participantCount=0, empty collections, GSI keys, and all Hangout fields |
+| `applyHangoutFields(pointer, hangout)` | **Updating** existing pointers | Copies all Hangout-sourced fields to an existing pointer. Preserves collections, participantCount, participationSummary, and version |
+
+### Fields Copied by `applyHangoutFields`
+
+title, description, startTimestamp, endTimestamp, visibility, seriesId, mainImagePath, carpoolEnabled, hostAtPlaceUserId, timeInput, location, externalId, externalSource, isGeneratedTitle, ticketLink, ticketsRequired, discountCode, gsi1sk (when startTimestamp is non-null)
+
+### Usage Patterns
+
+**Creation** (HangoutServiceImpl, EventSeriesServiceImpl, WatchPartyBackgroundServiceImpl):
+```java
+HangoutPointer pointer = HangoutPointerFactory.fromHangout(hangout, groupId);
+// Then set collections if needed (polls, attributes, etc.)
+```
+
+**Update via read-modify-write** (HangoutServiceImpl, WatchPartyServiceImpl, WatchPartyBackgroundServiceImpl):
+```java
+pointerUpdateService.updatePointerWithRetry(groupId, hangoutId,
+    pointer -> HangoutPointerFactory.applyHangoutFields(pointer, hangout),
+    "description of update");
+```
+
+**Upsert (update-or-create)** for background jobs where pointer may not exist:
+```java
+pointerUpdateService.upsertPointerWithRetry(groupId, hangoutId, hangout,
+    pointer -> HangoutPointerFactory.applyHangoutFields(pointer, hangout),
+    "description of upsert");
+```
+
+### Adding a New Hangout Field to Pointers
+
+1. Add the field to `HangoutPointer.java` (model)
+2. Add `pointer.setNewField(hangout.getNewField())` to `HangoutPointerFactory.applyHangoutFields()`
+3. That's it -- all 9+ creation and update sites automatically pick up the new field

@@ -1,5 +1,6 @@
 package com.bbthechange.inviter.service.impl;
 
+import com.bbthechange.inviter.model.Hangout;
 import com.bbthechange.inviter.model.HangoutPointer;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.testutil.HangoutPointerTestBuilder;
@@ -428,5 +429,148 @@ class PointerUpdateServiceTest {
 
         // Then
         verify(groupRepository).saveHangoutPointer(any(HangoutPointer.class));
+    }
+
+    // ============================================================================
+    // UPSERT POINTER WITH RETRY TESTS
+    // ============================================================================
+
+    @Test
+    void upsertPointerWithRetry_PointerExists_AppliesUpdateFunction() {
+        // Given - pointer exists
+        Hangout hangout = createTestHangout();
+
+        when(groupRepository.findHangoutPointer(groupId, hangoutId))
+            .thenReturn(Optional.of(pointer));
+        doNothing().when(groupRepository).saveHangoutPointer(any(HangoutPointer.class));
+
+        // When
+        pointerUpdateService.upsertPointerWithRetry(groupId, hangoutId, hangout,
+            p -> p.setTitle("Updated Title"),
+            "test upsert");
+
+        // Then - should use existing pointer, not create new
+        verify(groupRepository).findHangoutPointer(groupId, hangoutId);
+        verify(groupRepository).saveHangoutPointer(argThat(p ->
+            "Updated Title".equals(p.getTitle())
+        ));
+    }
+
+    @Test
+    void upsertPointerWithRetry_PointerMissing_CreatesViaFactory() {
+        // Given - pointer does NOT exist
+        Hangout hangout = createTestHangout();
+
+        when(groupRepository.findHangoutPointer(groupId, hangoutId))
+            .thenReturn(Optional.empty());
+        doNothing().when(groupRepository).saveHangoutPointer(any(HangoutPointer.class));
+
+        // When
+        pointerUpdateService.upsertPointerWithRetry(groupId, hangoutId, hangout,
+            p -> { /* no additional updates */ },
+            "test upsert");
+
+        // Then - should create new pointer via factory and save
+        verify(groupRepository).findHangoutPointer(groupId, hangoutId);
+        verify(groupRepository).saveHangoutPointer(argThat(p ->
+            "ACTIVE".equals(p.getStatus()) &&
+            "Test Hangout Title".equals(p.getTitle()) &&
+            p.getParticipantCount() == 0
+        ));
+    }
+
+    @Test
+    void upsertPointerWithRetry_VersionConflict_Retries() {
+        // Given - first attempt has version conflict, second succeeds
+        Hangout hangout = createTestHangout();
+
+        when(groupRepository.findHangoutPointer(groupId, hangoutId))
+            .thenReturn(Optional.of(pointer));
+
+        doThrow(ConditionalCheckFailedException.builder().message("Version conflict").build())
+            .doNothing()
+            .when(groupRepository).saveHangoutPointer(any(HangoutPointer.class));
+
+        // When
+        pointerUpdateService.upsertPointerWithRetry(groupId, hangoutId, hangout,
+            p -> p.setTitle("Updated Title"),
+            "test upsert");
+
+        // Then - should retry
+        verify(groupRepository, times(2)).findHangoutPointer(groupId, hangoutId);
+        verify(groupRepository, times(2)).saveHangoutPointer(any(HangoutPointer.class));
+    }
+
+    @Test
+    void upsertPointerWithRetry_PointerMissing_AppliesUpdateFunctionAfterCreation() {
+        // Given - pointer does NOT exist
+        Hangout hangout = createTestHangout();
+
+        when(groupRepository.findHangoutPointer(groupId, hangoutId))
+            .thenReturn(Optional.empty());
+        doNothing().when(groupRepository).saveHangoutPointer(any(HangoutPointer.class));
+
+        // When - apply additional update to the factory-created pointer
+        pointerUpdateService.upsertPointerWithRetry(groupId, hangoutId, hangout,
+            p -> p.setDescription("Custom description from lambda"),
+            "test upsert");
+
+        // Then - lambda should run on the newly created pointer
+        verify(groupRepository).saveHangoutPointer(argThat(p ->
+            "Custom description from lambda".equals(p.getDescription()) &&
+            "ACTIVE".equals(p.getStatus()) // Factory sets this
+        ));
+    }
+
+    @Test
+    void upsertPointerWithRetry_WithPersistentVersionConflict_ShouldGiveUpAfterMaxRetries() {
+        // Given - all attempts fail with version conflict
+        Hangout hangout = createTestHangout();
+
+        when(groupRepository.findHangoutPointer(groupId, hangoutId))
+            .thenReturn(Optional.of(pointer));
+
+        doThrow(ConditionalCheckFailedException.builder().message("Version conflict").build())
+            .when(groupRepository).saveHangoutPointer(any(HangoutPointer.class));
+
+        // When
+        pointerUpdateService.upsertPointerWithRetry(groupId, hangoutId, hangout,
+            p -> p.setTitle("Updated Title"),
+            "test upsert");
+
+        // Then - should try MAX_RETRY_ATTEMPTS times (3)
+        verify(groupRepository, times(3)).findHangoutPointer(groupId, hangoutId);
+        verify(groupRepository, times(3)).saveHangoutPointer(any(HangoutPointer.class));
+    }
+
+    @Test
+    void upsertPointerWithRetry_WithNonVersionException_ShouldGiveUpImmediately() {
+        // Given
+        Hangout hangout = createTestHangout();
+
+        when(groupRepository.findHangoutPointer(groupId, hangoutId))
+            .thenReturn(Optional.of(pointer));
+
+        doThrow(new RuntimeException("Database error"))
+            .when(groupRepository).saveHangoutPointer(any(HangoutPointer.class));
+
+        // When
+        pointerUpdateService.upsertPointerWithRetry(groupId, hangoutId, hangout,
+            p -> p.setTitle("Updated Title"),
+            "test upsert");
+
+        // Then - should only try once, no retries
+        verify(groupRepository, times(1)).findHangoutPointer(groupId, hangoutId);
+        verify(groupRepository, times(1)).saveHangoutPointer(any(HangoutPointer.class));
+    }
+
+    private Hangout createTestHangout() {
+        Hangout hangout = new Hangout();
+        hangout.setHangoutId(hangoutId);
+        hangout.setTitle("Test Hangout Title");
+        hangout.setDescription("Test description");
+        hangout.setStartTimestamp(1700000000L);
+        hangout.setEndTimestamp(1700007200L);
+        return hangout;
     }
 }
