@@ -295,15 +295,48 @@ class WatchPartyBackgroundServiceImplTest {
     }
 
     @Test
-    void processUpdateTitle_WithAlreadyNotified_SkipsUpdate() {
+    void processUpdateTitle_WhenTitleNotificationAlreadySent_StillUpdatesTitle() {
         // Given
         UpdateTitleMessage message = new UpdateTitleMessage("456", "New Episode Title");
+
+        String seriesId = "d7e8f9a0-b1c2-43d4-a5f6-7c8d9e0f1a2b";
+        String groupId = "c8c3f5d4-5e8b-4c2a-a9f2-b3c2d1e4f5a6";
 
         Hangout hangout = new Hangout();
         hangout.setHangoutId("a1b2c3d4-e5f6-47c8-9d1e-2f3a4b5c6d7e");
         hangout.setTitle("Old Title");
         hangout.setIsGeneratedTitle(true);
         hangout.setTitleNotificationSent(true); // Already notified
+        hangout.setStartTimestamp(System.currentTimeMillis() / 1000 + 3600);
+        hangout.setEndTimestamp(System.currentTimeMillis() / 1000 + 7200);
+        hangout.setAssociatedGroups(List.of(groupId));
+        hangout.setSeriesId(seriesId);
+
+        when(hangoutRepository.findAllByExternalIdAndSource("456", "TVMAZE"))
+                .thenReturn(List.of(hangout));
+
+        // When
+        service.processUpdateTitle(message);
+
+        // Then - title IS updated
+        ArgumentCaptor<Hangout> hangoutCaptor = ArgumentCaptor.forClass(Hangout.class);
+        verify(hangoutRepository).save(hangoutCaptor.capture());
+        assertEquals("New Episode Title", hangoutCaptor.getValue().getTitle());
+
+        // But notification is NOT sent
+        verify(notificationService, never()).notifyWatchPartyUpdate(anySet(), anyString(), anyString());
+    }
+
+    @Test
+    void processUpdateTitle_WhenTitleUnchanged_SkipsUpdate() {
+        // Given
+        UpdateTitleMessage message = new UpdateTitleMessage("456", "Same Title");
+
+        Hangout hangout = new Hangout();
+        hangout.setHangoutId("a1b2c3d4-e5f6-47c8-9d1e-2f3a4b5c6d7e");
+        hangout.setTitle("Same Title"); // Same as new title
+        hangout.setIsGeneratedTitle(true);
+        hangout.setTitleNotificationSent(false);
         hangout.setStartTimestamp(System.currentTimeMillis() / 1000 + 3600);
 
         when(hangoutRepository.findAllByExternalIdAndSource("456", "TVMAZE"))
@@ -312,7 +345,7 @@ class WatchPartyBackgroundServiceImplTest {
         // When
         service.processUpdateTitle(message);
 
-        // Then
+        // Then - no save since title hasn't changed
         verify(hangoutRepository, never()).save(any(Hangout.class));
     }
 
@@ -573,5 +606,107 @@ class WatchPartyBackgroundServiceImplTest {
                 "Pointer timeInput.startTime should match hangout's value");
         assertEquals("2025-02-14T21:00:00-05:00", savedPointer.getTimeInput().getEndTime(),
                 "Pointer timeInput.endTime should match hangout's value");
+    }
+
+    @Test
+    void processUpdateTitle_WithNullNewTitle_ReturnsEarlyWithMetric() {
+        // Given
+        UpdateTitleMessage message = new UpdateTitleMessage("456", null);
+
+        Hangout hangout = new Hangout();
+        hangout.setHangoutId("a1b2c3d4-e5f6-47c8-9d1e-2f3a4b5c6d7e");
+        hangout.setTitle("Old Title");
+        hangout.setIsGeneratedTitle(true);
+        hangout.setTitleNotificationSent(false);
+        hangout.setStartTimestamp(System.currentTimeMillis() / 1000 + 3600); // Future hangout
+
+        when(hangoutRepository.findAllByExternalIdAndSource("456", "TVMAZE"))
+                .thenReturn(List.of(hangout));
+
+        // When
+        service.processUpdateTitle(message);
+
+        // Then
+        verify(hangoutRepository, never()).save(any(Hangout.class));
+        verify(meterRegistry).counter("watchparty_background_total", "action", "update_title", "status", "invalid_message");
+    }
+
+    @Test
+    void processUpdateTitle_WhenAlreadyNotified_PointerAndSeriesPointerStillUpdated() {
+        // Given
+        UpdateTitleMessage message = new UpdateTitleMessage("456", "New Episode Title");
+
+        String hangoutId = "a1b2c3d4-e5f6-47c8-9d1e-2f3a4b5c6d7e";
+        String groupId = "c8c3f5d4-5e8b-4c2a-a9f2-b3c2d1e4f5a6";
+        String seriesId = "d7e8f9a0-b1c2-43d4-a5f6-7c8d9e0f1a2b";
+
+        Hangout hangout = new Hangout();
+        hangout.setHangoutId(hangoutId);
+        hangout.setTitle("Old Title");
+        hangout.setIsGeneratedTitle(true);
+        hangout.setTitleNotificationSent(true); // Already notified
+        hangout.setStartTimestamp(System.currentTimeMillis() / 1000 + 3600);
+        hangout.setEndTimestamp(System.currentTimeMillis() / 1000 + 7200);
+        hangout.setAssociatedGroups(List.of(groupId));
+        hangout.setSeriesId(seriesId);
+
+        when(hangoutRepository.findAllByExternalIdAndSource("456", "TVMAZE"))
+                .thenReturn(List.of(hangout));
+
+        // Create a SeriesPointer with a parts list containing one HangoutPointer
+        SeriesPointer seriesPointer = new SeriesPointer();
+        HangoutPointer existingPart = new HangoutPointer(groupId, hangoutId, "Old Title");
+        seriesPointer.setParts(new ArrayList<>(List.of(existingPart)));
+
+        when(groupRepository.findSeriesPointer(groupId, seriesId))
+                .thenReturn(Optional.of(seriesPointer));
+
+        // When
+        service.processUpdateTitle(message);
+
+        // Then - hangout IS saved
+        verify(hangoutRepository).save(any(Hangout.class));
+
+        // HangoutPointer IS updated with new title
+        ArgumentCaptor<HangoutPointer> pointerCaptor = ArgumentCaptor.forClass(HangoutPointer.class);
+        verify(groupRepository).saveHangoutPointer(pointerCaptor.capture());
+        assertEquals("New Episode Title", pointerCaptor.getValue().getTitle());
+
+        // SeriesPointer IS saved (denormalized parts updated)
+        verify(groupRepository).saveSeriesPointer(any(SeriesPointer.class));
+
+        // Group timestamps ARE updated
+        verify(groupTimestampService).updateGroupTimestamps(anyList());
+    }
+
+    @Test
+    void processUpdateTitle_WhenAlreadyNotified_TitleNotificationSentStaysTrue() {
+        // Given
+        UpdateTitleMessage message = new UpdateTitleMessage("456", "Second Title Change");
+
+        String groupId = "c8c3f5d4-5e8b-4c2a-a9f2-b3c2d1e4f5a6";
+
+        Hangout hangout = new Hangout();
+        hangout.setHangoutId("a1b2c3d4-e5f6-47c8-9d1e-2f3a4b5c6d7e");
+        hangout.setTitle("First Updated Title");
+        hangout.setIsGeneratedTitle(true);
+        hangout.setTitleNotificationSent(true); // Already notified
+        hangout.setStartTimestamp(System.currentTimeMillis() / 1000 + 3600);
+        hangout.setEndTimestamp(System.currentTimeMillis() / 1000 + 7200);
+        hangout.setAssociatedGroups(List.of(groupId));
+
+        when(hangoutRepository.findAllByExternalIdAndSource("456", "TVMAZE"))
+                .thenReturn(List.of(hangout));
+
+        // When
+        service.processUpdateTitle(message);
+
+        // Then
+        ArgumentCaptor<Hangout> hangoutCaptor = ArgumentCaptor.forClass(Hangout.class);
+        verify(hangoutRepository).save(hangoutCaptor.capture());
+
+        Hangout savedHangout = hangoutCaptor.getValue();
+        assertTrue(savedHangout.getTitleNotificationSent(), "titleNotificationSent should remain true");
+        assertEquals("Second Title Change", savedHangout.getTitle());
     }
 }

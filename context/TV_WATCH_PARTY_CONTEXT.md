@@ -271,7 +271,7 @@ EventBridge (2hr) ──▶ trigger-poll endpoint ──▶ TvMazePollingService
 
 **NEW_EPISODE:** Emitted when new episode detected. Creates hangouts for all groups watching the season.
 
-**UPDATE_TITLE:** Emitted when episode title changes. Updates hangouts where `isGeneratedTitle=true` and `titleNotificationSent=false`.
+**UPDATE_TITLE:** Emitted when episode title changes. Updates hangouts where `isGeneratedTitle=true`. Only sends push notifications if `titleNotificationSent=false`.
 
 **REMOVE_EPISODE:** Emitted when episode removed from TVMaze. Deletes hangouts and notifies users.
 
@@ -282,8 +282,9 @@ EventBridge (2hr) ──▶ trigger-poll endpoint ──▶ TvMazePollingService
 
 **UPDATE_TITLE:**
 - Skip if `isGeneratedTitle=false` (user customized title)
-- Skip if `titleNotificationSent=true` (already notified)
 - Skip if hangout is in the past
+- Skip if title hasn't changed (no-op)
+- Only send notification if `titleNotificationSent=false` (notify once)
 
 ## 8. Notifications
 
@@ -401,8 +402,8 @@ Episodes must be <20 hours apart based on `airTimestamp`. Check that TVMaze prov
 ### Title not updating
 Check:
 1. `isGeneratedTitle` must be `true`
-2. `titleNotificationSent` must be `false`
-3. Hangout must be in the future
+2. Hangout must be in the future
+3. New title must differ from current title
 
 ### Old version seeing watch parties
 Check `X-App-Version` header is being set correctly by client.

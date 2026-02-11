@@ -21,7 +21,8 @@ public interface WatchPartyBackgroundService {
 
     /**
      * Process a title update notification.
-     * Updates hangout titles where isGeneratedTitle=true and titleNotificationSent=false.
+     * Updates hangout titles where isGeneratedTitle=true.
+     * Only sends push notifications if titleNotificationSent=false.
      * Only updates future hangouts.
      *
      * @param message The update title message containing externalId and new title

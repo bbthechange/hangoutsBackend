@@ -150,6 +150,12 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
                 return;
             }
 
+            if (message.getNewTitle() == null) {
+                logger.warn("Received UpdateTitleMessage with null newTitle for externalId: {}", message.getExternalId());
+                meterRegistry.counter("watchparty_background_total", "action", "update_title", "status", "invalid_message").increment();
+                return;
+            }
+
             long nowTimestamp = Instant.now().getEpochSecond();
             int updated = 0;
             Set<String> groupsToUpdate = new HashSet<>();
@@ -160,20 +166,26 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
                     continue;
                 }
 
-                // Skip if already notified about title change
-                if (Boolean.TRUE.equals(hangout.getTitleNotificationSent())) {
+                // Skip past hangouts
+                if (hangout.getStartTimestamp() != null && hangout.getStartTimestamp() <= nowTimestamp) {
                     continue;
                 }
 
-                // Skip past hangouts
-                if (hangout.getStartTimestamp() != null && hangout.getStartTimestamp() <= nowTimestamp) {
+                // Skip if title hasn't actually changed
+                if (message.getNewTitle().equals(hangout.getTitle())) {
                     continue;
                 }
 
                 // Update title
                 String oldTitle = hangout.getTitle();
                 hangout.setTitle(message.getNewTitle());
-                hangout.setTitleNotificationSent(true);
+
+                // Only send push notification once per hangout
+                boolean shouldNotify = !Boolean.TRUE.equals(hangout.getTitleNotificationSent());
+                if (shouldNotify) {
+                    hangout.setTitleNotificationSent(true);
+                }
+
                 hangoutRepository.save(hangout);
 
                 // Update HangoutPointer
@@ -194,8 +206,8 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
                 logger.debug("Updated hangout {} title from '{}' to '{}'",
                         hangout.getHangoutId(), oldTitle, message.getNewTitle());
 
-                // Notify interested users about title change
-                if (hangout.getSeriesId() != null) {
+                // Notify interested users about title change (only once per hangout)
+                if (shouldNotify && hangout.getSeriesId() != null) {
                     notifyTitleUpdate(hangout.getSeriesId(), oldTitle, message.getNewTitle());
                 }
             }

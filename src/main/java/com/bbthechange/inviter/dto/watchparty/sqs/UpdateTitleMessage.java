@@ -2,7 +2,8 @@ package com.bbthechange.inviter.dto.watchparty.sqs;
 
 /**
  * Message indicating an episode title has been updated.
- * Only updates hangouts where isGeneratedTitle=true and titleNotificationSent=false.
+ * Updates hangout titles where isGeneratedTitle=true.
+ * Only sends push notifications if titleNotificationSent=false.
  */
 public class UpdateTitleMessage extends WatchPartyMessage {
 
