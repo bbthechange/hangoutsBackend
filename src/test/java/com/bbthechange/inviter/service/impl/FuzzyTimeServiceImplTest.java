@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.service.impl;
 
 import com.bbthechange.inviter.dto.TimeInfo;
+import com.bbthechange.inviter.exception.ValidationException;
 import com.bbthechange.inviter.service.FuzzyTimeService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -174,7 +175,7 @@ class FuzzyTimeServiceImplTest {
     @Test
     @DisplayName("Should throw exception for null timeInput")
     void shouldThrowExceptionForNullTimeInput() {
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
+        ValidationException exception = assertThrows(ValidationException.class, () -> {
             fuzzyTimeService.convert(null);
         });
         assertEquals("timeInput cannot be null", exception.getMessage());
@@ -184,7 +185,7 @@ class FuzzyTimeServiceImplTest {
     @DisplayName("Should throw exception for empty timeInput")
     void shouldThrowExceptionForEmptyTimeInput() {
         TimeInfo timeInfo = new TimeInfo(null, null, null, null);
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
+        ValidationException exception = assertThrows(ValidationException.class, () -> {
             fuzzyTimeService.convert(timeInfo);
         });
         assertEquals("timeInput must contain either exact time (startTime + optional endTime) or fuzzy time (periodGranularity + periodStart)", exception.getMessage());
@@ -208,7 +209,7 @@ class FuzzyTimeServiceImplTest {
     void shouldThrowExceptionForIncompleteFuzzyTime() {
         TimeInfo timeInfo = new TimeInfo("morning", null, null, null);
 
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
+        ValidationException exception = assertThrows(ValidationException.class, () -> {
             fuzzyTimeService.convert(timeInfo);
         });
         assertEquals("periodStart cannot be null or empty", exception.getMessage());
@@ -219,7 +220,7 @@ class FuzzyTimeServiceImplTest {
     void shouldThrowExceptionForNullStartTime() {
         TimeInfo timeInfo = new TimeInfo(null, null, null, "2025-08-05T21:30:00Z");
 
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
+        ValidationException exception = assertThrows(ValidationException.class, () -> {
             fuzzyTimeService.convert(timeInfo);
         });
         assertEquals("startTime cannot be null or empty", exception.getMessage());
@@ -230,7 +231,7 @@ class FuzzyTimeServiceImplTest {
     void shouldThrowExceptionForEmptyStartTime() {
         TimeInfo timeInfo = new TimeInfo(null, null, "", "2025-08-05T21:30:00Z");
 
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
+        ValidationException exception = assertThrows(ValidationException.class, () -> {
             fuzzyTimeService.convert(timeInfo);
         });
         assertEquals("startTime cannot be null or empty", exception.getMessage());
@@ -267,7 +268,7 @@ class FuzzyTimeServiceImplTest {
     void shouldThrowExceptionForNullPeriodGranularity() {
         TimeInfo timeInfo = new TimeInfo(null, "2025-08-05T19:00:00Z", null, null);
 
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
+        ValidationException exception = assertThrows(ValidationException.class, () -> {
             fuzzyTimeService.convert(timeInfo);
         });
         assertEquals("periodGranularity cannot be null or empty", exception.getMessage());
@@ -278,7 +279,7 @@ class FuzzyTimeServiceImplTest {
     void shouldThrowExceptionForEmptyPeriodGranularity() {
         TimeInfo timeInfo = new TimeInfo("", "2025-08-05T19:00:00Z", null, null);
 
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
+        ValidationException exception = assertThrows(ValidationException.class, () -> {
             fuzzyTimeService.convert(timeInfo);
         });
         assertEquals("periodGranularity cannot be null or empty", exception.getMessage());
@@ -289,7 +290,7 @@ class FuzzyTimeServiceImplTest {
     void shouldThrowExceptionForNullPeriodStart() {
         TimeInfo timeInfo = new TimeInfo("morning", null, null, null);
 
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
+        ValidationException exception = assertThrows(ValidationException.class, () -> {
             fuzzyTimeService.convert(timeInfo);
         });
         assertEquals("periodStart cannot be null or empty", exception.getMessage());
@@ -300,7 +301,7 @@ class FuzzyTimeServiceImplTest {
     void shouldThrowExceptionForEmptyPeriodStart() {
         TimeInfo timeInfo = new TimeInfo("morning", "   ", null, null);
 
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
+        ValidationException exception = assertThrows(ValidationException.class, () -> {
             fuzzyTimeService.convert(timeInfo);
         });
         assertEquals("periodStart cannot be null or empty", exception.getMessage());
@@ -311,7 +312,7 @@ class FuzzyTimeServiceImplTest {
     void shouldThrowExceptionForEndTimeBeforeStartTime() {
         TimeInfo timeInfo = new TimeInfo(null, null, "2025-08-05T21:30:00Z", "2025-08-05T19:15:00Z");
 
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
+        ValidationException exception = assertThrows(ValidationException.class, () -> {
             fuzzyTimeService.convert(timeInfo);
         });
         assertEquals("endTime must be after startTime", exception.getMessage());
@@ -322,7 +323,7 @@ class FuzzyTimeServiceImplTest {
     void shouldThrowExceptionForEqualTimes() {
         TimeInfo timeInfo = new TimeInfo(null, null, "2025-08-05T19:15:00Z", "2025-08-05T19:15:00Z");
 
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
+        ValidationException exception = assertThrows(ValidationException.class, () -> {
             fuzzyTimeService.convert(timeInfo);
         });
         assertEquals("endTime must be after startTime", exception.getMessage());
@@ -333,7 +334,7 @@ class FuzzyTimeServiceImplTest {
     void shouldThrowExceptionForInvalidIso8601Format() {
         TimeInfo timeInfo = new TimeInfo(null, null, "2025-08-05 19:15:00", "2025-08-05T21:30:00Z");
 
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
+        ValidationException exception = assertThrows(ValidationException.class, () -> {
             fuzzyTimeService.convert(timeInfo);
         });
         assertTrue(exception.getMessage().contains("Invalid ISO 8601 timestamp format"));
@@ -344,7 +345,7 @@ class FuzzyTimeServiceImplTest {
     void shouldThrowExceptionForInvalidFuzzyPeriodStartFormat() {
         TimeInfo timeInfo = new TimeInfo("morning", "invalid-date", null, null);
 
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
+        ValidationException exception = assertThrows(ValidationException.class, () -> {
             fuzzyTimeService.convert(timeInfo);
         });
         assertTrue(exception.getMessage().contains("Invalid ISO 8601 timestamp format for periodStart"));
@@ -356,7 +357,7 @@ class FuzzyTimeServiceImplTest {
     void shouldThrowExceptionForUnsupportedPeriodGranularity(String granularity) {
         TimeInfo timeInfo = new TimeInfo(granularity, "2025-08-05T19:00:00Z", null, null);
 
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
+        ValidationException exception = assertThrows(ValidationException.class, () -> {
             fuzzyTimeService.convert(timeInfo);
         });
         assertTrue(exception.getMessage().contains("Unsupported periodGranularity"));
@@ -368,7 +369,7 @@ class FuzzyTimeServiceImplTest {
     void shouldThrowExceptionForExactGranularityWithFuzzyStructure() {
         TimeInfo timeInfo = new TimeInfo("exact", "2025-08-05T19:00:00Z", null, null);
 
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
+        ValidationException exception = assertThrows(ValidationException.class, () -> {
             fuzzyTimeService.convert(timeInfo);
         });
         assertEquals("exact granularity should use startTime/endTime, not periodGranularity", exception.getMessage());

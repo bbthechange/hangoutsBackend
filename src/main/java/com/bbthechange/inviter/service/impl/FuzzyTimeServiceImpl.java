@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.service.impl;
 
 import com.bbthechange.inviter.dto.TimeInfo;
+import com.bbthechange.inviter.exception.ValidationException;
 import com.bbthechange.inviter.service.FuzzyTimeService;
 import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
@@ -27,7 +28,7 @@ public class FuzzyTimeServiceImpl implements FuzzyTimeService {
     @Override
     public TimeConversionResult convert(TimeInfo timeInfo) {
         if (timeInfo == null) {
-            throw new IllegalArgumentException("timeInput cannot be null");
+            throw new ValidationException("timeInput cannot be null");
         }
         
         // Check for exact time structure first and validate both fields
@@ -40,7 +41,7 @@ public class FuzzyTimeServiceImpl implements FuzzyTimeService {
             return handleFuzzyTime(timeInfo); // This will throw specific validation errors
         }
         
-        throw new IllegalArgumentException(
+        throw new ValidationException(
             "timeInput must contain either exact time (startTime + optional endTime) or fuzzy time (periodGranularity + periodStart)"
         );
     }
@@ -54,7 +55,7 @@ public class FuzzyTimeServiceImpl implements FuzzyTimeService {
         String endTimeStr = timeInfo.getEndTime();
         
         if (startTimeStr == null || startTimeStr.trim().isEmpty()) {
-            throw new IllegalArgumentException("startTime cannot be null or empty");
+            throw new ValidationException("startTime cannot be null or empty");
         }
         
         try {
@@ -67,7 +68,7 @@ public class FuzzyTimeServiceImpl implements FuzzyTimeService {
                 endTimestamp = parseIso8601ToUnixTimestamp(endTimeStr);
 
                 if (endTimestamp <= startTimestamp) {
-                    throw new IllegalArgumentException("endTime must be after startTime");
+                    throw new ValidationException("endTime must be after startTime");
                 }
 
                 logger.debug("Converted exact time: {} -> {}, {} -> {}",
@@ -83,7 +84,7 @@ public class FuzzyTimeServiceImpl implements FuzzyTimeService {
             return new TimeConversionResult(startTimestamp, endTimestamp);
             
         } catch (DateTimeParseException e) {
-            throw new IllegalArgumentException("Invalid ISO 8601 timestamp format: " + e.getMessage(), e);
+            throw new ValidationException("Invalid ISO 8601 timestamp format: " + e.getMessage(), e);
         }
     }
     
@@ -95,10 +96,10 @@ public class FuzzyTimeServiceImpl implements FuzzyTimeService {
         String periodStartStr = timeInfo.getPeriodStart();
         
         if (periodGranularity == null || periodGranularity.trim().isEmpty()) {
-            throw new IllegalArgumentException("periodGranularity cannot be null or empty");
+            throw new ValidationException("periodGranularity cannot be null or empty");
         }
         if (periodStartStr == null || periodStartStr.trim().isEmpty()) {
-            throw new IllegalArgumentException("periodStart cannot be null or empty");
+            throw new ValidationException("periodStart cannot be null or empty");
         }
         
         try {
@@ -114,7 +115,7 @@ public class FuzzyTimeServiceImpl implements FuzzyTimeService {
             return new TimeConversionResult(startTimestamp, endTimestamp);
             
         } catch (DateTimeParseException e) {
-            throw new IllegalArgumentException("Invalid ISO 8601 timestamp format for periodStart: " + e.getMessage(), e);
+            throw new ValidationException("Invalid ISO 8601 timestamp format for periodStart: " + e.getMessage(), e);
         }
     }
     
@@ -140,7 +141,7 @@ public class FuzzyTimeServiceImpl implements FuzzyTimeService {
     private Long calculateEndTimestamp(Long startTimestamp, String periodGranularity) {
         switch (periodGranularity.toLowerCase()) {
             case "exact":
-                throw new IllegalArgumentException("exact granularity should use startTime/endTime, not periodGranularity");
+                throw new ValidationException("exact granularity should use startTime/endTime, not periodGranularity");
             
             case "morning":
             case "afternoon":
@@ -157,7 +158,7 @@ public class FuzzyTimeServiceImpl implements FuzzyTimeService {
                 return startTimestamp + (2 * 24 * 60 * 60); // 2 days (48 hours) in seconds
             
             default:
-                throw new IllegalArgumentException("Unsupported periodGranularity: " + periodGranularity + 
+                throw new ValidationException("Unsupported periodGranularity: " + periodGranularity + 
                     ". Supported values: morning, afternoon, evening, night, day, weekend");
         }
     }
