@@ -64,6 +64,7 @@ eb deploy                     # Deploy to production
 | **Notifications** | `context/NOTIFICATIONS_CONTEXT.md` | Push notifications, device registration |
 | **TV Watch Party** | `context/TV_WATCH_PARTY_CONTEXT.md` | TV show watch parties, TVMaze integration, background polling |
 | **Adding Attributes** | `context/ATTRIBUTE_ADDITION_GUIDE.md` | Guide for adding fields to User/Group/Hangout |
+| **Username Cache** | `context/USERNAME_CACHE_CONTEXT.md` | Caffeine cache for user display names, UserSummaryDTO usage |
 | **Unit tests** | `context/UNIT_TESTING_PATTERNS.md` | Guide for unit tests |
 
 ### Context File Usage
