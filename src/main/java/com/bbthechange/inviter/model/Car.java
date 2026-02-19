@@ -2,6 +2,7 @@ package com.bbthechange.inviter.model;
 
 import com.bbthechange.inviter.util.InviterKeyFactory;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
+import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbIgnore;
 
 /**
  * Car entity for the InviterTable.
@@ -18,7 +19,10 @@ public class Car extends BaseItem {
     private int totalCapacity;      // Total seats including driver
     private int availableSeats;     // Remaining available seats
     private String notes;           // Additional info from driver
-    
+
+    // Transient field - not stored in DynamoDB but populated at read time
+    private String driverImagePath;
+
     // Default constructor for DynamoDB
     public Car() {
         super();
@@ -94,6 +98,15 @@ public class Car extends BaseItem {
         touch();
     }
     
+    @DynamoDbIgnore
+    public String getDriverImagePath() {
+        return driverImagePath;
+    }
+
+    public void setDriverImagePath(String driverImagePath) {
+        this.driverImagePath = driverImagePath;
+    }
+
     /**
      * Check if the car has available seats.
      */

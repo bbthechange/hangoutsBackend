@@ -542,6 +542,162 @@ class HangoutServiceRetrievalTest extends HangoutServiceTestBase {
         assertThat(result.getParticipations().get(0).getUserId()).isEqualTo(user1Id);
     }
 
+    // ============================================================================
+    // CARPOOL IMAGE ENRICHMENT TESTS
+    // ============================================================================
+
+    @Test
+    void getHangoutDetail_EnrichesCarDriverImages() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+        String driverId = UUID.randomUUID().toString();
+        String requesterUserId = UUID.randomUUID().toString();
+
+        Hangout hangout = new Hangout();
+        hangout.setHangoutId(hangoutId);
+        hangout.setTitle("Test Hangout");
+        hangout.setVisibility(EventVisibility.PUBLIC);
+
+        Car car = new Car(hangoutId, driverId, "Driver Dave", 4);
+
+        UserSummaryDTO driverSummary = new UserSummaryDTO();
+        driverSummary.setId(UUID.fromString(driverId));
+        driverSummary.setDisplayName("Driver Dave");
+        driverSummary.setMainImagePath("users/dave/profile.jpg");
+
+        HangoutDetailData data = HangoutDetailData.builder()
+            .withHangout(hangout)
+            .withCars(List.of(car))
+            .build();
+
+        when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
+        when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
+        when(userService.getUserSummary(UUID.fromString(driverId))).thenReturn(Optional.of(driverSummary));
+
+        // When
+        HangoutDetailDTO result = hangoutService.getHangoutDetail(hangoutId, requesterUserId);
+
+        // Then
+        assertThat(result.getCars()).hasSize(1);
+        assertThat(result.getCars().get(0).getDriverImagePath()).isEqualTo("users/dave/profile.jpg");
+    }
+
+    @Test
+    void getHangoutDetail_EnrichesCarRiderImages() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+        String driverId = UUID.randomUUID().toString();
+        String riderId = UUID.randomUUID().toString();
+        String requesterUserId = UUID.randomUUID().toString();
+
+        Hangout hangout = new Hangout();
+        hangout.setHangoutId(hangoutId);
+        hangout.setTitle("Test Hangout");
+        hangout.setVisibility(EventVisibility.PUBLIC);
+
+        CarRider rider = new CarRider(hangoutId, driverId, riderId, "Rider Rachel");
+
+        UserSummaryDTO riderSummary = new UserSummaryDTO();
+        riderSummary.setId(UUID.fromString(riderId));
+        riderSummary.setDisplayName("Rider Rachel");
+        riderSummary.setMainImagePath("users/rachel/profile.jpg");
+
+        HangoutDetailData data = HangoutDetailData.builder()
+            .withHangout(hangout)
+            .withCarRiders(List.of(rider))
+            .build();
+
+        when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
+        when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
+        when(userService.getUserSummary(UUID.fromString(riderId))).thenReturn(Optional.of(riderSummary));
+
+        // When
+        HangoutDetailDTO result = hangoutService.getHangoutDetail(hangoutId, requesterUserId);
+
+        // Then
+        assertThat(result.getCarRiders()).hasSize(1);
+        assertThat(result.getCarRiders().get(0).getRiderImagePath()).isEqualTo("users/rachel/profile.jpg");
+    }
+
+    @Test
+    void getHangoutDetail_EnrichesNeedsRideDisplayNamesAndImages() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+        String requesterUserId = UUID.randomUUID().toString();
+
+        Hangout hangout = new Hangout();
+        hangout.setHangoutId(hangoutId);
+        hangout.setTitle("Test Hangout");
+        hangout.setVisibility(EventVisibility.PUBLIC);
+
+        NeedsRide needsRide = new NeedsRide(hangoutId, userId, "Need a ride");
+
+        UserSummaryDTO userSummary = new UserSummaryDTO();
+        userSummary.setId(UUID.fromString(userId));
+        userSummary.setDisplayName("Needy Nancy");
+        userSummary.setMainImagePath("users/nancy/profile.jpg");
+
+        HangoutDetailData data = HangoutDetailData.builder()
+            .withHangout(hangout)
+            .withNeedsRide(List.of(needsRide))
+            .build();
+
+        when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
+        when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
+        when(userService.getUserSummary(UUID.fromString(userId))).thenReturn(Optional.of(userSummary));
+
+        // When
+        HangoutDetailDTO result = hangoutService.getHangoutDetail(hangoutId, requesterUserId);
+
+        // Then
+        assertThat(result.getNeedsRide()).hasSize(1);
+        assertThat(result.getNeedsRide().get(0).getDisplayName()).isEqualTo("Needy Nancy");
+        assertThat(result.getNeedsRide().get(0).getMainImagePath()).isEqualTo("users/nancy/profile.jpg");
+    }
+
+    @Test
+    void getHangoutDetail_WhenUserNotInCache_CarpoolFieldsRemainNull() {
+        // Given
+        String hangoutId = UUID.randomUUID().toString();
+        String driverId = UUID.randomUUID().toString();
+        String riderId = UUID.randomUUID().toString();
+        String needsRideUserId = UUID.randomUUID().toString();
+        String requesterUserId = UUID.randomUUID().toString();
+
+        Hangout hangout = new Hangout();
+        hangout.setHangoutId(hangoutId);
+        hangout.setTitle("Test Hangout");
+        hangout.setVisibility(EventVisibility.PUBLIC);
+
+        Car car = new Car(hangoutId, driverId, "Unknown Driver", 4);
+        CarRider rider = new CarRider(hangoutId, driverId, riderId, "Unknown Rider");
+        NeedsRide needsRide = new NeedsRide(hangoutId, needsRideUserId, "Help");
+
+        HangoutDetailData data = HangoutDetailData.builder()
+            .withHangout(hangout)
+            .withCars(List.of(car))
+            .withCarRiders(List.of(rider))
+            .withNeedsRide(List.of(needsRide))
+            .build();
+
+        when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(data);
+        when(hangoutRepository.findAttributesByHangoutId(hangoutId)).thenReturn(List.of());
+        when(userService.getUserSummary(any(UUID.class))).thenReturn(Optional.empty());
+
+        // When
+        HangoutDetailDTO result = hangoutService.getHangoutDetail(hangoutId, requesterUserId);
+
+        // Then - image fields remain null when user not in cache
+        assertThat(result.getCars()).hasSize(1);
+        assertThat(result.getCars().get(0).getDriverImagePath()).isNull();
+        assertThat(result.getCarRiders()).hasSize(1);
+        assertThat(result.getCarRiders().get(0).getRiderImagePath()).isNull();
+        assertThat(result.getNeedsRide()).hasSize(1);
+        assertThat(result.getNeedsRide().get(0).getDisplayName()).isNull();
+        assertThat(result.getNeedsRide().get(0).getMainImagePath()).isNull();
+    }
+
     @Test
     void getHangoutDetail_WithEmptyParticipationsAndOffers_ReturnsEmptyLists() {
         // Given

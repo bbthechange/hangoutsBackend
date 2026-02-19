@@ -249,9 +249,27 @@ public class HangoutServiceImpl implements HangoutService {
         // Transform to DTO with formatted timeInfo
         TimeInfo timeInfo = formatTimeInfoForResponse(hangout.getTimeInput());
         hangout.setTimeInput(timeInfo);
-        // Transform needs ride data to DTOs
+        // Enrich car driver images from username cache
+        for (Car car : hangoutDetail.getCars()) {
+            userService.getUserSummary(UUID.fromString(car.getDriverId()))
+                .ifPresent(u -> car.setDriverImagePath(u.getMainImagePath()));
+        }
+
+        // Enrich car rider images from username cache
+        for (CarRider rider : hangoutDetail.getCarRiders()) {
+            userService.getUserSummary(UUID.fromString(rider.getRiderId()))
+                .ifPresent(u -> rider.setRiderImagePath(u.getMainImagePath()));
+        }
+
+        // Transform needs ride data to DTOs with enriched display names and images
         List<NeedsRideDTO> needsRideDTOs = hangoutDetail.getNeedsRide().stream()
-            .map(NeedsRideDTO::new)
+            .map(nr -> {
+                UserSummaryDTO user = userService.getUserSummary(UUID.fromString(nr.getUserId()))
+                    .orElse(null);
+                return new NeedsRideDTO(nr,
+                    user != null ? user.getDisplayName() : null,
+                    user != null ? user.getMainImagePath() : null);
+            })
             .collect(Collectors.toList());
 
         // Convert participations and offers to DTOs with denormalized user info

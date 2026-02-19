@@ -2,6 +2,7 @@ package com.bbthechange.inviter.model;
 
 import com.bbthechange.inviter.util.InviterKeyFactory;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
+import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbIgnore;
 
 /**
  * CarRider entity for the InviterTable.
@@ -18,7 +19,10 @@ public class CarRider extends BaseItem {
     private String riderName;       // Denormalized for display
     private int plusOneCount;       // Additional passengers this rider is bringing
     private String notes;           // Special requests/notes from rider
-    
+
+    // Transient field - not stored in DynamoDB but populated at read time
+    private String riderImagePath;
+
     // Default constructor for DynamoDB
     public CarRider() {
         super();
@@ -93,6 +97,15 @@ public class CarRider extends BaseItem {
         touch();
     }
     
+    @DynamoDbIgnore
+    public String getRiderImagePath() {
+        return riderImagePath;
+    }
+
+    public void setRiderImagePath(String riderImagePath) {
+        this.riderImagePath = riderImagePath;
+    }
+
     /**
      * Total number of seats this rider is taking (rider + plus ones).
      */
