@@ -146,50 +146,58 @@ public class CarpoolServiceImpl implements CarpoolService {
     }
     
     @Override
-    public CarRider reserveSeat(String eventId, String driverId, String userId) {
+    public CarRider reserveSeat(String eventId, String driverId, String userId, ReserveSeatRequest request) {
         logger.info("User {} reserving seat with driver {} for event {}", userId, driverId, eventId);
-        
+
+        // Extract notes and plusOneCount from request (null-safe)
+        String notes = request != null ? request.getNotes() : null;
+        int effectivePlusOneCount = (request != null && request.getPlusOneCount() != null) ? request.getPlusOneCount() : 0;
+        int seatsNeeded = 1 + effectivePlusOneCount;
+
         // Get hangout and verify user can view it
         HangoutDetailData hangoutData = hangoutRepository.getHangoutDetailData(eventId);
         if (hangoutData.getHangout() == null) {
             throw new EventNotFoundException("Event not found: " + eventId);
         }
-        
+
         Hangout hangout = hangoutData.getHangout();
         if (!hangoutService.canUserViewHangout(userId, hangout)) {
             throw new UnauthorizedException("Cannot reserve seats for this event");
         }
-        
+
         // Find the car
         Car car = hangoutData.getCars().stream()
             .filter(c -> c.getDriverId().equals(driverId))
             .findFirst()
             .orElseThrow(() -> new CarNotFoundException("Car offer not found for driver: " + driverId));
-        
-        if (car.getAvailableSeats() <= 0) {
-            throw new NoAvailableSeatsException("No available seats in this car");
+
+        if (car.getAvailableSeats() < seatsNeeded) {
+            throw new NoAvailableSeatsException(
+                "Not enough available seats: need " + seatsNeeded + " but only " + car.getAvailableSeats() + " available");
         }
-        
+
         // Check if user already has a reservation
         List<CarRider> existingRiders = hangoutData.getCarRiders().stream()
             .filter(rider -> rider.getDriverId().equals(driverId) && rider.getRiderId().equals(userId))
             .toList();
-        
+
         if (!existingRiders.isEmpty()) {
             throw new ValidationException("User already has a reservation with this driver");
         }
-        
+
         // Get user display name for denormalization
         User user = userService.getUserById(UUID.fromString(userId))
             .orElseThrow(() -> new UserNotFoundException("User not found: " + userId));
         String riderName = user.getDisplayName() != null ? user.getDisplayName() : user.getUsername();
-        
-        // Create CarRider record
+
+        // Create CarRider record with notes and plusOneCount
         CarRider carRider = new CarRider(eventId, driverId, userId, riderName);
+        carRider.setNotes(notes);
+        carRider.setPlusOneCount(effectivePlusOneCount);
         CarRider savedRider = hangoutRepository.saveCarRider(carRider);
-        
-        // Update car available seats (decrease by 1)
-        car.setAvailableSeats(car.getAvailableSeats() - 1);
+
+        // Update car available seats (decrease by seatsNeeded)
+        car.setAvailableSeats(car.getAvailableSeats() - seatsNeeded);
         hangoutRepository.saveCar(car);
         
         // Auto-delete any existing ride request for this user
@@ -238,12 +246,14 @@ public class CarpoolServiceImpl implements CarpoolService {
         if (userRiders.isEmpty()) {
             throw new ValidationException("User does not have a reservation with this driver");
         }
-        
+
+        CarRider riderToRelease = userRiders.get(0);
+
         // Remove CarRider record
         hangoutRepository.deleteCarRider(eventId, driverId, userId);
 
-        // Update car available seats (increase by 1)
-        car.setAvailableSeats(car.getAvailableSeats() + 1);
+        // Update car available seats (restore rider + plus ones)
+        car.setAvailableSeats(car.getAvailableSeats() + riderToRelease.getTotalSeatsNeeded());
         hangoutRepository.saveCar(car);
 
         // Update pointer records with updated rider data
@@ -279,18 +289,19 @@ public class CarpoolServiceImpl implements CarpoolService {
         
         // Update car details
         if (request.getTotalCapacity() != null) {
-            // Count current riders
-            long currentRiders = hangoutData.getCarRiders().stream()
+            // Count total occupied seats (riders + their plus ones)
+            int occupiedSeats = hangoutData.getCarRiders().stream()
                 .filter(rider -> rider.getDriverId().equals(driverId))
-                .count();
-            
+                .mapToInt(CarRider::getTotalSeatsNeeded)
+                .sum();
+
             int newTotalCapacity = request.getTotalCapacity();
-            if (newTotalCapacity < currentRiders) {
-                throw new ValidationException("Cannot reduce capacity below current rider count (" + currentRiders + ")");
+            if (newTotalCapacity < occupiedSeats) {
+                throw new ValidationException("Cannot reduce capacity below occupied seats (" + occupiedSeats + ")");
             }
-            
+
             car.setTotalCapacity(newTotalCapacity);
-            car.setAvailableSeats((int) (newTotalCapacity - currentRiders));
+            car.setAvailableSeats(newTotalCapacity - occupiedSeats);
         }
         if (request.getNotes() != null) {
             car.setNotes(request.getNotes());

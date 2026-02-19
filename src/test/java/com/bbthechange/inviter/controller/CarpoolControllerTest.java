@@ -433,18 +433,62 @@ class CarpoolControllerTest {
         // Given
         String driverId = UUID.randomUUID().toString();
         CarRider mockRider = new CarRider(eventId, driverId, userId, "Test Rider");
-        when(carpoolService.reserveSeat(eq(eventId), eq(driverId), eq(userId)))
+        mockRider.setNotes("Pick me up at corner");
+        mockRider.setPlusOneCount(1);
+        when(carpoolService.reserveSeat(eq(eventId), eq(driverId), eq(userId), any(ReserveSeatRequest.class)))
                 .thenReturn(mockRider);
+
+        ReserveSeatRequest request = new ReserveSeatRequest("Pick me up at corner", 1);
 
         // When & Then
         mockMvc.perform(post("/events/{eventId}/carpool/cars/{driverId}/reserve", eventId, driverId)
                 .header("Authorization", "Bearer " + validJWT)
                 .requestAttr("userId", userId)
-                .contentType(MediaType.APPLICATION_JSON))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.riderId").value(userId))
+                .andExpect(jsonPath("$.notes").value("Pick me up at corner"))
+                .andExpect(jsonPath("$.plusOneCount").value(1));
+
+        verify(carpoolService).reserveSeat(eq(eventId), eq(driverId), eq(userId), any(ReserveSeatRequest.class));
+    }
+
+    @Test
+    void reserveSeat_WithNoBody_ReturnsCarRider() throws Exception {
+        // Given
+        String driverId = UUID.randomUUID().toString();
+        CarRider mockRider = new CarRider(eventId, driverId, userId, "Test Rider");
+        when(carpoolService.reserveSeat(eq(eventId), eq(driverId), eq(userId), isNull()))
+                .thenReturn(mockRider);
+
+        // When & Then - POST with no body (backward compatible)
+        mockMvc.perform(post("/events/{eventId}/carpool/cars/{driverId}/reserve", eventId, driverId)
+                .header("Authorization", "Bearer " + validJWT)
+                .requestAttr("userId", userId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.riderId").value(userId));
 
-        verify(carpoolService).reserveSeat(eq(eventId), eq(driverId), eq(userId));
+        verify(carpoolService).reserveSeat(eq(eventId), eq(driverId), eq(userId), isNull());
+    }
+
+    @Test
+    void reserveSeat_WithNotesExceedingMax_ReturnsBadRequest() throws Exception {
+        // Given - Notes longer than 500 characters should be rejected by validation
+        String driverId = UUID.randomUUID().toString();
+        String longNotes = "a".repeat(501);
+        ReserveSeatRequest request = new ReserveSeatRequest(longNotes, 0);
+
+        // When & Then
+        mockMvc.perform(post("/events/{eventId}/carpool/cars/{driverId}/reserve", eventId, driverId)
+                .header("Authorization", "Bearer " + validJWT)
+                .requestAttr("userId", userId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
+
+        // Service should not be called due to validation failure
+        verify(carpoolService, never()).reserveSeat(any(), any(), any(), any());
     }
 
     @Test

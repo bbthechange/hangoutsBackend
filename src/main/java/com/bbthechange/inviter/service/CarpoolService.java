@@ -32,8 +32,9 @@ public interface CarpoolService {
     /**
      * Reserve a seat in a car.
      * Atomically creates rider record and decreases available seats.
+     * @param request optional request with notes and plusOneCount (null treated as empty)
      */
-    CarRider reserveSeat(String eventId, String driverId, String userId);
+    CarRider reserveSeat(String eventId, String driverId, String userId, ReserveSeatRequest request);
     
     /**
      * Release a reserved seat in a car.

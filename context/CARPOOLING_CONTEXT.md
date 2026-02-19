@@ -13,7 +13,7 @@ All carpool-related entities share the same partition key as their parent hangou
 | Entity | Sort Key (SK) Structure | Purpose |
 | :--- | :--- | :--- |
 | `Car` | `CAR#{driverId}` | Represents a car being offered by a driver, including its total capacity and available seats. |
-| `CarRider` | `CAR#{driverId}#RIDER#{riderId}` | Links a specific user (rider) to a specific car, signifying a reserved seat. |
+| `CarRider` | `CAR#{driverId}#RIDER#{riderId}` | Links a specific user (rider) to a specific car, signifying a reserved seat. Stores optional `notes` (String) and `plusOneCount` (int, default 0) representing additional passengers. `getTotalSeatsNeeded()` returns `1 + plusOneCount`. |
 | `NeedsRide` | `NEEDS_RIDE#{userId}` | A flag-like item indicating a user needs a ride but has not yet reserved a seat. |
 
 This hierarchical key structure allows for efficient queries. For example, one can fetch a car and all its riders using a `begins_with(CAR#{driverId})` condition on the sort key.
@@ -50,12 +50,25 @@ This hierarchical key structure allows for efficient queries. For example, one c
 This is the key transactional flow.
 
 1.  **Endpoint:** `POST /events/{eventId}/carpool/cars/{driverId}/reserve`
-2.  **Service:** `CarpoolServiceImpl.reserveSeat()` orchestrates the process:
-    *   It first validates that the user can view the event and that the target car has available seats.
-    *   It creates a `CarRider` entity to represent the reservation.
-    *   It decrements the `availableSeats` count on the `Car` entity.
+2.  **Request body (optional):** `ReserveSeatRequest` with `notes` (String, max 500 chars) and `plusOneCount` (Integer, 0–7). The body is `@RequestBody(required = false)` for backward compatibility — clients sending no body get the same behavior as before (1 seat, no notes).
+3.  **Service:** `CarpoolServiceImpl.reserveSeat()` orchestrates the process:
+    *   It extracts `notes` and `plusOneCount` from the request (null-safe — null request treated as no notes, plusOneCount=0).
+    *   It calculates `seatsNeeded = 1 + effectivePlusOneCount`.
+    *   It validates that the user can view the event and that the target car has enough available seats (`availableSeats >= seatsNeeded`).
+    *   It creates a `CarRider` entity with `notes` and `plusOneCount` set.
+    *   It decrements `availableSeats` on the `Car` entity by `seatsNeeded`.
     *   It deletes the user's `NeedsRide` record, as they have now found a ride.
-3.  **Repository:** The service calls the `HangoutRepository` multiple times to save the `CarRider`, update the `Car`, and delete the `NeedsRide` record. These are currently separate calls and not executed in a single atomic transaction.
+4.  **Repository:** The service calls the `HangoutRepository` multiple times to save the `CarRider`, update the `Car`, and delete the `NeedsRide` record. These are currently separate calls and not executed in a single atomic transaction.
+
+### Releasing a Seat
+
+1.  **Endpoint:** `DELETE /events/{eventId}/carpool/cars/{driverId}/reserve`
+2.  **Service:** `CarpoolServiceImpl.releaseSeat()` restores seats using the rider's `getTotalSeatsNeeded()` (1 + plusOneCount), not a hardcoded value of 1.
+
+### Updating a Car Offer
+
+1.  **Endpoint:** `PUT /events/{eventId}/carpool/cars/{driverId}`
+2.  **Seat math:** When validating a capacity reduction, the service sums `getTotalSeatsNeeded()` across all riders (not just the rider count) to determine occupied seats. Capacity cannot be reduced below this total.
 
 ### Getting Carpool State for a Hangout
 

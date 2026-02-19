@@ -74,13 +74,14 @@ public class CarpoolController extends BaseController {
     public ResponseEntity<CarRider> reserveSeat(
             @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid event ID format") String eventId,
             @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid driver ID format") String driverId,
+            @RequestBody(required = false) @Valid ReserveSeatRequest request,
             HttpServletRequest httpRequest) {
-        
+
         String userId = extractUserId(httpRequest);
         logger.info("User {} reserving seat with driver {} for event {}", userId, driverId, eventId);
-        
-        CarRider rider = carpoolService.reserveSeat(eventId, driverId, userId);
-        
+
+        CarRider rider = carpoolService.reserveSeat(eventId, driverId, userId, request);
+
         return ResponseEntity.ok(rider);
     }
     

@@ -327,7 +327,7 @@ class CarpoolServiceImplTest {
         doNothing().when(hangoutRepository).deleteNeedsRide(eventId, userId);
 
         // When
-        CarRider result = carpoolService.reserveSeat(eventId, driverId, userId);
+        CarRider result = carpoolService.reserveSeat(eventId, driverId, userId, null);
 
         // Then
         assertThat(result).isNotNull();
@@ -359,7 +359,7 @@ class CarpoolServiceImplTest {
         doThrow(new RuntimeException("Delete failed")).when(hangoutRepository).deleteNeedsRide(eventId, userId);
 
         // When
-        CarRider result = carpoolService.reserveSeat(eventId, driverId, userId);
+        CarRider result = carpoolService.reserveSeat(eventId, driverId, userId, null);
 
         // Then - Should still succeed despite deletion failure
         assertThat(result).isNotNull();
@@ -382,9 +382,9 @@ class CarpoolServiceImplTest {
         when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
 
         // When/Then
-        assertThatThrownBy(() -> carpoolService.reserveSeat(eventId, driverId, userId))
+        assertThatThrownBy(() -> carpoolService.reserveSeat(eventId, driverId, userId, null))
                 .isInstanceOf(NoAvailableSeatsException.class)
-                .hasMessage("No available seats in this car");
+                .hasMessageContaining("Not enough available seats");
         
         verify(hangoutRepository, never()).deleteNeedsRide(any(), any());
         verify(hangoutRepository, never()).saveCarRider(any());
@@ -403,11 +403,134 @@ class CarpoolServiceImplTest {
         when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
 
         // When/Then
-        assertThatThrownBy(() -> carpoolService.reserveSeat(eventId, driverId, userId))
+        assertThatThrownBy(() -> carpoolService.reserveSeat(eventId, driverId, userId, null))
                 .isInstanceOf(ValidationException.class)
                 .hasMessage("User already has a reservation with this driver");
         
         verify(hangoutRepository, never()).deleteNeedsRide(any(), any());
+        verify(hangoutRepository, never()).saveCarRider(any());
+    }
+
+    // ============================================================================
+    // RESERVE SEAT WITH NOTES AND PLUS-ONE TESTS
+    // ============================================================================
+
+    @Test
+    void reserveSeat_WithNotes_SetsNotesOnRider() {
+        // Given
+        Car car = new Car(eventId, driverId, "Test Driver", 4);
+        car.setAvailableSeats(3);
+        HangoutDetailData dataWithCar = HangoutDetailData.builder().withHangout(hangout).withCars(List.of(car)).build();
+
+        User user = new User();
+        user.setDisplayName("Test User");
+        CarRider carRider = new CarRider(eventId, driverId, userId, "Test User");
+        carRider.setNotes("Pick me up at corner");
+
+        ReserveSeatRequest request = new ReserveSeatRequest("Pick me up at corner", null);
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(dataWithCar);
+        when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
+        when(userService.getUserById(UUID.fromString(userId))).thenReturn(Optional.of(user));
+        when(hangoutRepository.saveCarRider(any(CarRider.class))).thenReturn(carRider);
+        when(hangoutRepository.saveCar(any(Car.class))).thenReturn(car);
+
+        // When
+        CarRider result = carpoolService.reserveSeat(eventId, driverId, userId, request);
+
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result.getNotes()).isEqualTo("Pick me up at corner");
+
+        // Verify the saved rider had notes set
+        org.mockito.ArgumentCaptor<CarRider> riderCaptor = org.mockito.ArgumentCaptor.forClass(CarRider.class);
+        verify(hangoutRepository).saveCarRider(riderCaptor.capture());
+        assertThat(riderCaptor.getValue().getNotes()).isEqualTo("Pick me up at corner");
+        assertThat(riderCaptor.getValue().getPlusOneCount()).isEqualTo(0);
+    }
+
+    @Test
+    void reserveSeat_WithPlusOneCount_DecrementsCorrectSeats() {
+        // Given
+        Car car = new Car(eventId, driverId, "Test Driver", 4);
+        car.setAvailableSeats(4);
+        HangoutDetailData dataWithCar = HangoutDetailData.builder().withHangout(hangout).withCars(List.of(car)).build();
+
+        User user = new User();
+        user.setDisplayName("Test User");
+        CarRider carRider = new CarRider(eventId, driverId, userId, "Test User");
+        carRider.setPlusOneCount(2);
+
+        ReserveSeatRequest request = new ReserveSeatRequest(null, 2);
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(dataWithCar);
+        when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
+        when(userService.getUserById(UUID.fromString(userId))).thenReturn(Optional.of(user));
+        when(hangoutRepository.saveCarRider(any(CarRider.class))).thenReturn(carRider);
+        when(hangoutRepository.saveCar(any(Car.class))).thenReturn(car);
+
+        // When
+        carpoolService.reserveSeat(eventId, driverId, userId, request);
+
+        // Then - Verify seats decremented by 3 (1 rider + 2 plus ones)
+        org.mockito.ArgumentCaptor<Car> carCaptor = org.mockito.ArgumentCaptor.forClass(Car.class);
+        verify(hangoutRepository).saveCar(carCaptor.capture());
+        assertThat(carCaptor.getValue().getAvailableSeats()).isEqualTo(1); // 4 - 3 = 1
+
+        org.mockito.ArgumentCaptor<CarRider> riderCaptor = org.mockito.ArgumentCaptor.forClass(CarRider.class);
+        verify(hangoutRepository).saveCarRider(riderCaptor.capture());
+        assertThat(riderCaptor.getValue().getPlusOneCount()).isEqualTo(2);
+    }
+
+    @Test
+    void reserveSeat_WithNoBody_DefaultsToNoNotesAndZeroPlusOne() {
+        // Given
+        Car car = new Car(eventId, driverId, "Test Driver", 4);
+        car.setAvailableSeats(3);
+        HangoutDetailData dataWithCar = HangoutDetailData.builder().withHangout(hangout).withCars(List.of(car)).build();
+
+        User user = new User();
+        user.setDisplayName("Test User");
+        CarRider carRider = new CarRider(eventId, driverId, userId, "Test User");
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(dataWithCar);
+        when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
+        when(userService.getUserById(UUID.fromString(userId))).thenReturn(Optional.of(user));
+        when(hangoutRepository.saveCarRider(any(CarRider.class))).thenReturn(carRider);
+        when(hangoutRepository.saveCar(any(Car.class))).thenReturn(car);
+
+        // When - pass null request (no body)
+        carpoolService.reserveSeat(eventId, driverId, userId, null);
+
+        // Then - Verify rider has no notes and plusOneCount=0
+        org.mockito.ArgumentCaptor<CarRider> riderCaptor = org.mockito.ArgumentCaptor.forClass(CarRider.class);
+        verify(hangoutRepository).saveCarRider(riderCaptor.capture());
+        assertThat(riderCaptor.getValue().getNotes()).isNull();
+        assertThat(riderCaptor.getValue().getPlusOneCount()).isEqualTo(0);
+
+        // Verify seats decremented by 1
+        org.mockito.ArgumentCaptor<Car> carCaptor = org.mockito.ArgumentCaptor.forClass(Car.class);
+        verify(hangoutRepository).saveCar(carCaptor.capture());
+        assertThat(carCaptor.getValue().getAvailableSeats()).isEqualTo(2); // 3 - 1 = 2
+    }
+
+    @Test
+    void reserveSeat_WithPlusOneCountExceedingAvailableSeats_ThrowsException() {
+        // Given - car has 2 available seats, request needs 4 (1 + 3 plus ones)
+        Car car = new Car(eventId, driverId, "Test Driver", 4);
+        car.setAvailableSeats(2);
+        HangoutDetailData dataWithCar = HangoutDetailData.builder().withHangout(hangout).withCars(List.of(car)).build();
+
+        ReserveSeatRequest request = new ReserveSeatRequest(null, 3);
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(dataWithCar);
+        when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
+
+        // When/Then
+        assertThatThrownBy(() -> carpoolService.reserveSeat(eventId, driverId, userId, request))
+                .isInstanceOf(NoAvailableSeatsException.class)
+                .hasMessageContaining("Not enough available seats");
+
         verify(hangoutRepository, never()).saveCarRider(any());
     }
 
@@ -515,7 +638,7 @@ class CarpoolServiceImplTest {
         when(hangoutRepository.findHangoutById(eventId)).thenReturn(Optional.of(hangout));
 
         // When
-        CarRider result = carpoolService.reserveSeat(eventId, driverId, userId);
+        CarRider result = carpoolService.reserveSeat(eventId, driverId, userId, null);
 
         // Then
         assertThat(result).isNotNull();
@@ -557,7 +680,7 @@ class CarpoolServiceImplTest {
         when(hangoutRepository.findHangoutById(eventId)).thenReturn(Optional.of(hangout));
 
         // When
-        CarRider result = carpoolService.reserveSeat(eventId, driverId, userId);
+        CarRider result = carpoolService.reserveSeat(eventId, driverId, userId, null);
 
         // Then
         assertThat(result).isNotNull();

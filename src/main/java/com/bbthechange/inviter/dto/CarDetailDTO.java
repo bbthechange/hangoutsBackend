@@ -114,27 +114,47 @@ public class CarDetailDTO {
 class RiderDetailDTO {
     private String riderId;
     private String riderName;
-    
+    private String notes;
+    private int plusOneCount;
+
     public RiderDetailDTO() {}
-    
+
     public RiderDetailDTO(CarRider rider) {
         this.riderId = rider.getRiderId();
         this.riderName = rider.getRiderName();
+        this.notes = rider.getNotes();
+        this.plusOneCount = rider.getPlusOneCount();
     }
-    
+
     public String getRiderId() {
         return riderId;
     }
-    
+
     public void setRiderId(String riderId) {
         this.riderId = riderId;
     }
-    
+
     public String getRiderName() {
         return riderName;
     }
-    
+
     public void setRiderName(String riderName) {
         this.riderName = riderName;
+    }
+
+    public String getNotes() {
+        return notes;
+    }
+
+    public void setNotes(String notes) {
+        this.notes = notes;
+    }
+
+    public int getPlusOneCount() {
+        return plusOneCount;
+    }
+
+    public void setPlusOneCount(int plusOneCount) {
+        this.plusOneCount = plusOneCount;
     }
 }
