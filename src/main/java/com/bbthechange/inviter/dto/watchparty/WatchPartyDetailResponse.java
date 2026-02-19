@@ -70,6 +70,11 @@ public class WatchPartyDetailResponse {
     private String defaultHostId;
 
     /**
+     * Main image path for the watch party (TVMaze show image URL).
+     */
+    private String mainImagePath;
+
+    /**
      * All hangouts in this watch party.
      */
     private List<WatchPartyHangoutSummary> hangouts;

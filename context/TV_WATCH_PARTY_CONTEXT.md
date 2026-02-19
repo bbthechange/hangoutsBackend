@@ -108,6 +108,7 @@ Extends EventSeries with watch party-specific fields:
 | `defaultTime` | String | **Required.** "HH:mm" format |
 | `dayOverride` | Integer | Optional. 0=Sun, 1=Mon, ... 6=Sat |
 | `timezone` | String | **Required.** IANA timezone (e.g., "America/New_York") |
+| `mainImagePath` | String | TVMaze show image URL (set via `showImageUrl` on create/update) |
 | `deletedEpisodeIds` | Set<String> | User-deleted episodes (prevents re-creation) |
 
 **isWatchParty() method:** Returns `true` if `eventSeriesType == "WATCH_PARTY"`
@@ -141,14 +142,17 @@ Creates a watch party series.
   "defaultTime": "20:00",
   "timezone": "America/Los_Angeles",
   "dayOverride": 4,
-  "defaultHostId": "user-uuid"
+  "defaultHostId": "user-uuid",
+  "showImageUrl": "https://static.tvmaze.com/uploads/images/medium_portrait/123/456.jpg"
 }
 ```
 
 **Required:** `showId`, `seasonNumber`, `tvmazeSeasonId`, `showName`, `defaultTime`, `timezone`
-**Optional:** `dayOverride`, `defaultHostId`
+**Optional:** `dayOverride`, `defaultHostId`, `showImageUrl`
 
-**Response:** `WatchPartyResponse` with `seriesId` and list of created hangouts
+**`showImageUrl`** validation: Must start with `https://static.tvmaze.com/` and be ≤2048 characters. Stored as `mainImagePath` on EventSeries and denormalized to SeriesPointer.
+
+**Response:** `WatchPartyResponse` with `seriesId`, `mainImagePath`, and list of created hangouts
 
 ### PUT /groups/{groupId}/watch-parties/{seriesId}
 
@@ -160,11 +164,13 @@ Updates watch party settings.
   "defaultTime": "19:30",
   "dayOverride": 5,
   "defaultHostId": "new-user-uuid",
+  "showImageUrl": "https://static.tvmaze.com/uploads/images/medium_portrait/789/012.jpg",
   "changeExistingUpcomingHangouts": true
 }
 ```
 
 **`changeExistingUpcomingHangouts`** (default: true): If true, cascades changes to all future hangouts.
+**`showImageUrl`**: Set to new URL to change image, `""` to clear, omit to leave unchanged.
 
 ### DELETE /groups/{groupId}/watch-parties/{seriesId}
 

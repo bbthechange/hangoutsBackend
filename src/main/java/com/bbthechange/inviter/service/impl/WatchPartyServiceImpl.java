@@ -35,6 +35,7 @@ public class WatchPartyServiceImpl implements WatchPartyService {
     private static final String WATCH_PARTY_TYPE = "WATCH_PARTY";
     private static final String TVMAZE_SOURCE = "TVMAZE";
     private static final long TWENTY_HOURS_SECONDS = 20 * 60 * 60; // 72000 seconds
+    private static final String TVMAZE_IMAGE_PREFIX = "https://static.tvmaze.com/";
 
     private final GroupRepository groupRepository;
     private final HangoutRepository hangoutRepository;
@@ -157,6 +158,7 @@ public class WatchPartyServiceImpl implements WatchPartyService {
         return WatchPartyResponse.builder()
                 .seriesId(eventSeries.getSeriesId())
                 .seriesTitle(seriesTitle)
+                .mainImagePath(eventSeries.getMainImagePath())
                 .hangouts(hangoutSummaries)
                 .build();
     }
@@ -231,6 +233,7 @@ public class WatchPartyServiceImpl implements WatchPartyService {
                 .timezone(series.getTimezone())
                 .dayOverride(series.getDayOverride())
                 .defaultHostId(series.getDefaultHostId())
+                .mainImagePath(series.getMainImagePath())
                 .hangouts(hangoutSummaries)
                 .interestLevels(interestLevelDTOs)
                 .build();
@@ -311,20 +314,30 @@ public class WatchPartyServiceImpl implements WatchPartyService {
                 ? (request.getDefaultHostId().isEmpty() ? null : request.getDefaultHostId())
                 : series.getDefaultHostId();
 
-        // 5. Check if time-related settings changed
+        // 5. Apply show image update if provided
+        if (request.getShowImageUrl() != null) {
+            if (request.getShowImageUrl().isEmpty()) {
+                series.setMainImagePath(null);
+            } else {
+                validateShowImageUrl(request.getShowImageUrl());
+                series.setMainImagePath(request.getShowImageUrl());
+            }
+        }
+
+        // 6. Check if time-related settings changed
         boolean timeSettingsChanged = !Objects.equals(effectiveDefaultTime, series.getDefaultTime()) ||
                 !Objects.equals(effectiveTimezone, series.getTimezone()) ||
                 !Objects.equals(effectiveDayOverride, series.getDayOverride());
 
         boolean hostChanged = !Objects.equals(effectiveDefaultHostId, series.getDefaultHostId());
 
-        // 6. Apply settings to series
+        // 7. Apply time/host settings to series
         series.setDefaultTime(effectiveDefaultTime);
         series.setTimezone(effectiveTimezone);
         series.setDayOverride(effectiveDayOverride);
         series.setDefaultHostId(effectiveDefaultHostId);
 
-        // 7. If cascade is enabled and time/host changed, update future hangouts
+        // 8. If cascade is enabled and time/host changed, update future hangouts
         Boolean shouldCascade = request.getChangeExistingUpcomingHangouts();
         if (shouldCascade == null) {
             shouldCascade = true; // Default to true
@@ -412,7 +425,7 @@ public class WatchPartyServiceImpl implements WatchPartyService {
             }
         }
 
-        // 8. Update series timestamps if needed
+        // 9. Update series timestamps if needed
         if (minTimestamp != null) {
             series.setStartTimestamp(minTimestamp);
         }
@@ -420,10 +433,10 @@ public class WatchPartyServiceImpl implements WatchPartyService {
             series.setEndTimestamp(maxTimestamp);
         }
 
-        // 9. Save series
+        // 10. Save series
         eventSeriesRepository.save(series);
 
-        // 10. Update series pointer (preserve existing parts and interestLevels)
+        // 11. Update series pointer (preserve existing parts and interestLevels)
         Optional<SeriesPointer> existingPointerOpt = groupRepository.findSeriesPointer(groupId, seriesId);
         SeriesPointer seriesPointer;
         if (existingPointerOpt.isPresent()) {
@@ -468,7 +481,7 @@ public class WatchPartyServiceImpl implements WatchPartyService {
         seriesPointer.setGsi1sk(String.valueOf(series.getStartTimestamp()));
         groupRepository.saveSeriesPointer(seriesPointer);
 
-        // 11. Update group timestamp for cache invalidation
+        // 12. Update group timestamp for cache invalidation
         groupTimestampService.updateGroupTimestamps(List.of(groupId));
 
         logger.info("Updated watch party {} in group {} with cascade={}", seriesId, groupId, shouldCascade);
@@ -571,6 +584,15 @@ public class WatchPartyServiceImpl implements WatchPartyService {
             ZoneId.of(timezone);
         } catch (Exception e) {
             throw new ValidationException("Invalid timezone: " + timezone);
+        }
+    }
+
+    private void validateShowImageUrl(String url) {
+        if (url.length() > 2048) {
+            throw new ValidationException("showImageUrl exceeds maximum length");
+        }
+        if (!url.startsWith(TVMAZE_IMAGE_PREFIX)) {
+            throw new ValidationException("showImageUrl must be a TVMaze image URL");
         }
     }
 
@@ -830,6 +852,12 @@ public class WatchPartyServiceImpl implements WatchPartyService {
         // External ID fields for GSI lookup
         series.setExternalId(String.valueOf(request.getShowId()));
         series.setExternalSource(TVMAZE_SOURCE);
+
+        // Set show image if provided
+        if (request.getShowImageUrl() != null) {
+            validateShowImageUrl(request.getShowImageUrl());
+            series.setMainImagePath(request.getShowImageUrl());
+        }
 
         return series;
     }

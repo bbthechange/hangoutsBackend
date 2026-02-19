@@ -73,6 +73,12 @@ public class CreateWatchPartyRequest {
     private String defaultHostId;
 
     /**
+     * Optional TVMaze show image URL.
+     * Must start with "https://static.tvmaze.com/" if provided.
+     */
+    private String showImageUrl;
+
+    /**
      * TVMaze season ID for Phase 3.
      * When provided, episodes are fetched from TVMaze API.
      * If not provided, episodes must be supplied directly.

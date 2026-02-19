@@ -27,6 +27,11 @@ public class WatchPartyResponse {
     private String seriesTitle;
 
     /**
+     * Main image path for the watch party (TVMaze show image URL).
+     */
+    private String mainImagePath;
+
+    /**
      * List of hangouts created for episodes.
      */
     private List<WatchPartyHangoutSummary> hangouts;

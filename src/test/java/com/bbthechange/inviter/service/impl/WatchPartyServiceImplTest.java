@@ -2078,4 +2078,195 @@ class WatchPartyServiceImplTest {
                     .isEqualTo(savedHangout.getTimeInput().getEndTime());
         }
     }
+
+    // ============================================================================
+    // SHOW IMAGE URL TESTS
+    // ============================================================================
+
+    @Nested
+    class ShowImageUrlTests {
+
+        private static final String VALID_IMAGE_URL = "https://static.tvmaze.com/uploads/images/medium_portrait/123/456.jpg";
+        private static final String INVALID_IMAGE_URL = "https://example.com/image.jpg";
+
+        @Test
+        void createWatchParty_WithValidShowImageUrl_StoresOnSeries() {
+            // Given
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(seasonRepository.findByShowIdAndSeasonNumber(SHOW_ID, SEASON_NUMBER))
+                    .thenReturn(Optional.empty());
+
+            CreateWatchPartyRequest request = CreateWatchPartyRequest.builder()
+                    .showId(SHOW_ID)
+                    .seasonNumber(SEASON_NUMBER)
+                    .showName(SHOW_NAME)
+                    .defaultTime(DEFAULT_TIME)
+                    .timezone(TIMEZONE)
+                    .showImageUrl(VALID_IMAGE_URL)
+                    .episodes(List.of(createEpisode(101, "Pilot", BASE_TIMESTAMP, 60)))
+                    .build();
+
+            // When
+            WatchPartyResponse response = watchPartyService.createWatchParty(GROUP_ID, request, USER_ID);
+
+            // Then - mainImagePath returned in response
+            assertThat(response.getMainImagePath()).isEqualTo(VALID_IMAGE_URL);
+
+            // Verify EventSeries was saved with mainImagePath
+            ArgumentCaptor<EventSeries> seriesCaptor = ArgumentCaptor.forClass(EventSeries.class);
+            verify(eventSeriesRepository).save(seriesCaptor.capture());
+            assertThat(seriesCaptor.getValue().getMainImagePath()).isEqualTo(VALID_IMAGE_URL);
+        }
+
+        @Test
+        void createWatchParty_WithNullShowImageUrl_NoImageSet() {
+            // Given
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(seasonRepository.findByShowIdAndSeasonNumber(SHOW_ID, SEASON_NUMBER))
+                    .thenReturn(Optional.empty());
+
+            CreateWatchPartyRequest request = createValidRequest(
+                    List.of(createEpisode(101, "Pilot", BASE_TIMESTAMP, 60)));
+
+            // When
+            WatchPartyResponse response = watchPartyService.createWatchParty(GROUP_ID, request, USER_ID);
+
+            // Then
+            assertThat(response.getMainImagePath()).isNull();
+
+            ArgumentCaptor<EventSeries> seriesCaptor = ArgumentCaptor.forClass(EventSeries.class);
+            verify(eventSeriesRepository).save(seriesCaptor.capture());
+            assertThat(seriesCaptor.getValue().getMainImagePath()).isNull();
+        }
+
+        @Test
+        void createWatchParty_WithInvalidImageUrlPrefix_ThrowsValidation() {
+            // Given
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(seasonRepository.findByShowIdAndSeasonNumber(SHOW_ID, SEASON_NUMBER))
+                    .thenReturn(Optional.empty());
+
+            CreateWatchPartyRequest request = CreateWatchPartyRequest.builder()
+                    .showId(SHOW_ID)
+                    .seasonNumber(SEASON_NUMBER)
+                    .showName(SHOW_NAME)
+                    .defaultTime(DEFAULT_TIME)
+                    .timezone(TIMEZONE)
+                    .showImageUrl(INVALID_IMAGE_URL)
+                    .episodes(List.of(createEpisode(101, "Pilot", BASE_TIMESTAMP, 60)))
+                    .build();
+
+            // When/Then
+            assertThatThrownBy(() -> watchPartyService.createWatchParty(GROUP_ID, request, USER_ID))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessageContaining("showImageUrl must be a TVMaze image URL");
+        }
+
+        @Test
+        void updateWatchParty_WithNewShowImageUrl_UpdatesImage() {
+            // Given
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(testHangout));
+
+            SeriesPointer existingPointer = SeriesPointer.fromEventSeries(testSeries, GROUP_ID);
+            when(groupRepository.findSeriesPointer(GROUP_ID, SERIES_ID))
+                    .thenReturn(Optional.of(existingPointer));
+
+            UpdateWatchPartyRequest request = UpdateWatchPartyRequest.builder()
+                    .showImageUrl(VALID_IMAGE_URL)
+                    .changeExistingUpcomingHangouts(false)
+                    .build();
+
+            // When
+            WatchPartyDetailResponse result = watchPartyService.updateWatchParty(
+                    GROUP_ID, SERIES_ID, request, USER_ID);
+
+            // Then
+            assertThat(result.getMainImagePath()).isEqualTo(VALID_IMAGE_URL);
+
+            // Verify series saved with image
+            ArgumentCaptor<EventSeries> seriesCaptor = ArgumentCaptor.forClass(EventSeries.class);
+            verify(eventSeriesRepository).save(seriesCaptor.capture());
+            assertThat(seriesCaptor.getValue().getMainImagePath()).isEqualTo(VALID_IMAGE_URL);
+
+            // Verify pointer synced
+            ArgumentCaptor<SeriesPointer> pointerCaptor = ArgumentCaptor.forClass(SeriesPointer.class);
+            verify(groupRepository).saveSeriesPointer(pointerCaptor.capture());
+            assertThat(pointerCaptor.getValue().getMainImagePath()).isEqualTo(VALID_IMAGE_URL);
+        }
+
+        @Test
+        void updateWatchParty_WithEmptyShowImageUrl_ClearsImage() {
+            // Given
+            testSeries.setMainImagePath(VALID_IMAGE_URL); // Has existing image
+
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(testHangout));
+
+            SeriesPointer existingPointer = SeriesPointer.fromEventSeries(testSeries, GROUP_ID);
+            when(groupRepository.findSeriesPointer(GROUP_ID, SERIES_ID))
+                    .thenReturn(Optional.of(existingPointer));
+
+            UpdateWatchPartyRequest request = UpdateWatchPartyRequest.builder()
+                    .showImageUrl("") // Empty string = clear
+                    .changeExistingUpcomingHangouts(false)
+                    .build();
+
+            // When
+            WatchPartyDetailResponse result = watchPartyService.updateWatchParty(
+                    GROUP_ID, SERIES_ID, request, USER_ID);
+
+            // Then
+            assertThat(result.getMainImagePath()).isNull();
+
+            ArgumentCaptor<EventSeries> seriesCaptor = ArgumentCaptor.forClass(EventSeries.class);
+            verify(eventSeriesRepository).save(seriesCaptor.capture());
+            assertThat(seriesCaptor.getValue().getMainImagePath()).isNull();
+        }
+
+        @Test
+        void updateWatchParty_WithInvalidImageUrlPrefix_ThrowsValidation() {
+            // Given
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+
+            UpdateWatchPartyRequest request = UpdateWatchPartyRequest.builder()
+                    .showImageUrl(INVALID_IMAGE_URL)
+                    .changeExistingUpcomingHangouts(false)
+                    .build();
+
+            // When/Then
+            assertThatThrownBy(() ->
+                    watchPartyService.updateWatchParty(GROUP_ID, SERIES_ID, request, USER_ID))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessageContaining("showImageUrl must be a TVMaze image URL");
+        }
+
+        @Test
+        void createWatchParty_WithTooLongShowImageUrl_ThrowsValidation() {
+            // Given
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(seasonRepository.findByShowIdAndSeasonNumber(SHOW_ID, SEASON_NUMBER))
+                    .thenReturn(Optional.empty());
+
+            String longUrl = "https://static.tvmaze.com/" + "a".repeat(2049 - "https://static.tvmaze.com/".length());
+
+            CreateWatchPartyRequest request = CreateWatchPartyRequest.builder()
+                    .showId(SHOW_ID)
+                    .seasonNumber(SEASON_NUMBER)
+                    .showName(SHOW_NAME)
+                    .defaultTime(DEFAULT_TIME)
+                    .timezone(TIMEZONE)
+                    .showImageUrl(longUrl)
+                    .episodes(List.of(createEpisode(101, "Pilot", BASE_TIMESTAMP, 60)))
+                    .build();
+
+            // When/Then
+            assertThatThrownBy(() -> watchPartyService.createWatchParty(GROUP_ID, request, USER_ID))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessageContaining("exceeds maximum length");
+        }
+    }
 }

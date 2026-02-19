@@ -45,6 +45,13 @@ public class UpdateWatchPartyRequest {
     private String defaultHostId;
 
     /**
+     * Optional TVMaze show image URL.
+     * Must start with "https://static.tvmaze.com/" if provided.
+     * Set to empty string to clear.
+     */
+    private String showImageUrl;
+
+    /**
      * Whether to cascade changes to existing upcoming hangouts.
      * Defaults to true - changes will apply to future hangouts.
      * Set to false to only update series settings without modifying hangouts.
