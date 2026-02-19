@@ -444,6 +444,24 @@ public class SeriesPointer extends BaseItem {
     }
 
     /**
+     * Remove a user's interest level from this series.
+     * No-op if the user has no interest level or the list is null.
+     *
+     * @param userId The user whose interest level should be removed
+     * @return true if an entry was removed, false otherwise
+     */
+    public boolean removeInterestLevel(String userId) {
+        if (this.interestLevels == null || userId == null) {
+            return false;
+        }
+        boolean removed = this.interestLevels.removeIf(il -> userId.equals(il.getUserId()));
+        if (removed) {
+            touch();
+        }
+        return removed;
+    }
+
+    /**
      * Get the count of interest levels.
      */
     public int getInterestLevelsCount() {

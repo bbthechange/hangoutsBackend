@@ -479,54 +479,82 @@ public class WatchPartyServiceImpl implements WatchPartyService {
 
     @Override
     public void setUserInterest(String seriesId, String level, String requestingUserId) {
-        // 1. Lookup EventSeries by seriesId
-        EventSeries series = eventSeriesRepository.findById(seriesId)
-                .orElseThrow(() -> new ResourceNotFoundException("Watch party series not found: " + seriesId));
+        SeriesInterestContext ctx = validateAndGetSeriesInterestContext(seriesId, requestingUserId);
 
-        // Verify it's a watch party
-        if (!WATCH_PARTY_TYPE.equals(series.getEventSeriesType())) {
-            throw new ResourceNotFoundException("Series is not a watch party: " + seriesId);
-        }
-
-        // 2. Get the groupId from the EventSeries
-        String groupId = series.getGroupId();
-        if (groupId == null) {
-            throw new ResourceNotFoundException("Watch party has no associated group: " + seriesId);
-        }
-
-        // 3. Validate user is member of the associated group
-        if (!groupRepository.isUserMemberOfGroup(groupId, requestingUserId)) {
-            throw new UnauthorizedException("User is not a member of the watch party group");
-        }
-
-        // 4. Get user profile for denormalized data
+        // Get user profile for denormalized data
         User user = userRepository.findById(requestingUserId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + requestingUserId));
 
-        // 5. Create InterestLevel with denormalized user data
+        // Create InterestLevel with denormalized user data
         InterestLevel interestLevel = new InterestLevel();
         interestLevel.setUserId(requestingUserId);
         interestLevel.setStatus(level);  // GOING, INTERESTED, NOT_GOING
         interestLevel.setUserName(user.getDisplayName() != null ? user.getDisplayName() : user.getUsername());
         interestLevel.setMainImagePath(user.getMainImagePath());
 
-        // 6. Find and update the SeriesPointer
-        Optional<SeriesPointer> pointerOpt = groupRepository.findSeriesPointer(groupId, seriesId);
-        if (pointerOpt.isEmpty()) {
-            throw new ResourceNotFoundException("Series pointer not found for group: " + groupId);
+        // Find and update the SeriesPointer
+        if (ctx.pointer() == null) {
+            throw new ResourceNotFoundException("Series pointer not found for group: " + ctx.groupId());
         }
 
-        SeriesPointer seriesPointer = pointerOpt.get();
-        seriesPointer.setOrUpdateInterestLevel(interestLevel);
+        ctx.pointer().setOrUpdateInterestLevel(interestLevel);
 
-        // 7. Save the updated SeriesPointer
-        groupRepository.saveSeriesPointer(seriesPointer);
+        // Save the updated SeriesPointer
+        groupRepository.saveSeriesPointer(ctx.pointer());
 
-        // 8. Update group timestamp for ETag invalidation
-        groupTimestampService.updateGroupTimestamps(List.of(groupId));
+        // Update group timestamp for ETag invalidation
+        groupTimestampService.updateGroupTimestamps(List.of(ctx.groupId()));
 
         logger.info("User {} set interest level {} on watch party series {}", requestingUserId, level, seriesId);
     }
+
+    @Override
+    public void removeUserInterest(String seriesId, String requestingUserId) {
+        SeriesInterestContext ctx = validateAndGetSeriesInterestContext(seriesId, requestingUserId);
+
+        // If no pointer exists, nothing to remove — idempotent return
+        if (ctx.pointer() == null) {
+            return;
+        }
+
+        boolean removed = ctx.pointer().removeInterestLevel(requestingUserId);
+
+        if (removed) {
+            // Only persist and invalidate cache if something was actually removed
+            groupRepository.saveSeriesPointer(ctx.pointer());
+            groupTimestampService.updateGroupTimestamps(List.of(ctx.groupId()));
+            logger.info("User {} removed interest from watch party series {}", requestingUserId, seriesId);
+        }
+    }
+
+    /**
+     * Shared validation for series interest operations.
+     * Looks up the series, verifies it's a watch party, validates group membership,
+     * and returns the context needed for interest operations.
+     */
+    private SeriesInterestContext validateAndGetSeriesInterestContext(String seriesId, String requestingUserId) {
+        EventSeries series = eventSeriesRepository.findById(seriesId)
+                .orElseThrow(() -> new ResourceNotFoundException("Watch party series not found: " + seriesId));
+
+        if (!WATCH_PARTY_TYPE.equals(series.getEventSeriesType())) {
+            throw new ResourceNotFoundException("Series is not a watch party: " + seriesId);
+        }
+
+        String groupId = series.getGroupId();
+        if (groupId == null) {
+            throw new ResourceNotFoundException("Watch party has no associated group: " + seriesId);
+        }
+
+        if (!groupRepository.isUserMemberOfGroup(groupId, requestingUserId)) {
+            throw new UnauthorizedException("User is not a member of the watch party group");
+        }
+
+        SeriesPointer pointer = groupRepository.findSeriesPointer(groupId, seriesId)
+                .orElse(null);
+        return new SeriesInterestContext(groupId, pointer);
+    }
+
+    private record SeriesInterestContext(String groupId, SeriesPointer pointer) {}
 
     // ============================================================================
     // HELPER METHODS - VALIDATION

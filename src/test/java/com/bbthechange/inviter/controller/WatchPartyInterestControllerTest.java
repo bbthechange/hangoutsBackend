@@ -23,8 +23,10 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.UUID;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -33,6 +35,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *
  * Test Coverage:
  * - POST /watch-parties/{seriesId}/interest - Set series-level interest
+ * - DELETE /watch-parties/{seriesId}/interest - Remove series-level interest
  * - Validation scenarios (seriesId format, request body)
  * - Error handling (ResourceNotFoundException, UnauthorizedException)
  */
@@ -216,6 +219,73 @@ class WatchPartyInterestControllerTest {
                     .andExpect(status().isForbidden());
 
             verify(watchPartyService).setUserInterest(eq(seriesId), eq("GOING"), eq(userId));
+        }
+    }
+
+    @Nested
+    @DisplayName("DELETE /watch-parties/{seriesId}/interest - Remove Series Interest Tests")
+    class RemoveSeriesInterestTests {
+
+        @Test
+        @DisplayName("Should return 204 and call service with valid request")
+        void removeSeriesInterest_WithValidRequest_Returns204AndCallsService() throws Exception {
+            // Given
+            doNothing().when(watchPartyService).removeUserInterest(eq(seriesId), eq(userId));
+
+            // When & Then
+            mockMvc.perform(delete("/watch-parties/{seriesId}/interest", seriesId)
+                    .header("Authorization", "Bearer " + validJWT)
+                    .requestAttr("userId", userId))
+                    .andExpect(status().isNoContent());
+
+            verify(watchPartyService).removeUserInterest(eq(seriesId), eq(userId));
+        }
+
+        @Test
+        @DisplayName("Should return 400 for invalid seriesId format")
+        void removeSeriesInterest_WithInvalidSeriesIdFormat_Returns400() throws Exception {
+            // Given
+            String invalidSeriesId = "invalid-id";
+
+            // When & Then
+            mockMvc.perform(delete("/watch-parties/{seriesId}/interest", invalidSeriesId)
+                    .header("Authorization", "Bearer " + validJWT)
+                    .requestAttr("userId", userId))
+                    .andExpect(status().isBadRequest());
+
+            verify(watchPartyService, never()).removeUserInterest(any(), any());
+        }
+
+        @Test
+        @DisplayName("Should return 404 when service throws ResourceNotFoundException")
+        void removeSeriesInterest_WhenServiceThrowsNotFound_Returns404() throws Exception {
+            // Given
+            doThrow(new ResourceNotFoundException("Watch party series not found: " + seriesId))
+                    .when(watchPartyService).removeUserInterest(eq(seriesId), eq(userId));
+
+            // When & Then
+            mockMvc.perform(delete("/watch-parties/{seriesId}/interest", seriesId)
+                    .header("Authorization", "Bearer " + validJWT)
+                    .requestAttr("userId", userId))
+                    .andExpect(status().isNotFound());
+
+            verify(watchPartyService).removeUserInterest(eq(seriesId), eq(userId));
+        }
+
+        @Test
+        @DisplayName("Should return 403 when service throws UnauthorizedException")
+        void removeSeriesInterest_WhenServiceThrowsUnauthorized_Returns403() throws Exception {
+            // Given
+            doThrow(new UnauthorizedException("User not authorized to access this watch party"))
+                    .when(watchPartyService).removeUserInterest(eq(seriesId), eq(userId));
+
+            // When & Then
+            mockMvc.perform(delete("/watch-parties/{seriesId}/interest", seriesId)
+                    .header("Authorization", "Bearer " + validJWT)
+                    .requestAttr("userId", userId))
+                    .andExpect(status().isForbidden());
+
+            verify(watchPartyService).removeUserInterest(eq(seriesId), eq(userId));
         }
     }
 }

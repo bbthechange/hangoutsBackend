@@ -102,4 +102,15 @@ public interface WatchPartyService {
      * @throws com.bbthechange.inviter.exception.UnauthorizedException if user is not in any associated group
      */
     void setUserInterest(String seriesId, String level, String requestingUserId);
+
+    /**
+     * Remove series-level interest for a watch party.
+     * Idempotent: no error if the user has no existing interest.
+     *
+     * @param seriesId The watch party series ID
+     * @param requestingUserId The user removing their interest
+     * @throws com.bbthechange.inviter.exception.ResourceNotFoundException if series not found
+     * @throws com.bbthechange.inviter.exception.UnauthorizedException if user is not in any associated group
+     */
+    void removeUserInterest(String seriesId, String requestingUserId);
 }

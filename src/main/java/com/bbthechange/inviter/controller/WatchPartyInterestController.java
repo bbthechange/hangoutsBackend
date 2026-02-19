@@ -58,4 +58,28 @@ public class WatchPartyInterestController extends BaseController {
 
         return ResponseEntity.ok().build();
     }
+
+    /**
+     * Remove series-level interest for a watch party.
+     *
+     * Idempotent: returns 204 even if the user had no interest set.
+     *
+     * Authorization: User must be a member of a group that the watch party belongs to.
+     *
+     * @param seriesId The watch party series ID (UUID format)
+     * @param httpRequest HTTP request for user ID extraction
+     * @return 204 No Content on success
+     */
+    @DeleteMapping("/{seriesId}/interest")
+    public ResponseEntity<Void> removeSeriesInterest(
+            @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid series ID format") String seriesId,
+            HttpServletRequest httpRequest) {
+
+        String userId = extractUserId(httpRequest);
+        logger.info("User {} removing interest from watch party series {}", userId, seriesId);
+
+        watchPartyService.removeUserInterest(seriesId, userId);
+
+        return ResponseEntity.noContent().build();
+    }
 }

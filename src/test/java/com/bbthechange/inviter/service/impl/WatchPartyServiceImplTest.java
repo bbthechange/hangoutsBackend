@@ -1498,6 +1498,165 @@ class WatchPartyServiceImplTest {
     }
 
     // ============================================================================
+    // REMOVE USER INTEREST TESTS
+    // ============================================================================
+
+    @Nested
+    class RemoveUserInterestTests {
+
+        private SeriesPointer testSeriesPointer;
+
+        @BeforeEach
+        void setUpRemoveInterestTests() {
+            testSeriesPointer = new SeriesPointer();
+            testSeriesPointer.setSeriesId(SERIES_ID);
+            testSeriesPointer.setGroupId(GROUP_ID);
+            testSeriesPointer.setEventSeriesType("WATCH_PARTY");
+        }
+
+        @Test
+        void removeUserInterest_RemovesExistingInterest() {
+            // Given - User has existing interest
+            InterestLevel existingLevel = new InterestLevel();
+            existingLevel.setUserId(USER_ID);
+            existingLevel.setStatus("GOING");
+            existingLevel.setUserName("Test User");
+            testSeriesPointer.setInterestLevels(new ArrayList<>(List.of(existingLevel)));
+
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(groupRepository.findSeriesPointer(GROUP_ID, SERIES_ID)).thenReturn(Optional.of(testSeriesPointer));
+
+            // When
+            watchPartyService.removeUserInterest(SERIES_ID, USER_ID);
+
+            // Then
+            ArgumentCaptor<SeriesPointer> pointerCaptor = ArgumentCaptor.forClass(SeriesPointer.class);
+            verify(groupRepository).saveSeriesPointer(pointerCaptor.capture());
+
+            SeriesPointer savedPointer = pointerCaptor.getValue();
+            assertThat(savedPointer.getInterestLevels()).isEmpty();
+            verify(groupTimestampService).updateGroupTimestamps(List.of(GROUP_ID));
+        }
+
+        @Test
+        void removeUserInterest_NoOpWhenNoInterestExists() {
+            // Given - Empty interest levels list
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(groupRepository.findSeriesPointer(GROUP_ID, SERIES_ID)).thenReturn(Optional.of(testSeriesPointer));
+
+            // When
+            watchPartyService.removeUserInterest(SERIES_ID, USER_ID);
+
+            // Then - No save or timestamp update since nothing was removed
+            verify(groupRepository, never()).saveSeriesPointer(any());
+            verify(groupTimestampService, never()).updateGroupTimestamps(any());
+        }
+
+        @Test
+        void removeUserInterest_OtherUsersInterestNotAffected() {
+            // Given - Multiple users have interest
+            String otherUserId = "other-user-1234-1234-123456789012";
+            InterestLevel userLevel = new InterestLevel();
+            userLevel.setUserId(USER_ID);
+            userLevel.setStatus("GOING");
+            userLevel.setUserName("Test User");
+
+            InterestLevel otherLevel = new InterestLevel();
+            otherLevel.setUserId(otherUserId);
+            otherLevel.setStatus("INTERESTED");
+            otherLevel.setUserName("Other User");
+
+            testSeriesPointer.setInterestLevels(new ArrayList<>(List.of(userLevel, otherLevel)));
+
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(groupRepository.findSeriesPointer(GROUP_ID, SERIES_ID)).thenReturn(Optional.of(testSeriesPointer));
+
+            // When
+            watchPartyService.removeUserInterest(SERIES_ID, USER_ID);
+
+            // Then - Other user's interest is preserved
+            ArgumentCaptor<SeriesPointer> pointerCaptor = ArgumentCaptor.forClass(SeriesPointer.class);
+            verify(groupRepository).saveSeriesPointer(pointerCaptor.capture());
+
+            SeriesPointer savedPointer = pointerCaptor.getValue();
+            assertThat(savedPointer.getInterestLevels()).hasSize(1);
+            assertThat(savedPointer.getInterestLevels().get(0).getUserId()).isEqualTo(otherUserId);
+        }
+
+        @Test
+        void removeUserInterest_MissingPointer_EarlyReturn() {
+            // Given - No pointer exists
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(groupRepository.findSeriesPointer(GROUP_ID, SERIES_ID)).thenReturn(Optional.empty());
+
+            // When
+            watchPartyService.removeUserInterest(SERIES_ID, USER_ID);
+
+            // Then - No save, no timestamp update
+            verify(groupRepository, never()).saveSeriesPointer(any());
+            verify(groupTimestampService, never()).updateGroupTimestamps(any());
+        }
+
+        @Test
+        void removeUserInterest_UpdatesGroupTimestamp() {
+            // Given
+            InterestLevel existingLevel = new InterestLevel();
+            existingLevel.setUserId(USER_ID);
+            existingLevel.setStatus("GOING");
+            testSeriesPointer.setInterestLevels(new ArrayList<>(List.of(existingLevel)));
+
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(groupRepository.findSeriesPointer(GROUP_ID, SERIES_ID)).thenReturn(Optional.of(testSeriesPointer));
+
+            // When
+            watchPartyService.removeUserInterest(SERIES_ID, USER_ID);
+
+            // Then
+            verify(groupTimestampService).updateGroupTimestamps(List.of(GROUP_ID));
+        }
+
+        @Test
+        void removeUserInterest_SeriesNotFound_ThrowsNotFound() {
+            // Given
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.empty());
+
+            // When/Then
+            assertThatThrownBy(() -> watchPartyService.removeUserInterest(SERIES_ID, USER_ID))
+                    .isInstanceOf(ResourceNotFoundException.class)
+                    .hasMessageContaining("Watch party series not found");
+        }
+
+        @Test
+        void removeUserInterest_NotWatchParty_ThrowsNotFound() {
+            // Given
+            testSeries.setEventSeriesType("REGULAR");
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+
+            // When/Then
+            assertThatThrownBy(() -> watchPartyService.removeUserInterest(SERIES_ID, USER_ID))
+                    .isInstanceOf(ResourceNotFoundException.class)
+                    .hasMessageContaining("not a watch party");
+        }
+
+        @Test
+        void removeUserInterest_NonMember_ThrowsUnauthorized() {
+            // Given
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(false);
+
+            // When/Then
+            assertThatThrownBy(() -> watchPartyService.removeUserInterest(SERIES_ID, USER_ID))
+                    .isInstanceOf(UnauthorizedException.class)
+                    .hasMessageContaining("not a member");
+        }
+    }
+
+    // ============================================================================
     // TIME INFO ISO-8601 FORMATTING TESTS
     // ============================================================================
 

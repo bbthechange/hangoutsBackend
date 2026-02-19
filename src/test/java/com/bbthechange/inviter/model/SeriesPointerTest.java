@@ -569,6 +569,61 @@ class SeriesPointerTest {
     }
 
     @Test
+    void removeInterestLevel_RemovesCorrectEntry() {
+        // Given
+        SeriesPointer pointer = new SeriesPointer();
+        String userId = "12345678-1234-1234-1234-123456789016";
+
+        InterestLevel level = new InterestLevel();
+        level.setUserId(userId);
+        level.setStatus("GOING");
+        level.setUserName("John");
+        pointer.setOrUpdateInterestLevel(level);
+
+        assertThat(pointer.getInterestLevels()).hasSize(1);
+
+        // When
+        pointer.removeInterestLevel(userId);
+
+        // Then
+        assertThat(pointer.getInterestLevels()).isEmpty();
+    }
+
+    @Test
+    void removeInterestLevel_NoOpWhenUserNotInList() {
+        // Given
+        SeriesPointer pointer = new SeriesPointer();
+        String userId = "12345678-1234-1234-1234-123456789016";
+        String otherUserId = "22222222-2222-2222-2222-222222222222";
+
+        InterestLevel level = new InterestLevel();
+        level.setUserId(otherUserId);
+        level.setStatus("INTERESTED");
+        level.setUserName("Other");
+        pointer.setOrUpdateInterestLevel(level);
+
+        // When
+        pointer.removeInterestLevel(userId);
+
+        // Then - other user's entry is preserved
+        assertThat(pointer.getInterestLevels()).hasSize(1);
+        assertThat(pointer.getInterestLevels().get(0).getUserId()).isEqualTo(otherUserId);
+    }
+
+    @Test
+    void removeInterestLevel_NullSafeWhenListIsNull() {
+        // Given
+        SeriesPointer pointer = new SeriesPointer();
+        pointer.setInterestLevels(null);
+
+        // When - should not throw
+        pointer.removeInterestLevel("12345678-1234-1234-1234-123456789016");
+
+        // Then - no exception thrown
+        assertThat(pointer.getInterestLevelsCount()).isEqualTo(0);
+    }
+
+    @Test
     void setWatchPartyFields_ShouldWorkCorrectly() {
         // Given
         SeriesPointer pointer = new SeriesPointer();
