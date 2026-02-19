@@ -905,7 +905,7 @@ class CarpoolServiceImplTest {
 
         hangout.setAssociatedGroups(Arrays.asList(groupId));
         Car updatedCar = new Car(eventId, userId, "Test Driver", 6);
-        updatedCar.setAvailableSeats(4);
+        updatedCar.setAvailableSeats(5); // 6 - 1 driver - 0 riders
         updatedCar.setNotes("Updated notes");
         HangoutDetailData updatedData = HangoutDetailData.builder().withHangout(hangout).withCars(List.of(updatedCar)).build();
 
@@ -924,8 +924,81 @@ class CarpoolServiceImplTest {
 
         // Then
         assertThat(result).isNotNull();
-        verify(hangoutRepository).saveCar(any(Car.class));
+        org.mockito.ArgumentCaptor<Car> carCaptor = org.mockito.ArgumentCaptor.forClass(Car.class);
+        verify(hangoutRepository).saveCar(carCaptor.capture());
+        Car savedCar = carCaptor.getValue();
+        assertThat(savedCar.getTotalCapacity()).isEqualTo(6);
+        assertThat(savedCar.getAvailableSeats()).isEqualTo(5); // 6 - 1 driver - 0 riders
         verify(pointerUpdateService).updatePointerWithRetry(eq(groupId), eq(eventId), any(), eq("carpool data"));
+    }
+
+    @Test
+    void updateCarOffer_WithCapacityChange_ShouldSubtractDriverSeat() {
+        // Given - car with capacity 4, 1 rider
+        String groupId = UUID.randomUUID().toString();
+        String riderId = UUID.randomUUID().toString();
+
+        Car car = new Car(eventId, userId, "Test Driver", 4);
+        car.setAvailableSeats(2); // 4 - 1 driver - 1 rider
+        CarRider rider = new CarRider(eventId, userId, riderId, "Test Rider");
+        HangoutDetailData dataWithCar = HangoutDetailData.builder()
+            .withHangout(hangout)
+            .withCars(List.of(car))
+            .withCarRiders(List.of(rider))
+            .build();
+
+        UpdateCarRequest request = new UpdateCarRequest(5, null);
+
+        hangout.setAssociatedGroups(Arrays.asList(groupId));
+        Car updatedCar = new Car(eventId, userId, "Test Driver", 5);
+        updatedCar.setAvailableSeats(3); // 5 - 1 driver - 1 rider
+        HangoutDetailData updatedData = HangoutDetailData.builder()
+            .withHangout(hangout)
+            .withCars(List.of(updatedCar))
+            .withCarRiders(List.of(rider))
+            .build();
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(dataWithCar).thenReturn(updatedData);
+        when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
+        when(hangoutRepository.saveCar(any(Car.class))).thenReturn(updatedCar);
+        when(hangoutRepository.findHangoutById(eventId)).thenReturn(Optional.of(hangout));
+
+        // When
+        carpoolService.updateCarOffer(eventId, userId, request, userId);
+
+        // Then
+        org.mockito.ArgumentCaptor<Car> carCaptor = org.mockito.ArgumentCaptor.forClass(Car.class);
+        verify(hangoutRepository).saveCar(carCaptor.capture());
+        Car savedCar = carCaptor.getValue();
+        assertThat(savedCar.getTotalCapacity()).isEqualTo(5);
+        assertThat(savedCar.getAvailableSeats()).isEqualTo(3); // 5 - 1 driver - 1 rider
+    }
+
+    @Test
+    void updateCarOffer_CannotReduceBelowDriverPlusRiders() {
+        // Given - car with capacity 4, 2 riders
+        String riderId1 = UUID.randomUUID().toString();
+        String riderId2 = UUID.randomUUID().toString();
+
+        Car car = new Car(eventId, userId, "Test Driver", 4);
+        car.setAvailableSeats(1); // 4 - 1 driver - 2 riders
+        CarRider rider1 = new CarRider(eventId, userId, riderId1, "Rider 1");
+        CarRider rider2 = new CarRider(eventId, userId, riderId2, "Rider 2");
+        HangoutDetailData dataWithCar = HangoutDetailData.builder()
+            .withHangout(hangout)
+            .withCars(List.of(car))
+            .withCarRiders(List.of(rider1, rider2))
+            .build();
+
+        // Attempt to reduce to 2 seats (need at least 3: 1 driver + 2 riders)
+        UpdateCarRequest request = new UpdateCarRequest(2, null);
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(dataWithCar);
+        when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
+
+        // When/Then
+        assertThatThrownBy(() -> carpoolService.updateCarOffer(eventId, userId, request, userId))
+            .isInstanceOf(ValidationException.class);
     }
 
     @Test

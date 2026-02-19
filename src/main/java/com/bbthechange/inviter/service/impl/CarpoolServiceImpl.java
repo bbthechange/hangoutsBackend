@@ -319,12 +319,12 @@ public class CarpoolServiceImpl implements CarpoolService {
                 .sum();
 
             int newTotalCapacity = request.getTotalCapacity();
-            if (newTotalCapacity < occupiedSeats) {
+            if (newTotalCapacity < occupiedSeats + 1) { // +1 for driver
                 throw new ValidationException("Cannot reduce capacity below occupied seats (" + occupiedSeats + ")");
             }
 
             car.setTotalCapacity(newTotalCapacity);
-            car.setAvailableSeats(newTotalCapacity - occupiedSeats);
+            car.setAvailableSeats(newTotalCapacity - 1 - occupiedSeats); // -1 for driver
         }
         if (request.getNotes() != null) {
             car.setNotes(request.getNotes());
