@@ -73,7 +73,7 @@ class CarpoolServiceImplTest {
     // ============================================================================
 
     @Test
-    void getNeedsRideRequests_WithValidEventAndUser_ReturnsNeedsRideList() {
+    void getNeedsRideRequests_WithValidEventAndUser_ReturnsNeedsRideListWithProfileData() {
         // Given
         NeedsRide needsRide1 = new NeedsRide(eventId, userId, "Need a ride from downtown");
         String userId2 = UUID.randomUUID().toString();
@@ -81,8 +81,13 @@ class CarpoolServiceImplTest {
         List<NeedsRide> needsRideList = List.of(needsRide1, needsRide2);
         hangoutData.setNeedsRide(needsRideList);
 
+        UserSummaryDTO summary1 = new UserSummaryDTO(UUID.fromString(userId), "User One", "users/u1/profile.jpg");
+        UserSummaryDTO summary2 = new UserSummaryDTO(UUID.fromString(userId2), "User Two", "users/u2/profile.jpg");
+
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
         when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
+        when(userService.getUserSummary(UUID.fromString(userId))).thenReturn(Optional.of(summary1));
+        when(userService.getUserSummary(UUID.fromString(userId2))).thenReturn(Optional.of(summary2));
 
         // When
         List<NeedsRideDTO> result = carpoolService.getNeedsRideRequests(eventId, userId);
@@ -91,9 +96,13 @@ class CarpoolServiceImplTest {
         assertThat(result).hasSize(2);
         assertThat(result.get(0).getUserId()).isEqualTo(userId);
         assertThat(result.get(0).getNotes()).isEqualTo("Need a ride from downtown");
+        assertThat(result.get(0).getDisplayName()).isEqualTo("User One");
+        assertThat(result.get(0).getMainImagePath()).isEqualTo("users/u1/profile.jpg");
         assertThat(result.get(1).getUserId()).isEqualTo(userId2);
         assertThat(result.get(1).getNotes()).isEqualTo("Need a ride from airport");
-        
+        assertThat(result.get(1).getDisplayName()).isEqualTo("User Two");
+        assertThat(result.get(1).getMainImagePath()).isEqualTo("users/u2/profile.jpg");
+
         verify(hangoutRepository).getHangoutDetailData(eventId);
         verify(hangoutService).canUserViewHangout(userId, hangout);
     }
@@ -142,6 +151,156 @@ class CarpoolServiceImplTest {
 
         // Then
         assertThat(result).isEmpty();
+        verify(userService, never()).getUserSummary(any());
+    }
+
+    @Test
+    void getNeedsRideRequests_WithUserNotInCache_ReturnsNullDisplayNameAndImage() {
+        // Given
+        NeedsRide needsRide = new NeedsRide(eventId, userId, "Need a ride");
+        hangoutData.setNeedsRide(List.of(needsRide));
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+        when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
+        when(userService.getUserSummary(UUID.fromString(userId))).thenReturn(Optional.empty());
+
+        // When
+        List<NeedsRideDTO> result = carpoolService.getNeedsRideRequests(eventId, userId);
+
+        // Then
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getUserId()).isEqualTo(userId);
+        assertThat(result.get(0).getDisplayName()).isNull();
+        assertThat(result.get(0).getMainImagePath()).isNull();
+    }
+
+    // ============================================================================
+    // GET EVENT CARS TESTS
+    // ============================================================================
+
+    @Test
+    void getEventCars_WithValidEventAndUser_ReturnsCarsWithImagePaths() {
+        // Given
+        Car car = new Car(eventId, driverId, "Test Driver", 4);
+        car.setAvailableSeats(2);
+        car.setNotes("Meet at lot A");
+        String riderId = UUID.randomUUID().toString();
+        CarRider rider = new CarRider(eventId, driverId, riderId, "Test Rider");
+        rider.setNotes("Pick me up at corner");
+        rider.setPlusOneCount(1);
+        HangoutDetailData dataWithCar = HangoutDetailData.builder()
+            .withHangout(hangout)
+            .withCars(List.of(car))
+            .withCarRiders(List.of(rider))
+            .build();
+
+        UserSummaryDTO driverSummary = new UserSummaryDTO(UUID.fromString(driverId), "Test Driver", "users/driver/profile.jpg");
+        UserSummaryDTO riderSummary = new UserSummaryDTO(UUID.fromString(riderId), "Test Rider", "users/rider/profile.jpg");
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(dataWithCar);
+        when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
+        when(userService.getUserSummary(UUID.fromString(driverId))).thenReturn(Optional.of(driverSummary));
+        when(userService.getUserSummary(UUID.fromString(riderId))).thenReturn(Optional.of(riderSummary));
+
+        // When
+        List<CarWithRidersDTO> result = carpoolService.getEventCars(eventId, userId);
+
+        // Then
+        assertThat(result).hasSize(1);
+        CarWithRidersDTO carDto = result.get(0);
+        assertThat(carDto.getDriverId()).isEqualTo(driverId);
+        assertThat(carDto.getDriverName()).isEqualTo("Test Driver");
+        assertThat(carDto.getDriverImagePath()).isEqualTo("users/driver/profile.jpg");
+        assertThat(carDto.getTotalCapacity()).isEqualTo(4);
+        assertThat(carDto.getAvailableSeats()).isEqualTo(2);
+        assertThat(carDto.getNotes()).isEqualTo("Meet at lot A");
+
+        assertThat(carDto.getRiders()).hasSize(1);
+        assertThat(carDto.getRiders().get(0).getRiderId()).isEqualTo(riderId);
+        assertThat(carDto.getRiders().get(0).getRiderName()).isEqualTo("Test Rider");
+        assertThat(carDto.getRiders().get(0).getRiderImagePath()).isEqualTo("users/rider/profile.jpg");
+    }
+
+    @Test
+    void getEventCars_WithUserNotInCache_ReturnsNullImagePath() {
+        // Given
+        Car car = new Car(eventId, driverId, "Test Driver", 4);
+        car.setAvailableSeats(4);
+        HangoutDetailData dataWithCar = HangoutDetailData.builder()
+            .withHangout(hangout)
+            .withCars(List.of(car))
+            .build();
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(dataWithCar);
+        when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
+        when(userService.getUserSummary(UUID.fromString(driverId))).thenReturn(Optional.empty());
+
+        // When
+        List<CarWithRidersDTO> result = carpoolService.getEventCars(eventId, userId);
+
+        // Then
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getDriverImagePath()).isNull();
+    }
+
+    // ============================================================================
+    // GET CAR DETAIL TESTS
+    // ============================================================================
+
+    @Test
+    void getCarDetail_WithValidIds_ReturnsDetailWithImagePaths() {
+        // Given
+        Car car = new Car(eventId, driverId, "Test Driver", 4);
+        car.setAvailableSeats(3);
+        car.setNotes("Meet at lot A");
+        String riderId = UUID.randomUUID().toString();
+        CarRider rider = new CarRider(eventId, driverId, riderId, "Test Rider");
+        HangoutDetailData dataWithCarAndRider = HangoutDetailData.builder()
+            .withHangout(hangout)
+            .withCars(List.of(car))
+            .withCarRiders(List.of(rider))
+            .build();
+
+        UserSummaryDTO driverSummary = new UserSummaryDTO(UUID.fromString(driverId), "Test Driver", "users/driver/profile.jpg");
+        UserSummaryDTO riderSummary = new UserSummaryDTO(UUID.fromString(riderId), "Test Rider", "users/rider/profile.jpg");
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(dataWithCarAndRider);
+        when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
+        when(userService.getUserSummary(UUID.fromString(driverId))).thenReturn(Optional.of(driverSummary));
+        when(userService.getUserSummary(UUID.fromString(riderId))).thenReturn(Optional.of(riderSummary));
+
+        // When
+        CarDetailDTO result = carpoolService.getCarDetail(eventId, driverId, userId);
+
+        // Then
+        assertThat(result.getDriverId()).isEqualTo(driverId);
+        assertThat(result.getDriverImagePath()).isEqualTo("users/driver/profile.jpg");
+        assertThat(result.getRiders()).hasSize(1);
+        assertThat(result.getRiders().get(0).getRiderImagePath()).isEqualTo("users/rider/profile.jpg");
+        assertThat(result.isUserIsDriver()).isFalse();
+        assertThat(result.isUserHasReservation()).isFalse();
+    }
+
+    @Test
+    void getCarDetail_WithUserNotInCache_ReturnsNullImagePaths() {
+        // Given
+        Car car = new Car(eventId, driverId, "Test Driver", 4);
+        car.setAvailableSeats(4);
+        HangoutDetailData dataWithCar = HangoutDetailData.builder()
+            .withHangout(hangout)
+            .withCars(List.of(car))
+            .build();
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(dataWithCar);
+        when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
+        when(userService.getUserSummary(UUID.fromString(driverId))).thenReturn(Optional.empty());
+
+        // When
+        CarDetailDTO result = carpoolService.getCarDetail(eventId, driverId, userId);
+
+        // Then
+        assertThat(result.getDriverImagePath()).isNull();
+        assertThat(result.getRiders()).isEmpty();
     }
 
     @Test

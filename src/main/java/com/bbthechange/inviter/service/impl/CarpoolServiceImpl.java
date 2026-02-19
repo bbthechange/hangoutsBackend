@@ -101,13 +101,25 @@ public class CarpoolServiceImpl implements CarpoolService {
         List<Car> cars = hangoutData.getCars();
         List<CarRider> allRiders = hangoutData.getCarRiders();
         
-        // Build CarWithRidersDTO by grouping riders by driver
+        // Build CarWithRidersDTO by grouping riders by driver, enriching with profile images
         return cars.stream()
             .map(car -> {
                 List<CarRider> carRiders = allRiders.stream()
                     .filter(rider -> rider.getDriverId().equals(car.getDriverId()))
                     .toList();
-                return new CarWithRidersDTO(car, carRiders);
+
+                CarWithRidersDTO dto = new CarWithRidersDTO(car, carRiders);
+
+                // Enrich driver image
+                userService.getUserSummary(UUID.fromString(car.getDriverId()))
+                    .ifPresent(u -> dto.setDriverImagePath(u.getMainImagePath()));
+
+                // Enrich rider images
+                dto.getRiders().forEach(riderDto ->
+                    userService.getUserSummary(UUID.fromString(riderDto.getRiderId()))
+                        .ifPresent(u -> riderDto.setRiderImagePath(u.getMainImagePath())));
+
+                return dto;
             })
             .toList();
     }
@@ -142,7 +154,18 @@ public class CarpoolServiceImpl implements CarpoolService {
         boolean userHasReservation = riders.stream()
             .anyMatch(rider -> rider.getRiderId().equals(userId));
         
-        return new CarDetailDTO(car, riders, userIsDriver, userHasReservation);
+        CarDetailDTO dto = new CarDetailDTO(car, riders, userIsDriver, userHasReservation);
+
+        // Enrich driver image
+        userService.getUserSummary(UUID.fromString(car.getDriverId()))
+            .ifPresent(u -> dto.setDriverImagePath(u.getMainImagePath()));
+
+        // Enrich rider images
+        dto.getRiders().forEach(riderDto ->
+            userService.getUserSummary(UUID.fromString(riderDto.getRiderId()))
+                .ifPresent(u -> riderDto.setRiderImagePath(u.getMainImagePath())));
+
+        return dto;
     }
     
     @Override
@@ -371,7 +394,13 @@ public class CarpoolServiceImpl implements CarpoolService {
         List<NeedsRide> needsRideList = hangoutData.getNeedsRide();
 
         return needsRideList.stream()
-                .map(NeedsRideDTO::new)
+                .map(nr -> {
+                    UserSummaryDTO user = userService.getUserSummary(UUID.fromString(nr.getUserId()))
+                        .orElse(null);
+                    return new NeedsRideDTO(nr,
+                        user != null ? user.getDisplayName() : null,
+                        user != null ? user.getMainImagePath() : null);
+                })
                 .toList();
     }
 

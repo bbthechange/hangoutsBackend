@@ -28,7 +28,11 @@ This hierarchical key structure allows for efficient queries. For example, one c
 | `Car.java` | The `@DynamoDbBean` for a car offer. |
 | `CarRider.java` | The `@DynamoDbBean` for a seat reservation. |
 | `NeedsRide.java` | The `@DynamoDbBean` for a user's ride request. |
-| `CarWithRidersDTO.java` | A DTO used to return a car and its list of confirmed riders. |
+| `CarWithRidersDTO.java` | A DTO used to return a car and its list of confirmed riders. Includes `driverImagePath`. |
+| `RiderDTO.java` | A DTO for rider information within a car listing. Includes `riderImagePath`. |
+| `CarDetailDTO.java` | A DTO for detailed car information with driver and rider details. Includes `driverImagePath`. |
+| `RiderDetailDTO.java` | A DTO for detailed rider information. Includes `riderImagePath`. |
+| `NeedsRideDTO.java` | A DTO for ride requests. Includes `displayName` and `mainImagePath`. |
 
 ## 4. Core Flows
 
@@ -76,3 +80,23 @@ This is the key transactional flow.
 2.  **Repository:** `HangoutRepositoryImpl.getHangoutDetailData()` executes its standard item collection query (`PK = EVENT#{hangoutId}`).
 3.  **Result:** This single query returns the `Hangout` record itself, plus all `Poll`, `Car`, `CarRider`, and `NeedsRide` items associated with it.
 4.  **Service-Layer Assembly:** `CarpoolServiceImpl.getEventCars()` receives this collection of items and assembles the `CarWithRidersDTO` list in application memory before returning it.
+
+## 5. Profile Enrichment (Avatars & Display Names)
+
+Carpool DTOs are enriched with profile data (avatar image paths, display names) at the service layer using `UserService.getUserSummary()`, which reads from a Caffeine cache (60-min TTL, 10k entries). This avoids storing stale profile data in DynamoDB and keeps DTOs up-to-date with current user profiles.
+
+### Enrichment Points
+
+| Method | DTO | Enriched Fields |
+| :--- | :--- | :--- |
+| `getEventCars()` | `CarWithRidersDTO` | `driverImagePath` on the car, `riderImagePath` on each `RiderDTO` |
+| `getCarDetail()` | `CarDetailDTO` | `driverImagePath` on the car, `riderImagePath` on each `RiderDetailDTO` |
+| `getNeedsRideRequests()` | `NeedsRideDTO` | `displayName` and `mainImagePath` on each ride request |
+
+### Pattern
+
+After constructing the DTO from the model data, the service calls `userService.getUserSummary(UUID)` for each participant. If the user is not found in the cache, the enriched fields remain `null` — the frontend handles this gracefully by showing a default avatar.
+
+### Note on Denormalized Names
+
+The `driverName` and `riderName` fields are still written to DynamoDB at creation time (in `offerCar()` and `reserveSeat()`). These denormalized names are used in pointer records and remain available even if the cache is cold. The `driverImagePath`/`riderImagePath` fields are **not** stored in DynamoDB — they are resolved at read time from the cache.

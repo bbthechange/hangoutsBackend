@@ -14,13 +14,14 @@ public class CarDetailDTO {
     private String driverName;
     private int totalCapacity;
     private int availableSeats;
+    private String driverImagePath;
     private String notes;
     private List<RiderDetailDTO> riders;
     private boolean userIsDriver;
     private boolean userHasReservation;
-    
+
     public CarDetailDTO() {}
-    
+
     public CarDetailDTO(Car car, List<CarRider> riders, boolean userIsDriver, boolean userHasReservation) {
         this.eventId = car.getEventId();
         this.driverId = car.getDriverId();
@@ -33,6 +34,14 @@ public class CarDetailDTO {
             .toList();
         this.userIsDriver = userIsDriver;
         this.userHasReservation = userHasReservation;
+    }
+
+    public String getDriverImagePath() {
+        return driverImagePath;
+    }
+
+    public void setDriverImagePath(String driverImagePath) {
+        this.driverImagePath = driverImagePath;
     }
     
     public String getEventId() {
@@ -105,56 +114,5 @@ public class CarDetailDTO {
     
     public void setUserHasReservation(boolean userHasReservation) {
         this.userHasReservation = userHasReservation;
-    }
-}
-
-/**
- * DTO for detailed rider information.
- */
-class RiderDetailDTO {
-    private String riderId;
-    private String riderName;
-    private String notes;
-    private int plusOneCount;
-
-    public RiderDetailDTO() {}
-
-    public RiderDetailDTO(CarRider rider) {
-        this.riderId = rider.getRiderId();
-        this.riderName = rider.getRiderName();
-        this.notes = rider.getNotes();
-        this.plusOneCount = rider.getPlusOneCount();
-    }
-
-    public String getRiderId() {
-        return riderId;
-    }
-
-    public void setRiderId(String riderId) {
-        this.riderId = riderId;
-    }
-
-    public String getRiderName() {
-        return riderName;
-    }
-
-    public void setRiderName(String riderName) {
-        this.riderName = riderName;
-    }
-
-    public String getNotes() {
-        return notes;
-    }
-
-    public void setNotes(String notes) {
-        this.notes = notes;
-    }
-
-    public int getPlusOneCount() {
-        return plusOneCount;
-    }
-
-    public void setPlusOneCount(int plusOneCount) {
-        this.plusOneCount = plusOneCount;
     }
 }
