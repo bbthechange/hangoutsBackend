@@ -177,7 +177,15 @@ public class CarpoolServiceImpl implements CarpoolService {
         int effectivePlusOneCount = (request != null && request.getPlusOneCount() != null) ? request.getPlusOneCount() : 0;
         int seatsNeeded = 1 + effectivePlusOneCount;
 
-        // Get hangout and verify user can view it
+        // Determine effective rider: if riderId is specified, reserve on behalf of that user
+        String effectiveRiderId = (request != null && request.getRiderId() != null) ? request.getRiderId() : userId;
+
+        // If reserving on behalf of another user, caller must be the driver
+        if (!effectiveRiderId.equals(userId) && !userId.equals(driverId)) {
+            throw new UnauthorizedException("Only the driver can reserve a seat on behalf of another rider");
+        }
+
+        // Get hangout and verify caller can view it
         HangoutDetailData hangoutData = hangoutRepository.getHangoutDetailData(eventId);
         if (hangoutData.getHangout() == null) {
             throw new EventNotFoundException("Event not found: " + eventId);
@@ -186,6 +194,11 @@ public class CarpoolServiceImpl implements CarpoolService {
         Hangout hangout = hangoutData.getHangout();
         if (!hangoutService.canUserViewHangout(userId, hangout)) {
             throw new UnauthorizedException("Cannot reserve seats for this event");
+        }
+
+        // If reserving on behalf of another user, verify the rider can also view the hangout
+        if (!effectiveRiderId.equals(userId) && !hangoutService.canUserViewHangout(effectiveRiderId, hangout)) {
+            throw new UnauthorizedException("Rider does not have access to this event");
         }
 
         // Find the car
@@ -199,22 +212,22 @@ public class CarpoolServiceImpl implements CarpoolService {
                 "Not enough available seats: need " + seatsNeeded + " but only " + car.getAvailableSeats() + " available");
         }
 
-        // Check if user already has a reservation
+        // Check if rider already has a reservation
         List<CarRider> existingRiders = hangoutData.getCarRiders().stream()
-            .filter(rider -> rider.getDriverId().equals(driverId) && rider.getRiderId().equals(userId))
+            .filter(rider -> rider.getDriverId().equals(driverId) && rider.getRiderId().equals(effectiveRiderId))
             .toList();
 
         if (!existingRiders.isEmpty()) {
             throw new ValidationException("User already has a reservation with this driver");
         }
 
-        // Get user display name for denormalization
-        User user = userService.getUserById(UUID.fromString(userId))
-            .orElseThrow(() -> new UserNotFoundException("User not found: " + userId));
-        String riderName = user.getDisplayName() != null ? user.getDisplayName() : user.getUsername();
+        // Get rider display name for denormalization
+        User riderUser = userService.getUserById(UUID.fromString(effectiveRiderId))
+            .orElseThrow(() -> new UserNotFoundException("User not found: " + effectiveRiderId));
+        String riderName = riderUser.getDisplayName() != null ? riderUser.getDisplayName() : riderUser.getUsername();
 
         // Create CarRider record with notes and plusOneCount
-        CarRider carRider = new CarRider(eventId, driverId, userId, riderName);
+        CarRider carRider = new CarRider(eventId, driverId, effectiveRiderId, riderName);
         carRider.setNotes(notes);
         carRider.setPlusOneCount(effectivePlusOneCount);
         CarRider savedRider = hangoutRepository.saveCarRider(carRider);
@@ -222,21 +235,21 @@ public class CarpoolServiceImpl implements CarpoolService {
         // Update car available seats (decrease by seatsNeeded)
         car.setAvailableSeats(car.getAvailableSeats() - seatsNeeded);
         hangoutRepository.saveCar(car);
-        
-        // Auto-delete any existing ride request for this user
+
+        // Auto-delete any existing ride request for the rider
         try {
-            hangoutRepository.deleteNeedsRide(eventId, userId);
-            logger.info("Automatically deleted 'needs ride' request for user {} after seat reservation.", userId);
+            hangoutRepository.deleteNeedsRide(eventId, effectiveRiderId);
+            logger.info("Automatically deleted 'needs ride' request for user {} after seat reservation.", effectiveRiderId);
         } catch (Exception e) {
             // Log this, but do not fail the transaction. The user has a seat,
             // which is the most important state. A dangling request is a minor issue.
-            logger.warn("Failed to auto-delete 'needs ride' request for user {}.", userId, e);
+            logger.warn("Failed to auto-delete 'needs ride' request for user {}.", effectiveRiderId, e);
         }
 
         // Update pointer records with new rider data
         updatePointersWithCarpoolData(eventId);
 
-        logger.info("Successfully reserved seat for user {} with driver {} in event {}", userId, driverId, eventId);
+        logger.info("Successfully reserved seat for user {} with driver {} in event {}", effectiveRiderId, driverId, eventId);
         return savedRider;
     }
     

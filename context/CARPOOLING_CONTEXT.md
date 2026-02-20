@@ -54,14 +54,15 @@ This hierarchical key structure allows for efficient queries. For example, one c
 This is the key transactional flow.
 
 1.  **Endpoint:** `POST /events/{eventId}/carpool/cars/{driverId}/reserve`
-2.  **Request body (optional):** `ReserveSeatRequest` with `notes` (String, max 500 chars) and `plusOneCount` (Integer, 0–7). The body is `@RequestBody(required = false)` for backward compatibility — clients sending no body get the same behavior as before (1 seat, no notes).
+2.  **Request body (optional):** `ReserveSeatRequest` with `notes` (String, max 500 chars), `plusOneCount` (Integer, 0–7), and `riderId` (String, UUID format, optional). The body is `@RequestBody(required = false)` for backward compatibility — clients sending no body get the same behavior as before (1 seat, no notes, reserved for the caller).
 3.  **Service:** `CarpoolServiceImpl.reserveSeat()` orchestrates the process:
-    *   It extracts `notes` and `plusOneCount` from the request (null-safe — null request treated as no notes, plusOneCount=0).
+    *   It extracts `notes`, `plusOneCount`, and `riderId` from the request (null-safe — null request treated as no notes, plusOneCount=0, riderId=caller).
+    *   **Driver-on-behalf-of:** When `riderId` is provided and differs from the caller, the caller must be the driver of the target car. The rider must also have access to the event. This allows drivers to pull users from the "needs ride" list into their car.
     *   It calculates `seatsNeeded = 1 + effectivePlusOneCount`.
-    *   It validates that the user can view the event and that the target car has enough available seats (`availableSeats >= seatsNeeded`).
-    *   It creates a `CarRider` entity with `notes` and `plusOneCount` set.
+    *   It validates that the caller can view the event and that the target car has enough available seats (`availableSeats >= seatsNeeded`).
+    *   It creates a `CarRider` entity with the effective rider's ID, display name, `notes`, and `plusOneCount`.
     *   It decrements `availableSeats` on the `Car` entity by `seatsNeeded`.
-    *   It deletes the user's `NeedsRide` record, as they have now found a ride.
+    *   It deletes the **rider's** `NeedsRide` record (not the caller's), as they have now found a ride.
 4.  **Repository:** The service calls the `HangoutRepository` multiple times to save the `CarRider`, update the `Car`, and delete the `NeedsRide` record. These are currently separate calls and not executed in a single atomic transaction.
 
 ### Releasing a Seat

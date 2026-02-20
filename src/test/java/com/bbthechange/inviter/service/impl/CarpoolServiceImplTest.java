@@ -693,6 +693,232 @@ class CarpoolServiceImplTest {
         verify(hangoutRepository, never()).saveCarRider(any());
     }
 
+    // ============================================================================
+    // RESERVE SEAT ON BEHALF OF RIDER (riderId) TESTS
+    // ============================================================================
+
+    @Test
+    void reserveSeat_DriverReservesForRider_CreatesRiderWithRiderIdAndDeletesNeedsRide() {
+        // Given - driver reserves a seat for a different rider
+        String riderId = UUID.randomUUID().toString();
+        Car car = new Car(eventId, driverId, "Test Driver", 4);
+        car.setAvailableSeats(3);
+        HangoutDetailData dataWithCar = HangoutDetailData.builder().withHangout(hangout).withCars(List.of(car)).build();
+
+        User riderUser = new User();
+        riderUser.setDisplayName("Rider Name");
+
+        CarRider savedCarRider = new CarRider(eventId, driverId, riderId, "Rider Name");
+
+        ReserveSeatRequest request = new ReserveSeatRequest(null, null, riderId);
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(dataWithCar);
+        when(hangoutService.canUserViewHangout(driverId, hangout)).thenReturn(true);
+        when(hangoutService.canUserViewHangout(riderId, hangout)).thenReturn(true);
+        when(userService.getUserById(UUID.fromString(riderId))).thenReturn(Optional.of(riderUser));
+        when(hangoutRepository.saveCarRider(any(CarRider.class))).thenReturn(savedCarRider);
+        when(hangoutRepository.saveCar(any(Car.class))).thenReturn(car);
+
+        // When
+        CarRider result = carpoolService.reserveSeat(eventId, driverId, driverId, request);
+
+        // Then
+        assertThat(result.getRiderId()).isEqualTo(riderId);
+        assertThat(result.getRiderName()).isEqualTo("Rider Name");
+
+        org.mockito.ArgumentCaptor<CarRider> riderCaptor = org.mockito.ArgumentCaptor.forClass(CarRider.class);
+        verify(hangoutRepository).saveCarRider(riderCaptor.capture());
+        assertThat(riderCaptor.getValue().getRiderId()).isEqualTo(riderId);
+        assertThat(riderCaptor.getValue().getRiderName()).isEqualTo("Rider Name");
+
+        // Verify NeedsRide deleted for the rider, not the driver
+        verify(hangoutRepository).deleteNeedsRide(eventId, riderId);
+
+        // Verify seats decremented
+        org.mockito.ArgumentCaptor<Car> carCaptor = org.mockito.ArgumentCaptor.forClass(Car.class);
+        verify(hangoutRepository).saveCar(carCaptor.capture());
+        assertThat(carCaptor.getValue().getAvailableSeats()).isEqualTo(2); // 3 - 1
+    }
+
+    @Test
+    void reserveSeat_NonDriverSpecifiesRiderId_ThrowsUnauthorizedException() {
+        // Given - a non-driver user tries to reserve on behalf of another user
+        String riderId = UUID.randomUUID().toString();
+        String nonDriverUserId = UUID.randomUUID().toString();
+
+        ReserveSeatRequest request = new ReserveSeatRequest(null, null, riderId);
+
+        // When/Then - non-driver trying to reserve for someone else
+        assertThatThrownBy(() -> carpoolService.reserveSeat(eventId, driverId, nonDriverUserId, request))
+                .isInstanceOf(UnauthorizedException.class)
+                .hasMessage("Only the driver can reserve a seat on behalf of another rider");
+
+        // Verify no repository calls were made
+        verify(hangoutRepository, never()).getHangoutDetailData(any());
+        verify(hangoutRepository, never()).saveCarRider(any());
+    }
+
+    @Test
+    void reserveSeat_DriverReservesForRiderNotInEvent_ThrowsUnauthorizedException() {
+        // Given - driver tries to reserve for a rider who can't view the hangout
+        String riderId = UUID.randomUUID().toString();
+        Car car = new Car(eventId, driverId, "Test Driver", 4);
+        car.setAvailableSeats(3);
+        HangoutDetailData dataWithCar = HangoutDetailData.builder().withHangout(hangout).withCars(List.of(car)).build();
+
+        ReserveSeatRequest request = new ReserveSeatRequest(null, null, riderId);
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(dataWithCar);
+        when(hangoutService.canUserViewHangout(driverId, hangout)).thenReturn(true);
+        when(hangoutService.canUserViewHangout(riderId, hangout)).thenReturn(false);
+
+        // When/Then
+        assertThatThrownBy(() -> carpoolService.reserveSeat(eventId, driverId, driverId, request))
+                .isInstanceOf(UnauthorizedException.class)
+                .hasMessage("Rider does not have access to this event");
+
+        verify(hangoutRepository, never()).saveCarRider(any());
+    }
+
+    @Test
+    void reserveSeat_NullRiderId_ReservesForAuthenticatedUser() {
+        // Given - riderId is null, should behave like before (reserve for caller)
+        Car car = new Car(eventId, driverId, "Test Driver", 4);
+        car.setAvailableSeats(3);
+        HangoutDetailData dataWithCar = HangoutDetailData.builder().withHangout(hangout).withCars(List.of(car)).build();
+
+        User user = new User();
+        user.setDisplayName("Caller Name");
+
+        CarRider savedCarRider = new CarRider(eventId, driverId, userId, "Caller Name");
+
+        ReserveSeatRequest request = new ReserveSeatRequest("my notes", null, null);
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(dataWithCar);
+        when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
+        when(userService.getUserById(UUID.fromString(userId))).thenReturn(Optional.of(user));
+        when(hangoutRepository.saveCarRider(any(CarRider.class))).thenReturn(savedCarRider);
+        when(hangoutRepository.saveCar(any(Car.class))).thenReturn(car);
+
+        // When
+        CarRider result = carpoolService.reserveSeat(eventId, driverId, userId, request);
+
+        // Then - reserved for the authenticated user, not a different rider
+        assertThat(result.getRiderId()).isEqualTo(userId);
+
+        org.mockito.ArgumentCaptor<CarRider> riderCaptor = org.mockito.ArgumentCaptor.forClass(CarRider.class);
+        verify(hangoutRepository).saveCarRider(riderCaptor.capture());
+        assertThat(riderCaptor.getValue().getRiderId()).isEqualTo(userId);
+
+        // canUserViewHangout only called once (for caller, not for a separate rider)
+        verify(hangoutService, times(1)).canUserViewHangout(anyString(), any());
+    }
+
+    @Test
+    void reserveSeat_DriverReservesForRiderWithExistingReservation_ThrowsValidationException() {
+        // Given - driver calls reserveSeat with riderId set to a rider who already has a CarRider record
+        String riderId = UUID.randomUUID().toString();
+        Car car = new Car(eventId, driverId, "Test Driver", 4);
+        car.setAvailableSeats(3);
+        CarRider existingRider = new CarRider(eventId, driverId, riderId, "Existing Rider");
+        HangoutDetailData dataWithCarAndRider = HangoutDetailData.builder()
+            .withHangout(hangout)
+            .withCars(List.of(car))
+            .withCarRiders(List.of(existingRider))
+            .build();
+
+        ReserveSeatRequest request = new ReserveSeatRequest(null, null, riderId);
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(dataWithCarAndRider);
+        when(hangoutService.canUserViewHangout(driverId, hangout)).thenReturn(true);
+        when(hangoutService.canUserViewHangout(riderId, hangout)).thenReturn(true);
+
+        // When/Then
+        assertThatThrownBy(() -> carpoolService.reserveSeat(eventId, driverId, driverId, request))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("User already has a reservation with this driver");
+
+        // Verify no CarRider was saved
+        verify(hangoutRepository, never()).saveCarRider(any());
+    }
+
+    @Test
+    void reserveSeat_DriverReservesForRiderWithNotesAndPlusOne_SetsFieldsCorrectly() {
+        // Given - driver calls reserveSeat with riderId, notes, and plusOneCount
+        String riderId = UUID.randomUUID().toString();
+        Car car = new Car(eventId, driverId, "Test Driver", 5);
+        car.setAvailableSeats(4);
+        HangoutDetailData dataWithCar = HangoutDetailData.builder()
+            .withHangout(hangout)
+            .withCars(List.of(car))
+            .build();
+
+        User riderUser = new User();
+        riderUser.setDisplayName("Rider Name");
+
+        CarRider savedCarRider = new CarRider(eventId, driverId, riderId, "Rider Name");
+        savedCarRider.setNotes("Pick up at mall");
+        savedCarRider.setPlusOneCount(2);
+
+        ReserveSeatRequest request = new ReserveSeatRequest("Pick up at mall", 2, riderId);
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(dataWithCar);
+        when(hangoutService.canUserViewHangout(driverId, hangout)).thenReturn(true);
+        when(hangoutService.canUserViewHangout(riderId, hangout)).thenReturn(true);
+        when(userService.getUserById(UUID.fromString(riderId))).thenReturn(Optional.of(riderUser));
+        when(hangoutRepository.saveCarRider(any(CarRider.class))).thenReturn(savedCarRider);
+        when(hangoutRepository.saveCar(any(Car.class))).thenReturn(car);
+
+        // When
+        CarRider result = carpoolService.reserveSeat(eventId, driverId, driverId, request);
+
+        // Then - verify the saved CarRider has riderId (not driverId), notes, and plusOneCount
+        org.mockito.ArgumentCaptor<CarRider> riderCaptor = org.mockito.ArgumentCaptor.forClass(CarRider.class);
+        verify(hangoutRepository).saveCarRider(riderCaptor.capture());
+        CarRider capturedRider = riderCaptor.getValue();
+        assertThat(capturedRider.getRiderId()).isEqualTo(riderId);
+        assertThat(capturedRider.getNotes()).isEqualTo("Pick up at mall");
+        assertThat(capturedRider.getPlusOneCount()).isEqualTo(2);
+
+        // Verify the saved Car has availableSeats = 1 (4 - 3 seats needed: 1 rider + 2 plus ones)
+        org.mockito.ArgumentCaptor<Car> carCaptor = org.mockito.ArgumentCaptor.forClass(Car.class);
+        verify(hangoutRepository).saveCar(carCaptor.capture());
+        assertThat(carCaptor.getValue().getAvailableSeats()).isEqualTo(1);
+    }
+
+    @Test
+    void reserveSeat_DriverReservesForSelf_NoExtraAuthCheck() {
+        // Given - driver calls reserveSeat with riderId set to their own ID (same as userId)
+        Car car = new Car(eventId, driverId, "Test Driver", 4);
+        car.setAvailableSeats(3);
+        HangoutDetailData dataWithCar = HangoutDetailData.builder()
+            .withHangout(hangout)
+            .withCars(List.of(car))
+            .build();
+
+        User driverUser = new User();
+        driverUser.setDisplayName("Driver Name");
+
+        CarRider savedCarRider = new CarRider(eventId, driverId, driverId, "Driver Name");
+
+        // riderId equals userId (driverId) -- should skip the extra canUserViewHangout call
+        ReserveSeatRequest request = new ReserveSeatRequest(null, null, driverId);
+
+        when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(dataWithCar);
+        when(hangoutService.canUserViewHangout(driverId, hangout)).thenReturn(true);
+        when(userService.getUserById(UUID.fromString(driverId))).thenReturn(Optional.of(driverUser));
+        when(hangoutRepository.saveCarRider(any(CarRider.class))).thenReturn(savedCarRider);
+        when(hangoutRepository.saveCar(any(Car.class))).thenReturn(car);
+
+        // When
+        CarRider result = carpoolService.reserveSeat(eventId, driverId, driverId, request);
+
+        // Then - success, and canUserViewHangout called exactly once (for the caller only)
+        assertThat(result).isNotNull();
+        assertThat(result.getRiderId()).isEqualTo(driverId);
+        verify(hangoutService, times(1)).canUserViewHangout(anyString(), any());
+    }
+
     // ==================== Pointer Synchronization Tests ====================
 
     @Test
