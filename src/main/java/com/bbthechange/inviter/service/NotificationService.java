@@ -67,4 +67,30 @@ public interface NotificationService {
      * @param message The notification message
      */
     void notifyWatchPartyUpdate(Set<String> userIds, String seriesId, String message);
+
+    /**
+     * Notify users on the "needs ride" list that a new car has been offered.
+     * The driver is excluded from notifications.
+     *
+     * @param hangoutId The hangout ID
+     * @param hangoutTitle The hangout title
+     * @param groupIds The associated group IDs (first used for deep-link context)
+     * @param driverUserId The driver who offered the car (won't be notified)
+     * @param driverName The display name of the driver
+     * @param needsRideUserIds Pre-filtered list of user IDs who need a ride
+     */
+    void notifyCarpoolNewCar(String hangoutId, String hangoutTitle, List<String> groupIds,
+                              String driverUserId, String driverName, List<String> needsRideUserIds);
+
+    /**
+     * Notify a rider that they were added to a car by a driver.
+     *
+     * @param hangoutId The hangout ID
+     * @param hangoutTitle The hangout title
+     * @param groupIds The associated group IDs (first used for deep-link context)
+     * @param driverName The display name of the driver
+     * @param riderId The user ID of the rider to notify
+     */
+    void notifyCarpoolRiderAdded(String hangoutId, String hangoutTitle, List<String> groupIds,
+                                  String driverName, String riderId);
 }

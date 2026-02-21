@@ -7,6 +7,7 @@ import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.service.GroupTimestampService;
 import com.bbthechange.inviter.service.HangoutService;
+import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.UserService;
 import com.bbthechange.inviter.testutil.HangoutPointerTestBuilder;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,6 +46,9 @@ class CarpoolServiceImplTest {
 
     @Mock
     private GroupTimestampService groupTimestampService;
+
+    @Mock
+    private NotificationService notificationService;
 
     @InjectMocks
     private CarpoolServiceImpl carpoolService;
@@ -1619,6 +1623,195 @@ class CarpoolServiceImplTest {
             verify(pointerUpdateService).updatePointerWithRetry(eq(groupId), eq(eventId), any(), eq("carpool data"));
 
             // Note: Exception handling behavior is now tested in PointerUpdateServiceTest.
+        }
+    }
+
+    // ============================================================================
+    // CARPOOL NOTIFICATION TESTS
+    // ============================================================================
+
+    @Nested
+    class CarpoolNotificationTests {
+
+        @Test
+        void offerCar_CallsNotifyCarpoolNewCar_WithNeedsRideUserIds() {
+            // Given
+            String groupId = UUID.randomUUID().toString();
+            String needsRideUserId1 = UUID.randomUUID().toString();
+            String needsRideUserId2 = UUID.randomUUID().toString();
+
+            OfferCarRequest request = new OfferCarRequest(4, "Meet at lot A");
+            User driver = new User();
+            driver.setDisplayName("Test Driver");
+
+            NeedsRide nr1 = new NeedsRide(eventId, needsRideUserId1, "Need ride");
+            NeedsRide nr2 = new NeedsRide(eventId, needsRideUserId2, "Also need ride");
+
+            hangout.setAssociatedGroups(List.of(groupId));
+            HangoutDetailData dataWithNeedsRide = HangoutDetailData.builder()
+                .withHangout(hangout)
+                .withNeedsRide(List.of(nr1, nr2))
+                .build();
+
+            Car newCar = new Car(eventId, userId, "Test Driver", 4);
+            newCar.setNotes("Meet at lot A");
+
+            when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(dataWithNeedsRide);
+            when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
+            when(userService.getUserById(UUID.fromString(userId))).thenReturn(Optional.of(driver));
+            when(hangoutRepository.saveCar(any(Car.class))).thenReturn(newCar);
+            when(hangoutRepository.findHangoutById(eventId)).thenReturn(Optional.of(hangout));
+
+            // When
+            carpoolService.offerCar(eventId, request, userId);
+
+            // Then
+            verify(notificationService).notifyCarpoolNewCar(
+                eq(eventId),
+                eq("Test Hangout"),
+                eq(List.of(groupId)),
+                eq(userId),
+                eq("Test Driver"),
+                argThat(list -> list.size() == 2
+                    && list.contains(needsRideUserId1)
+                    && list.contains(needsRideUserId2))
+            );
+        }
+
+        @Test
+        void offerCar_WhenNotificationThrows_StillSucceeds() {
+            // Given
+            String groupId = UUID.randomUUID().toString();
+            OfferCarRequest request = new OfferCarRequest(4, "Meet at lot A");
+            User driver = new User();
+            driver.setDisplayName("Test Driver");
+
+            hangout.setAssociatedGroups(List.of(groupId));
+            hangoutData = HangoutDetailData.builder().withHangout(hangout).build();
+
+            Car newCar = new Car(eventId, userId, "Test Driver", 4);
+
+            when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+            when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
+            when(userService.getUserById(UUID.fromString(userId))).thenReturn(Optional.of(driver));
+            when(hangoutRepository.saveCar(any(Car.class))).thenReturn(newCar);
+            when(hangoutRepository.findHangoutById(eventId)).thenReturn(Optional.of(hangout));
+
+            doThrow(new RuntimeException("Notification failed"))
+                .when(notificationService).notifyCarpoolNewCar(
+                    anyString(), anyString(), anyList(), anyString(), anyString(), anyList());
+
+            // When
+            Car result = carpoolService.offerCar(eventId, request, userId);
+
+            // Then - should still return the car
+            assertThat(result).isNotNull();
+            verify(hangoutRepository).saveCar(any(Car.class));
+        }
+
+        @Test
+        void reserveSeat_DriverOnBehalf_CallsNotifyCarpoolRiderAdded() {
+            // Given
+            String riderId = UUID.randomUUID().toString();
+            String groupId = UUID.randomUUID().toString();
+
+            Car car = new Car(eventId, driverId, "Test Driver", 4);
+            car.setAvailableSeats(3);
+            hangout.setAssociatedGroups(List.of(groupId));
+            HangoutDetailData dataWithCar = HangoutDetailData.builder()
+                .withHangout(hangout).withCars(List.of(car)).build();
+
+            User riderUser = new User();
+            riderUser.setDisplayName("Rider Name");
+
+            CarRider savedCarRider = new CarRider(eventId, driverId, riderId, "Rider Name");
+            ReserveSeatRequest request = new ReserveSeatRequest(null, null, riderId);
+
+            when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(dataWithCar);
+            when(hangoutService.canUserViewHangout(driverId, hangout)).thenReturn(true);
+            when(hangoutService.canUserViewHangout(riderId, hangout)).thenReturn(true);
+            when(userService.getUserById(UUID.fromString(riderId))).thenReturn(Optional.of(riderUser));
+            when(hangoutRepository.saveCarRider(any(CarRider.class))).thenReturn(savedCarRider);
+            when(hangoutRepository.saveCar(any(Car.class))).thenReturn(car);
+            when(hangoutRepository.findHangoutById(eventId)).thenReturn(Optional.of(hangout));
+
+            // When
+            carpoolService.reserveSeat(eventId, driverId, driverId, request);
+
+            // Then
+            verify(notificationService).notifyCarpoolRiderAdded(
+                eq(eventId),
+                eq("Test Hangout"),
+                eq(List.of(groupId)),
+                eq("Test Driver"),
+                eq(riderId)
+            );
+        }
+
+        @Test
+        void reserveSeat_SelfReserve_DoesNotCallNotifyCarpoolRiderAdded() {
+            // Given
+            Car car = new Car(eventId, driverId, "Test Driver", 4);
+            car.setAvailableSeats(3);
+            HangoutDetailData dataWithCar = HangoutDetailData.builder()
+                .withHangout(hangout).withCars(List.of(car)).build();
+
+            User user = new User();
+            user.setDisplayName("Test User");
+
+            CarRider savedCarRider = new CarRider(eventId, driverId, userId, "Test User");
+
+            when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(dataWithCar);
+            when(hangoutService.canUserViewHangout(userId, hangout)).thenReturn(true);
+            when(userService.getUserById(UUID.fromString(userId))).thenReturn(Optional.of(user));
+            when(hangoutRepository.saveCarRider(any(CarRider.class))).thenReturn(savedCarRider);
+            when(hangoutRepository.saveCar(any(Car.class))).thenReturn(car);
+            when(hangoutRepository.findHangoutById(eventId)).thenReturn(Optional.of(hangout));
+
+            // When
+            carpoolService.reserveSeat(eventId, driverId, userId, null);
+
+            // Then: no rider-added notification for self-reserve
+            verify(notificationService, never()).notifyCarpoolRiderAdded(
+                anyString(), anyString(), anyList(), anyString(), anyString());
+        }
+
+        @Test
+        void reserveSeat_DriverOnBehalf_WhenNotificationThrows_StillSucceeds() {
+            // Given
+            String riderId = UUID.randomUUID().toString();
+            String groupId = UUID.randomUUID().toString();
+
+            Car car = new Car(eventId, driverId, "Test Driver", 4);
+            car.setAvailableSeats(3);
+            hangout.setAssociatedGroups(List.of(groupId));
+            HangoutDetailData dataWithCar = HangoutDetailData.builder()
+                .withHangout(hangout).withCars(List.of(car)).build();
+
+            User riderUser = new User();
+            riderUser.setDisplayName("Rider Name");
+
+            CarRider savedCarRider = new CarRider(eventId, driverId, riderId, "Rider Name");
+            ReserveSeatRequest request = new ReserveSeatRequest(null, null, riderId);
+
+            when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(dataWithCar);
+            when(hangoutService.canUserViewHangout(driverId, hangout)).thenReturn(true);
+            when(hangoutService.canUserViewHangout(riderId, hangout)).thenReturn(true);
+            when(userService.getUserById(UUID.fromString(riderId))).thenReturn(Optional.of(riderUser));
+            when(hangoutRepository.saveCarRider(any(CarRider.class))).thenReturn(savedCarRider);
+            when(hangoutRepository.saveCar(any(Car.class))).thenReturn(car);
+            when(hangoutRepository.findHangoutById(eventId)).thenReturn(Optional.of(hangout));
+
+            doThrow(new RuntimeException("Notification failed"))
+                .when(notificationService).notifyCarpoolRiderAdded(
+                    anyString(), anyString(), anyList(), anyString(), anyString());
+
+            // When
+            CarRider result = carpoolService.reserveSeat(eventId, driverId, driverId, request);
+
+            // Then - should still succeed
+            assertThat(result).isNotNull();
+            assertThat(result.getRiderId()).isEqualTo(riderId);
         }
     }
 }

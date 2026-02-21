@@ -200,6 +200,72 @@ public class FcmNotificationService {
         }
     }
 
+    public void sendCarpoolNewCarNotification(String deviceToken, String hangoutId, String groupId,
+                                               String hangoutTitle, String driverName) {
+        if (firebaseApp == null) {
+            logger.info("FCM not configured - skipping push notification for carpool new car '{}'", hangoutTitle);
+            return;
+        }
+
+        String tokenPrefix = deviceToken.substring(0, Math.min(8, deviceToken.length())) + "...";
+
+        try {
+            Message.Builder messageBuilder = Message.builder()
+                    .setToken(deviceToken)
+                    .setNotification(Notification.builder()
+                            .setTitle(NotificationTextGenerator.CARPOOL_NEW_CAR_TITLE)
+                            .setBody(textGenerator.getCarpoolNewCarBody(driverName, hangoutTitle))
+                            .build())
+                    .putData("type", "carpool_new_car")
+                    .putData("hangoutId", hangoutId);
+
+            if (groupId != null) {
+                messageBuilder.putData("groupId", groupId);
+            }
+
+            String messageId = FirebaseMessaging.getInstance(firebaseApp).send(messageBuilder.build());
+            logger.info("Carpool new car notification sent successfully to device: {}, messageId: {}",
+                    tokenPrefix, messageId);
+            meterRegistry.counter("fcm_notification_total", "status", "success", "type", "carpool_new_car").increment();
+
+        } catch (FirebaseMessagingException e) {
+            handleFcmError(e, deviceToken, tokenPrefix);
+        }
+    }
+
+    public void sendCarpoolRiderAddedNotification(String deviceToken, String hangoutId, String groupId,
+                                                   String hangoutTitle, String driverName) {
+        if (firebaseApp == null) {
+            logger.info("FCM not configured - skipping push notification for carpool rider added '{}'", hangoutTitle);
+            return;
+        }
+
+        String tokenPrefix = deviceToken.substring(0, Math.min(8, deviceToken.length())) + "...";
+
+        try {
+            Message.Builder messageBuilder = Message.builder()
+                    .setToken(deviceToken)
+                    .setNotification(Notification.builder()
+                            .setTitle(NotificationTextGenerator.CARPOOL_RIDER_ADDED_TITLE)
+                            .setBody(textGenerator.getCarpoolRiderAddedBody(driverName, hangoutTitle))
+                            .build())
+                    .putData("type", "carpool_rider_added")
+                    .putData("hangoutId", hangoutId);
+
+            if (groupId != null) {
+                messageBuilder.putData("groupId", groupId);
+            }
+
+            String messageId = FirebaseMessaging.getInstance(firebaseApp).send(messageBuilder.build());
+            logger.info("Carpool rider added notification sent successfully to device: {}, messageId: {}",
+                    tokenPrefix, messageId);
+            meterRegistry.counter("fcm_notification_total", "status", "success", "type", "carpool_rider_added").increment();
+
+        } catch (FirebaseMessagingException e) {
+            handleFcmError(e, deviceToken, tokenPrefix);
+        }
+    }
+
     /**
      * Handle FCM errors and clean up invalid tokens.
      */

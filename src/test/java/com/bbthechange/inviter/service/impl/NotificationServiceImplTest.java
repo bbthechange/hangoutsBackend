@@ -1352,4 +1352,234 @@ class NotificationServiceImplTest {
                 anyString(), eq(SERIES_ID), eq(GROUP_ID), eq(TEST_MESSAGE));
         }
     }
+
+    // ================= Carpool New Car Notification Tests =================
+
+    @Nested
+    class NotifyCarpoolNewCarTests {
+
+        private static final String HANGOUT_ID = "00000000-0000-0000-0000-000000000100";
+        private static final String HANGOUT_TITLE = "Beach Trip";
+        private static final String GROUP_ID = "00000000-0000-0000-0000-000000000201";
+        private static final String DRIVER_USER_ID = "00000000-0000-0000-0000-000000000001";
+        private static final String DRIVER_NAME = "Alice";
+        private static final String USER_1_ID = "00000000-0000-0000-0000-000000000002";
+        private static final String USER_2_ID = "00000000-0000-0000-0000-000000000003";
+
+        private Device createDevice(String token, Device.Platform platform) {
+            Device device = new Device();
+            device.setToken(token);
+            device.setPlatform(platform);
+            device.setActive(true);
+            return device;
+        }
+
+        @Test
+        void notifyCarpoolNewCar_SendsToNeedsRideUsers() {
+            // Given
+            List<String> groupIds = List.of(GROUP_ID);
+            List<String> needsRideUserIds = List.of(USER_1_ID, USER_2_ID);
+
+            Device device1 = createDevice("ios-token-1", Device.Platform.IOS);
+            Device device2 = createDevice("ios-token-2", Device.Platform.IOS);
+
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(USER_1_ID)))
+                .thenReturn(List.of(device1));
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(USER_2_ID)))
+                .thenReturn(List.of(device2));
+
+            // When
+            notificationService.notifyCarpoolNewCar(HANGOUT_ID, HANGOUT_TITLE, groupIds,
+                    DRIVER_USER_ID, DRIVER_NAME, needsRideUserIds);
+
+            // Then
+            verify(pushNotificationService).sendCarpoolNewCarNotification(
+                eq("ios-token-1"), eq(HANGOUT_ID), eq(GROUP_ID), eq(HANGOUT_TITLE), eq(DRIVER_NAME));
+            verify(pushNotificationService).sendCarpoolNewCarNotification(
+                eq("ios-token-2"), eq(HANGOUT_ID), eq(GROUP_ID), eq(HANGOUT_TITLE), eq(DRIVER_NAME));
+        }
+
+        @Test
+        void notifyCarpoolNewCar_ExcludesDriver() {
+            // Given: driver is also in the needs-ride list
+            List<String> groupIds = List.of(GROUP_ID);
+            List<String> needsRideUserIds = List.of(DRIVER_USER_ID, USER_1_ID);
+
+            Device device1 = createDevice("ios-token-1", Device.Platform.IOS);
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(USER_1_ID)))
+                .thenReturn(List.of(device1));
+
+            // When
+            notificationService.notifyCarpoolNewCar(HANGOUT_ID, HANGOUT_TITLE, groupIds,
+                    DRIVER_USER_ID, DRIVER_NAME, needsRideUserIds);
+
+            // Then: driver not notified
+            verify(deviceService, never()).getActiveDevicesForUser(UUID.fromString(DRIVER_USER_ID));
+            verify(pushNotificationService, times(1)).sendCarpoolNewCarNotification(
+                anyString(), anyString(), anyString(), anyString(), anyString());
+        }
+
+        @Test
+        void notifyCarpoolNewCar_WithEmptyList_DoesNothing() {
+            // When
+            notificationService.notifyCarpoolNewCar(HANGOUT_ID, HANGOUT_TITLE, List.of(GROUP_ID),
+                    DRIVER_USER_ID, DRIVER_NAME, List.of());
+
+            // Then
+            verifyNoInteractions(deviceService);
+            verifyNoInteractions(pushNotificationService);
+            verifyNoInteractions(fcmNotificationService);
+        }
+
+        @Test
+        void notifyCarpoolNewCar_WithNullList_DoesNothing() {
+            // When
+            notificationService.notifyCarpoolNewCar(HANGOUT_ID, HANGOUT_TITLE, List.of(GROUP_ID),
+                    DRIVER_USER_ID, DRIVER_NAME, null);
+
+            // Then
+            verifyNoInteractions(deviceService);
+            verifyNoInteractions(pushNotificationService);
+        }
+
+        @Test
+        void notifyCarpoolNewCar_WithMixedDevices_SendsToBothPlatforms() {
+            // Given
+            List<String> groupIds = List.of(GROUP_ID);
+            List<String> needsRideUserIds = List.of(USER_1_ID);
+
+            Device iosDevice = createDevice("ios-token", Device.Platform.IOS);
+            Device androidDevice = createDevice("android-token", Device.Platform.ANDROID);
+
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(USER_1_ID)))
+                .thenReturn(List.of(iosDevice, androidDevice));
+
+            // When
+            notificationService.notifyCarpoolNewCar(HANGOUT_ID, HANGOUT_TITLE, groupIds,
+                    DRIVER_USER_ID, DRIVER_NAME, needsRideUserIds);
+
+            // Then
+            verify(pushNotificationService).sendCarpoolNewCarNotification(
+                eq("ios-token"), eq(HANGOUT_ID), eq(GROUP_ID), eq(HANGOUT_TITLE), eq(DRIVER_NAME));
+            verify(fcmNotificationService).sendCarpoolNewCarNotification(
+                eq("android-token"), eq(HANGOUT_ID), eq(GROUP_ID), eq(HANGOUT_TITLE), eq(DRIVER_NAME));
+        }
+
+        @Test
+        void notifyCarpoolNewCar_WhenDeviceFails_ContinuesToNextUser() {
+            // Given
+            List<String> groupIds = List.of(GROUP_ID);
+            List<String> needsRideUserIds = List.of(USER_1_ID, USER_2_ID);
+
+            Device device1 = createDevice("ios-token-fail", Device.Platform.IOS);
+            Device device2 = createDevice("ios-token-success", Device.Platform.IOS);
+
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(USER_1_ID)))
+                .thenReturn(List.of(device1));
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(USER_2_ID)))
+                .thenReturn(List.of(device2));
+
+            doThrow(new RuntimeException("APNS error"))
+                .when(pushNotificationService).sendCarpoolNewCarNotification(
+                    eq("ios-token-fail"), anyString(), anyString(), anyString(), anyString());
+
+            // When
+            notificationService.notifyCarpoolNewCar(HANGOUT_ID, HANGOUT_TITLE, groupIds,
+                    DRIVER_USER_ID, DRIVER_NAME, needsRideUserIds);
+
+            // Then: second user still receives notification
+            verify(pushNotificationService).sendCarpoolNewCarNotification(
+                eq("ios-token-success"), eq(HANGOUT_ID), eq(GROUP_ID), eq(HANGOUT_TITLE), eq(DRIVER_NAME));
+        }
+    }
+
+    // ================= Carpool Rider Added Notification Tests =================
+
+    @Nested
+    class NotifyCarpoolRiderAddedTests {
+
+        private static final String HANGOUT_ID = "00000000-0000-0000-0000-000000000100";
+        private static final String HANGOUT_TITLE = "Beach Trip";
+        private static final String GROUP_ID = "00000000-0000-0000-0000-000000000201";
+        private static final String DRIVER_NAME = "Alice";
+        private static final String RIDER_ID = "00000000-0000-0000-0000-000000000002";
+
+        private Device createDevice(String token, Device.Platform platform) {
+            Device device = new Device();
+            device.setToken(token);
+            device.setPlatform(platform);
+            device.setActive(true);
+            return device;
+        }
+
+        @Test
+        void notifyCarpoolRiderAdded_SendsToRiderViaIos() {
+            // Given
+            List<String> groupIds = List.of(GROUP_ID);
+            Device iosDevice = createDevice("ios-token-123", Device.Platform.IOS);
+
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(RIDER_ID)))
+                .thenReturn(List.of(iosDevice));
+
+            // When
+            notificationService.notifyCarpoolRiderAdded(HANGOUT_ID, HANGOUT_TITLE, groupIds, DRIVER_NAME, RIDER_ID);
+
+            // Then
+            verify(pushNotificationService).sendCarpoolRiderAddedNotification(
+                eq("ios-token-123"), eq(HANGOUT_ID), eq(GROUP_ID), eq(HANGOUT_TITLE), eq(DRIVER_NAME));
+            verify(fcmNotificationService, never()).sendCarpoolRiderAddedNotification(
+                anyString(), anyString(), anyString(), anyString(), anyString());
+        }
+
+        @Test
+        void notifyCarpoolRiderAdded_SendsToRiderViaAndroid() {
+            // Given
+            List<String> groupIds = List.of(GROUP_ID);
+            Device androidDevice = createDevice("android-token-456", Device.Platform.ANDROID);
+
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(RIDER_ID)))
+                .thenReturn(List.of(androidDevice));
+
+            // When
+            notificationService.notifyCarpoolRiderAdded(HANGOUT_ID, HANGOUT_TITLE, groupIds, DRIVER_NAME, RIDER_ID);
+
+            // Then
+            verify(fcmNotificationService).sendCarpoolRiderAddedNotification(
+                eq("android-token-456"), eq(HANGOUT_ID), eq(GROUP_ID), eq(HANGOUT_TITLE), eq(DRIVER_NAME));
+            verify(pushNotificationService, never()).sendCarpoolRiderAddedNotification(
+                anyString(), anyString(), anyString(), anyString(), anyString());
+        }
+
+        @Test
+        void notifyCarpoolRiderAdded_WithNoDevices_HandlesGracefully() {
+            // Given
+            List<String> groupIds = List.of(GROUP_ID);
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(RIDER_ID)))
+                .thenReturn(List.of());
+
+            // When
+            notificationService.notifyCarpoolRiderAdded(HANGOUT_ID, HANGOUT_TITLE, groupIds, DRIVER_NAME, RIDER_ID);
+
+            // Then
+            verify(pushNotificationService, never()).sendCarpoolRiderAddedNotification(
+                anyString(), anyString(), anyString(), anyString(), anyString());
+            verify(fcmNotificationService, never()).sendCarpoolRiderAddedNotification(
+                anyString(), anyString(), anyString(), anyString(), anyString());
+        }
+
+        @Test
+        void notifyCarpoolRiderAdded_WithNoGroups_UsesNullGroupId() {
+            // Given
+            Device iosDevice = createDevice("ios-token-123", Device.Platform.IOS);
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(RIDER_ID)))
+                .thenReturn(List.of(iosDevice));
+
+            // When
+            notificationService.notifyCarpoolRiderAdded(HANGOUT_ID, HANGOUT_TITLE, List.of(), DRIVER_NAME, RIDER_ID);
+
+            // Then
+            verify(pushNotificationService).sendCarpoolRiderAddedNotification(
+                eq("ios-token-123"), eq(HANGOUT_ID), isNull(), eq(HANGOUT_TITLE), eq(DRIVER_NAME));
+        }
+    }
 }

@@ -20,6 +20,10 @@ public class NotificationTextGenerator {
     public static final String WATCH_PARTY_EPISODE_REMOVED_TITLE = "Episode Removed";
     public static final String WATCH_PARTY_NEEDS_HOST_TITLE = "Host Needed";
 
+    // Carpool notification titles
+    public static final String CARPOOL_NEW_CAR_TITLE = "Ride Available";
+    public static final String CARPOOL_RIDER_ADDED_TITLE = "Ride Confirmed";
+
     /**
      * Generate body text for new hangout notification.
      * @param creatorName Name of user who created the hangout (can be null)
@@ -76,6 +80,32 @@ public class NotificationTextGenerator {
      */
     public String getHangoutReminderBody(String hangoutTitle) {
         return hangoutTitle + " starts in 2 hours";
+    }
+
+    /**
+     * Generate body text for carpool new car notification.
+     * @param driverName Name of the driver offering a ride (can be null)
+     * @param hangoutTitle Title of the hangout
+     * @return Notification body text
+     */
+    public String getCarpoolNewCarBody(String driverName, String hangoutTitle) {
+        if (driverName != null && !driverName.trim().isEmpty() && !"Unknown".equals(driverName)) {
+            return String.format("%s offered a ride for '%s'", driverName, hangoutTitle);
+        }
+        return String.format("A ride was offered for '%s'", hangoutTitle);
+    }
+
+    /**
+     * Generate body text for carpool rider added notification.
+     * @param driverName Name of the driver who added the rider (can be null)
+     * @param hangoutTitle Title of the hangout
+     * @return Notification body text
+     */
+    public String getCarpoolRiderAddedBody(String driverName, String hangoutTitle) {
+        if (driverName != null && !driverName.trim().isEmpty() && !"Unknown".equals(driverName)) {
+            return String.format("%s added you to their car for '%s'", driverName, hangoutTitle);
+        }
+        return String.format("You were added to a car for '%s'", hangoutTitle);
     }
 
     /**

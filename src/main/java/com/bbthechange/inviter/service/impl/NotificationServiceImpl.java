@@ -632,4 +632,135 @@ public class NotificationServiceImpl implements NotificationService {
             return false;
         }
     }
+
+    @Override
+    public void notifyCarpoolNewCar(String hangoutId, String hangoutTitle, List<String> groupIds,
+                                     String driverUserId, String driverName, List<String> needsRideUserIds) {
+        if (needsRideUserIds == null || needsRideUserIds.isEmpty()) {
+            logger.debug("No needs-ride users to notify for carpool new car on hangout {}", hangoutId);
+            return;
+        }
+
+        // Filter out the driver from the notification list
+        List<String> usersToNotify = needsRideUserIds.stream()
+                .filter(uid -> !uid.equals(driverUserId))
+                .toList();
+
+        if (usersToNotify.isEmpty()) {
+            logger.debug("No users to notify for carpool new car on hangout {} (only driver needs ride)", hangoutId);
+            return;
+        }
+
+        String primaryGroupId = (groupIds != null && !groupIds.isEmpty()) ? groupIds.get(0) : null;
+
+        logger.info("Sending carpool new car notifications for hangout {} to {} users", hangoutId, usersToNotify.size());
+
+        int successCount = 0;
+        int failureCount = 0;
+
+        for (String userId : usersToNotify) {
+            try {
+                boolean sent = sendCarpoolNewCarNotificationToUser(userId, hangoutId, primaryGroupId, hangoutTitle, driverName);
+                if (sent) {
+                    successCount++;
+                }
+            } catch (Exception e) {
+                failureCount++;
+                logger.warn("Failed to send carpool new car notification to user {}: {}", userId, e.getMessage());
+            }
+        }
+
+        logger.info("Carpool new car notification summary for hangout {}: {} sent, {} failed",
+                hangoutId, successCount, failureCount);
+    }
+
+    private boolean sendCarpoolNewCarNotificationToUser(String userId, String hangoutId,
+                                                         String groupId, String hangoutTitle, String driverName) {
+        try {
+            List<Device> devices = deviceService.getActiveDevicesForUser(UUID.fromString(userId));
+
+            if (devices.isEmpty()) {
+                logger.debug("No active devices for user {}", userId);
+                return false;
+            }
+
+            boolean anySent = false;
+
+            for (Device device : devices) {
+                try {
+                    if (device.getPlatform() == Device.Platform.IOS) {
+                        pushNotificationService.sendCarpoolNewCarNotification(
+                            device.getToken(), hangoutId, groupId, hangoutTitle, driverName);
+                        anySent = true;
+                    } else if (device.getPlatform() == Device.Platform.ANDROID) {
+                        fcmNotificationService.sendCarpoolNewCarNotification(
+                            device.getToken(), hangoutId, groupId, hangoutTitle, driverName);
+                        anySent = true;
+                    }
+                } catch (Exception e) {
+                    logger.error("Failed to send carpool new car notification to device {}: {}",
+                        device.getToken().substring(0, Math.min(8, device.getToken().length())),
+                        e.getMessage());
+                }
+            }
+
+            return anySent;
+
+        } catch (Exception e) {
+            logger.warn("Failed to send carpool new car notifications to user {}: {}", userId, e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public void notifyCarpoolRiderAdded(String hangoutId, String hangoutTitle, List<String> groupIds,
+                                         String driverName, String riderId) {
+        String primaryGroupId = (groupIds != null && !groupIds.isEmpty()) ? groupIds.get(0) : null;
+
+        boolean sent = sendCarpoolRiderAddedNotificationToUser(riderId, hangoutId, primaryGroupId, hangoutTitle, driverName);
+
+        if (sent) {
+            logger.info("Carpool rider added notification sent for rider {} in hangout {}", riderId, hangoutId);
+        } else {
+            logger.debug("No devices found for rider {} to send carpool rider added notification", riderId);
+        }
+    }
+
+    private boolean sendCarpoolRiderAddedNotificationToUser(String userId, String hangoutId,
+                                                              String groupId, String hangoutTitle, String driverName) {
+        try {
+            List<Device> devices = deviceService.getActiveDevicesForUser(UUID.fromString(userId));
+
+            if (devices.isEmpty()) {
+                logger.debug("No active devices for user {}", userId);
+                return false;
+            }
+
+            boolean anySent = false;
+
+            for (Device device : devices) {
+                try {
+                    if (device.getPlatform() == Device.Platform.IOS) {
+                        pushNotificationService.sendCarpoolRiderAddedNotification(
+                            device.getToken(), hangoutId, groupId, hangoutTitle, driverName);
+                        anySent = true;
+                    } else if (device.getPlatform() == Device.Platform.ANDROID) {
+                        fcmNotificationService.sendCarpoolRiderAddedNotification(
+                            device.getToken(), hangoutId, groupId, hangoutTitle, driverName);
+                        anySent = true;
+                    }
+                } catch (Exception e) {
+                    logger.error("Failed to send carpool rider added notification to device {}: {}",
+                        device.getToken().substring(0, Math.min(8, device.getToken().length())),
+                        e.getMessage());
+                }
+            }
+
+            return anySent;
+
+        } catch (Exception e) {
+            logger.warn("Failed to send carpool rider added notifications to user {}: {}", userId, e.getMessage());
+            return false;
+        }
+    }
 }

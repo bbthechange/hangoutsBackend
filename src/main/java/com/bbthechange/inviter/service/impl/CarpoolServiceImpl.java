@@ -2,6 +2,7 @@ package com.bbthechange.inviter.service.impl;
 
 import com.bbthechange.inviter.service.CarpoolService;
 import com.bbthechange.inviter.service.HangoutService;
+import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.UserService;
 import com.bbthechange.inviter.service.GroupTimestampService;
 import com.bbthechange.inviter.dto.*;
@@ -34,18 +35,21 @@ public class CarpoolServiceImpl implements CarpoolService {
     private final UserService userService;
     private final PointerUpdateService pointerUpdateService;
     private final GroupTimestampService groupTimestampService;
+    private final NotificationService notificationService;
 
     @Autowired
     public CarpoolServiceImpl(HangoutRepository hangoutRepository, GroupRepository groupRepository,
                              HangoutService hangoutService, UserService userService,
                              PointerUpdateService pointerUpdateService,
-                             GroupTimestampService groupTimestampService) {
+                             GroupTimestampService groupTimestampService,
+                             NotificationService notificationService) {
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
         this.hangoutService = hangoutService;
         this.userService = userService;
         this.pointerUpdateService = pointerUpdateService;
         this.groupTimestampService = groupTimestampService;
+        this.notificationService = notificationService;
     }
     
     @Override
@@ -76,6 +80,16 @@ public class CarpoolServiceImpl implements CarpoolService {
 
         // Update pointer records with new car data
         updatePointersWithCarpoolData(eventId);
+
+        // Notify users who need a ride about the new car
+        try {
+            List<String> needsRideUserIds = hangoutData.getNeedsRide().stream()
+                    .map(NeedsRide::getUserId).toList();
+            notificationService.notifyCarpoolNewCar(eventId, hangout.getTitle(),
+                    hangout.getAssociatedGroups(), userId, driverName, needsRideUserIds);
+        } catch (Exception e) {
+            logger.warn("Failed to send carpool new car notifications: {}", e.getMessage());
+        }
 
         logger.info("Successfully created car offer {} for event {}", savedCar.getDriverId(), eventId);
 
@@ -248,6 +262,16 @@ public class CarpoolServiceImpl implements CarpoolService {
 
         // Update pointer records with new rider data
         updatePointersWithCarpoolData(eventId);
+
+        // Notify rider if a driver added them on their behalf
+        if (!effectiveRiderId.equals(userId)) {
+            try {
+                notificationService.notifyCarpoolRiderAdded(eventId, hangout.getTitle(),
+                        hangout.getAssociatedGroups(), car.getDriverName(), effectiveRiderId);
+            } catch (Exception e) {
+                logger.warn("Failed to send carpool rider added notification: {}", e.getMessage());
+            }
+        }
 
         logger.info("Successfully reserved seat for user {} with driver {} in event {}", effectiveRiderId, driverId, eventId);
         return savedRider;

@@ -301,4 +301,104 @@ class NotificationTextGeneratorTest {
         // Then
         assertThat(result).isEqualTo("Check the app for details");
     }
+
+    // ========== Carpool New Car Body Tests ==========
+
+    @Test
+    void getCarpoolNewCarBody_WithValidDriverName_IncludesDriverInMessage() {
+        // Given
+        String driverName = "Alice";
+        String hangoutTitle = "Beach Trip";
+
+        // When
+        String result = textGenerator.getCarpoolNewCarBody(driverName, hangoutTitle);
+
+        // Then
+        assertThat(result).isEqualTo("Alice offered a ride for 'Beach Trip'");
+    }
+
+    @Test
+    void getCarpoolNewCarBody_WithNullDriverName_UsesFallbackMessage() {
+        // When
+        String result = textGenerator.getCarpoolNewCarBody(null, "Beach Trip");
+
+        // Then
+        assertThat(result).isEqualTo("A ride was offered for 'Beach Trip'");
+    }
+
+    @Test
+    void getCarpoolNewCarBody_WithEmptyDriverName_UsesFallbackMessage() {
+        // When
+        String resultEmpty = textGenerator.getCarpoolNewCarBody("", "Beach Trip");
+        String resultWhitespace = textGenerator.getCarpoolNewCarBody("   ", "Beach Trip");
+
+        // Then
+        assertThat(resultEmpty).isEqualTo("A ride was offered for 'Beach Trip'");
+        assertThat(resultWhitespace).isEqualTo("A ride was offered for 'Beach Trip'");
+    }
+
+    @Test
+    void getCarpoolNewCarBody_WithUnknownDriverName_UsesFallbackMessage() {
+        // When
+        String result = textGenerator.getCarpoolNewCarBody("Unknown", "Beach Trip");
+
+        // Then
+        assertThat(result).isEqualTo("A ride was offered for 'Beach Trip'");
+    }
+
+    // ========== Carpool Rider Added Body Tests ==========
+
+    @Test
+    void getCarpoolRiderAddedBody_WithValidDriverName_IncludesDriverInMessage() {
+        // Given
+        String driverName = "Bob";
+        String hangoutTitle = "Concert Night";
+
+        // When
+        String result = textGenerator.getCarpoolRiderAddedBody(driverName, hangoutTitle);
+
+        // Then
+        assertThat(result).isEqualTo("Bob added you to their car for 'Concert Night'");
+    }
+
+    @Test
+    void getCarpoolRiderAddedBody_WithNullDriverName_UsesFallbackMessage() {
+        // When
+        String result = textGenerator.getCarpoolRiderAddedBody(null, "Concert Night");
+
+        // Then
+        assertThat(result).isEqualTo("You were added to a car for 'Concert Night'");
+    }
+
+    @Test
+    void getCarpoolRiderAddedBody_WithEmptyDriverName_UsesFallbackMessage() {
+        // When
+        String resultEmpty = textGenerator.getCarpoolRiderAddedBody("", "Concert Night");
+        String resultWhitespace = textGenerator.getCarpoolRiderAddedBody("   ", "Concert Night");
+
+        // Then
+        assertThat(resultEmpty).isEqualTo("You were added to a car for 'Concert Night'");
+        assertThat(resultWhitespace).isEqualTo("You were added to a car for 'Concert Night'");
+    }
+
+    @Test
+    void getCarpoolRiderAddedBody_WithUnknownDriverName_UsesFallbackMessage() {
+        // When
+        String result = textGenerator.getCarpoolRiderAddedBody("Unknown", "Concert Night");
+
+        // Then
+        assertThat(result).isEqualTo("You were added to a car for 'Concert Night'");
+    }
+
+    // ========== Carpool Title Constants ==========
+
+    @Test
+    void carpoolNewCarTitle_IsCorrectConstant() {
+        assertThat(NotificationTextGenerator.CARPOOL_NEW_CAR_TITLE).isEqualTo("Ride Available");
+    }
+
+    @Test
+    void carpoolRiderAddedTitle_IsCorrectConstant() {
+        assertThat(NotificationTextGenerator.CARPOOL_RIDER_ADDED_TITLE).isEqualTo("Ride Confirmed");
+    }
 }

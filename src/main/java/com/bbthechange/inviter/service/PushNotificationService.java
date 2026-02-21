@@ -388,6 +388,112 @@ public class PushNotificationService {
         }
     }
 
+    public void sendCarpoolNewCarNotification(String deviceToken, String hangoutId, String groupId,
+                                               String hangoutTitle, String driverName) {
+        if (apnsClient == null) {
+            logger.info("APNs not configured - skipping push notification for carpool new car '{}'", hangoutTitle);
+            return;
+        }
+
+        try {
+            SimpleApnsPayloadBuilder payloadBuilder = new SimpleApnsPayloadBuilder();
+            payloadBuilder.setAlertTitle(NotificationTextGenerator.CARPOOL_NEW_CAR_TITLE);
+            payloadBuilder.setAlertBody(textGenerator.getCarpoolNewCarBody(driverName, hangoutTitle));
+            payloadBuilder.setBadgeNumber(1);
+            payloadBuilder.setSound("default");
+            payloadBuilder.addCustomProperty("type", "carpool_new_car");
+            payloadBuilder.addCustomProperty("hangoutId", hangoutId);
+            if (groupId != null) {
+                payloadBuilder.addCustomProperty("groupId", groupId);
+            }
+
+            String payload = payloadBuilder.build();
+            String token = TokenUtil.sanitizeTokenString(deviceToken);
+
+            SimpleApnsPushNotification pushNotification = new SimpleApnsPushNotification(token, bundleId, payload);
+
+            PushNotificationResponse<SimpleApnsPushNotification> response = apnsClient.sendNotification(pushNotification).get();
+
+            if (response.isAccepted()) {
+                logger.info("Carpool new car notification sent successfully to device: {}", deviceToken.substring(0, 8) + "...");
+                meterRegistry.counter("apns_notification_total", "status", "success", "type", "carpool_new_car").increment();
+            } else {
+                Optional<String> rejectionReason = response.getRejectionReason();
+                String reason = rejectionReason.orElse("unknown");
+                logger.error("Carpool new car notification failed for device: {}. Reason: {}",
+                    deviceToken.substring(0, 8) + "...", reason);
+                meterRegistry.counter("apns_notification_total",
+                        "status", "rejected", "type", "carpool_new_car",
+                        "reason", reason, "category", categorizeApnsRejection(reason)).increment();
+            }
+
+        } catch (ExecutionException | InterruptedException e) {
+            logger.error("Error sending carpool new car notification to device: {}", deviceToken.substring(0, 8) + "...", e);
+            meterRegistry.counter("apns_notification_total",
+                    "status", "error", "type", "carpool_new_car",
+                    "error_type", "execution", "category", "transient").increment();
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            logger.error("Unexpected error sending carpool new car notification", e);
+            meterRegistry.counter("apns_notification_total",
+                    "status", "error", "type", "carpool_new_car",
+                    "error_type", "unexpected", "category", "unexpected").increment();
+        }
+    }
+
+    public void sendCarpoolRiderAddedNotification(String deviceToken, String hangoutId, String groupId,
+                                                   String hangoutTitle, String driverName) {
+        if (apnsClient == null) {
+            logger.info("APNs not configured - skipping push notification for carpool rider added '{}'", hangoutTitle);
+            return;
+        }
+
+        try {
+            SimpleApnsPayloadBuilder payloadBuilder = new SimpleApnsPayloadBuilder();
+            payloadBuilder.setAlertTitle(NotificationTextGenerator.CARPOOL_RIDER_ADDED_TITLE);
+            payloadBuilder.setAlertBody(textGenerator.getCarpoolRiderAddedBody(driverName, hangoutTitle));
+            payloadBuilder.setBadgeNumber(1);
+            payloadBuilder.setSound("default");
+            payloadBuilder.addCustomProperty("type", "carpool_rider_added");
+            payloadBuilder.addCustomProperty("hangoutId", hangoutId);
+            if (groupId != null) {
+                payloadBuilder.addCustomProperty("groupId", groupId);
+            }
+
+            String payload = payloadBuilder.build();
+            String token = TokenUtil.sanitizeTokenString(deviceToken);
+
+            SimpleApnsPushNotification pushNotification = new SimpleApnsPushNotification(token, bundleId, payload);
+
+            PushNotificationResponse<SimpleApnsPushNotification> response = apnsClient.sendNotification(pushNotification).get();
+
+            if (response.isAccepted()) {
+                logger.info("Carpool rider added notification sent successfully to device: {}", deviceToken.substring(0, 8) + "...");
+                meterRegistry.counter("apns_notification_total", "status", "success", "type", "carpool_rider_added").increment();
+            } else {
+                Optional<String> rejectionReason = response.getRejectionReason();
+                String reason = rejectionReason.orElse("unknown");
+                logger.error("Carpool rider added notification failed for device: {}. Reason: {}",
+                    deviceToken.substring(0, 8) + "...", reason);
+                meterRegistry.counter("apns_notification_total",
+                        "status", "rejected", "type", "carpool_rider_added",
+                        "reason", reason, "category", categorizeApnsRejection(reason)).increment();
+            }
+
+        } catch (ExecutionException | InterruptedException e) {
+            logger.error("Error sending carpool rider added notification to device: {}", deviceToken.substring(0, 8) + "...", e);
+            meterRegistry.counter("apns_notification_total",
+                    "status", "error", "type", "carpool_rider_added",
+                    "error_type", "execution", "category", "transient").increment();
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            logger.error("Unexpected error sending carpool rider added notification", e);
+            meterRegistry.counter("apns_notification_total",
+                    "status", "error", "type", "carpool_rider_added",
+                    "error_type", "unexpected", "category", "unexpected").increment();
+        }
+    }
+
     /**
      * Categorize APNs rejection reason as expected or unexpected.
      * Expected: User/device issues (app uninstalled, token expired)
