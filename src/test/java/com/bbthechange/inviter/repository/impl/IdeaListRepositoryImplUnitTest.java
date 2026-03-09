@@ -1,5 +1,6 @@
 package com.bbthechange.inviter.repository.impl;
 
+import com.bbthechange.inviter.dto.IdeaDTO;
 import com.bbthechange.inviter.model.IdeaList;
 import com.bbthechange.inviter.model.IdeaListCategory;
 import com.bbthechange.inviter.model.IdeaListMember;
@@ -12,6 +13,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
@@ -280,6 +283,41 @@ class IdeaListRepositoryImplUnitTest {
         assertThat(memberSk1).isNotEqualTo(memberSk2);
         assertThat(listSk1).isNotEqualTo(memberSk1);
         assertThat(listSk2).isNotEqualTo(memberSk2);
+    }
+
+    // ===== INTEREST FIELD TESTS =====
+
+    @Test
+    void ideaListMember_InterestedUserIds_NullSafeSetterHandlesEmptySet() {
+        // Given: An IdeaListMember
+        String listId = UUID.randomUUID().toString();
+        IdeaListMember member = new IdeaListMember(testGroupId, listId, "Test Idea", null, null, testUserId);
+
+        // When/Then: Setting empty set stores null (DynamoDB can't store empty sets)
+        member.setInterestedUserIds(new HashSet<>());
+        assertThat(member.getInterestedUserIds()).isNull();
+
+        // When/Then: Setting null stores null
+        member.setInterestedUserIds(null);
+        assertThat(member.getInterestedUserIds()).isNull();
+
+        // When/Then: Setting non-empty set stores the set
+        member.setInterestedUserIds(Set.of("user1"));
+        assertThat(member.getInterestedUserIds()).containsExactly("user1");
+    }
+
+    @Test
+    void ideaDTO_Constructor_InitializesInterestFieldsWithDefaults() {
+        // Given: An IdeaListMember with no interest data
+        String listId = UUID.randomUUID().toString();
+        IdeaListMember member = new IdeaListMember(testGroupId, listId, "Test Idea", "http://example.com", "A note", testUserId);
+
+        // When: Construct IdeaDTO from member
+        IdeaDTO dto = new IdeaDTO(member);
+
+        // Then: interestedUsers is empty list (not null), interestCount is 1 (creator)
+        assertThat(dto.getInterestedUsers()).isNotNull().isEmpty();
+        assertThat(dto.getInterestCount()).isEqualTo(1);
     }
 
     @Test

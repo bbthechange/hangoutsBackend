@@ -181,6 +181,8 @@ All path parameters (`groupId`, `listId`, `ideaId`) are validated against UUID f
       "url": "https://joespizza.com",
       "note": "Great thin crust",
       "addedBy": "0ab8b8c1-b3b4-4b81-b938-d9cdebf63a20",
+      "addedByName": "Jeana",
+      "addedByImagePath": "users/0ab8b8c1.../profile.jpg",
       "addedTime": "2025-01-15T11:00:00Z",
       "imageUrl": null,
       "externalId": null,
@@ -235,7 +237,29 @@ Authorization is enforced via `ensureUserIsGroupMember()` which calls `groupRepo
 - Deleting an idea list deletes all its ideas via `deleteIdeaListWithAllMembers()`
 - Uses batch delete: queries all items with `begins_with(sk, "IDEALIST#{listId}")`, then batch-deletes them
 
-## 8. Query Patterns
+## 8. Interest Feature ("I'd do this")
+
+### Overview
+Group members can express interest in ideas by toggling an "I'd do this" signal. Interest data is stored as `Set<String> interestedUserIds` directly on the `IdeaListMember` DynamoDB item.
+
+### Storage Pattern
+- **DynamoDB `ADD`**: Atomically adds userId to the `interestedUserIds` string set (concurrent-safe)
+- **DynamoDB `DELETE`**: Atomically removes userId from the string set
+- **Empty sets**: DynamoDB cannot store empty sets; Enhanced Client returns null for absent attributes, treated as "no interest"
+- **Precedent**: Same pattern as `EventSeries.deletedEpisodeIds`
+
+### Interest Count
+`interestCount = interestedUsers.size() + 1` — the "+1" represents the implicit creator who always counts as interested in their own idea.
+
+### User Resolution
+Interested user IDs are resolved to `InterestedUserDTO` (userId, displayName, profileImagePath) via `UserService.getUserSummary()` (Caffeine-cached). Deleted users are silently skipped.
+
+### Backward Compatibility
+- New `interestedUsers` and `interestCount` fields in IdeaDTO — old clients ignore unknown JSON fields
+- New PUT/DELETE interest endpoints — old clients never call them
+- Existing items without `interestedUserIds` — Enhanced Client returns null, treated as empty
+
+## 9. Query Patterns
 
 ### Get All Lists for Group (single DynamoDB query)
 ```
@@ -253,7 +277,7 @@ Returns the list metadata and all its ideas in one query.
 - **Idea lists**: Sorted by `createdAt` descending (newest first)
 - **Ideas within a list**: Sorted by `interestCount` descending (most interest first), then `addedTime` descending (newest first)
 
-## 9. File Locations
+## 10. File Locations
 
 | Component | Path |
 | :--- | :--- |
@@ -267,12 +291,13 @@ Returns the list metadata and all its ideas in one query.
 | IdeaListCategory Enum | `model/IdeaListCategory.java` |
 | IdeaListDTO | `dto/IdeaListDTO.java` |
 | IdeaDTO | `dto/IdeaDTO.java` |
+| InterestedUserDTO | `dto/InterestedUserDTO.java` |
 | CreateIdeaListRequest | `dto/CreateIdeaListRequest.java` |
 | UpdateIdeaListRequest | `dto/UpdateIdeaListRequest.java` |
 | CreateIdeaRequest | `dto/CreateIdeaRequest.java` |
 | UpdateIdeaRequest | `dto/UpdateIdeaRequest.java` |
 
-## 10. Testing
+## 11. Testing
 
 | Test File | Scope |
 | :--- | :--- |

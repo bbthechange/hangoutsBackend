@@ -5,6 +5,7 @@ import com.bbthechange.inviter.exception.*;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.repository.IdeaListRepository;
+import com.bbthechange.inviter.service.UserService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -13,10 +14,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -35,6 +33,9 @@ class IdeaListServiceImplTest {
 
     @Mock
     private GroupRepository groupRepository;
+
+    @Mock
+    private UserService userService;
 
     @InjectMocks
     private IdeaListServiceImpl ideaListService;
@@ -405,7 +406,7 @@ class IdeaListServiceImplTest {
     void updateIdeaList_NoFieldsProvided_ReturnsUnchangedList() {
         // Given: Update request with all null fields
         when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
-        
+
         IdeaList existingList = new IdeaList(testGroupId, "Original Name", IdeaListCategory.MOVIE, "Original Note", testUserId);
         existingList.setListId(testListId);
         when(ideaListRepository.findIdeaListById(testGroupId, testListId)).thenReturn(Optional.of(existingList));
@@ -420,7 +421,232 @@ class IdeaListServiceImplTest {
         assertThat(result.getName()).isEqualTo("Original Name");
         assertThat(result.getCategory()).isEqualTo(IdeaListCategory.MOVIE);
         assertThat(result.getNote()).isEqualTo("Original Note");
-        
+
         verify(ideaListRepository, never()).saveIdeaList(any()); // No update needed
+    }
+
+    // ===== IDEA INTEREST TESTS =====
+
+    @Test
+    void addIdeaInterest_ValidRequest_ReturnsIdeaDTOWithInterestedUser() {
+        // Given: User is group member, idea exists with interest added
+        when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
+
+        IdeaListMember member = new IdeaListMember(testGroupId, testListId, "Fun idea", null, null, "creator-id");
+        member.setIdeaId(testIdeaId);
+        member.setInterestedUserIds(new HashSet<>(Set.of(testUserId)));
+        when(ideaListRepository.findIdeaListMemberById(testGroupId, testListId, testIdeaId))
+                .thenReturn(Optional.of(member));
+
+        UserSummaryDTO userSummary = new UserSummaryDTO(UUID.fromString(testUserId), "TestUser", "users/profile.jpg");
+        when(userService.getUserSummary(UUID.fromString(testUserId))).thenReturn(Optional.of(userSummary));
+
+        // When: Add interest
+        IdeaDTO result = ideaListService.addIdeaInterest(testGroupId, testListId, testIdeaId, testUserId);
+
+        // Then: Verify interest data populated
+        verify(ideaListRepository).addIdeaInterest(testGroupId, testListId, testIdeaId, testUserId);
+        assertThat(result.getInterestedUsers()).hasSize(1);
+        assertThat(result.getInterestedUsers().get(0).getUserId()).isEqualTo(testUserId);
+        assertThat(result.getInterestedUsers().get(0).getDisplayName()).isEqualTo("TestUser");
+        assertThat(result.getInterestedUsers().get(0).getProfileImagePath()).isEqualTo("users/profile.jpg");
+        assertThat(result.getInterestCount()).isEqualTo(2); // 1 explicit + 1 implicit creator
+    }
+
+    @Test
+    void addIdeaInterest_UserNotGroupMember_ThrowsUnauthorizedException() {
+        // Given: User is not a group member
+        when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(false);
+
+        // When/Then: Exception thrown, no repository calls made
+        assertThatThrownBy(() -> ideaListService.addIdeaInterest(testGroupId, testListId, testIdeaId, testUserId))
+                .isInstanceOf(UnauthorizedException.class)
+                .hasMessageContaining("User is not a member of group");
+
+        verify(groupRepository).isUserMemberOfGroup(testGroupId, testUserId);
+        verifyNoInteractions(ideaListRepository);
+    }
+
+    @Test
+    void removeIdeaInterest_ValidRequest_ReturnsIdeaDTOWithoutUser() {
+        // Given: User is group member, idea exists with no interest after removal
+        when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
+
+        IdeaListMember member = new IdeaListMember(testGroupId, testListId, "Fun idea", null, null, "creator-id");
+        member.setIdeaId(testIdeaId);
+        // After removal, interestedUserIds is null (empty set)
+        when(ideaListRepository.findIdeaListMemberById(testGroupId, testListId, testIdeaId))
+                .thenReturn(Optional.of(member));
+
+        // When: Remove interest
+        IdeaDTO result = ideaListService.removeIdeaInterest(testGroupId, testListId, testIdeaId, testUserId);
+
+        // Then: Verify interest removed
+        verify(ideaListRepository).removeIdeaInterest(testGroupId, testListId, testIdeaId, testUserId);
+        assertThat(result.getInterestedUsers()).isEmpty();
+        assertThat(result.getInterestCount()).isEqualTo(1); // Only implicit creator
+    }
+
+    @Test
+    void removeIdeaInterest_UserNotGroupMember_ThrowsUnauthorizedException() {
+        // Given: User is not a group member
+        when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(false);
+
+        // When/Then: Exception thrown
+        assertThatThrownBy(() -> ideaListService.removeIdeaInterest(testGroupId, testListId, testIdeaId, testUserId))
+                .isInstanceOf(UnauthorizedException.class)
+                .hasMessageContaining("User is not a member of group");
+
+        verify(groupRepository).isUserMemberOfGroup(testGroupId, testUserId);
+        verifyNoInteractions(ideaListRepository);
+    }
+
+    @Test
+    void addIdeaInterest_IdeaNotFound_ThrowsResourceNotFoundException() {
+        // Given: User is group member but idea doesn't exist after add (repo throws)
+        when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
+        doThrow(new ResourceNotFoundException("Idea not found: " + testIdeaId))
+                .when(ideaListRepository).addIdeaInterest(testGroupId, testListId, testIdeaId, testUserId);
+
+        // When/Then: ResourceNotFoundException propagated
+        assertThatThrownBy(() -> ideaListService.addIdeaInterest(testGroupId, testListId, testIdeaId, testUserId))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining("Idea not found");
+    }
+
+    @Test
+    void convertToDTO_WithInterestData_SortsByInterestCountDesc() {
+        // Given: User is group member, list with ideas having different interest levels
+        when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
+
+        IdeaList ideaList = new IdeaList(testGroupId, "Test List", IdeaListCategory.ACTIVITY, null, testUserId);
+        ideaList.setListId(testListId);
+
+        String user1 = UUID.randomUUID().toString();
+        String user2 = UUID.randomUUID().toString();
+
+        // Idea with 0 explicit interest (added first chronologically)
+        IdeaListMember idea1 = new IdeaListMember(testGroupId, testListId, "Boring idea", null, null, testUserId);
+        // Idea with 2 explicit interests (added second)
+        IdeaListMember idea2 = new IdeaListMember(testGroupId, testListId, "Popular idea", null, null, testUserId);
+        idea2.setInterestedUserIds(new HashSet<>(Set.of(user1, user2)));
+
+        ideaList.getMembers().addAll(Arrays.asList(idea1, idea2));
+        when(ideaListRepository.findIdeaListWithMembersById(testGroupId, testListId))
+                .thenReturn(Optional.of(ideaList));
+
+        UserSummaryDTO summary1 = new UserSummaryDTO(UUID.fromString(user1), "User1", null);
+        UserSummaryDTO summary2 = new UserSummaryDTO(UUID.fromString(user2), "User2", null);
+        when(userService.getUserSummary(UUID.fromString(user1))).thenReturn(Optional.of(summary1));
+        when(userService.getUserSummary(UUID.fromString(user2))).thenReturn(Optional.of(summary2));
+
+        // When: Get idea list
+        IdeaListDTO result = ideaListService.getIdeaList(testGroupId, testListId, testUserId);
+
+        // Then: Popular idea (interestCount=3) sorted before boring idea (interestCount=1)
+        assertThat(result.getIdeas()).hasSize(2);
+        assertThat(result.getIdeas().get(0).getName()).isEqualTo("Popular idea");
+        assertThat(result.getIdeas().get(0).getInterestCount()).isEqualTo(3); // 2 explicit + 1 creator
+        assertThat(result.getIdeas().get(0).getInterestedUsers()).hasSize(2);
+        assertThat(result.getIdeas().get(1).getName()).isEqualTo("Boring idea");
+        assertThat(result.getIdeas().get(1).getInterestCount()).isEqualTo(1); // 0 explicit + 1 creator
+        assertThat(result.getIdeas().get(1).getInterestedUsers()).isEmpty();
+    }
+
+    @Test
+    void removeIdeaInterest_IdeaNotFoundInRepo_ThrowsResourceNotFoundException() {
+        // Given: User is group member, but repo throws on remove because idea doesn't exist
+        when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
+        doThrow(new ResourceNotFoundException("Idea not found: " + testIdeaId))
+                .when(ideaListRepository).removeIdeaInterest(testGroupId, testListId, testIdeaId, testUserId);
+
+        // When/Then: ResourceNotFoundException propagated from repository
+        assertThatThrownBy(() -> ideaListService.removeIdeaInterest(testGroupId, testListId, testIdeaId, testUserId))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining("Idea not found");
+    }
+
+    @Test
+    void addIdeaInterest_MultipleUsers_ReturnsAllInterestedUsers() {
+        // Given: User is group member, idea has 3 interested users
+        when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
+
+        String user1 = UUID.randomUUID().toString();
+        String user2 = UUID.randomUUID().toString();
+        String user3 = UUID.randomUUID().toString();
+
+        IdeaListMember member = new IdeaListMember(testGroupId, testListId, "Popular idea", null, null, "creator-id");
+        member.setIdeaId(testIdeaId);
+        member.setInterestedUserIds(new HashSet<>(Set.of(user1, user2, user3)));
+        when(ideaListRepository.findIdeaListMemberById(testGroupId, testListId, testIdeaId))
+                .thenReturn(Optional.of(member));
+
+        UserSummaryDTO summary1 = new UserSummaryDTO(UUID.fromString(user1), "Alice", "users/alice.jpg");
+        UserSummaryDTO summary2 = new UserSummaryDTO(UUID.fromString(user2), "Bob", "users/bob.jpg");
+        UserSummaryDTO summary3 = new UserSummaryDTO(UUID.fromString(user3), "Charlie", "users/charlie.jpg");
+        when(userService.getUserSummary(UUID.fromString(user1))).thenReturn(Optional.of(summary1));
+        when(userService.getUserSummary(UUID.fromString(user2))).thenReturn(Optional.of(summary2));
+        when(userService.getUserSummary(UUID.fromString(user3))).thenReturn(Optional.of(summary3));
+
+        // When: Add interest
+        IdeaDTO result = ideaListService.addIdeaInterest(testGroupId, testListId, testIdeaId, testUserId);
+
+        // Then: All 3 interested users resolved, interestCount = 3 explicit + 1 creator = 4
+        assertThat(result.getInterestedUsers()).hasSize(3);
+        assertThat(result.getInterestCount()).isEqualTo(4);
+    }
+
+    @Test
+    void convertToDTO_SameInterestCount_SortsByAddedTimeDesc() {
+        // Given: User is group member, list with 2 ideas both having same interestCount (1)
+        when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
+
+        IdeaList ideaList = new IdeaList(testGroupId, "Test List", IdeaListCategory.ACTIVITY, null, testUserId);
+        ideaList.setListId(testListId);
+
+        // Idea1 added 1 hour ago
+        IdeaListMember idea1 = new IdeaListMember(testGroupId, testListId, "Older idea", null, null, testUserId);
+        // Override addedTime to 1 hour ago using reflection-free approach: create then set
+        idea1.setAddedTime(Instant.now().minusSeconds(3600));
+
+        // Idea2 added now
+        IdeaListMember idea2 = new IdeaListMember(testGroupId, testListId, "Newer idea", null, null, testUserId);
+        idea2.setAddedTime(Instant.now());
+
+        // Both have null interestedUserIds, so interestCount = 1 for both
+        ideaList.getMembers().addAll(Arrays.asList(idea1, idea2));
+        when(ideaListRepository.findIdeaListWithMembersById(testGroupId, testListId))
+                .thenReturn(Optional.of(ideaList));
+
+        // When: Get idea list
+        IdeaListDTO result = ideaListService.getIdeaList(testGroupId, testListId, testUserId);
+
+        // Then: Newer idea (idea2) appears first due to addedTime desc secondary sort
+        assertThat(result.getIdeas()).hasSize(2);
+        assertThat(result.getIdeas().get(0).getName()).isEqualTo("Newer idea");
+        assertThat(result.getIdeas().get(1).getName()).isEqualTo("Older idea");
+    }
+
+    @Test
+    void resolveInterestedUsers_DeletedUser_SkippedGracefully() {
+        // Given: User is group member, idea has interest from a deleted user
+        when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
+
+        IdeaListMember member = new IdeaListMember(testGroupId, testListId, "Idea", null, null, "creator-id");
+        member.setIdeaId(testIdeaId);
+        String deletedUserId = UUID.randomUUID().toString();
+        member.setInterestedUserIds(new HashSet<>(Set.of(deletedUserId)));
+        when(ideaListRepository.findIdeaListMemberById(testGroupId, testListId, testIdeaId))
+                .thenReturn(Optional.of(member));
+
+        // Deleted user returns empty
+        when(userService.getUserSummary(UUID.fromString(deletedUserId))).thenReturn(Optional.empty());
+
+        // When: Add interest (re-fetch shows deleted user interest)
+        IdeaDTO result = ideaListService.addIdeaInterest(testGroupId, testListId, testIdeaId, testUserId);
+
+        // Then: Deleted user skipped, empty interested users
+        assertThat(result.getInterestedUsers()).isEmpty();
+        assertThat(result.getInterestCount()).isEqualTo(1); // 0 resolved + 1 creator
     }
 }

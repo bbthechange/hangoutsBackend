@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.repository.impl;
 
 import com.bbthechange.inviter.exception.RepositoryException;
+import com.bbthechange.inviter.exception.ResourceNotFoundException;
 import com.bbthechange.inviter.model.IdeaList;
 import com.bbthechange.inviter.model.IdeaListMember;
 import com.bbthechange.inviter.repository.IdeaListRepository;
@@ -14,6 +15,7 @@ import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.*;
 
+import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -351,20 +353,82 @@ public class IdeaListRepositoryImpl implements IdeaListRepository {
                                 ":skPrefix", AttributeValue.builder().s(InviterKeyFactory.getIdeaListPrefix(listId)).build()
                         ))
                         .build();
-                        
+
                 QueryResponse response = dynamoDbClient.query(request);
-                
+
                 List<IdeaListMember> members = response.items().stream()
                         .map(item -> ideaMemberSchema.mapToItem(item))
                         .sorted((a, b) -> b.getAddedTime().compareTo(a.getAddedTime())) // Most recent first
                         .collect(Collectors.toList());
-                
+
                 logger.debug("Found {} members for idea list: {} in group: {}", members.size(), listId, groupId);
                 return members;
-                
+
             } catch (Exception e) {
                 logger.error("Error finding members for idea list: {} in group: {}", listId, groupId, e);
                 throw new RepositoryException("Failed to find members for idea list", e);
+            }
+        });
+    }
+
+    @Override
+    public void addIdeaInterest(String groupId, String listId, String ideaId, String userId) {
+        queryTracker.trackQuery("addIdeaInterest", TABLE_NAME, () -> {
+            try {
+                UpdateItemRequest request = UpdateItemRequest.builder()
+                        .tableName(TABLE_NAME)
+                        .key(Map.of(
+                                "pk", AttributeValue.builder().s(InviterKeyFactory.getGroupPk(groupId)).build(),
+                                "sk", AttributeValue.builder().s(InviterKeyFactory.getIdeaListMemberSk(listId, ideaId)).build()
+                        ))
+                        .updateExpression("ADD interestedUserIds :userId SET updatedAt = :now")
+                        .conditionExpression("attribute_exists(pk)")
+                        .expressionAttributeValues(Map.of(
+                                ":userId", AttributeValue.builder().ss(userId).build(),
+                                ":now", AttributeValue.builder().n(String.valueOf(Instant.now().toEpochMilli())).build()
+                        ))
+                        .build();
+
+                dynamoDbClient.updateItem(request);
+                logger.debug("Added interest for user: {} on idea: {} in list: {} group: {}", userId, ideaId, listId, groupId);
+                return null;
+
+            } catch (ConditionalCheckFailedException e) {
+                throw new ResourceNotFoundException("Idea not found: " + ideaId);
+            } catch (DynamoDbException e) {
+                logger.error("Error adding interest for user: {} on idea: {} in list: {} group: {}", userId, ideaId, listId, groupId, e);
+                throw new RepositoryException("Failed to add idea interest", e);
+            }
+        });
+    }
+
+    @Override
+    public void removeIdeaInterest(String groupId, String listId, String ideaId, String userId) {
+        queryTracker.trackQuery("removeIdeaInterest", TABLE_NAME, () -> {
+            try {
+                UpdateItemRequest request = UpdateItemRequest.builder()
+                        .tableName(TABLE_NAME)
+                        .key(Map.of(
+                                "pk", AttributeValue.builder().s(InviterKeyFactory.getGroupPk(groupId)).build(),
+                                "sk", AttributeValue.builder().s(InviterKeyFactory.getIdeaListMemberSk(listId, ideaId)).build()
+                        ))
+                        .updateExpression("DELETE interestedUserIds :userId SET updatedAt = :now")
+                        .conditionExpression("attribute_exists(pk)")
+                        .expressionAttributeValues(Map.of(
+                                ":userId", AttributeValue.builder().ss(userId).build(),
+                                ":now", AttributeValue.builder().n(String.valueOf(Instant.now().toEpochMilli())).build()
+                        ))
+                        .build();
+
+                dynamoDbClient.updateItem(request);
+                logger.debug("Removed interest for user: {} on idea: {} in list: {} group: {}", userId, ideaId, listId, groupId);
+                return null;
+
+            } catch (ConditionalCheckFailedException e) {
+                throw new ResourceNotFoundException("Idea not found: " + ideaId);
+            } catch (DynamoDbException e) {
+                logger.error("Error removing interest for user: {} on idea: {} in list: {} group: {}", userId, ideaId, listId, groupId, e);
+                throw new RepositoryException("Failed to remove idea interest", e);
             }
         });
     }

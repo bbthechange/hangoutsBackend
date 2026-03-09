@@ -9,6 +9,7 @@ import lombok.ToString;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
 
 import java.time.Instant;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -36,6 +37,16 @@ public class IdeaListMember extends BaseItem {
     private String imageUrl;        // URL to image (may be external or S3 path)
     private String externalId;      // ID from external source (e.g., Ticketmaster, Yelp)
     private String externalSource;  // Source system for externalId (e.g., "TICKETMASTER", "YELP")
+    private Set<String> interestedUserIds; // User IDs who expressed interest ("I'd do this")
+
+    public void setInterestedUserIds(Set<String> interestedUserIds) {
+        if (interestedUserIds == null || interestedUserIds.isEmpty()) {
+            this.interestedUserIds = null;  // DynamoDB can't store empty sets
+        } else {
+            this.interestedUserIds = interestedUserIds;
+        }
+        // No touch() — interest changes use atomic UpdateExpression, not PutItem
+    }
 
     /**
      * Create a new idea list member with generated UUID.

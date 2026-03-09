@@ -165,11 +165,47 @@ public class IdeaListController extends BaseController {
             @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid list ID format") String listId,
             @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid idea ID format") String ideaId,
             HttpServletRequest httpRequest) {
-        
+
         String requestingUserId = extractUserId(httpRequest);
         logger.debug("Deleting idea: {} from list: {} group: {} by user: {}", ideaId, listId, groupId, requestingUserId);
-        
+
         ideaListService.deleteIdea(groupId, listId, ideaId, requestingUserId);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Add interest ("I'd do this") to an idea. Idempotent.
+     * PUT /groups/{groupId}/idea-lists/{listId}/ideas/{ideaId}/interest
+     */
+    @PutMapping("/{listId}/ideas/{ideaId}/interest")
+    public ResponseEntity<IdeaDTO> addIdeaInterest(
+            @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid group ID format") String groupId,
+            @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid list ID format") String listId,
+            @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid idea ID format") String ideaId,
+            HttpServletRequest httpRequest) {
+
+        String requestingUserId = extractUserId(httpRequest);
+        logger.debug("Adding interest on idea: {} in list: {} group: {} by user: {}", ideaId, listId, groupId, requestingUserId);
+
+        IdeaDTO updatedIdea = ideaListService.addIdeaInterest(groupId, listId, ideaId, requestingUserId);
+        return ResponseEntity.ok(updatedIdea);
+    }
+
+    /**
+     * Remove interest from an idea. Idempotent.
+     * DELETE /groups/{groupId}/idea-lists/{listId}/ideas/{ideaId}/interest
+     */
+    @DeleteMapping("/{listId}/ideas/{ideaId}/interest")
+    public ResponseEntity<IdeaDTO> removeIdeaInterest(
+            @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid group ID format") String groupId,
+            @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid list ID format") String listId,
+            @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid idea ID format") String ideaId,
+            HttpServletRequest httpRequest) {
+
+        String requestingUserId = extractUserId(httpRequest);
+        logger.debug("Removing interest on idea: {} in list: {} group: {} by user: {}", ideaId, listId, groupId, requestingUserId);
+
+        IdeaDTO updatedIdea = ideaListService.removeIdeaInterest(groupId, listId, ideaId, requestingUserId);
+        return ResponseEntity.ok(updatedIdea);
     }
 }

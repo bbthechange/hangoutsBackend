@@ -51,4 +51,16 @@ public interface IdeaListRepository {
      * Get all idea members for a specific list (without the list metadata).
      */
     List<IdeaListMember> findMembersByListId(String groupId, String listId);
+
+    /**
+     * Atomically add a user's interest to an idea using DynamoDB ADD on string set.
+     * @throws com.bbthechange.inviter.exception.ResourceNotFoundException if idea does not exist
+     */
+    void addIdeaInterest(String groupId, String listId, String ideaId, String userId);
+
+    /**
+     * Atomically remove a user's interest from an idea using DynamoDB DELETE on string set.
+     * Safe to call even if user has no interest recorded.
+     */
+    void removeIdeaInterest(String groupId, String listId, String ideaId, String userId);
 }

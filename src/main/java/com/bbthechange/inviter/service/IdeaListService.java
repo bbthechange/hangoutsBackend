@@ -58,4 +58,16 @@ public interface IdeaListService {
      * Only group members can delete ideas.
      */
     void deleteIdea(String groupId, String listId, String ideaId, String requestingUserId);
+
+    /**
+     * Add the requesting user's interest ("I'd do this") to an idea.
+     * Idempotent — adding interest twice has no additional effect.
+     */
+    IdeaDTO addIdeaInterest(String groupId, String listId, String ideaId, String requestingUserId);
+
+    /**
+     * Remove the requesting user's interest from an idea.
+     * Idempotent — removing non-existent interest is a no-op.
+     */
+    IdeaDTO removeIdeaInterest(String groupId, String listId, String ideaId, String requestingUserId);
 }

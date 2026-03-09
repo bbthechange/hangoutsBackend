@@ -309,6 +309,91 @@ class IdeaListControllerUnitTest {
         verify(ideaListService).updateIdea(eq(testGroupId), eq(testListId), eq(testIdeaId), any(UpdateIdeaRequest.class), eq(testUserId));
     }
 
+    // ===== INTEREST ENDPOINT TESTS =====
+
+    @Test
+    void addIdeaInterest_ValidRequest_Returns200WithUpdatedIdea() {
+        // Given: Valid request
+        IdeaDTO updatedIdea = createSampleIdeaDTO("Fun Idea", "http://example.com", "Great idea");
+        updatedIdea.setInterestedUsers(List.of(new InterestedUserDTO(testUserId, "TestUser", "users/profile.jpg")));
+        updatedIdea.setInterestCount(2);
+        when(ideaListService.addIdeaInterest(testGroupId, testListId, testIdeaId, testUserId))
+                .thenReturn(updatedIdea);
+
+        // When: Call controller method
+        ResponseEntity<IdeaDTO> response = controller.addIdeaInterest(testGroupId, testListId, testIdeaId, httpRequest);
+
+        // Then: HTTP 200 with interest data
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().getInterestedUsers()).hasSize(1);
+        assertThat(response.getBody().getInterestedUsers().get(0).getUserId()).isEqualTo(testUserId);
+        assertThat(response.getBody().getInterestCount()).isEqualTo(2);
+
+        verify(ideaListService).addIdeaInterest(testGroupId, testListId, testIdeaId, testUserId);
+    }
+
+    @Test
+    void removeIdeaInterest_ValidRequest_Returns200WithUpdatedIdea() {
+        // Given: Valid request
+        IdeaDTO updatedIdea = createSampleIdeaDTO("Fun Idea", "http://example.com", "Great idea");
+        updatedIdea.setInterestedUsers(List.of());
+        updatedIdea.setInterestCount(1);
+        when(ideaListService.removeIdeaInterest(testGroupId, testListId, testIdeaId, testUserId))
+                .thenReturn(updatedIdea);
+
+        // When: Call controller method
+        ResponseEntity<IdeaDTO> response = controller.removeIdeaInterest(testGroupId, testListId, testIdeaId, httpRequest);
+
+        // Then: HTTP 200 with empty interest
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().getInterestedUsers()).isEmpty();
+        assertThat(response.getBody().getInterestCount()).isEqualTo(1);
+
+        verify(ideaListService).removeIdeaInterest(testGroupId, testListId, testIdeaId, testUserId);
+    }
+
+    @Test
+    void addIdeaInterest_UserNotGroupMember_PropagatesUnauthorizedException() {
+        // Given: Service throws UnauthorizedException
+        doThrow(new UnauthorizedException("User is not a member of group")).when(ideaListService)
+                .addIdeaInterest(testGroupId, testListId, testIdeaId, testUserId);
+
+        // When/Then: Exception propagated
+        assertThatThrownBy(() -> controller.addIdeaInterest(testGroupId, testListId, testIdeaId, httpRequest))
+                .isInstanceOf(UnauthorizedException.class)
+                .hasMessageContaining("User is not a member of group");
+
+        verify(ideaListService).addIdeaInterest(testGroupId, testListId, testIdeaId, testUserId);
+    }
+
+    @Test
+    void removeIdeaInterest_IdeaNotFound_PropagatesResourceNotFoundException() {
+        // Given: Service throws ResourceNotFoundException for non-existent idea
+        doThrow(new ResourceNotFoundException("Idea not found")).when(ideaListService)
+                .removeIdeaInterest(testGroupId, testListId, testIdeaId, testUserId);
+
+        // When/Then: Exception propagated with correct message
+        assertThatThrownBy(() -> controller.removeIdeaInterest(testGroupId, testListId, testIdeaId, httpRequest))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining("Idea not found");
+
+        verify(ideaListService).removeIdeaInterest(testGroupId, testListId, testIdeaId, testUserId);
+    }
+
+    @Test
+    void addIdeaInterest_IdeaNotFound_PropagatesResourceNotFoundException() {
+        // Given: Service throws ResourceNotFoundException
+        doThrow(new ResourceNotFoundException("Idea not found")).when(ideaListService)
+                .addIdeaInterest(testGroupId, testListId, testIdeaId, testUserId);
+
+        // When/Then: Exception propagated
+        assertThatThrownBy(() -> controller.addIdeaInterest(testGroupId, testListId, testIdeaId, httpRequest))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining("Idea not found");
+
+        verify(ideaListService).addIdeaInterest(testGroupId, testListId, testIdeaId, testUserId);
+    }
+
     // Helper methods
 
     private IdeaListDTO createSampleIdeaListDTO(String name, IdeaListCategory category) {

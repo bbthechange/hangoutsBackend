@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.service.impl;
 
 import com.bbthechange.inviter.service.IdeaListService;
+import com.bbthechange.inviter.service.UserService;
 import com.bbthechange.inviter.repository.IdeaListRepository;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.model.*;
@@ -12,8 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -27,11 +27,13 @@ public class IdeaListServiceImpl implements IdeaListService {
     
     private final IdeaListRepository ideaListRepository;
     private final GroupRepository groupRepository;
-    
+    private final UserService userService;
+
     @Autowired
-    public IdeaListServiceImpl(IdeaListRepository ideaListRepository, GroupRepository groupRepository) {
+    public IdeaListServiceImpl(IdeaListRepository ideaListRepository, GroupRepository groupRepository, UserService userService) {
         this.ideaListRepository = ideaListRepository;
         this.groupRepository = groupRepository;
+        this.userService = userService;
     }
     
     @Override
@@ -166,10 +168,12 @@ public class IdeaListServiceImpl implements IdeaListService {
         member.setExternalSource(request.getExternalSource());
 
         IdeaListMember savedMember = ideaListRepository.saveIdeaListMember(member);
-        logger.debug("Added idea: {} to list: {} in group: {} by user: {}", 
+        logger.debug("Added idea: {} to list: {} in group: {} by user: {}",
                 savedMember.getIdeaId(), listId, groupId, requestingUserId);
-        
-        return new IdeaDTO(savedMember);
+
+        IdeaDTO dto = new IdeaDTO(savedMember);
+        populateEnrichedData(dto, savedMember);
+        return dto;
     }
     
     @Override
@@ -212,10 +216,14 @@ public class IdeaListServiceImpl implements IdeaListService {
             existingMember.touch(); // Update timestamp
             IdeaListMember savedMember = ideaListRepository.saveIdeaListMember(existingMember);
             logger.debug("Updated idea: {} in list: {} group: {} by user: {}", ideaId, listId, groupId, requestingUserId);
-            return new IdeaDTO(savedMember);
+            IdeaDTO dto = new IdeaDTO(savedMember);
+            populateEnrichedData(dto, savedMember);
+            return dto;
         }
-        
-        return new IdeaDTO(existingMember);
+
+        IdeaDTO dto = new IdeaDTO(existingMember);
+        populateEnrichedData(dto, existingMember);
+        return dto;
     }
     
     @Override
@@ -233,8 +241,36 @@ public class IdeaListServiceImpl implements IdeaListService {
         logger.debug("Deleted idea: {} from list: {} group: {} by user: {}", ideaId, listId, groupId, requestingUserId);
     }
     
+    @Override
+    public IdeaDTO addIdeaInterest(String groupId, String listId, String ideaId, String requestingUserId) {
+        ensureUserIsGroupMember(groupId, requestingUserId);
+
+        ideaListRepository.addIdeaInterest(groupId, listId, ideaId, requestingUserId);
+
+        IdeaListMember member = ideaListRepository.findIdeaListMemberById(groupId, listId, ideaId)
+                .orElseThrow(() -> new ResourceNotFoundException("Idea not found: " + ideaId));
+
+        IdeaDTO dto = new IdeaDTO(member);
+        populateEnrichedData(dto, member);
+        return dto;
+    }
+
+    @Override
+    public IdeaDTO removeIdeaInterest(String groupId, String listId, String ideaId, String requestingUserId) {
+        ensureUserIsGroupMember(groupId, requestingUserId);
+
+        ideaListRepository.removeIdeaInterest(groupId, listId, ideaId, requestingUserId);
+
+        IdeaListMember member = ideaListRepository.findIdeaListMemberById(groupId, listId, ideaId)
+                .orElseThrow(() -> new ResourceNotFoundException("Idea not found: " + ideaId));
+
+        IdeaDTO dto = new IdeaDTO(member);
+        populateEnrichedData(dto, member);
+        return dto;
+    }
+
     // Private helper methods
-    
+
     private void ensureUserIsGroupMember(String groupId, String userId) {
         if (!groupRepository.isUserMemberOfGroup(groupId, userId)) {
             throw new UnauthorizedException("User is not a member of group: " + groupId);
@@ -258,13 +294,67 @@ public class IdeaListServiceImpl implements IdeaListService {
     
     private IdeaListDTO convertToDTO(IdeaList ideaList) {
         IdeaListDTO dto = new IdeaListDTO(ideaList);
-        
-        // Convert members that are already attached to the idea list (no additional DB call needed!)
+
+        // Convert members and populate interest data
         List<IdeaDTO> ideaDTOs = ideaList.getMembers().stream()
-                .map(IdeaDTO::new)
-                .collect(Collectors.toList()); // Already sorted in repository
-        
+                .map(member -> {
+                    IdeaDTO ideaDTO = new IdeaDTO(member);
+                    populateEnrichedData(ideaDTO, member);
+                    return ideaDTO;
+                })
+                // Sort by interestCount desc, then addedTime desc
+                .sorted(Comparator.comparingInt(IdeaDTO::getInterestCount).reversed()
+                        .thenComparing(Comparator.comparing(IdeaDTO::getAddedTime).reversed()))
+                .collect(Collectors.toList());
+
         dto.setIdeas(ideaDTOs);
         return dto;
+    }
+
+    private void populateEnrichedData(IdeaDTO dto, IdeaListMember member) {
+        // Resolve creator display info
+        resolveCreatorInfo(dto, member);
+        // Resolve interest data
+        List<InterestedUserDTO> interestedUsers = resolveInterestedUsers(member);
+        dto.setInterestedUsers(interestedUsers);
+        dto.setInterestCount(interestedUsers.size() + 1); // explicit + 1 (implicit creator)
+    }
+
+    private void resolveCreatorInfo(IdeaDTO dto, IdeaListMember member) {
+        if (member.getAddedBy() != null) {
+            try {
+                userService.getUserSummary(UUID.fromString(member.getAddedBy()))
+                        .ifPresent(summary -> {
+                            dto.setAddedByName(summary.getDisplayName());
+                            dto.setAddedByImagePath(summary.getMainImagePath());
+                        });
+            } catch (Exception e) {
+                logger.warn("Failed to resolve creator info for userId: {}", member.getAddedBy(), e);
+            }
+        }
+    }
+
+    private List<InterestedUserDTO> resolveInterestedUsers(IdeaListMember member) {
+        Set<String> userIds = member.getInterestedUserIds();
+        if (userIds == null || userIds.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        return userIds.stream()
+                .map(userId -> {
+                    try {
+                        return userService.getUserSummary(UUID.fromString(userId))
+                                .map(summary -> new InterestedUserDTO(
+                                        userId,
+                                        summary.getDisplayName(),
+                                        summary.getMainImagePath()))
+                                .orElse(null);
+                    } catch (Exception e) {
+                        logger.warn("Failed to resolve user summary for interest userId: {}", userId, e);
+                        return null;
+                    }
+                })
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
     }
 }
