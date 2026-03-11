@@ -13,6 +13,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 
+import java.time.Instant;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -330,9 +331,118 @@ class IdeaListRepositoryImplUnitTest {
         assertThat(IdeaListCategory.BOOK.getDisplayName()).isEqualTo("Book");
         assertThat(IdeaListCategory.TRAVEL.getDisplayName()).isEqualTo("Travel");
         assertThat(IdeaListCategory.OTHER.getDisplayName()).isEqualTo("Other");
-        
+
         // Verify toString() returns display name
         assertThat(IdeaListCategory.RESTAURANT.toString()).isEqualTo("Restaurant");
         assertThat(IdeaListCategory.OTHER.toString()).isEqualTo("Other");
+    }
+
+    // ===== PLACE FIELD TESTS =====
+
+    @Test
+    void ideaListMember_PlaceFields_SetAndGetCorrectly() {
+        // Given: IdeaListMember with all place fields populated
+        String listId = UUID.randomUUID().toString();
+        IdeaListMember member = new IdeaListMember(testGroupId, listId, "Joe's Pizza", null, null, testUserId);
+
+        // When: Set all place fields
+        member.setGooglePlaceId("ChIJN1t_tDeuEmsRUsoyG83frY4");
+        member.setApplePlaceId("apple-place-123");
+        member.setAddress("123 Main St, New York, NY 10001");
+        member.setLatitude(40.7128);
+        member.setLongitude(-74.0060);
+        member.setCachedPhotoUrl("places/photos/abc123.jpg");
+        member.setCachedRating(4.3);
+        member.setCachedPriceLevel(2);
+        member.setPhoneNumber("+12125551234");
+        member.setWebsiteUrl("http://joespizza.com");
+        member.setMenuUrl("http://joespizza.com/menu");
+        member.setCachedHoursJson("{\"monday\":\"9:00-22:00\"}");
+        member.setPlaceCategory("restaurant");
+        Instant enrichedAt = Instant.now();
+        member.setLastEnrichedAt(enrichedAt);
+        member.setEnrichmentStatus("ENRICHED");
+
+        // Then: All place fields get correctly
+        assertThat(member.getGooglePlaceId()).isEqualTo("ChIJN1t_tDeuEmsRUsoyG83frY4");
+        assertThat(member.getApplePlaceId()).isEqualTo("apple-place-123");
+        assertThat(member.getAddress()).isEqualTo("123 Main St, New York, NY 10001");
+        assertThat(member.getLatitude()).isEqualTo(40.7128);
+        assertThat(member.getLongitude()).isEqualTo(-74.0060);
+        assertThat(member.getCachedPhotoUrl()).isEqualTo("places/photos/abc123.jpg");
+        assertThat(member.getCachedRating()).isEqualTo(4.3);
+        assertThat(member.getCachedPriceLevel()).isEqualTo(2);
+        assertThat(member.getPhoneNumber()).isEqualTo("+12125551234");
+        assertThat(member.getWebsiteUrl()).isEqualTo("http://joespizza.com");
+        assertThat(member.getMenuUrl()).isEqualTo("http://joespizza.com/menu");
+        assertThat(member.getCachedHoursJson()).isEqualTo("{\"monday\":\"9:00-22:00\"}");
+        assertThat(member.getPlaceCategory()).isEqualTo("restaurant");
+        assertThat(member.getLastEnrichedAt()).isEqualTo(enrichedAt);
+        assertThat(member.getEnrichmentStatus()).isEqualTo("ENRICHED");
+    }
+
+    @Test
+    void ideaListMember_PlaceFields_DefaultToNull() {
+        // Given: New IdeaListMember without place fields set
+        String listId = UUID.randomUUID().toString();
+        IdeaListMember member = new IdeaListMember(testGroupId, listId, "Non-place idea", null, null, testUserId);
+
+        // Then: All place fields default to null (backward compatibility)
+        assertThat(member.getGooglePlaceId()).isNull();
+        assertThat(member.getApplePlaceId()).isNull();
+        assertThat(member.getAddress()).isNull();
+        assertThat(member.getLatitude()).isNull();
+        assertThat(member.getLongitude()).isNull();
+        assertThat(member.getCachedPhotoUrl()).isNull();
+        assertThat(member.getCachedRating()).isNull();
+        assertThat(member.getCachedPriceLevel()).isNull();
+        assertThat(member.getPhoneNumber()).isNull();
+        assertThat(member.getWebsiteUrl()).isNull();
+        assertThat(member.getMenuUrl()).isNull();
+        assertThat(member.getCachedHoursJson()).isNull();
+        assertThat(member.getPlaceCategory()).isNull();
+        assertThat(member.getLastEnrichedAt()).isNull();
+        assertThat(member.getEnrichmentStatus()).isNull();
+    }
+
+    @Test
+    void ideaListMember_NoArgConstructor_PlaceFieldsNull() {
+        // Given: Default constructor (used by DynamoDB Enhanced Client deserialization)
+        IdeaListMember member = new IdeaListMember();
+
+        // Then: All place fields are null (DynamoDB deserialization compat)
+        assertThat(member.getGooglePlaceId()).isNull();
+        assertThat(member.getApplePlaceId()).isNull();
+        assertThat(member.getAddress()).isNull();
+        assertThat(member.getLatitude()).isNull();
+        assertThat(member.getLongitude()).isNull();
+        assertThat(member.getEnrichmentStatus()).isNull();
+        assertThat(member.getLastEnrichedAt()).isNull();
+        assertThat(member.getCachedPhotoUrl()).isNull();
+        assertThat(member.getCachedRating()).isNull();
+        assertThat(member.getCachedPriceLevel()).isNull();
+    }
+
+    @Test
+    void ideaListMember_EnrichmentStatus_AllValidValues() {
+        // Given: An IdeaListMember
+        String listId = UUID.randomUUID().toString();
+        IdeaListMember member = new IdeaListMember(testGroupId, listId, "Test", null, null, testUserId);
+
+        // When/Then: All valid enrichment statuses can be set
+        member.setEnrichmentStatus("PENDING");
+        assertThat(member.getEnrichmentStatus()).isEqualTo("PENDING");
+
+        member.setEnrichmentStatus("ENRICHED");
+        assertThat(member.getEnrichmentStatus()).isEqualTo("ENRICHED");
+
+        member.setEnrichmentStatus("FAILED");
+        assertThat(member.getEnrichmentStatus()).isEqualTo("FAILED");
+
+        member.setEnrichmentStatus("NOT_APPLICABLE");
+        assertThat(member.getEnrichmentStatus()).isEqualTo("NOT_APPLICABLE");
+
+        member.setEnrichmentStatus(null);
+        assertThat(member.getEnrichmentStatus()).isNull();
     }
 }

@@ -2,6 +2,7 @@ package com.bbthechange.inviter.repository;
 
 import com.bbthechange.inviter.model.IdeaList;
 import com.bbthechange.inviter.model.IdeaListMember;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 import java.util.List;
 import java.util.Map;
@@ -63,4 +64,12 @@ public interface IdeaListRepository {
      * Safe to call even if user has no interest recorded.
      */
     void removeIdeaInterest(String groupId, String listId, String ideaId, String userId);
+
+    /**
+     * Update place enrichment data on an idea using UpdateItem (not PutItem).
+     * Avoids race conditions with concurrent interest ADD/DELETE operations.
+     * @param enrichmentAttributes map of attribute names to DynamoDB AttributeValues to set
+     */
+    void updateIdeaEnrichmentData(String groupId, String listId, String ideaId,
+        Map<String, AttributeValue> enrichmentAttributes);
 }

@@ -432,4 +432,52 @@ public class IdeaListRepositoryImpl implements IdeaListRepository {
             }
         });
     }
+
+    @Override
+    public void updateIdeaEnrichmentData(String groupId, String listId, String ideaId,
+            Map<String, AttributeValue> enrichmentAttributes) {
+        queryTracker.trackQuery("updateIdeaEnrichmentData", TABLE_NAME, () -> {
+            try {
+                if (enrichmentAttributes == null || enrichmentAttributes.isEmpty()) {
+                    logger.debug("No enrichment attributes to update for idea: {}", ideaId);
+                    return null;
+                }
+
+                // Build dynamic SET expression from the attributes map
+                StringBuilder setExpression = new StringBuilder("SET updatedAt = :now");
+                Map<String, AttributeValue> expressionValues = new HashMap<>();
+                expressionValues.put(":now", AttributeValue.builder()
+                        .n(String.valueOf(Instant.now().toEpochMilli())).build());
+
+                int i = 0;
+                for (Map.Entry<String, AttributeValue> entry : enrichmentAttributes.entrySet()) {
+                    String placeholder = ":enrichVal" + i;
+                    setExpression.append(", ").append(entry.getKey()).append(" = ").append(placeholder);
+                    expressionValues.put(placeholder, entry.getValue());
+                    i++;
+                }
+
+                UpdateItemRequest request = UpdateItemRequest.builder()
+                        .tableName(TABLE_NAME)
+                        .key(Map.of(
+                                "pk", AttributeValue.builder().s(InviterKeyFactory.getGroupPk(groupId)).build(),
+                                "sk", AttributeValue.builder().s(InviterKeyFactory.getIdeaListMemberSk(listId, ideaId)).build()
+                        ))
+                        .updateExpression(setExpression.toString())
+                        .conditionExpression("attribute_exists(pk)")
+                        .expressionAttributeValues(expressionValues)
+                        .build();
+
+                dynamoDbClient.updateItem(request);
+                logger.debug("Updated enrichment data for idea: {} in list: {} group: {}", ideaId, listId, groupId);
+                return null;
+
+            } catch (ConditionalCheckFailedException e) {
+                throw new ResourceNotFoundException("Idea not found: " + ideaId);
+            } catch (DynamoDbException e) {
+                logger.error("Error updating enrichment data for idea: {} in list: {} group: {}", ideaId, listId, groupId, e);
+                throw new RepositoryException("Failed to update idea enrichment data", e);
+            }
+        });
+    }
 }

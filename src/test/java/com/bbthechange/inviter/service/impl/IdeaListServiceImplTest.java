@@ -5,11 +5,13 @@ import com.bbthechange.inviter.exception.*;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.repository.IdeaListRepository;
+import com.bbthechange.inviter.service.PlaceEnrichmentService;
+import com.bbthechange.inviter.service.S3Service;
 import com.bbthechange.inviter.service.UserService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -37,7 +39,12 @@ class IdeaListServiceImplTest {
     @Mock
     private UserService userService;
 
-    @InjectMocks
+    @Mock
+    private PlaceEnrichmentService placeEnrichmentService;
+
+    @Mock
+    private S3Service s3Service;
+
     private IdeaListServiceImpl ideaListService;
 
     private String testGroupId;
@@ -51,6 +58,7 @@ class IdeaListServiceImplTest {
         testUserId = UUID.randomUUID().toString();
         testListId = UUID.randomUUID().toString();
         testIdeaId = UUID.randomUUID().toString();
+        ideaListService = new IdeaListServiceImpl(ideaListRepository, groupRepository, userService, s3Service, placeEnrichmentService);
     }
 
     // ===== AUTHORIZATION & SECURITY TESTS =====
@@ -648,5 +656,397 @@ class IdeaListServiceImplTest {
         // Then: Deleted user skipped, empty interested users
         assertThat(result.getInterestedUsers()).isEmpty();
         assertThat(result.getInterestCount()).isEqualTo(1); // 0 resolved + 1 creator
+    }
+
+    // ===== PLACE ENRICHMENT TESTS =====
+
+    @Nested
+    class PlaceEnrichmentTests {
+
+        @Test
+        void addIdeaToList_WithGooglePlaceId_SetsEnrichmentPendingAndTriggersEnrichment() {
+            // Given: User is group member, list exists, request has googlePlaceId
+            when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
+            when(ideaListRepository.ideaListExists(testGroupId, testListId)).thenReturn(true);
+            when(ideaListRepository.saveIdeaListMember(any(IdeaListMember.class)))
+                    .thenAnswer(invocation -> invocation.getArgument(0));
+            when(placeEnrichmentService.isEnabled()).thenReturn(true);
+
+            CreateIdeaRequest request = new CreateIdeaRequest();
+            request.setName("Joe's Pizza");
+            request.setGooglePlaceId("ChIJN1t_tDeuEmsRUsoyG83frY4");
+            request.setAddress("123 Main St");
+
+            // When: Add idea with Google Place ID
+            IdeaDTO result = ideaListService.addIdeaToList(testGroupId, testListId, request, testUserId);
+
+            // Then: returned DTO has PENDING status and place data
+            assertThat(result.getEnrichmentStatus()).isEqualTo("PENDING");
+            assertThat(result.getGooglePlaceId()).isEqualTo("ChIJN1t_tDeuEmsRUsoyG83frY4");
+
+            // And: async enrichment was triggered
+            verify(placeEnrichmentService).enrichPlaceAsync(
+                    eq(testGroupId), eq(testListId), any(String.class), eq("ChIJN1t_tDeuEmsRUsoyG83frY4"));
+        }
+
+        @Test
+        void addIdeaToList_WithoutGooglePlaceId_SetsEnrichmentNotApplicable() {
+            // Given: User is group member, list exists, request has no googlePlaceId
+            when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
+            when(ideaListRepository.ideaListExists(testGroupId, testListId)).thenReturn(true);
+            when(ideaListRepository.saveIdeaListMember(any(IdeaListMember.class)))
+                    .thenAnswer(invocation -> invocation.getArgument(0));
+
+            CreateIdeaRequest request = new CreateIdeaRequest();
+            request.setName("Custom Place");
+            request.setAddress("456 Elm St");
+
+            // When: Add idea without Google Place ID
+            IdeaDTO result = ideaListService.addIdeaToList(testGroupId, testListId, request, testUserId);
+
+            // Then: returned DTO has NOT_APPLICABLE status, no enrichment triggered
+            assertThat(result.getEnrichmentStatus()).isEqualTo("NOT_APPLICABLE");
+            verify(placeEnrichmentService, never()).enrichPlaceAsync(any(), any(), any(), any());
+        }
+
+        @Test
+        void addIdeaToList_WithPlaceFields_SavesAllPlaceFields() {
+            // Given: User is group member, list exists, request has all place fields
+            when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
+            when(ideaListRepository.ideaListExists(testGroupId, testListId)).thenReturn(true);
+            when(ideaListRepository.saveIdeaListMember(any(IdeaListMember.class)))
+                    .thenAnswer(invocation -> invocation.getArgument(0));
+            when(placeEnrichmentService.isEnabled()).thenReturn(true);
+
+            CreateIdeaRequest request = new CreateIdeaRequest();
+            request.setName("Joe's Pizza");
+            request.setGooglePlaceId("ChIJN1t_tDeuEmsRUsoyG83frY4");
+            request.setApplePlaceId("apple-place-123");
+            request.setAddress("123 Main St, New York, NY");
+            request.setLatitude(40.7128);
+            request.setLongitude(-74.0060);
+            request.setPlaceCategory("restaurant");
+
+            // When: Add idea with all place fields
+            IdeaDTO result = ideaListService.addIdeaToList(testGroupId, testListId, request, testUserId);
+
+            // Then: returned DTO has all place fields
+            assertThat(result.getGooglePlaceId()).isEqualTo("ChIJN1t_tDeuEmsRUsoyG83frY4");
+            assertThat(result.getApplePlaceId()).isEqualTo("apple-place-123");
+            assertThat(result.getAddress()).isEqualTo("123 Main St, New York, NY");
+            assertThat(result.getLatitude()).isEqualTo(40.7128);
+            assertThat(result.getLongitude()).isEqualTo(-74.0060);
+            assertThat(result.getPlaceCategory()).isEqualTo("restaurant");
+            assertThat(result.getEnrichmentStatus()).isEqualTo("PENDING");
+        }
+
+        @Test
+        void updateIdea_WithPlaceFields_UpdatesPlaceFields() {
+            // Given: Existing idea, PATCH request with place fields
+            when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
+
+            IdeaListMember existingMember = new IdeaListMember(testGroupId, testListId, "Old Restaurant", null, null, testUserId);
+            existingMember.setIdeaId(testIdeaId);
+            existingMember.setAddress("Old Address");
+            existingMember.setEnrichmentStatus("NOT_APPLICABLE");
+            when(ideaListRepository.findIdeaListMemberById(testGroupId, testListId, testIdeaId))
+                    .thenReturn(Optional.of(existingMember));
+            when(ideaListRepository.saveIdeaListMember(any(IdeaListMember.class)))
+                    .thenAnswer(invocation -> invocation.getArgument(0));
+
+            UpdateIdeaRequest request = new UpdateIdeaRequest();
+            request.setAddress("New Address");
+            request.setLatitude(34.0522);
+            request.setLongitude(-118.2437);
+            request.setPlaceCategory("bar");
+
+            // When: Update idea with place fields
+            IdeaDTO result = ideaListService.updateIdea(testGroupId, testListId, testIdeaId, request, testUserId);
+
+            // Then: Place fields updated, original name unchanged
+            assertThat(result.getName()).isEqualTo("Old Restaurant");
+            assertThat(result.getAddress()).isEqualTo("New Address");
+            assertThat(result.getLatitude()).isEqualTo(34.0522);
+            assertThat(result.getLongitude()).isEqualTo(-118.2437);
+            assertThat(result.getPlaceCategory()).isEqualTo("bar");
+        }
+
+        @Test
+        void updateIdea_WithNewGooglePlaceId_ResetsEnrichmentAndTriggersReEnrichment() {
+            // Given: Existing idea with old googlePlaceId, update with new one
+            when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
+            when(placeEnrichmentService.isEnabled()).thenReturn(true);
+
+            IdeaListMember existingMember = new IdeaListMember(testGroupId, testListId, "Restaurant", null, null, testUserId);
+            existingMember.setIdeaId(testIdeaId);
+            existingMember.setGooglePlaceId("old-place-id");
+            existingMember.setEnrichmentStatus("ENRICHED");
+            existingMember.setLastEnrichedAt(Instant.now().minusSeconds(86400));
+            when(ideaListRepository.findIdeaListMemberById(testGroupId, testListId, testIdeaId))
+                    .thenReturn(Optional.of(existingMember));
+            when(ideaListRepository.saveIdeaListMember(any(IdeaListMember.class)))
+                    .thenAnswer(invocation -> invocation.getArgument(0));
+
+            UpdateIdeaRequest request = new UpdateIdeaRequest();
+            request.setGooglePlaceId("new-place-id");
+
+            // When: Update with new Google Place ID
+            IdeaDTO result = ideaListService.updateIdea(testGroupId, testListId, testIdeaId, request, testUserId);
+
+            // Then: returned DTO shows enrichment reset to PENDING with cleared timestamp
+            assertThat(result.getEnrichmentStatus()).isEqualTo("PENDING");
+            assertThat(result.getLastEnrichedAt()).isNull();
+            assertThat(result.getGooglePlaceId()).isEqualTo("new-place-id");
+
+            // And: async enrichment was triggered for the new place
+            verify(placeEnrichmentService).enrichPlaceAsync(testGroupId, testListId, testIdeaId, "new-place-id");
+        }
+
+        @Test
+        void updateIdea_WithSameGooglePlaceId_DoesNotTriggerReEnrichment() {
+            // Given: Existing idea, update with same googlePlaceId
+            when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
+
+            IdeaListMember existingMember = new IdeaListMember(testGroupId, testListId, "Restaurant", null, null, testUserId);
+            existingMember.setIdeaId(testIdeaId);
+            existingMember.setGooglePlaceId("same-place-id");
+            existingMember.setEnrichmentStatus("ENRICHED");
+            when(ideaListRepository.findIdeaListMemberById(testGroupId, testListId, testIdeaId))
+                    .thenReturn(Optional.of(existingMember));
+            when(ideaListRepository.saveIdeaListMember(any(IdeaListMember.class)))
+                    .thenAnswer(invocation -> invocation.getArgument(0));
+
+            UpdateIdeaRequest request = new UpdateIdeaRequest();
+            request.setGooglePlaceId("same-place-id");
+            request.setName("Updated Name");
+
+            // When: Update with same Google Place ID
+            IdeaDTO result = ideaListService.updateIdea(testGroupId, testListId, testIdeaId, request, testUserId);
+
+            // Then: returned DTO retains ENRICHED status, no re-enrichment triggered
+            assertThat(result.getEnrichmentStatus()).isEqualTo("ENRICHED");
+            assertThat(result.getName()).isEqualTo("Updated Name");
+            verify(placeEnrichmentService, never()).enrichPlaceAsync(any(), any(), any(), any());
+        }
+
+        @Test
+        void getIdeaList_TriggersStaleReEnrichment() {
+            // Given: User is group member, list exists with members, enrichment enabled
+            when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
+            when(placeEnrichmentService.isEnabled()).thenReturn(true);
+
+            IdeaList ideaList = new IdeaList(testGroupId, "Places List", IdeaListCategory.RESTAURANT, null, testUserId);
+            ideaList.setListId(testListId);
+            IdeaListMember member = new IdeaListMember(testGroupId, testListId, "Old Place", null, null, testUserId);
+            ideaList.getMembers().add(member);
+
+            when(ideaListRepository.findIdeaListWithMembersById(testGroupId, testListId))
+                    .thenReturn(Optional.of(ideaList));
+
+            // When: Get idea list
+            ideaListService.getIdeaList(testGroupId, testListId, testUserId);
+
+            // Then: triggerStaleReEnrichment called with the list members
+            verify(placeEnrichmentService).triggerStaleReEnrichment(
+                    eq(ideaList.getMembers()), eq(testGroupId), eq(testListId));
+        }
+
+        @Test
+        void addIdeaToList_WithoutGooglePlaceId_CustomPlace_NoEnrichmentTriggered() {
+            // Given: User is group member, list exists, custom place (no Google/Apple IDs)
+            when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
+            when(ideaListRepository.ideaListExists(testGroupId, testListId)).thenReturn(true);
+            when(ideaListRepository.saveIdeaListMember(any(IdeaListMember.class)))
+                    .thenAnswer(invocation -> invocation.getArgument(0));
+
+            CreateIdeaRequest request = new CreateIdeaRequest();
+            request.setName("My Home");
+            request.setAddress("789 Custom St");
+            request.setLatitude(37.7749);
+            request.setLongitude(-122.4194);
+            request.setPlaceCategory("home");
+
+            // When: Add custom place (no googlePlaceId)
+            IdeaDTO result = ideaListService.addIdeaToList(testGroupId, testListId, request, testUserId);
+
+            // Then: NOT_APPLICABLE status, no enrichment triggered
+            assertThat(result.getEnrichmentStatus()).isEqualTo("NOT_APPLICABLE");
+            assertThat(result.getAddress()).isEqualTo("789 Custom St");
+            assertThat(result.getPlaceCategory()).isEqualTo("home");
+            verify(placeEnrichmentService, never()).enrichPlaceAsync(any(), any(), any(), any());
+        }
+
+        @Test
+        void addIdeaToList_NonPlaceIdea_BackwardCompatible() {
+            // Given: Traditional idea without any place fields (backward compat)
+            when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
+            when(ideaListRepository.ideaListExists(testGroupId, testListId)).thenReturn(true);
+            when(ideaListRepository.saveIdeaListMember(any(IdeaListMember.class)))
+                    .thenAnswer(invocation -> invocation.getArgument(0));
+
+            CreateIdeaRequest request = new CreateIdeaRequest();
+            request.setName("Watch The Matrix");
+            request.setNote("Classic sci-fi movie");
+
+            // When: Add non-place idea
+            IdeaDTO result = ideaListService.addIdeaToList(testGroupId, testListId, request, testUserId);
+
+            // Then: Place fields are null, enrichment NOT_APPLICABLE
+            assertThat(result.getGooglePlaceId()).isNull();
+            assertThat(result.getApplePlaceId()).isNull();
+            assertThat(result.getAddress()).isNull();
+            assertThat(result.getLatitude()).isNull();
+            assertThat(result.getLongitude()).isNull();
+            assertThat(result.getPlaceCategory()).isNull();
+            assertThat(result.getEnrichmentStatus()).isEqualTo("NOT_APPLICABLE");
+            verify(placeEnrichmentService, never()).enrichPlaceAsync(any(), any(), any(), any());
+        }
+
+        @Test
+        void addIdeaToList_EnrichmentServiceDisabled_NoEnrichmentTriggered() {
+            // Given: Enrichment service is disabled
+            when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
+            when(ideaListRepository.ideaListExists(testGroupId, testListId)).thenReturn(true);
+            when(ideaListRepository.saveIdeaListMember(any(IdeaListMember.class)))
+                    .thenAnswer(invocation -> invocation.getArgument(0));
+            when(placeEnrichmentService.isEnabled()).thenReturn(false);
+
+            CreateIdeaRequest request = new CreateIdeaRequest();
+            request.setName("Joe's Pizza");
+            request.setGooglePlaceId("ChIJN1t_tDeuEmsRUsoyG83frY4");
+
+            // When: Add idea with Google Place ID but enrichment disabled
+            IdeaDTO result = ideaListService.addIdeaToList(testGroupId, testListId, request, testUserId);
+
+            // Then: returned DTO has PENDING status but enrichPlaceAsync NOT called
+            assertThat(result.getEnrichmentStatus()).isEqualTo("PENDING");
+            verify(placeEnrichmentService, never()).enrichPlaceAsync(any(), any(), any(), any());
+        }
+
+        @Test
+        void addIdeaToList_NullEnrichmentService_DoesNotThrow() {
+            // Given: PlaceEnrichmentService is null (optional dependency)
+            IdeaListServiceImpl serviceWithoutEnrichment = new IdeaListServiceImpl(
+                    ideaListRepository, groupRepository, userService, s3Service, null);
+
+            when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
+            when(ideaListRepository.ideaListExists(testGroupId, testListId)).thenReturn(true);
+            when(ideaListRepository.saveIdeaListMember(any(IdeaListMember.class)))
+                    .thenAnswer(invocation -> invocation.getArgument(0));
+
+            CreateIdeaRequest request = new CreateIdeaRequest();
+            request.setName("Joe's Pizza");
+            request.setGooglePlaceId("ChIJN1t_tDeuEmsRUsoyG83frY4");
+
+            // When/Then: No exception thrown even with null enrichment service
+            assertThatCode(() -> serviceWithoutEnrichment.addIdeaToList(
+                    testGroupId, testListId, request, testUserId))
+                    .doesNotThrowAnyException();
+        }
+
+        @Test
+        void getIdeaList_NullEnrichmentService_DoesNotThrow() {
+            // Given: PlaceEnrichmentService is null (optional dependency)
+            IdeaListServiceImpl serviceWithoutEnrichment = new IdeaListServiceImpl(
+                    ideaListRepository, groupRepository, userService, s3Service, null);
+
+            when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
+            IdeaList ideaList = new IdeaList(testGroupId, "Test List", IdeaListCategory.RESTAURANT, null, testUserId);
+            ideaList.setListId(testListId);
+            when(ideaListRepository.findIdeaListWithMembersById(testGroupId, testListId))
+                    .thenReturn(Optional.of(ideaList));
+
+            // When/Then: No exception thrown
+            assertThatCode(() -> serviceWithoutEnrichment.getIdeaList(
+                    testGroupId, testListId, testUserId))
+                    .doesNotThrowAnyException();
+        }
+
+        @Test
+        void deleteIdea_WithCachedPhoto_DeletesPhotoFromS3() {
+            // Given: Idea with a cached photo
+            when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
+
+            IdeaListMember member = new IdeaListMember(testGroupId, testListId, "Restaurant", null, null, testUserId);
+            member.setIdeaId(testIdeaId);
+            member.setCachedPhotoUrl("places/photos/" + testIdeaId + ".jpg");
+            when(ideaListRepository.findIdeaListMemberById(testGroupId, testListId, testIdeaId))
+                    .thenReturn(Optional.of(member));
+
+            // When: Delete the idea
+            ideaListService.deleteIdea(testGroupId, testListId, testIdeaId, testUserId);
+
+            // Then: S3 cleanup triggered and idea deleted
+            verify(s3Service).deleteImageAsync("places/photos/" + testIdeaId + ".jpg");
+            verify(ideaListRepository).deleteIdeaListMember(testGroupId, testListId, testIdeaId);
+        }
+
+        @Test
+        void deleteIdea_WithoutCachedPhoto_SkipsS3Cleanup() {
+            // Given: Idea without a cached photo
+            when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
+
+            IdeaListMember member = new IdeaListMember(testGroupId, testListId, "Custom Place", null, null, testUserId);
+            member.setIdeaId(testIdeaId);
+            when(ideaListRepository.findIdeaListMemberById(testGroupId, testListId, testIdeaId))
+                    .thenReturn(Optional.of(member));
+
+            // When: Delete the idea
+            ideaListService.deleteIdea(testGroupId, testListId, testIdeaId, testUserId);
+
+            // Then: No S3 cleanup, but idea still deleted
+            verify(s3Service, never()).deleteImageAsync(any());
+            verify(ideaListRepository).deleteIdeaListMember(testGroupId, testListId, testIdeaId);
+        }
+
+        @Test
+        void addIdeaToList_LatitudeOnly_ThrowsValidation() {
+            // Given
+            when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
+            when(ideaListRepository.ideaListExists(testGroupId, testListId)).thenReturn(true);
+
+            CreateIdeaRequest request = new CreateIdeaRequest();
+            request.setName("Test Place");
+            request.setLatitude(40.7128);
+
+            // When/Then
+            assertThatThrownBy(() -> ideaListService.addIdeaToList(testGroupId, testListId, request, testUserId))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessageContaining("together");
+        }
+
+        @Test
+        void addIdeaToList_LatitudeOutOfRange_ThrowsValidation() {
+            // Given
+            when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
+            when(ideaListRepository.ideaListExists(testGroupId, testListId)).thenReturn(true);
+
+            CreateIdeaRequest request = new CreateIdeaRequest();
+            request.setName("Test Place");
+            request.setLatitude(999.0);
+            request.setLongitude(-74.0);
+
+            // When/Then
+            assertThatThrownBy(() -> ideaListService.addIdeaToList(testGroupId, testListId, request, testUserId))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessageContaining("Latitude");
+        }
+
+        @Test
+        void addIdeaToList_LongitudeOutOfRange_ThrowsValidation() {
+            // Given
+            when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
+            when(ideaListRepository.ideaListExists(testGroupId, testListId)).thenReturn(true);
+
+            CreateIdeaRequest request = new CreateIdeaRequest();
+            request.setName("Test Place");
+            request.setLatitude(40.7128);
+            request.setLongitude(-200.0);
+
+            // When/Then
+            assertThatThrownBy(() -> ideaListService.addIdeaToList(testGroupId, testListId, request, testUserId))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessageContaining("Longitude");
+        }
     }
 }

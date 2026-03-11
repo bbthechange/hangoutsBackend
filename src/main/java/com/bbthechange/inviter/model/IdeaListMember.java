@@ -39,6 +39,29 @@ public class IdeaListMember extends BaseItem {
     private String externalSource;  // Source system for externalId (e.g., "TICKETMASTER", "YELP")
     private Set<String> interestedUserIds; // User IDs who expressed interest ("I'd do this")
 
+    // Place Identity
+    private String googlePlaceId;     // Google Places API place_id
+    private String applePlaceId;      // Apple Maps identifier
+
+    // Location
+    private String address;           // Human-readable address
+    private Double latitude;
+    private Double longitude;
+
+    // Enriched Data (populated by async enrichment service, not by clients)
+    private String cachedPhotoUrl;    // S3 key e.g. "places/photos/{ideaId}.jpg"
+    private Double cachedRating;      // e.g. 4.3
+    private Integer cachedPriceLevel; // 1-4
+    private String phoneNumber;
+    private String websiteUrl;
+    private String menuUrl;
+    private String cachedHoursJson;   // JSON string of weekly hours
+    private String placeCategory;     // "restaurant", "bar", "home", "event_space", "park", "trail", "other"
+
+    // Enrichment Metadata
+    private Instant lastEnrichedAt;   // When last enriched via Google
+    private String enrichmentStatus;  // "PENDING", "ENRICHED", "FAILED", "NOT_APPLICABLE"
+
     public void setInterestedUserIds(Set<String> interestedUserIds) {
         if (interestedUserIds == null || interestedUserIds.isEmpty()) {
             this.interestedUserIds = null;  // DynamoDB can't store empty sets

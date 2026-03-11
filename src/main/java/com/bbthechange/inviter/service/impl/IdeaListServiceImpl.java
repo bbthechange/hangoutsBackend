@@ -1,6 +1,8 @@
 package com.bbthechange.inviter.service.impl;
 
 import com.bbthechange.inviter.service.IdeaListService;
+import com.bbthechange.inviter.service.PlaceEnrichmentService;
+import com.bbthechange.inviter.service.S3Service;
 import com.bbthechange.inviter.service.UserService;
 import com.bbthechange.inviter.repository.IdeaListRepository;
 import com.bbthechange.inviter.repository.GroupRepository;
@@ -28,12 +30,18 @@ public class IdeaListServiceImpl implements IdeaListService {
     private final IdeaListRepository ideaListRepository;
     private final GroupRepository groupRepository;
     private final UserService userService;
+    private final PlaceEnrichmentService placeEnrichmentService;
+    private final S3Service s3Service;
 
     @Autowired
-    public IdeaListServiceImpl(IdeaListRepository ideaListRepository, GroupRepository groupRepository, UserService userService) {
+    public IdeaListServiceImpl(IdeaListRepository ideaListRepository, GroupRepository groupRepository,
+                               UserService userService, S3Service s3Service,
+                               @Autowired(required = false) PlaceEnrichmentService placeEnrichmentService) {
         this.ideaListRepository = ideaListRepository;
         this.groupRepository = groupRepository;
         this.userService = userService;
+        this.s3Service = s3Service;
+        this.placeEnrichmentService = placeEnrichmentService;
     }
     
     @Override
@@ -43,8 +51,14 @@ public class IdeaListServiceImpl implements IdeaListService {
         
         // Get all idea lists with their members
         List<IdeaList> ideaLists = ideaListRepository.findAllIdeaListsWithMembersByGroupId(groupId);
-        
-        // Get all members for all lists in one query (already done by repository)
+
+        // Trigger re-enrichment for stale place data across all lists (async, non-blocking)
+        if (placeEnrichmentService != null && placeEnrichmentService.isEnabled()) {
+            for (IdeaList ideaList : ideaLists) {
+                placeEnrichmentService.triggerStaleReEnrichment(ideaList.getMembers(), groupId, ideaList.getListId());
+            }
+        }
+
         // Convert to DTOs
         return ideaLists.stream()
                 .map(this::convertToDTO)
@@ -56,11 +70,16 @@ public class IdeaListServiceImpl implements IdeaListService {
     public IdeaListDTO getIdeaList(String groupId, String listId, String requestingUserId) {
         // Verify user is group member
         ensureUserIsGroupMember(groupId, requestingUserId);
-        
+
         // Get idea list with all its members
         IdeaList ideaList = ideaListRepository.findIdeaListWithMembersById(groupId, listId)
                 .orElseThrow(() -> new ResourceNotFoundException("Idea list not found: " + listId));
-        
+
+        // Trigger re-enrichment for stale place data (async, non-blocking)
+        if (placeEnrichmentService != null && placeEnrichmentService.isEnabled()) {
+            placeEnrichmentService.triggerStaleReEnrichment(ideaList.getMembers(), groupId, listId);
+        }
+
         return convertToDTO(ideaList);
     }
     
@@ -167,9 +186,33 @@ public class IdeaListServiceImpl implements IdeaListService {
         member.setExternalId(request.getExternalId());
         member.setExternalSource(request.getExternalSource());
 
+        // Validate coordinates (must be provided together)
+        validateCoordinates(request.getLatitude(), request.getLongitude());
+
+        // Set place fields if provided
+        member.setGooglePlaceId(request.getGooglePlaceId());
+        member.setApplePlaceId(request.getApplePlaceId());
+        member.setAddress(request.getAddress());
+        member.setLatitude(request.getLatitude());
+        member.setLongitude(request.getLongitude());
+        member.setPlaceCategory(request.getPlaceCategory());
+
+        // Set enrichment status based on whether enrichment is possible
+        if (request.getGooglePlaceId() != null && !request.getGooglePlaceId().isBlank()) {
+            member.setEnrichmentStatus("PENDING");
+        } else {
+            member.setEnrichmentStatus("NOT_APPLICABLE");
+        }
+
         IdeaListMember savedMember = ideaListRepository.saveIdeaListMember(member);
         logger.debug("Added idea: {} to list: {} in group: {} by user: {}",
                 savedMember.getIdeaId(), listId, groupId, requestingUserId);
+
+        // Trigger async enrichment if a Google Place ID is provided
+        if (savedMember.getGooglePlaceId() != null && !savedMember.getGooglePlaceId().isBlank()
+                && placeEnrichmentService != null && placeEnrichmentService.isEnabled()) {
+            placeEnrichmentService.enrichPlaceAsync(groupId, listId, savedMember.getIdeaId(), savedMember.getGooglePlaceId());
+        }
 
         IdeaDTO dto = new IdeaDTO(savedMember);
         populateEnrichedData(dto, savedMember);
@@ -211,11 +254,59 @@ public class IdeaListServiceImpl implements IdeaListService {
             existingMember.setExternalSource(request.getExternalSource());
             updated = true;
         }
+        // Validate coordinates (must be provided together)
+        validateCoordinates(request.getLatitude(), request.getLongitude());
+
+        // Place fields (PATCH semantics)
+        // Capture old googlePlaceId before updating for enrichment trigger
+        String oldGooglePlaceId = existingMember.getGooglePlaceId();
+        if (request.getGooglePlaceId() != null) {
+            existingMember.setGooglePlaceId(request.getGooglePlaceId());
+            updated = true;
+        }
+        if (request.getApplePlaceId() != null) {
+            existingMember.setApplePlaceId(request.getApplePlaceId());
+            updated = true;
+        }
+        if (request.getAddress() != null) {
+            existingMember.setAddress(request.getAddress());
+            updated = true;
+        }
+        if (request.getLatitude() != null) {
+            existingMember.setLatitude(request.getLatitude());
+            updated = true;
+        }
+        if (request.getLongitude() != null) {
+            existingMember.setLongitude(request.getLongitude());
+            updated = true;
+        }
+        if (request.getPlaceCategory() != null) {
+            existingMember.setPlaceCategory(request.getPlaceCategory());
+            updated = true;
+        }
+
+        // Check if googlePlaceId was changed (new value differs from old)
+        boolean googlePlaceIdChanged = request.getGooglePlaceId() != null
+                && !request.getGooglePlaceId().equals(oldGooglePlaceId);
 
         if (updated) {
+            // If googlePlaceId changed, update enrichment status and trigger re-enrichment
+            if (googlePlaceIdChanged) {
+                existingMember.setEnrichmentStatus("PENDING");
+                existingMember.setLastEnrichedAt(null);
+            }
+
             existingMember.touch(); // Update timestamp
             IdeaListMember savedMember = ideaListRepository.saveIdeaListMember(existingMember);
             logger.debug("Updated idea: {} in list: {} group: {} by user: {}", ideaId, listId, groupId, requestingUserId);
+
+            // Trigger async enrichment if googlePlaceId was changed
+            if (googlePlaceIdChanged && savedMember.getGooglePlaceId() != null
+                    && !savedMember.getGooglePlaceId().isBlank()
+                    && placeEnrichmentService != null && placeEnrichmentService.isEnabled()) {
+                placeEnrichmentService.enrichPlaceAsync(groupId, listId, ideaId, savedMember.getGooglePlaceId());
+            }
+
             IdeaDTO dto = new IdeaDTO(savedMember);
             populateEnrichedData(dto, savedMember);
             return dto;
@@ -230,12 +321,16 @@ public class IdeaListServiceImpl implements IdeaListService {
     public void deleteIdea(String groupId, String listId, String ideaId, String requestingUserId) {
         // Verify user is group member
         ensureUserIsGroupMember(groupId, requestingUserId);
-        
-        // Verify idea exists
-        if (!ideaListRepository.findIdeaListMemberById(groupId, listId, ideaId).isPresent()) {
-            throw new ResourceNotFoundException("Idea not found: " + ideaId);
+
+        // Fetch idea (needed for existence check and S3 cleanup)
+        IdeaListMember member = ideaListRepository.findIdeaListMemberById(groupId, listId, ideaId)
+                .orElseThrow(() -> new ResourceNotFoundException("Idea not found: " + ideaId));
+
+        // Clean up cached photo from S3 if present
+        if (member.getCachedPhotoUrl() != null) {
+            s3Service.deleteImageAsync(member.getCachedPhotoUrl());
         }
-        
+
         // Delete idea
         ideaListRepository.deleteIdeaListMember(groupId, listId, ideaId);
         logger.debug("Deleted idea: {} from list: {} group: {} by user: {}", ideaId, listId, groupId, requestingUserId);
@@ -283,6 +378,20 @@ public class IdeaListServiceImpl implements IdeaListService {
         }
     }
     
+    private void validateCoordinates(Double latitude, Double longitude) {
+        if ((latitude != null) != (longitude != null)) {
+            throw new ValidationException("Both latitude and longitude must be provided together");
+        }
+        if (latitude != null) {
+            if (latitude < -90 || latitude > 90) {
+                throw new ValidationException("Latitude must be between -90 and 90");
+            }
+            if (longitude < -180 || longitude > 180) {
+                throw new ValidationException("Longitude must be between -180 and 180");
+            }
+        }
+    }
+
     private void validateCreateIdeaRequest(CreateIdeaRequest request) {
         // At least one field must be provided
         if ((request.getName() == null || request.getName().trim().isEmpty()) &&

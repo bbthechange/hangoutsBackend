@@ -29,6 +29,22 @@ public class UpdateIdeaRequest {
     @Size(max = 50, message = "External source must be less than 50 characters")
     private String externalSource;
 
+    // Place fields
+    @Size(max = 200, message = "Google Place ID must be less than 200 characters")
+    private String googlePlaceId;
+
+    @Size(max = 200, message = "Apple Place ID must be less than 200 characters")
+    private String applePlaceId;
+
+    @Size(max = 500, message = "Address must be less than 500 characters")
+    private String address;
+
+    private Double latitude;
+    private Double longitude;
+
+    @Size(max = 50, message = "Place category must be less than 50 characters")
+    private String placeCategory;
+
     public UpdateIdeaRequest(String name, String url, String note) {
         this.name = name;
         this.url = url;
@@ -58,5 +74,21 @@ public class UpdateIdeaRequest {
 
     public String getExternalSource() {
         return externalSource != null ? externalSource.trim() : null;
+    }
+
+    public String getGooglePlaceId() {
+        return googlePlaceId != null ? googlePlaceId.trim() : null;
+    }
+
+    public String getApplePlaceId() {
+        return applePlaceId != null ? applePlaceId.trim() : null;
+    }
+
+    public String getAddress() {
+        return address != null ? address.trim() : null;
+    }
+
+    public String getPlaceCategory() {
+        return placeCategory != null ? placeCategory.trim() : null;
     }
 }

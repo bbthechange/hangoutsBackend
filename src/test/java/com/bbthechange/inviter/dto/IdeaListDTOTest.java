@@ -288,7 +288,7 @@ class IdeaListDTOTest {
         // Given: DTO with null ideas list
         IdeaListDTO dto = new IdeaListDTO();
         dto.setIdeas(null);
-        
+
         IdeaDTO idea = new IdeaDTO();
         idea.setName("Test Idea");
 
@@ -299,5 +299,161 @@ class IdeaListDTOTest {
         assertThat(dto.getIdeas()).isNotNull();
         assertThat(dto.getIdeas()).hasSize(1);
         assertThat(dto.getIdeas().get(0).getName()).isEqualTo("Test Idea");
+    }
+
+    // ===== PLACE FIELD MAPPING TESTS =====
+
+    @Test
+    void ideaDTO_Constructor_MapsAllPlaceFields() {
+        // Given: IdeaListMember with all place fields populated
+        String listId = UUID.randomUUID().toString();
+        IdeaListMember member = new IdeaListMember(testGroupId, listId, "Joe's Pizza", "http://joespizza.com", "Best pizza", testUserId);
+        member.setGooglePlaceId("ChIJN1t_tDeuEmsRUsoyG83frY4");
+        member.setApplePlaceId("apple-place-123");
+        member.setAddress("123 Main St, New York, NY 10001");
+        member.setLatitude(40.7128);
+        member.setLongitude(-74.0060);
+        member.setCachedPhotoUrl("places/photos/abc123.jpg");
+        member.setCachedRating(4.3);
+        member.setCachedPriceLevel(2);
+        member.setPhoneNumber("+12125551234");
+        member.setWebsiteUrl("http://joespizza.com");
+        member.setMenuUrl("http://joespizza.com/menu");
+        member.setCachedHoursJson("{\"monday\":\"9:00-22:00\"}");
+        member.setPlaceCategory("restaurant");
+        member.setLastEnrichedAt(Instant.parse("2025-06-15T10:00:00Z"));
+        member.setEnrichmentStatus("ENRICHED");
+
+        // When: Convert to DTO
+        IdeaDTO dto = new IdeaDTO(member);
+
+        // Then: All 15 place fields mapped correctly
+        assertThat(dto.getGooglePlaceId()).isEqualTo("ChIJN1t_tDeuEmsRUsoyG83frY4");
+        assertThat(dto.getApplePlaceId()).isEqualTo("apple-place-123");
+        assertThat(dto.getAddress()).isEqualTo("123 Main St, New York, NY 10001");
+        assertThat(dto.getLatitude()).isEqualTo(40.7128);
+        assertThat(dto.getLongitude()).isEqualTo(-74.0060);
+        assertThat(dto.getCachedPhotoUrl()).isEqualTo("places/photos/abc123.jpg");
+        assertThat(dto.getCachedRating()).isEqualTo(4.3);
+        assertThat(dto.getCachedPriceLevel()).isEqualTo(2);
+        assertThat(dto.getPhoneNumber()).isEqualTo("+12125551234");
+        assertThat(dto.getWebsiteUrl()).isEqualTo("http://joespizza.com");
+        assertThat(dto.getMenuUrl()).isEqualTo("http://joespizza.com/menu");
+        assertThat(dto.getCachedHoursJson()).isEqualTo("{\"monday\":\"9:00-22:00\"}");
+        assertThat(dto.getPlaceCategory()).isEqualTo("restaurant");
+        assertThat(dto.getLastEnrichedAt()).isEqualTo(Instant.parse("2025-06-15T10:00:00Z"));
+        assertThat(dto.getEnrichmentStatus()).isEqualTo("ENRICHED");
+
+        // Original fields also mapped
+        assertThat(dto.getId()).isEqualTo(member.getIdeaId());
+        assertThat(dto.getName()).isEqualTo("Joe's Pizza");
+        assertThat(dto.getUrl()).isEqualTo("http://joespizza.com");
+        assertThat(dto.getNote()).isEqualTo("Best pizza");
+    }
+
+    @Test
+    void ideaDTO_Constructor_NullPlaceFields_HandledGracefully() {
+        // Given: IdeaListMember with no place fields (backward compatibility)
+        String listId = UUID.randomUUID().toString();
+        IdeaListMember member = new IdeaListMember(testGroupId, listId, "Watch a Movie", null, "Classic film", testUserId);
+
+        // When: Convert to DTO
+        IdeaDTO dto = new IdeaDTO(member);
+
+        // Then: All place fields are null (no NPE)
+        assertThat(dto.getGooglePlaceId()).isNull();
+        assertThat(dto.getApplePlaceId()).isNull();
+        assertThat(dto.getAddress()).isNull();
+        assertThat(dto.getLatitude()).isNull();
+        assertThat(dto.getLongitude()).isNull();
+        assertThat(dto.getCachedPhotoUrl()).isNull();
+        assertThat(dto.getCachedRating()).isNull();
+        assertThat(dto.getCachedPriceLevel()).isNull();
+        assertThat(dto.getPhoneNumber()).isNull();
+        assertThat(dto.getWebsiteUrl()).isNull();
+        assertThat(dto.getMenuUrl()).isNull();
+        assertThat(dto.getCachedHoursJson()).isNull();
+        assertThat(dto.getPlaceCategory()).isNull();
+        assertThat(dto.getLastEnrichedAt()).isNull();
+        assertThat(dto.getEnrichmentStatus()).isNull();
+
+        // Original fields still work
+        assertThat(dto.getName()).isEqualTo("Watch a Movie");
+        assertThat(dto.getNote()).isEqualTo("Classic film");
+    }
+
+    @Test
+    void ideaDTO_PlaceFields_JsonSerialization_IncludesPlaceData() throws JsonProcessingException {
+        // Given: IdeaDTO with place fields populated
+        IdeaDTO dto = new IdeaDTO();
+        dto.setId(UUID.randomUUID().toString());
+        dto.setName("Joe's Pizza");
+        dto.setGooglePlaceId("ChIJN1t_tDeuEmsRUsoyG83frY4");
+        dto.setAddress("123 Main St");
+        dto.setLatitude(40.7128);
+        dto.setLongitude(-74.0060);
+        dto.setCachedRating(4.3);
+        dto.setCachedPriceLevel(2);
+        dto.setPlaceCategory("restaurant");
+        dto.setEnrichmentStatus("ENRICHED");
+
+        // When: Serialize to JSON
+        String json = objectMapper.writeValueAsString(dto);
+
+        // Then: Place fields present in JSON
+        assertThat(json).contains("\"googlePlaceId\":\"ChIJN1t_tDeuEmsRUsoyG83frY4\"");
+        assertThat(json).contains("\"address\":\"123 Main St\"");
+        assertThat(json).contains("\"latitude\":40.7128");
+        assertThat(json).contains("\"longitude\":-74.006");
+        assertThat(json).contains("\"cachedRating\":4.3");
+        assertThat(json).contains("\"cachedPriceLevel\":2");
+        assertThat(json).contains("\"placeCategory\":\"restaurant\"");
+        assertThat(json).contains("\"enrichmentStatus\":\"ENRICHED\"");
+    }
+
+    @Test
+    void createIdeaRequest_PlaceFields_InputSanitization_TrimsWhitespace() {
+        // Given: CreateIdeaRequest with whitespace around place fields
+        CreateIdeaRequest request = new CreateIdeaRequest();
+        request.setGooglePlaceId("  ChIJN1t_tDeuEmsRUsoyG83frY4  ");
+        request.setApplePlaceId("  apple-123  ");
+        request.setAddress("  123 Main St  ");
+        request.setPlaceCategory("  restaurant  ");
+
+        // When/Then: Getters trim whitespace
+        assertThat(request.getGooglePlaceId()).isEqualTo("ChIJN1t_tDeuEmsRUsoyG83frY4");
+        assertThat(request.getApplePlaceId()).isEqualTo("apple-123");
+        assertThat(request.getAddress()).isEqualTo("123 Main St");
+        assertThat(request.getPlaceCategory()).isEqualTo("restaurant");
+    }
+
+    @Test
+    void createIdeaRequest_PlaceFields_NullValues_ReturnNull() {
+        // Given: CreateIdeaRequest with null place fields
+        CreateIdeaRequest request = new CreateIdeaRequest();
+
+        // When/Then: Null fields return null (no NPE)
+        assertThat(request.getGooglePlaceId()).isNull();
+        assertThat(request.getApplePlaceId()).isNull();
+        assertThat(request.getAddress()).isNull();
+        assertThat(request.getLatitude()).isNull();
+        assertThat(request.getLongitude()).isNull();
+        assertThat(request.getPlaceCategory()).isNull();
+    }
+
+    @Test
+    void updateIdeaRequest_PlaceFields_InputSanitization_TrimsWhitespace() {
+        // Given: UpdateIdeaRequest with whitespace around place fields
+        UpdateIdeaRequest request = new UpdateIdeaRequest();
+        request.setGooglePlaceId("  ChIJN1t_tDeuEmsRUsoyG83frY4  ");
+        request.setApplePlaceId("  apple-123  ");
+        request.setAddress("  123 Main St  ");
+        request.setPlaceCategory("  restaurant  ");
+
+        // When/Then: Getters trim whitespace
+        assertThat(request.getGooglePlaceId()).isEqualTo("ChIJN1t_tDeuEmsRUsoyG83frY4");
+        assertThat(request.getApplePlaceId()).isEqualTo("apple-123");
+        assertThat(request.getAddress()).isEqualTo("123 Main St");
+        assertThat(request.getPlaceCategory()).isEqualTo("restaurant");
     }
 }
