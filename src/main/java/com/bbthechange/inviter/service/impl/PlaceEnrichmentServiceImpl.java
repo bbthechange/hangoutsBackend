@@ -9,7 +9,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
@@ -30,7 +29,6 @@ import java.util.Map;
  * Asynchronously enriches idea records with place details and caches photos to S3.
  */
 @Service
-@ConditionalOnProperty(name = "google.places.api-key")
 public class PlaceEnrichmentServiceImpl implements PlaceEnrichmentService {
 
     private static final Logger logger = LoggerFactory.getLogger(PlaceEnrichmentServiceImpl.class);
@@ -54,7 +52,7 @@ public class PlaceEnrichmentServiceImpl implements PlaceEnrichmentService {
             ObjectMapper objectMapper,
             IdeaListRepository ideaListRepository,
             S3Client s3Client,
-            @Value("${google.places.api-key}") String apiKey,
+            @Qualifier("googlePlacesApiKey") String apiKey,
             @Value("${aws.s3.bucket}") String bucketName) {
         this.restTemplate = restTemplate;
         this.objectMapper = objectMapper;
