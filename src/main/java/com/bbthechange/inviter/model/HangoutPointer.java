@@ -75,6 +75,13 @@ public class HangoutPointer extends BaseItem {
     // Host at place field (denormalized from Hangout)
     private String hostAtPlaceUserId;
 
+    // Momentum fields (denormalized from Hangout)
+    private MomentumCategory momentumCategory; // Current momentum state
+    private Integer momentumScore;             // Raw score
+    private Long confirmedAt;                  // Epoch millis when confirmed (null if not confirmed)
+    private String confirmedBy;                // User ID who confirmed
+    private String suggestedBy;                // User ID of original suggester
+
     // Default constructor for DynamoDB
     public HangoutPointer() {
         super();
@@ -441,6 +448,55 @@ public class HangoutPointer extends BaseItem {
 
     public void setHostAtPlaceUserId(String hostAtPlaceUserId) {
         this.hostAtPlaceUserId = hostAtPlaceUserId;
+        touch();
+    }
+
+    // ============================================================================
+    // MOMENTUM FIELDS (Denormalized from canonical Hangout)
+    // ============================================================================
+
+    public MomentumCategory getMomentumCategory() {
+        return momentumCategory;
+    }
+
+    public void setMomentumCategory(MomentumCategory momentumCategory) {
+        this.momentumCategory = momentumCategory;
+        touch();
+    }
+
+    public Integer getMomentumScore() {
+        return momentumScore;
+    }
+
+    public void setMomentumScore(Integer momentumScore) {
+        this.momentumScore = momentumScore;
+        touch();
+    }
+
+    public Long getConfirmedAt() {
+        return confirmedAt;
+    }
+
+    public void setConfirmedAt(Long confirmedAt) {
+        this.confirmedAt = confirmedAt;
+        touch();
+    }
+
+    public String getConfirmedBy() {
+        return confirmedBy;
+    }
+
+    public void setConfirmedBy(String confirmedBy) {
+        this.confirmedBy = confirmedBy;
+        touch();
+    }
+
+    public String getSuggestedBy() {
+        return suggestedBy;
+    }
+
+    public void setSuggestedBy(String suggestedBy) {
+        this.suggestedBy = suggestedBy;
         touch();
     }
 }

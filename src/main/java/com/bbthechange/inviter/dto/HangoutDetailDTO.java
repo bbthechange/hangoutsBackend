@@ -46,4 +46,7 @@ public class HangoutDetailDTO {
     // Host at place resolved fields (fetched from user cache)
     private String hostAtPlaceDisplayName;
     private String hostAtPlaceImagePath;
+
+    // Momentum data (populated by MomentumService at read time)
+    private MomentumDTO momentum;
 }

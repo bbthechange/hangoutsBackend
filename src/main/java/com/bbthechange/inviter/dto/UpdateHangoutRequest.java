@@ -25,4 +25,7 @@ public class UpdateHangoutRequest {
 
     // Host at place field
     private String hostAtPlaceUserId;   // User ID when hosting at their place (null to clear)
+
+    // Momentum field: true = manual "It's on!" confirmation
+    private Boolean confirmed;
 }

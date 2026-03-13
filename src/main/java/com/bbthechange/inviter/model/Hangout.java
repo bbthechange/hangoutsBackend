@@ -59,6 +59,13 @@ public class Hangout extends BaseItem {
     private Boolean titleNotificationSent;  // Track if title notification has been sent
     private List<String> combinedExternalIds; // External IDs of episodes combined into this hangout
 
+    // Momentum fields
+    private MomentumCategory momentumCategory; // Current momentum state (BUILDING, GAINING_MOMENTUM, CONFIRMED)
+    private Integer momentumScore;             // Raw score (recomputed on each signal change)
+    private Long confirmedAt;                  // Epoch millis when confirmed (null if not confirmed)
+    private String confirmedBy;                // User ID who confirmed ("SYSTEM" for auto-promotion)
+    private String suggestedBy;                // User ID of creator for "Float it" hangouts
+
     // Default constructor for DynamoDB
     public Hangout() {
         super();
@@ -412,5 +419,54 @@ public class Hangout extends BaseItem {
      */
     public int getCombinedEpisodesCount() {
         return this.combinedExternalIds != null ? this.combinedExternalIds.size() : 0;
+    }
+
+    // ============================================================================
+    // MOMENTUM FIELDS
+    // ============================================================================
+
+    public MomentumCategory getMomentumCategory() {
+        return momentumCategory;
+    }
+
+    public void setMomentumCategory(MomentumCategory momentumCategory) {
+        this.momentumCategory = momentumCategory;
+        touch();
+    }
+
+    public Integer getMomentumScore() {
+        return momentumScore;
+    }
+
+    public void setMomentumScore(Integer momentumScore) {
+        this.momentumScore = momentumScore;
+        touch();
+    }
+
+    public Long getConfirmedAt() {
+        return confirmedAt;
+    }
+
+    public void setConfirmedAt(Long confirmedAt) {
+        this.confirmedAt = confirmedAt;
+        touch();
+    }
+
+    public String getConfirmedBy() {
+        return confirmedBy;
+    }
+
+    public void setConfirmedBy(String confirmedBy) {
+        this.confirmedBy = confirmedBy;
+        touch();
+    }
+
+    public String getSuggestedBy() {
+        return suggestedBy;
+    }
+
+    public void setSuggestedBy(String suggestedBy) {
+        this.suggestedBy = suggestedBy;
+        touch();
     }
 }

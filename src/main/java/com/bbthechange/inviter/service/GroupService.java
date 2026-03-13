@@ -97,6 +97,21 @@ public interface GroupService {
                              String startingAfter, String endingBefore, ClientInfo clientInfo);
 
     /**
+     * Get the group feed with client version filtering and momentum filter support.
+     *
+     * @param groupId The group ID
+     * @param requestingUserId The user requesting the feed (for authorization)
+     * @param limit Maximum number of events to return (null for no limit)
+     * @param startingAfter Pagination token for forward pagination (get more future events)
+     * @param endingBefore Pagination token for backward pagination (get past events)
+     * @param clientInfo Client information including app version (may be null)
+     * @param filter Momentum filter: "ALL" (default), "CONFIRMED", or "EVERYTHING"
+     * @return GroupFeedDTO with chronological events and pagination tokens
+     */
+    GroupFeedDTO getGroupFeed(String groupId, String requestingUserId, Integer limit,
+                             String startingAfter, String endingBefore, ClientInfo clientInfo, String filter);
+
+    /**
      * Get group metadata for ETag validation.
      * Verifies user has access and returns group with lastHangoutModified timestamp.
      * Lightweight check (2 RCUs: group metadata + membership check).

@@ -30,4 +30,7 @@ public class CreateHangoutRequest {
 
     // Host at place field
     private String hostAtPlaceUserId;   // User ID when hosting at their place
+
+    // Momentum field: true = "Lock it in" (CONFIRMED), false/null = "Float it" (BUILDING)
+    private Boolean confirmed;
 }

@@ -70,6 +70,12 @@ public final class HangoutPointerFactory {
         pointer.setTicketsRequired(hangout.getTicketsRequired());
         pointer.setDiscountCode(hangout.getDiscountCode());
 
+        pointer.setMomentumCategory(hangout.getMomentumCategory());
+        pointer.setMomentumScore(hangout.getMomentumScore());
+        pointer.setConfirmedAt(hangout.getConfirmedAt());
+        pointer.setConfirmedBy(hangout.getConfirmedBy());
+        pointer.setSuggestedBy(hangout.getSuggestedBy());
+
         // Update UserGroupIndex sort key when timestamps change
         // (EntityTimeIndex uses startTimestamp directly via @DynamoDbSecondarySortKey)
         if (hangout.getStartTimestamp() != null) {

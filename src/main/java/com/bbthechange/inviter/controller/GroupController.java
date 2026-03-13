@@ -174,6 +174,7 @@ public class GroupController extends BaseController {
             @RequestParam(required = false) @Min(1) Integer limit,
             @RequestParam(required = false) String startingAfter,
             @RequestParam(required = false) String endingBefore,
+            @RequestParam(required = false, defaultValue = "ALL") String filter,
             @RequestHeader(value = "If-None-Match", required = false) String ifNoneMatch,
             HttpServletRequest httpRequest) {
 
@@ -196,7 +197,7 @@ public class GroupController extends BaseController {
         }
 
         // Step 3: ETag doesn't match - do the expensive feed query with version filtering
-        GroupFeedDTO feed = groupService.getGroupFeed(groupId, userId, limit, startingAfter, endingBefore, clientInfo);
+        GroupFeedDTO feed = groupService.getGroupFeed(groupId, userId, limit, startingAfter, endingBefore, clientInfo, filter);
         logger.debug("Retrieved group feed for group {} with {} chronological events",
                     groupId, feed.getWithDay().size());
 

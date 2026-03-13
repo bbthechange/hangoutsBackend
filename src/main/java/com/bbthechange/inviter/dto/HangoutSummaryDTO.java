@@ -86,6 +86,9 @@ public class HangoutSummaryDTO implements FeedItem {
     private String hostAtPlaceDisplayName;
     private String hostAtPlaceImagePath;
 
+    // Momentum data
+    private MomentumDTO momentum;
+
     /**
      * Create HangoutSummaryDTO from HangoutPointer with transformed nested data.
      *
@@ -155,6 +158,17 @@ public class HangoutSummaryDTO implements FeedItem {
 
         // Host at place field (display name and image path set by service layer enrichment)
         this.hostAtPlaceUserId = pointer.getHostAtPlaceUserId();
+
+        // Momentum data (built from pointer's denormalized momentum fields)
+        if (pointer.getMomentumCategory() != null) {
+            this.momentum = MomentumDTO.fromPointerFields(
+                    pointer.getMomentumScore(),
+                    pointer.getMomentumCategory(),
+                    pointer.getConfirmedAt(),
+                    pointer.getConfirmedBy(),
+                    pointer.getSuggestedBy()
+            );
+        }
     }
     
     public String getHangoutId() {
@@ -403,5 +417,13 @@ public class HangoutSummaryDTO implements FeedItem {
 
     public void setHostAtPlaceImagePath(String hostAtPlaceImagePath) {
         this.hostAtPlaceImagePath = hostAtPlaceImagePath;
+    }
+
+    public MomentumDTO getMomentum() {
+        return momentum;
+    }
+
+    public void setMomentum(MomentumDTO momentum) {
+        this.momentum = momentum;
     }
 }

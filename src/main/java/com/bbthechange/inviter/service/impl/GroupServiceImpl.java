@@ -386,6 +386,12 @@ public class GroupServiceImpl implements GroupService {
     @Override
     public GroupFeedDTO getGroupFeed(String groupId, String requestingUserId, Integer limit,
                                     String startingAfter, String endingBefore, ClientInfo clientInfo) {
+        return getGroupFeed(groupId, requestingUserId, limit, startingAfter, endingBefore, clientInfo, "ALL");
+    }
+
+    @Override
+    public GroupFeedDTO getGroupFeed(String groupId, String requestingUserId, Integer limit,
+                                    String startingAfter, String endingBefore, ClientInfo clientInfo, String filter) {
         // Authorization check
         if (!isUserInGroup(requestingUserId, groupId)) {
             throw new UnauthorizedException("User not in group");
@@ -393,14 +399,38 @@ public class GroupServiceImpl implements GroupService {
 
         long nowTimestamp = System.currentTimeMillis() / 1000; // Unix timestamp in seconds
 
+        GroupFeedDTO feed;
         // Determine query type based on pagination parameters
         if (endingBefore != null) {
             // Backward pagination - get past events
-            return getPastEvents(groupId, nowTimestamp, limit, endingBefore, requestingUserId, clientInfo);
+            feed = getPastEvents(groupId, nowTimestamp, limit, endingBefore, requestingUserId, clientInfo);
         } else {
             // Default or forward pagination - get current/future events
-            return getCurrentAndFutureEvents(groupId, nowTimestamp, limit, startingAfter, requestingUserId, clientInfo);
+            feed = getCurrentAndFutureEvents(groupId, nowTimestamp, limit, startingAfter, requestingUserId, clientInfo);
         }
+
+        // Apply momentum filter post-query (filter=EVERYTHING is same as ALL for now)
+        if ("CONFIRMED".equals(filter)) {
+            List<FeedItem> filteredWithDay = feed.getWithDay().stream()
+                .filter(item -> {
+                    if (item instanceof HangoutSummaryDTO h) {
+                        return h.getMomentum() != null &&
+                               "CONFIRMED".equals(h.getMomentum().getCategory());
+                    }
+                    return true; // Keep series items
+                })
+                .collect(Collectors.toList());
+
+            List<HangoutSummaryDTO> filteredNeedsDay = feed.getNeedsDay().stream()
+                .filter(h -> h.getMomentum() != null &&
+                             "CONFIRMED".equals(h.getMomentum().getCategory()))
+                .collect(Collectors.toList());
+
+            return new GroupFeedDTO(groupId, filteredWithDay, filteredNeedsDay,
+                    feed.getNextPageToken(), feed.getPreviousPageToken());
+        }
+
+        return feed;
     }
 
     /**

@@ -179,3 +179,40 @@ pointerUpdateService.upsertPointerWithRetry(groupId, hangoutId, hangout,
 1. Add the field to `HangoutPointer.java` (model)
 2. Add `pointer.setNewField(hangout.getNewField())` to `HangoutPointerFactory.applyHangoutFields()`
 3. That's it -- all 9+ creation and update sites automatically pick up the new field
+
+## 8. Momentum Integration
+
+See `MOMENTUM_CONTEXT.md` for full details on the momentum system.
+
+### Momentum Fields on Hangout and HangoutPointer
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `momentumCategory` | `MomentumCategory` | Current state: BUILDING, GAINING_MOMENTUM, CONFIRMED |
+| `momentumScore` | `Integer` | Raw internal score |
+| `confirmedAt` | `Long` | Epoch millis when confirmed |
+| `confirmedBy` | `String` | User ID who confirmed, or "SYSTEM" for auto-promotion |
+| `suggestedBy` | `String` | Creator user ID for "Float it" hangouts |
+
+All 5 fields are copied via `HangoutPointerFactory.applyHangoutFields()`.
+
+### Create Hangout — Momentum Initialization
+
+In `HangoutServiceImpl.createHangout()`:
+1. `momentumService.initializeMomentum(hangout, confirmed, userId)` is called BEFORE pointer creation
+2. Momentum fields are set on the Hangout object, so `HangoutPointerFactory.fromHangout()` picks them up automatically
+3. After the atomic transaction, creator is auto-RSVPed: INTERESTED for "Float it", GOING for "Lock it in"
+
+### Update Hangout — Momentum Recomputation
+
+In `HangoutServiceImpl.updateHangout()`:
+- Manual confirmation (`confirmed: true`): Sets momentum fields directly on the local hangout object (NOT via `momentumService.confirmHangout()` — see important note in MOMENTUM_CONTEXT.md §6)
+- Time/location/ticket changes: Calls `momentumService.recomputeMomentum()` after saving canonical
+
+### RSVP — Momentum Recomputation
+
+In `HangoutServiceImpl.setUserInterest()`: Calls `momentumService.recomputeMomentum()` after saving the interest level.
+
+### Detail View
+
+`HangoutServiceImpl.getHangoutDetail()` builds a `MomentumDTO` via `momentumService.buildMomentumDTO(hangout, primaryGroupId)` and includes it in `HangoutDetailDTO`.

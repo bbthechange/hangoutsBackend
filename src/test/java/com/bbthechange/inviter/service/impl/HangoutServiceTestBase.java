@@ -8,6 +8,7 @@ import com.bbthechange.inviter.service.EventSeriesService;
 import com.bbthechange.inviter.service.FuzzyTimeService;
 import com.bbthechange.inviter.service.GroupTimestampService;
 import com.bbthechange.inviter.service.HangoutSchedulerService;
+import com.bbthechange.inviter.service.MomentumService;
 import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.UserService;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -53,6 +54,9 @@ abstract class HangoutServiceTestBase {
 
     @Mock
     protected HangoutSchedulerService hangoutSchedulerService;
+
+    @Mock
+    protected MomentumService momentumService;
 
     @InjectMocks
     protected HangoutServiceImpl hangoutService;

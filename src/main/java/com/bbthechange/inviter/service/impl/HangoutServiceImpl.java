@@ -3,6 +3,7 @@ package com.bbthechange.inviter.service.impl;
 import com.bbthechange.inviter.service.HangoutService;
 import com.bbthechange.inviter.service.HangoutSchedulerService;
 import com.bbthechange.inviter.service.FuzzyTimeService;
+import com.bbthechange.inviter.service.MomentumService;
 import com.bbthechange.inviter.service.UserService;
 import com.bbthechange.inviter.service.EventSeriesService;
 import com.bbthechange.inviter.service.NotificationService;
@@ -48,6 +49,7 @@ public class HangoutServiceImpl implements HangoutService {
     private final S3Service s3Service;
     private final GroupTimestampService groupTimestampService;
     private final HangoutSchedulerService hangoutSchedulerService;
+    private final MomentumService momentumService;
 
     @Value("${inviter.attendance.backward-compat-interested:true}")
     private boolean attendanceBackwardCompatEnabled;
@@ -60,7 +62,8 @@ public class HangoutServiceImpl implements HangoutService {
                               PointerUpdateService pointerUpdateService,
                               S3Service s3Service,
                               GroupTimestampService groupTimestampService,
-                              HangoutSchedulerService hangoutSchedulerService) {
+                              HangoutSchedulerService hangoutSchedulerService,
+                              MomentumService momentumService) {
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
         this.fuzzyTimeService = fuzzyTimeService;
@@ -71,11 +74,16 @@ public class HangoutServiceImpl implements HangoutService {
         this.s3Service = s3Service;
         this.groupTimestampService = groupTimestampService;
         this.hangoutSchedulerService = hangoutSchedulerService;
+        this.momentumService = momentumService;
     }
     
     @Override
     public Hangout createHangout(CreateHangoutRequest request, String requestingUserId) {
         Hangout hangout = hangoutFromHangoutRequest(request, requestingUserId);
+
+        // Initialize momentum before pointer creation so pointers get momentum fields via HangoutPointerFactory
+        boolean confirmed = Boolean.TRUE.equals(request.getConfirmed());
+        momentumService.initializeMomentum(hangout, confirmed, requestingUserId);
 
         // Prepare pointer records
         List<HangoutPointer> pointers = new ArrayList<>();
@@ -157,6 +165,16 @@ public class HangoutServiceImpl implements HangoutService {
 
         logger.info("Created hangout {} with {} attributes and {} polls by user {}",
             hangout.getHangoutId(), attributes.size(), polls.size(), requestingUserId);
+
+        // Auto-RSVP the creator based on momentum mode:
+        //   "Float it" (confirmed=false) -> INTERESTED
+        //   "Lock it in" (confirmed=true) -> GOING
+        String autoRsvpStatus = confirmed ? "GOING" : "INTERESTED";
+        try {
+            setUserInterest(hangout.getHangoutId(), new SetInterestRequest(autoRsvpStatus, null), requestingUserId);
+        } catch (Exception e) {
+            logger.warn("Failed to auto-RSVP creator {} on hangout {}: {}", requestingUserId, hangout.getHangoutId(), e.getMessage());
+        }
 
         // Update Group.lastHangoutModified for all associated groups
         groupTimestampService.updateGroupTimestamps(hangout.getAssociatedGroups());
@@ -303,6 +321,18 @@ public class HangoutServiceImpl implements HangoutService {
         List<InterestLevel> attendance = HangoutDataTransformer.transformAttendanceForBackwardCompatibility(
                 hangoutDetail.getAttendance(), attendanceBackwardCompatEnabled);
 
+        // Build momentum DTO for detail response
+        String primaryGroupId = hangout.getAssociatedGroups() != null && !hangout.getAssociatedGroups().isEmpty()
+                ? hangout.getAssociatedGroups().get(0) : null;
+        MomentumDTO momentumDTO = null;
+        if (hangout.getMomentumCategory() != null) {
+            try {
+                momentumDTO = momentumService.buildMomentumDTO(hangout, primaryGroupId);
+            } catch (Exception e) {
+                logger.warn("Failed to build MomentumDTO for hangout {}: {}", hangoutId, e.getMessage());
+            }
+        }
+
         // Build the DTO
         HangoutDetailDTO.HangoutDetailDTOBuilder dtoBuilder = HangoutDetailDTO.builder()
                 .withHangout(hangout)
@@ -314,7 +344,8 @@ public class HangoutServiceImpl implements HangoutService {
                 .withCarRiders(hangoutDetail.getCarRiders())
                 .withNeedsRide(needsRideDTOs)
                 .withParticipations(participationDTOs)
-                .withReservationOffers(offerDTOs);
+                .withReservationOffers(offerDTOs)
+                .withMomentum(momentumDTO);
 
         // Resolve host at place display name and image
         if (hangout.getHostAtPlaceUserId() != null) {
@@ -342,9 +373,10 @@ public class HangoutServiceImpl implements HangoutService {
         boolean needsPointerUpdate = false;
         String oldMainImagePath = null;
 
-        // Track specific changes for notifications
+        // Track specific changes for notifications and momentum recomputation
         boolean timeChanged = false;
         boolean locationChanged = false;
+        boolean ticketFieldChanged = false;
 
         // Update canonical record fields
         if (request.getTitle() != null && !request.getTitle().equals(hangout.getTitle())) {
@@ -400,11 +432,13 @@ public class HangoutServiceImpl implements HangoutService {
         if (request.getTicketLink() != null && !request.getTicketLink().equals(hangout.getTicketLink())) {
             hangout.setTicketLink(request.getTicketLink());
             needsPointerUpdate = true;
+            ticketFieldChanged = true;
         }
 
         if (request.getTicketsRequired() != null && !request.getTicketsRequired().equals(hangout.getTicketsRequired())) {
             hangout.setTicketsRequired(request.getTicketsRequired());
             needsPointerUpdate = true;
+            ticketFieldChanged = true;
         }
 
         if (request.getDiscountCode() != null && !request.getDiscountCode().equals(hangout.getDiscountCode())) {
@@ -440,12 +474,33 @@ public class HangoutServiceImpl implements HangoutService {
             needsPointerUpdate = true;
         }
 
+        // Handle manual "It's on!" confirmation via momentum
+        // Set fields directly on the local hangout object (NOT via momentumService.confirmHangout)
+        // because the hangout is saved below and would overwrite any changes made by confirmHangout
+        // on a separate copy loaded from DB.
+        if (Boolean.TRUE.equals(request.getConfirmed())
+                && !MomentumCategory.CONFIRMED.equals(hangout.getMomentumCategory())) {
+            hangout.setMomentumCategory(MomentumCategory.CONFIRMED);
+            hangout.setConfirmedAt(System.currentTimeMillis());
+            hangout.setConfirmedBy(requestingUserId);
+            needsPointerUpdate = true;
+        }
+
         // Save canonical record
         hangoutRepository.createHangout(hangout); // Using createHangout as it's a putItem
 
         // Update pointer records using read-modify-write pattern with optimistic locking
         if (needsPointerUpdate && hangout.getAssociatedGroups() != null) {
             updatePointersWithBasicFields(hangout);
+        }
+
+        // Recompute momentum if scoring-relevant fields changed (time, location, tickets)
+        if (timeChanged || locationChanged || ticketFieldChanged) {
+            try {
+                momentumService.recomputeMomentum(hangoutId);
+            } catch (Exception e) {
+                logger.warn("Failed to recompute momentum for hangout {} after update: {}", hangoutId, e.getMessage());
+            }
         }
 
         // Update Group.lastHangoutModified for all associated groups
@@ -980,6 +1035,13 @@ public class HangoutServiceImpl implements HangoutService {
         interestLevel.setNotes(request.getNotes());
         interestLevel.setMainImagePath(user.getMainImagePath()); // Denormalize user's profile image
         hangoutRepository.saveInterestLevel(interestLevel);
+
+        // Recompute momentum after RSVP change
+        try {
+            momentumService.recomputeMomentum(hangoutId);
+        } catch (Exception e) {
+            logger.warn("Failed to recompute momentum for hangout {} after interest change: {}", hangoutId, e.getMessage());
+        }
 
         // Update participant counts using atomic counters
         List<String> associatedGroups = data.getHangout().getAssociatedGroups();

@@ -86,3 +86,29 @@ When a group's mainImagePath or backgroundImagePath changes:
 -   **Manual JSON in Pagination:** `GroupServiceImpl` manually constructs JSON strings for pagination tokens (`generatePreviousPageTokenFromBaseItems`). This is extremely brittle and unsafe. A structured object should be serialized with a proper JSON library (like Jackson, which is already a dependency) to create the token.
 -   **Inconsistent Pagination:** There are two separate feed endpoints (`/feed` and `/feed-items`) with different logic and pagination strategies. `getGroupFeed` in `GroupServiceImpl` has complex, multi-part logic for past, present, and future events, while `getGroupFeedItems` in `GroupFeedServiceImpl` has the aggregator loop. This is confusing and redundant.
 -   **Last Member Deletes Group:** The `leaveGroup` logic contains a potentially destructive side effect: if the last member leaves, the entire group is deleted. While this prevents orphaned groups, it's an implicit behavior that could lead to accidental data loss if not fully understood by the client or developer.
+
+## 5. Momentum in Group Feed
+
+See `MOMENTUM_CONTEXT.md` for full momentum system details.
+
+### Feed Filter Parameter
+
+The feed endpoint (`GET /groups/{groupId}/feed`) accepts a `filter` query parameter:
+
+| Filter | Behavior |
+|--------|----------|
+| `ALL` (default) | Returns all hangouts |
+| `CONFIRMED` | Returns only hangouts where `momentumCategory == CONFIRMED` |
+| `EVERYTHING` | Same as ALL for now (fading is client-side) |
+
+**Implementation:** `GroupController` passes the filter to `GroupServiceImpl.getGroupFeed()`. Filtering is post-query on both `withDay` and `needsDay` lists. Series items are always kept regardless of filter.
+
+### MomentumDTO in Feed Response
+
+Each `HangoutSummaryDTO` in the feed includes a `momentum` object built from the `HangoutPointer`'s denormalized momentum fields. The `MomentumDTO` is constructed in the `HangoutSummaryDTO` constructor when `pointer.getMomentumCategory() != null`.
+
+**Note:** Feed score uses the raw stored value (not threshold-normalized), since threshold context is unavailable at feed query time. Clients should use `momentum.category` for rendering decisions.
+
+### Future: Slot-Based Interleaving
+
+The current feed sorting is chronological (via EntityTimeIndex GSI). Slot-based interleaving by momentum category (CONFIRMED first, then GAINING_MOMENTUM, then BUILDING within time horizons) is deferred. Clients can sort by `momentum.category` client-side for v1.
