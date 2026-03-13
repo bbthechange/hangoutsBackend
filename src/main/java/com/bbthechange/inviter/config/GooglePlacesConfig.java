@@ -55,8 +55,8 @@ public class GooglePlacesConfig {
             return apiKey;
 
         } catch (Exception e) {
-            logger.error("Failed to retrieve Google Places API key from Parameter Store", e);
-            throw new RuntimeException("Failed to initialize Google Places API configuration", e);
+            logger.error("Failed to retrieve Google Places API key from Parameter Store. Place enrichment will be disabled.", e);
+            return "";
         }
     }
 

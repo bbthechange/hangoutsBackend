@@ -164,11 +164,250 @@ Filtering is post-query on both `withDay` and `needsDay` lists.
 - Momentum fields are additive — old clients ignore them
 - `confirmed` field defaults to null (treated as false/float)
 - Hangouts created by old clients get `momentumCategory=null` — clients should treat null as legacy/CONFIRMED behavior
-- Feed sorting unchanged (chronological) — slot-based interleaving deferred
+- Feed sorting uses slot-based interleaving (see Section 12)
 
-## 12. Deferred Features
+## 12. Slot-Based Feed Interleaving (Feature 1)
 
-- **Slot-based feed interleaving** — complex sort by momentum category within time horizons. Client can sort by category for v1.
-- **Attribute promotion (silence=consent)** — 24h window for alternatives when someone adds location/description. Distinct feature, no dependency on MomentumService.
-- **Active member tracking** — currently uses total membership count; should track members with InterestLevel records in last 8 weeks.
+**Status: Implemented.** `GroupServiceImpl.getGroupFeed()` now routes through `FeedSortingService` to apply slot-based ordering.
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `service/impl/FeedSortingService.java` | Core sort algorithm — buckets by time horizon, applies smart surfacing |
+| `service/impl/GroupServiceImpl.java` | Calls `feedSortingService.sortFeed()` before returning feed |
+
+### Time Horizon Buckets (in order)
+
+| Horizon | Window | Description |
+|---------|--------|-------------|
+| IMMINENT | ≤ 48h | Exempt from busy-week suppression |
+| NEAR_TERM | ≤ 7 days | Busy-week and empty-week rules apply |
+| MID_TERM | ≤ 21 days | Same smart-surfacing rules |
+| DISTANT | > 21 days | No suppression |
+| needsDay | No timestamp | Sorted by momentum category only |
+
+### Sort Order Within Each Horizon
+
+`CONFIRMED → GAINING_MOMENTUM → BUILDING`, then chronological within each group. Series items are treated as CONFIRMED.
+
+### Smart Surfacing Rules for BUILDING Items
+
+- **Busy week** (confirmed item in same horizon): BUILDING items are suppressed unless they have a recent support surge (2+ interest signals in last 24h). Imminent horizon is always exempt.
+- **Empty week** (no confirmed items): Best BUILDING candidate is auto-surfaced (most recent support signal).
+- **Zero-support cap**: Max 2 zero-support BUILDING items across the entire feed (shared between `withDay` and `needsDay`). A zero-support item has 0 or 1 interest levels (creator only = zero support).
+
+### Constants
+
+```java
+IMMINENT_SECONDS  = 48 * 3600   // 48h
+NEAR_TERM_SECONDS = 7 * 86400   // 7 days
+MID_TERM_SECONDS  = 21 * 86400  // 21 days
+MAX_ZERO_SUPPORT_BUILDING = 2
+RECENT_SUPPORT_WINDOW_SECONDS = 24 * 3600
+```
+
+## 13. Idea List Feed Surfacing (Feature 2)
+
+**Status: Implemented.** When the group's feed is requested, `IdeaFeedSurfacingServiceImpl` injects idea suggestions into the feed.
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `service/IdeaFeedSurfacingService.java` | Interface |
+| `service/impl/IdeaFeedSurfacingServiceImpl.java` | Suppression check + idea filtering |
+| `dto/IdeaFeedItemDTO.java` | Feed item DTO for an idea suggestion |
+| `service/impl/GroupServiceImpl.java` | Calls `getSurfacedIdeas()` and appends to feed |
+
+### Logic
+
+1. **Suppression check** (`allUpcomingWeeksCovered`): Queries `getFutureEventsPage` for the next 3 ISO weeks. If every week has ≥1 CONFIRMED hangout, no ideas are surfaced.
+2. **Idea filtering**: Fetches all idea lists via `IdeaListService.getIdeaListsForGroup()`. Returns ideas with `interestCount >= 3`, sorted by `interestCount` descending.
+3. **Graceful degradation**: Repository or ideaListService failures return an empty list — feed still works.
+
+### Constants
+
+```java
+MIN_INTEREST_COUNT = 3
+WEEKS_TO_CHECK = 3
+```
+
+### IdeaFeedItemDTO fields
+
+`type="idea_suggestion"`, `ideaId`, `listId`, `groupId`, `ideaName`, `listName`, `imageUrl`, `note`, `interestCount`, `googlePlaceId`, `address`, `latitude`, `longitude`, `placeCategory`
+
+## 14. Time Suggestions (Feature 3)
+
+**Status: Implemented.** When a hangout has no time set, members can suggest fuzzy or specific times.
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `model/FuzzyTime.java` | Enum: TONIGHT, THIS_WEEKEND, SATURDAY, etc. |
+| `model/TimeSuggestion.java` | DynamoDB entity. PK=EVENT#{hangoutId}, SK=TIME_SUGGESTION#{suggestionId} |
+| `model/TimeSuggestionStatus.java` | ACTIVE, ADOPTED, REJECTED |
+| `dto/CreateTimeSuggestionRequest.java` | Request body for creating a suggestion |
+| `dto/TimeSuggestionDTO.java` | API response DTO |
+| `service/TimeSuggestionService.java` | Interface |
+| `service/impl/TimeSuggestionServiceImpl.java` | Business logic + auto-adoption |
+| `controller/TimeSuggestionController.java` | REST endpoints |
+| `task/TimeSuggestionAutoAdoptionTask.java` | Hourly scheduled task (disabled by default) |
+
+### REST Endpoints
+
+```
+POST   /groups/{groupId}/hangouts/{hangoutId}/time-suggestions         — create suggestion
+POST   /groups/{groupId}/hangouts/{hangoutId}/time-suggestions/{id}/support  — +1 a suggestion
+GET    /groups/{groupId}/hangouts/{hangoutId}/time-suggestions         — list active suggestions
+```
+
+### Silence = Consent Auto-Adoption Rules
+
+| Scenario | Window |
+|----------|--------|
+| Single suggestion + ≥1 supporter, no competition | `short-window-hours` (default 24h) |
+| Single suggestion + 0 votes, no competition | `long-window-hours` (default 48h) |
+| Multiple competing suggestions | Leave as poll; no auto-adopt |
+
+**Config** (disabled by default):
+```properties
+time-suggestion.auto-adoption.enabled=true          # enable task
+time-suggestion.auto-adoption.short-window-hours=24
+time-suggestion.auto-adoption.long-window-hours=48
+time-suggestion.auto-adoption.interval-ms=3600000   # hourly
+```
+
+### Adoption Flow
+
+1. Mark suggestion as ADOPTED in DynamoDB.
+2. If suggestion has `specificTime`, update `hangout.startTimestamp` and all pointers via `PointerUpdateService`.
+3. Call `momentumService.recomputeMomentum()` so the time-added bonus propagates.
+
+### DynamoDB Key Pattern
+
+TimeSuggestion items live in the hangout's item collection:
+- `PK = EVENT#{hangoutId}`
+- `SK = TIME_SUGGESTION#{suggestionId}`
+- `itemType = TIME_SUGGESTION`
+
+They are retrieved with a `begins_with(sk, "TIME_SUGGESTION#")` query.
+
+## 15. Attribute Promotion / Silence=Consent (Feature 4)
+
+**Status: Implemented.** When a non-creator edits a hangout's location or description, a proposal is created instead of applying the change immediately.
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `model/AttributeProposal.java` | DynamoDB entity. PK=EVENT#{hangoutId}, SK=PROPOSAL#{proposalId} |
+| `model/AttributeProposalType.java` | Enum: LOCATION, DESCRIPTION |
+| `model/AttributeProposalStatus.java` | Enum: PENDING, ADOPTED, REJECTED, SUPERSEDED |
+| `service/AttributeProposalService.java` | Interface |
+| `service/impl/AttributeProposalServiceImpl.java` | Create, vote, auto-adopt logic |
+| `repository/AttributeProposalRepository.java` | DynamoDB access |
+| `service/impl/HangoutServiceImpl.java` | Intercepts non-creator edits in `updateHangout()` |
+
+### Update Hangout Interception
+
+In `HangoutServiceImpl.updateHangout()`, when a non-creator submits a location or description change:
+1. The change is **not** applied directly.
+2. `AttributeProposalServiceImpl.createProposal()` is called instead.
+3. Any existing PENDING proposal for the same attribute type is SUPERSEDED first.
+4. Group members are notified of the proposal (fire-and-forget).
+
+Creator's own edits always apply directly — this flow is bypassed.
+
+### Auto-Adoption Rules
+
+After 24 hours:
+- **No alternatives submitted** → proposal is ADOPTED (silence = consent); hangout field is updated and pointers are synced
+- **Alternatives submitted** → lightweight vote determines outcome; proposal with most votes is adopted
+
+### DynamoDB Key Pattern
+
+```
+PK = EVENT#{hangoutId}
+SK = PROPOSAL#{proposalId}
+itemType = PROPOSAL
+```
+
+## 16. Action-Oriented Nudges (Feature 5)
+
+**Status: Implemented.** Nudges are computed fresh on each `getHangoutDetail()` request — never stored.
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `model/NudgeType.java` | Enum: SUGGEST_TIME, ADD_LOCATION, MAKE_RESERVATION, CONSIDER_TICKETS |
+| `dto/NudgeDTO.java` | type, message, actionUrl |
+| `service/NudgeService.java` | Interface |
+| `service/impl/NudgeServiceImpl.java` | Computes nudges from hangout state + interest levels |
+| `dto/HangoutDetailDTO.java` | `List<NudgeDTO> nudges` field (computed at read time) |
+| `service/impl/HangoutServiceImpl.java` | Calls `nudgeService.computeNudges()` in `getHangoutDetail()` |
+
+### Nudge Rules
+
+| Nudge Type | Condition |
+|------------|-----------|
+| SUGGEST_TIME | `startTimestamp == null` AND ≥1 non-creator interest signal |
+| ADD_LOCATION | `location == null` AND ≥1 non-creator interest signal |
+| MAKE_RESERVATION | `placeCategory` is restaurant/bar/food AND momentum is GAINING_MOMENTUM or CONFIRMED |
+| CONSIDER_TICKETS | `placeCategory` is event/entertainment/concert/theater/sports AND momentum is GAINING_MOMENTUM or CONFIRMED |
+
+Multiple nudges can be active simultaneously. Nudges are in `HangoutDetailDTO.nudges` — not in the feed summary.
+
+## 17. Adaptive Notifications (Feature 6)
+
+**Status: Implemented.** Per-group weekly notification budget prevents notification fatigue.
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `model/GroupNotificationTracker.java` | DynamoDB entity tracking weekly counts and rolling average |
+| `repository/GroupNotificationTrackerRepository.java` | DynamoDB access |
+| `service/AdaptiveNotificationService.java` | Budget computation, rollover, signal recording |
+
+### Decision Rules
+
+| Signal Type | Always Notify? |
+|-------------|---------------|
+| `CONCRETE_ACTION` (tickets, reservation) | Yes |
+| `CONFIRMED` (explicit "It's on!") | Yes |
+| `BUILDING_TO_GAINING`, `GAINING_TO_CONFIRMED`, `GENERAL` | Subject to weekly budget |
+
+### Weekly Budget
+
+```
+weeklyBudget = max(2, ceil(rollingWeeklyAverage × 1.5))
+shouldSend   = notificationsSentThisWeek < weeklyBudget
+```
+
+New groups with no history default to budget = 2. Rolling average uses 8-week exponential moving average (α = 1/8).
+
+### DynamoDB Key Pattern
+
+```
+PK = GROUP#{groupId}
+SK = NOTIFICATION_TRACKER
+```
+
+### Notification Message Templates
+
+| Type | Template |
+|------|----------|
+| Gaining traction | `'[title]' is gaining traction — N people are interested` |
+| Ticket purchased | `[name] bought tickets for '[title]'` |
+| Action nudge | `'[title]' is [dayLabel] — consider buying tickets` |
+| Empty week | `Nothing planned next week — check out your group's ideas` |
+
+## 18. Deferred / Known Gaps
+
+- **Active member tracking** — `engagementMultiplier` currently uses total membership count; should track members with InterestLevel records in last 8 weeks.
 - **Group confirmation rate** — currently uses default 0.6 multiplier; should compute from rolling 8-week data.
+- **TimeSuggestion GSI** — auto-adoption task uses DynamoDB scan (acceptable at small scale). A GSI on (itemType, status) would enable efficient querying without full-table scan.
+- **AttributeProposal vote tie-breaking** — not yet defined; current implementation adopts first proposal by creation time on tie.

@@ -266,6 +266,38 @@ public class FcmNotificationService {
         }
     }
 
+    public void sendMomentumChangeNotification(String deviceToken, String hangoutId, String groupId,
+                                                String hangoutTitle, String message) {
+        if (firebaseApp == null) {
+            logger.info("FCM not configured - skipping momentum change notification for '{}'", hangoutTitle);
+            return;
+        }
+
+        String tokenPrefix = deviceToken.substring(0, Math.min(8, deviceToken.length())) + "...";
+
+        try {
+            Message.Builder messageBuilder = Message.builder()
+                    .setToken(deviceToken)
+                    .setNotification(Notification.builder()
+                            .setTitle(NotificationTextGenerator.MOMENTUM_CHANGE_TITLE)
+                            .setBody(message)
+                            .build())
+                    .putData("type", "momentum_change")
+                    .putData("hangoutId", hangoutId);
+
+            if (groupId != null) {
+                messageBuilder.putData("groupId", groupId);
+            }
+
+            String messageId = FirebaseMessaging.getInstance(firebaseApp).send(messageBuilder.build());
+            logger.info("Momentum change notification sent to device: {}, messageId: {}", tokenPrefix, messageId);
+            meterRegistry.counter("fcm_notification_total", "status", "success", "type", "momentum_change").increment();
+
+        } catch (FirebaseMessagingException e) {
+            handleFcmError(e, deviceToken, tokenPrefix);
+        }
+    }
+
     /**
      * Handle FCM errors and clean up invalid tokens.
      */

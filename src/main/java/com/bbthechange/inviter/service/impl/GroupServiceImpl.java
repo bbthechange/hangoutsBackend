@@ -11,6 +11,7 @@ import com.bbthechange.inviter.repository.InviteCodeRepository;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.exception.*;
+import com.bbthechange.inviter.service.IdeaFeedSurfacingService;
 import com.bbthechange.inviter.service.InviteService;
 import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.UserService;
@@ -66,6 +67,8 @@ public class GroupServiceImpl implements GroupService {
     private final S3Service s3Service;
     private final InviteCodeRepository inviteCodeRepository;
     private final String appBaseUrl;
+    private final FeedSortingService feedSortingService;
+    private final IdeaFeedSurfacingService ideaFeedSurfacingService;
 
     @Value("${inviter.attendance.backward-compat-interested:true}")
     private boolean attendanceBackwardCompatEnabled;
@@ -75,7 +78,9 @@ public class GroupServiceImpl implements GroupService {
                            UserRepository userRepository, UserService userService, InviteService inviteService,
                            NotificationService notificationService, @Lazy HangoutService hangoutService,
                            S3Service s3Service, InviteCodeRepository inviteCodeRepository,
-                           @Value("${app.base-url}") String appBaseUrl) {
+                           @Value("${app.base-url}") String appBaseUrl,
+                           FeedSortingService feedSortingService,
+                           IdeaFeedSurfacingService ideaFeedSurfacingService) {
         this.groupRepository = groupRepository;
         this.hangoutRepository = hangoutRepository;
         this.userRepository = userRepository;
@@ -86,6 +91,8 @@ public class GroupServiceImpl implements GroupService {
         this.s3Service = s3Service;
         this.inviteCodeRepository = inviteCodeRepository;
         this.appBaseUrl = appBaseUrl;
+        this.feedSortingService = feedSortingService;
+        this.ideaFeedSurfacingService = ideaFeedSurfacingService;
     }
     
     @Override
@@ -486,17 +493,27 @@ public class GroupServiceImpl implements GroupService {
                 }
             }
             
+            // Apply slot-based interleaving sort
+            FeedSortingService.SortResult sorted =
+                    feedSortingService.sortFeed(feedItems, needsDay, nowTimestamp);
+
+            // Append high-interest idea suggestions (sorted by interest, after main feed items)
+            List<FeedItem> finalWithDay = new ArrayList<>(sorted.withDay);
+            List<IdeaFeedItemDTO> surfacedIdeas =
+                    ideaFeedSurfacingService.getSurfacedIdeas(groupId, nowTimestamp, requestingUserId);
+            finalWithDay.addAll(surfacedIdeas);
+
             // Repository is the source of truth for pagination tokens
             String nextPageToken = null;
             if (futureEvents.hasMore()) {
                 // Convert repository token to custom format for API response
                 nextPageToken = getCustomToken(futureEvents.getNextToken(), true);
             }
-            
+
             // Always provide a token to access past events when viewing current/future events
             String previousPageToken = generatePreviousPageTokenFromBaseItems(allItems, nowTimestamp);
-            
-            return new GroupFeedDTO(groupId, feedItems, needsDay, nextPageToken, previousPageToken);
+
+            return new GroupFeedDTO(groupId, finalWithDay, sorted.needsDay, nextPageToken, previousPageToken);
             
         } catch (Exception e) {
             logger.error("Failed to get current and future events for group {}", groupId, e);
@@ -686,6 +703,8 @@ public class GroupServiceImpl implements GroupService {
                             hangoutDTO.getInterestLevels(), attendanceBackwardCompatEnabled));
                     // Enrich host at place info
                     hangoutService.enrichHostAtPlaceInfo(hangoutDTO);
+                    // Compute and set action-oriented nudges
+                    hangoutService.enrichNudges(hangoutDTO, hangoutPointer);
                     feedItems.add(hangoutDTO);
                 }
                 // If it's part of a series, ignore it (already included in SeriesSummaryDTO)

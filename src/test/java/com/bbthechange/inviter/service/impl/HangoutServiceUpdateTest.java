@@ -295,6 +295,7 @@ class HangoutServiceUpdateTest extends HangoutServiceTestBase {
         Hangout existingHangout = createTestHangout(hangoutId);
         existingHangout.setDescription("Old description");
         existingHangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")));
+        existingHangout.setCreatedBy(userId); // user is creator — bypasses silence=consent intercept
 
         UpdateHangoutRequest request = new UpdateHangoutRequest();
         request.setDescription(newDescription);
@@ -517,6 +518,7 @@ class HangoutServiceUpdateTest extends HangoutServiceTestBase {
         void updateHangout_LocationChanged_TriggersNotificationWithLocationChangeType() {
             // Given: Existing hangout with Address, update request with different address
             Hangout existingHangout = createTestHangout(HANGOUT_ID);
+            existingHangout.setCreatedBy(USER_ID); // creator bypasses silence=consent intercept
             Address existingLocation = new Address();
             existingLocation.setName("Old Place");
             existingLocation.setStreetAddress("123 Old St");
@@ -567,6 +569,7 @@ class HangoutServiceUpdateTest extends HangoutServiceTestBase {
         void updateHangout_TimeAndLocationChanged_TriggersNotificationWithCombinedChangeType() {
             // Given: Update request changes both timeInfo and location
             Hangout existingHangout = createTestHangout(HANGOUT_ID);
+            existingHangout.setCreatedBy(USER_ID); // creator bypasses silence=consent intercept
             TimeInfo existingTimeInfo = new TimeInfo();
             existingTimeInfo.setStartTime("2025-01-01T10:00:00Z");
             existingHangout.setTimeInput(existingTimeInfo);

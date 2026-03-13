@@ -494,6 +494,59 @@ public class PushNotificationService {
         }
     }
 
+    public void sendMomentumChangeNotification(String deviceToken, String hangoutId, String groupId,
+                                                String hangoutTitle, String message) {
+        if (apnsClient == null) {
+            logger.info("APNs not configured - skipping momentum change notification for '{}'", hangoutTitle);
+            return;
+        }
+
+        try {
+            SimpleApnsPayloadBuilder payloadBuilder = new SimpleApnsPayloadBuilder();
+            payloadBuilder.setAlertTitle(NotificationTextGenerator.MOMENTUM_CHANGE_TITLE);
+            payloadBuilder.setAlertBody(message);
+            payloadBuilder.setBadgeNumber(1);
+            payloadBuilder.setSound("default");
+            payloadBuilder.addCustomProperty("type", "momentum_change");
+            payloadBuilder.addCustomProperty("hangoutId", hangoutId);
+            if (groupId != null) {
+                payloadBuilder.addCustomProperty("groupId", groupId);
+            }
+
+            String payload = payloadBuilder.build();
+            String token = TokenUtil.sanitizeTokenString(deviceToken);
+
+            SimpleApnsPushNotification pushNotification = new SimpleApnsPushNotification(token, bundleId, payload);
+
+            PushNotificationResponse<SimpleApnsPushNotification> response = apnsClient.sendNotification(pushNotification).get();
+
+            if (response.isAccepted()) {
+                logger.info("Momentum change notification sent successfully to device: {}", deviceToken.substring(0, 8) + "...");
+                meterRegistry.counter("apns_notification_total", "status", "success", "type", "momentum_change").increment();
+            } else {
+                Optional<String> rejectionReason = response.getRejectionReason();
+                String reason = rejectionReason.orElse("unknown");
+                logger.error("Momentum change notification failed for device: {}. Reason: {}",
+                        deviceToken.substring(0, 8) + "...", reason);
+                meterRegistry.counter("apns_notification_total",
+                        "status", "rejected", "type", "momentum_change",
+                        "reason", reason, "category", categorizeApnsRejection(reason)).increment();
+            }
+
+        } catch (ExecutionException | InterruptedException e) {
+            logger.error("Error sending momentum change notification to device: {}", deviceToken.substring(0, 8) + "...", e);
+            meterRegistry.counter("apns_notification_total",
+                    "status", "error", "type", "momentum_change",
+                    "error_type", "execution", "category", "transient").increment();
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            logger.error("Unexpected error sending momentum change notification", e);
+            meterRegistry.counter("apns_notification_total",
+                    "status", "error", "type", "momentum_change",
+                    "error_type", "unexpected", "category", "unexpected").increment();
+        }
+    }
+
     /**
      * Categorize APNs rejection reason as expected or unexpected.
      * Expected: User/device issues (app uninstalled, token expired)

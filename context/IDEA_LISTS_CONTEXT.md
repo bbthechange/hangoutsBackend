@@ -297,7 +297,52 @@ Returns the list metadata and all its ideas in one query.
 | CreateIdeaRequest | `dto/CreateIdeaRequest.java` |
 | UpdateIdeaRequest | `dto/UpdateIdeaRequest.java` |
 
-## 11. Testing
+## 11. Feed Surfacing
+
+Idea lists participate in the group feed via `IdeaFeedSurfacingServiceImpl`. High-interest ideas (interestCount ≥ 3) are surfaced as `IdeaFeedItemDTO` items when the group's upcoming weeks are not fully covered by CONFIRMED hangouts.
+
+### Surfacing Rules
+
+- **Suppression**: If all 3 upcoming ISO weeks each have ≥1 CONFIRMED hangout for the group, no ideas are surfaced.
+- **Filtering**: Only ideas with `interestCount >= 3` qualify.
+- **Sorting**: Qualifying ideas are sorted by `interestCount` descending (most-wanted first).
+- **Graceful degradation**: If `IdeaListService` or the hangout repository throws, an empty list is returned and the feed still works.
+
+### IdeaFeedItemDTO
+
+Each surfaced idea becomes an `IdeaFeedItemDTO` in the group feed:
+
+```json
+{
+  "type": "idea_suggestion",
+  "ideaId": "...",
+  "listId": "...",
+  "groupId": "...",
+  "ideaName": "Sushi Nakazawa",
+  "listName": "NYC Restaurants",
+  "imageUrl": "https://...",
+  "note": "Omakase only",
+  "interestCount": 5,
+  "googlePlaceId": "ChIJ...",
+  "address": "23 Commerce St, New York",
+  "latitude": 40.7271,
+  "longitude": -74.0028,
+  "placeCategory": "restaurant"
+}
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `service/IdeaFeedSurfacingService.java` | Interface |
+| `service/impl/IdeaFeedSurfacingServiceImpl.java` | Suppression check + idea filtering |
+| `dto/IdeaFeedItemDTO.java` | Feed DTO for surfaced ideas |
+| `service/impl/GroupServiceImpl.java` | Calls `getSurfacedIdeas()` and includes results in feed |
+
+See `MOMENTUM_CONTEXT.md` Section 13 for more detail on the suppression algorithm.
+
+## 12. Testing
 
 | Test File | Scope |
 | :--- | :--- |

@@ -26,6 +26,9 @@ public class UpdateHangoutRequest {
     // Host at place field
     private String hostAtPlaceUserId;   // User ID when hosting at their place (null to clear)
 
+    // Place category for nudge computation (e.g. "restaurant", "bar", "event_space", "park", "trail", "other")
+    private String placeCategory;
+
     // Momentum field: true = manual "It's on!" confirmation
     private Boolean confirmed;
 }

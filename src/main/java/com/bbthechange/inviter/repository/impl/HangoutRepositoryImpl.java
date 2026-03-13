@@ -50,6 +50,7 @@ public class HangoutRepositoryImpl implements HangoutRepository {
     private final TableSchema<EventSeries> eventSeriesSchema;
     private final TableSchema<Participation> participationSchema;
     private final TableSchema<ReservationOffer> reservationOfferSchema;
+    private final TableSchema<TimeSuggestion> timeSuggestionSchema;
     private final QueryPerformanceTracker performanceTracker;
     private final EventRepository eventRepository; // For canonical Event records
     
@@ -75,6 +76,7 @@ public class HangoutRepositoryImpl implements HangoutRepository {
         this.eventSeriesSchema = TableSchema.fromBean(EventSeries.class);
         this.participationSchema = TableSchema.fromBean(Participation.class);
         this.reservationOfferSchema = TableSchema.fromBean(ReservationOffer.class);
+        this.timeSuggestionSchema = TableSchema.fromBean(TimeSuggestion.class);
         this.performanceTracker = performanceTracker;
         this.eventRepository = eventRepository;
     }
@@ -115,6 +117,8 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                     return participationSchema.mapToItem(itemMap);
                 } else if (InviterKeyFactory.isReservationOffer(sk)) {
                     return reservationOfferSchema.mapToItem(itemMap);
+                } else if (InviterKeyFactory.isTimeSuggestion(sk)) {
+                    return timeSuggestionSchema.mapToItem(itemMap);
                 }
             }
             throw new IllegalStateException("Missing itemType discriminator and unable to determine type from SK");
@@ -150,6 +154,8 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                 return participationSchema.mapToItem(itemMap);
             case "RESERVEOFFER":
                 return reservationOfferSchema.mapToItem(itemMap);
+            case "TIME_SUGGESTION":
+                return timeSuggestionSchema.mapToItem(itemMap);
             default:
                 throw new IllegalArgumentException("Unknown item type: " + itemType);
         }
@@ -194,6 +200,7 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                 List<NeedsRide> needsRideList = new ArrayList<>();
                 List<Participation> participations = new ArrayList<>();
                 List<ReservationOffer> reservationOffers = new ArrayList<>();
+                List<TimeSuggestion> timeSuggestions = new ArrayList<>();
                 Optional<Hangout> hangoutOption = Optional.empty();
 
                 for (BaseItem item : allItems) {
@@ -218,6 +225,8 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                         participations.add((Participation) item); // Safe - key pattern guarantees Participation
                     } else if (InviterKeyFactory.isReservationOffer(sk)) {
                         reservationOffers.add((ReservationOffer) item); // Safe - key pattern guarantees ReservationOffer
+                    } else if (InviterKeyFactory.isTimeSuggestion(sk)) {
+                        timeSuggestions.add((TimeSuggestion) item); // Safe - key pattern guarantees TimeSuggestion
                     } else if (InviterKeyFactory.isMetadata(sk)) {
                         hangoutOption = Optional.of((Hangout) item);
                     }
@@ -227,7 +236,7 @@ public class HangoutRepositoryImpl implements HangoutRepository {
                         .orElseThrow(() -> new ResourceNotFoundException("Event not found: " + eventId));
 
                 return new HangoutDetailData(hangout, polls, pollOptions, cars, votes, attendance,
-                    carRiders, needsRideList, participations, reservationOffers);
+                    carRiders, needsRideList, participations, reservationOffers, timeSuggestions);
 
             } catch (Exception e) {
                 logger.error("Failed to get event detail data for event {}", eventId, e);
@@ -1720,6 +1729,94 @@ public class HangoutRepositoryImpl implements HangoutRepository {
             } catch (DynamoDbException e) {
                 logger.error("Failed to find all hangouts by externalId={}, externalSource={}", externalId, externalSource, e);
                 throw new RepositoryException("Failed to query all hangouts by external ID", e);
+            }
+        });
+    }
+
+    // ============================================================================
+    // TIME SUGGESTION OPERATIONS
+    // ============================================================================
+
+    @Override
+    public TimeSuggestion saveTimeSuggestion(TimeSuggestion suggestion) {
+        return performanceTracker.trackQuery("PutItem", TABLE_NAME, () -> {
+            try {
+                suggestion.touch();
+                Map<String, AttributeValue> item = timeSuggestionSchema.itemToMap(suggestion, true);
+                dynamoDbClient.putItem(PutItemRequest.builder()
+                        .tableName(TABLE_NAME)
+                        .item(item)
+                        .build());
+                logger.debug("Saved time suggestion {} for hangout {}", suggestion.getSuggestionId(), suggestion.getHangoutId());
+                return suggestion;
+            } catch (DynamoDbException e) {
+                logger.error("Failed to save time suggestion {}", suggestion.getSuggestionId(), e);
+                throw new RepositoryException("Failed to save time suggestion", e);
+            }
+        });
+    }
+
+    @Override
+    public Optional<TimeSuggestion> findTimeSuggestionById(String hangoutId, String suggestionId) {
+        return performanceTracker.trackQuery("GetItem", TABLE_NAME, () -> {
+            try {
+                GetItemRequest request = GetItemRequest.builder()
+                        .tableName(TABLE_NAME)
+                        .key(Map.of(
+                                "pk", AttributeValue.builder().s(InviterKeyFactory.getEventPk(hangoutId)).build(),
+                                "sk", AttributeValue.builder().s(InviterKeyFactory.getTimeSuggestionSk(suggestionId)).build()
+                        ))
+                        .build();
+                GetItemResponse response = dynamoDbClient.getItem(request);
+                if (!response.hasItem() || response.item().isEmpty()) {
+                    return Optional.empty();
+                }
+                return Optional.of(timeSuggestionSchema.mapToItem(response.item()));
+            } catch (DynamoDbException e) {
+                logger.error("Failed to get time suggestion {} for hangout {}", suggestionId, hangoutId, e);
+                throw new RepositoryException("Failed to retrieve time suggestion", e);
+            }
+        });
+    }
+
+    @Override
+    public List<TimeSuggestion> findActiveTimeSuggestions(String hangoutId) {
+        return queryTimeSuggestionsWithFilter(hangoutId, true);
+    }
+
+    @Override
+    public List<TimeSuggestion> findAllTimeSuggestions(String hangoutId) {
+        return queryTimeSuggestionsWithFilter(hangoutId, false);
+    }
+
+    private List<TimeSuggestion> queryTimeSuggestionsWithFilter(String hangoutId, boolean activeOnly) {
+        return performanceTracker.trackQuery("QueryTimeSuggestions", TABLE_NAME, () -> {
+            try {
+                QueryRequest request = QueryRequest.builder()
+                        .tableName(TABLE_NAME)
+                        .keyConditionExpression("pk = :pk AND begins_with(sk, :sk_prefix)")
+                        .expressionAttributeValues(Map.of(
+                                ":pk", AttributeValue.builder().s(InviterKeyFactory.getEventPk(hangoutId)).build(),
+                                ":sk_prefix", AttributeValue.builder().s(InviterKeyFactory.TIME_SUGGESTION_PREFIX + "#").build()
+                        ))
+                        .build();
+
+                QueryResponse response = dynamoDbClient.query(request);
+                List<TimeSuggestion> suggestions = response.items().stream()
+                        .map(item -> timeSuggestionSchema.mapToItem(item))
+                        .collect(Collectors.toList());
+
+                if (activeOnly) {
+                    suggestions = suggestions.stream()
+                            .filter(s -> com.bbthechange.inviter.model.TimeSuggestionStatus.ACTIVE.equals(s.getStatus()))
+                            .collect(Collectors.toList());
+                }
+
+                logger.debug("Found {} time suggestions for hangout {} (activeOnly={})", suggestions.size(), hangoutId, activeOnly);
+                return suggestions;
+            } catch (DynamoDbException e) {
+                logger.error("Failed to query time suggestions for hangout {}", hangoutId, e);
+                throw new RepositoryException("Failed to retrieve time suggestions", e);
             }
         });
     }

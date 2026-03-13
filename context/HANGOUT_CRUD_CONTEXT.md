@@ -43,8 +43,11 @@ The Hangout feature is the core of the application, allowing users to create, vi
 2.  **Service:** `HangoutServiceImpl.getHangoutDetail()`
 3.  **Repository:** `HangoutRepositoryImpl.getHangoutDetailData()`:
     *   Executes a single, highly efficient **Query** on the main table with `PK = EVENT#{hangoutId}`.
-    *   This single query retrieves the `Hangout` metadata record AND all other items in its collection (Polls, Cars, Votes, InterestLevels, etc.).
-    *   The service then assembles this data into the `HangoutDetailDTO`.
+    *   This single query retrieves the `Hangout` metadata record AND all other items in its collection (Polls, Cars, Votes, InterestLevels, TimeSuggestions, etc.).
+    *   The service assembles this data into the `HangoutDetailDTO`, including:
+        - `timeSuggestions` — active TimeSuggestion items mapped to `TimeSuggestionDTO`
+        - `nudges` — computed fresh by `NudgeService.computeNudges()` (never stored)
+        - `momentum` — built by `MomentumService.buildMomentumDTO()`
 
 ### Update Hangout
 
@@ -53,6 +56,20 @@ The Hangout feature is the core of the application, allowing users to create, vi
     *   **Rule: Canonical First:** It first loads and modifies the canonical `Hangout` record and saves it.
     *   **Rule: Pointers Second:** It then calls `PointerUpdateService.updatePointerWithRetry()` with a lambda that uses `HangoutPointerFactory.applyHangoutFields(pointer, hangout)` to update all denormalized fields on existing pointers. This preserves collections (polls, votes, cars, etc.), participantCount, and version.
     *   **Series Interaction:** Crucially, after the update, it calls `eventSeriesService.updateSeriesAfterHangoutModification()`. This service is responsible for updating the parent `EventSeries` and its `SeriesPointer` if the hangout's modification (e.g., a time change, image path change) affects the series' overall start or end time.
+
+### Attribute Proposal Interception in Update Hangout
+
+When `HangoutServiceImpl.updateHangout()` is called by a **non-creator**, changes to `location` or `description` are intercepted and converted to `AttributeProposal` records rather than applied immediately. This is the silence=consent flow.
+
+**Rules:**
+- Creator's own edits always apply directly.
+- Non-creator edits to `location` or `description` create a proposal.
+- Any existing PENDING proposal for the same hangout + attribute type is SUPERSEDED first.
+- Group members are notified of the proposal (fire-and-forget).
+- After 24h with no alternatives: proposal is ADOPTED, hangout field is updated, pointers are synced.
+- After 24h with alternatives: lightweight vote determines which value is adopted.
+
+**Key files:** `model/AttributeProposal.java`, `service/impl/AttributeProposalServiceImpl.java`. See `MOMENTUM_CONTEXT.md` Section 15 for full details.
 
 ### Delete Hangout
 

@@ -1,9 +1,11 @@
 package com.bbthechange.inviter.service.impl;
 
+import com.bbthechange.inviter.service.AttributeProposalService;
 import com.bbthechange.inviter.service.HangoutService;
 import com.bbthechange.inviter.service.HangoutSchedulerService;
 import com.bbthechange.inviter.service.FuzzyTimeService;
 import com.bbthechange.inviter.service.MomentumService;
+import com.bbthechange.inviter.service.NudgeService;
 import com.bbthechange.inviter.service.UserService;
 import com.bbthechange.inviter.service.EventSeriesService;
 import com.bbthechange.inviter.service.NotificationService;
@@ -50,6 +52,8 @@ public class HangoutServiceImpl implements HangoutService {
     private final GroupTimestampService groupTimestampService;
     private final HangoutSchedulerService hangoutSchedulerService;
     private final MomentumService momentumService;
+    private final NudgeService nudgeService;
+    private final AttributeProposalService attributeProposalService;
 
     @Value("${inviter.attendance.backward-compat-interested:true}")
     private boolean attendanceBackwardCompatEnabled;
@@ -63,7 +67,9 @@ public class HangoutServiceImpl implements HangoutService {
                               S3Service s3Service,
                               GroupTimestampService groupTimestampService,
                               HangoutSchedulerService hangoutSchedulerService,
-                              MomentumService momentumService) {
+                              MomentumService momentumService,
+                              NudgeService nudgeService,
+                              AttributeProposalService attributeProposalService) {
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
         this.fuzzyTimeService = fuzzyTimeService;
@@ -75,6 +81,8 @@ public class HangoutServiceImpl implements HangoutService {
         this.groupTimestampService = groupTimestampService;
         this.hangoutSchedulerService = hangoutSchedulerService;
         this.momentumService = momentumService;
+        this.nudgeService = nudgeService;
+        this.attributeProposalService = attributeProposalService;
     }
     
     @Override
@@ -233,6 +241,14 @@ public class HangoutServiceImpl implements HangoutService {
             hangout.setHostAtPlaceUserId(request.getHostAtPlaceUserId());
         }
 
+        // Set place category for nudge computation
+        if (request.getPlaceCategory() != null) {
+            hangout.setPlaceCategory(request.getPlaceCategory());
+        }
+
+        // Track who created the hangout for attribute proposal system
+        hangout.setCreatedBy(requestingUserId);
+
         // Verify user is in all specified groups
         if (request.getAssociatedGroups() != null) {
             for (String groupId : request.getAssociatedGroups()) {
@@ -333,6 +349,15 @@ public class HangoutServiceImpl implements HangoutService {
             }
         }
 
+        // Compute action-oriented nudges (never stored — computed fresh each request)
+        List<NudgeDTO> nudges = nudgeService.computeNudges(hangout, hangoutDetail.getAttendance());
+
+        // Map time suggestions to DTOs (active suggestions for timeless hangouts)
+        List<TimeSuggestionDTO> timeSuggestionDTOs = hangoutDetail.getTimeSuggestions().stream()
+                .filter(ts -> TimeSuggestionStatus.ACTIVE.equals(ts.getStatus()))
+                .map(TimeSuggestionDTO::from)
+                .collect(Collectors.toList());
+
         // Build the DTO
         HangoutDetailDTO.HangoutDetailDTOBuilder dtoBuilder = HangoutDetailDTO.builder()
                 .withHangout(hangout)
@@ -345,7 +370,9 @@ public class HangoutServiceImpl implements HangoutService {
                 .withNeedsRide(needsRideDTOs)
                 .withParticipations(participationDTOs)
                 .withReservationOffers(offerDTOs)
-                .withMomentum(momentumDTO);
+                .withMomentum(momentumDTO)
+                .withTimeSuggestions(timeSuggestionDTOs)
+                .withNudges(nudges);
 
         // Resolve host at place display name and image
         if (hangout.getHostAtPlaceUserId() != null) {
@@ -368,6 +395,54 @@ public class HangoutServiceImpl implements HangoutService {
         if (!canUserEditHangout(requestingUserId, hangout)) {
             throw new UnauthorizedException("Cannot edit hangout");
         }
+
+        // --- Attribute promotion / silence=consent ---
+        // When a non-creator edits location or description, intercept and create a proposal
+        // instead of applying immediately. Creator's own edits bypass this flow.
+        boolean isCreator = requestingUserId.equals(hangout.getCreatedBy());
+        if (!isCreator) {
+            boolean proposedLocation = request.getLocation() != null
+                    && !Objects.equals(hangout.getLocation(), request.getLocation());
+            boolean proposedDescription = request.getDescription() != null
+                    && !Objects.equals(hangout.getDescription(), request.getDescription());
+
+            if (proposedLocation || proposedDescription) {
+                String primaryGroupId = (hangout.getAssociatedGroups() != null && !hangout.getAssociatedGroups().isEmpty())
+                        ? hangout.getAssociatedGroups().get(0) : null;
+
+                if (primaryGroupId != null) {
+                    if (proposedLocation) {
+                        String locationValue = request.getLocation().getName() != null
+                                ? request.getLocation().getName()
+                                : (request.getLocation().getStreetAddress() != null
+                                        ? request.getLocation().getStreetAddress() : "");
+                        try {
+                            attributeProposalService.createProposal(
+                                    hangoutId, primaryGroupId, requestingUserId,
+                                    AttributeProposalType.LOCATION, locationValue);
+                            logger.info("Created LOCATION proposal for hangout {} by non-creator {}", hangoutId, requestingUserId);
+                        } catch (Exception e) {
+                            logger.warn("Failed to create location proposal for hangout {}: {}", hangoutId, e.getMessage());
+                        }
+                        // Do NOT apply location directly; clear from request so the rest of updateHangout skips it
+                        request.setLocation(null);
+                    }
+                    if (proposedDescription) {
+                        try {
+                            attributeProposalService.createProposal(
+                                    hangoutId, primaryGroupId, requestingUserId,
+                                    AttributeProposalType.DESCRIPTION, request.getDescription());
+                            logger.info("Created DESCRIPTION proposal for hangout {} by non-creator {}", hangoutId, requestingUserId);
+                        } catch (Exception e) {
+                            logger.warn("Failed to create description proposal for hangout {}: {}", hangoutId, e.getMessage());
+                        }
+                        // Do NOT apply description directly; clear from request
+                        request.setDescription(null);
+                    }
+                }
+            }
+        }
+        // --- End attribute promotion intercept ---
 
         // Track if any pointer-denormalized fields changed
         boolean needsPointerUpdate = false;
@@ -471,6 +546,12 @@ public class HangoutServiceImpl implements HangoutService {
         // Always check for change (including null → value or value → different value)
         if (!Objects.equals(request.getHostAtPlaceUserId(), hangout.getHostAtPlaceUserId())) {
             hangout.setHostAtPlaceUserId(request.getHostAtPlaceUserId());
+            needsPointerUpdate = true;
+        }
+
+        // Place category field
+        if (!Objects.equals(request.getPlaceCategory(), hangout.getPlaceCategory())) {
+            hangout.setPlaceCategory(request.getPlaceCategory());
             needsPointerUpdate = true;
         }
 
@@ -1326,6 +1407,12 @@ public class HangoutServiceImpl implements HangoutService {
                     dto.setHostAtPlaceImagePath(user.getMainImagePath());
                 });
         }
+    }
+
+    @Override
+    public void enrichNudges(HangoutSummaryDTO dto, HangoutPointer pointer) {
+        List<NudgeDTO> nudges = nudgeService.computeNudgesFromPointer(pointer);
+        dto.setNudges(nudges);
     }
 
 }

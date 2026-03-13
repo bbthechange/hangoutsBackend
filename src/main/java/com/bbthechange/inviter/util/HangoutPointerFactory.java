@@ -70,6 +70,8 @@ public final class HangoutPointerFactory {
         pointer.setTicketsRequired(hangout.getTicketsRequired());
         pointer.setDiscountCode(hangout.getDiscountCode());
 
+        pointer.setPlaceCategory(hangout.getPlaceCategory());
+
         pointer.setMomentumCategory(hangout.getMomentumCategory());
         pointer.setMomentumScore(hangout.getMomentumScore());
         pointer.setConfirmedAt(hangout.getConfirmedAt());

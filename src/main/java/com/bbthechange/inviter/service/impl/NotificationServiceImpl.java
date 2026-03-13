@@ -763,4 +763,150 @@ public class NotificationServiceImpl implements NotificationService {
             return false;
         }
     }
+
+    @Override
+    public void notifyAttributeProposal(String groupId, String proposerUserId, String message) {
+        if (groupId == null || message == null) {
+            logger.debug("Skipping attribute proposal notification — missing groupId or message");
+            return;
+        }
+
+        try {
+            List<GroupMembership> members = groupRepository.findMembersByGroupId(groupId);
+            List<String> userIds = members.stream()
+                    .map(GroupMembership::getUserId)
+                    .filter(uid -> !uid.equals(proposerUserId))
+                    .toList();
+
+            if (userIds.isEmpty()) {
+                logger.debug("No users to notify for attribute proposal in group {}", groupId);
+                return;
+            }
+
+            logger.info("Sending attribute proposal notifications to {} users in group {}", userIds.size(), groupId);
+
+            for (String userId : userIds) {
+                try {
+                    List<Device> devices = deviceService.getActiveDevicesForUser(UUID.fromString(userId));
+                    for (Device device : devices) {
+                        try {
+                            if (device.getPlatform() == Device.Platform.IOS) {
+                                pushNotificationService.sendMomentumChangeNotification(
+                                        device.getToken(), null, groupId, null, message);
+                            } else if (device.getPlatform() == Device.Platform.ANDROID) {
+                                fcmNotificationService.sendMomentumChangeNotification(
+                                        device.getToken(), null, groupId, null, message);
+                            }
+                        } catch (Exception e) {
+                            logger.error("Failed to send attribute proposal notification to device {}: {}",
+                                    device.getToken().substring(0, Math.min(8, device.getToken().length())),
+                                    e.getMessage());
+                        }
+                    }
+                } catch (Exception e) {
+                    logger.warn("Failed to send attribute proposal notification to user {}: {}", userId, e.getMessage());
+                }
+            }
+
+        } catch (Exception e) {
+            logger.error("Error sending attribute proposal notifications for group {}: {}", groupId, e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public void notifyMomentumChange(String hangoutId, String hangoutTitle, String primaryGroupId,
+                                      Set<String> allGroupIds, String message, String signalType) {
+        if (allGroupIds == null || allGroupIds.isEmpty()) {
+            logger.debug("No groups for momentum notification on hangout {}", hangoutId);
+            return;
+        }
+
+        try {
+            Set<String> uniqueUserIds = collectUniqueUsersFromGroups(allGroupIds.stream().toList());
+
+            if (uniqueUserIds.isEmpty()) {
+                logger.debug("No users to notify for momentum change on hangout {}", hangoutId);
+                return;
+            }
+
+            logger.info("Sending momentum change notifications for hangout {} to {} unique users (signal={})",
+                    hangoutId, uniqueUserIds.size(), signalType);
+
+            int successCount = 0;
+            int failureCount = 0;
+
+            for (String userId : uniqueUserIds) {
+                try {
+                    boolean sent = sendMomentumChangeNotificationToUser(
+                            userId, hangoutId, primaryGroupId, hangoutTitle, message);
+                    if (sent) {
+                        successCount++;
+                    }
+                } catch (Exception e) {
+                    failureCount++;
+                    logger.warn("Failed to send momentum notification to user {}: {}", userId, e.getMessage());
+                }
+            }
+
+            logger.info("Momentum notification summary for hangout {}: {} sent, {} failed",
+                    hangoutId, successCount, failureCount);
+
+            if (successCount > 0) {
+                meterRegistry.counter("momentum_notification_total",
+                        "status", "success", "signal_type", signalType).increment(successCount);
+            }
+            if (failureCount > 0) {
+                meterRegistry.counter("momentum_notification_total",
+                        "status", "failure", "signal_type", signalType).increment(failureCount);
+            }
+
+        } catch (Exception e) {
+            logger.error("Error sending momentum change notifications for hangout {}: {}",
+                    hangoutId, e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Send a momentum change notification to all active devices for a single user.
+     * Returns true if at least one notification was sent.
+     */
+    private boolean sendMomentumChangeNotificationToUser(String userId, String hangoutId,
+                                                          String groupId, String hangoutTitle,
+                                                          String message) {
+        try {
+            List<Device> devices = deviceService.getActiveDevicesForUser(UUID.fromString(userId));
+
+            if (devices.isEmpty()) {
+                logger.debug("No active devices for user {}", userId);
+                return false;
+            }
+
+            boolean anySent = false;
+
+            for (Device device : devices) {
+                try {
+                    if (device.getPlatform() == Device.Platform.IOS) {
+                        pushNotificationService.sendMomentumChangeNotification(
+                                device.getToken(), hangoutId, groupId, hangoutTitle, message);
+                        anySent = true;
+                    } else if (device.getPlatform() == Device.Platform.ANDROID) {
+                        fcmNotificationService.sendMomentumChangeNotification(
+                                device.getToken(), hangoutId, groupId, hangoutTitle, message);
+                        anySent = true;
+                    }
+                } catch (Exception e) {
+                    logger.error("Failed to send momentum notification to device {}: {}",
+                            device.getToken().substring(0, Math.min(8, device.getToken().length())),
+                            e.getMessage());
+                }
+            }
+
+            return anySent;
+
+        } catch (Exception e) {
+            logger.warn("Failed to send momentum notification to user {}: {}", userId, e.getMessage());
+            return false;
+        }
+    }
+
 }

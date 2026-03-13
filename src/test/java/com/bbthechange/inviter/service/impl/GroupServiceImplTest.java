@@ -8,10 +8,12 @@ import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.exception.*;
 import com.bbthechange.inviter.service.HangoutService;
+import com.bbthechange.inviter.service.IdeaFeedSurfacingService;
 import com.bbthechange.inviter.service.InviteService;
 import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.UserService;
 import com.bbthechange.inviter.util.PaginatedResult;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -61,9 +63,29 @@ class GroupServiceImplTest {
     @Mock
     private com.bbthechange.inviter.service.S3Service s3Service;
 
+    @Mock
+    private com.bbthechange.inviter.repository.InviteCodeRepository inviteCodeRepository;
+
+    @Mock
+    private FeedSortingService feedSortingService;
+
+    @Mock
+    private IdeaFeedSurfacingService ideaFeedSurfacingService;
+
     @InjectMocks
     private GroupServiceImpl groupService;
-    
+
+    @BeforeEach
+    void setUp() {
+        // FeedSortingService.sortFeed() returns a passthrough SortResult by default
+        // so that tests not focused on feed sorting still work correctly.
+        lenient().when(feedSortingService.sortFeed(any(), any(), anyLong()))
+                .thenAnswer(inv -> new FeedSortingService.SortResult(inv.getArgument(0), inv.getArgument(1)));
+        // IdeaFeedSurfacingService returns empty list by default
+        lenient().when(ideaFeedSurfacingService.getSurfacedIdeas(any(), anyLong(), any()))
+                .thenReturn(List.of());
+    }
+
     @Test
     void createGroup_Success() {
         // Given

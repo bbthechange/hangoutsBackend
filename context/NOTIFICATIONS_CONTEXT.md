@@ -329,7 +329,68 @@ The `Hangout.titleNotificationSent` flag prevents duplicate title update notific
 void sendWatchPartyNotification(String deviceToken, String seriesId, String groupId, String message);
 ```
 
-## 6. Adding New Notification Types
+## 6. Adaptive Notification Thresholds
+
+To prevent notification fatigue, momentum-related notifications go through `AdaptiveNotificationService` before being sent. This applies to state-change notifications (BUILDING→GAINING_MOMENTUM, etc.) — not to reminders or watch party notifications.
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `service/AdaptiveNotificationService.java` | Budget decision, rollover, message templates |
+| `model/GroupNotificationTracker.java` | DynamoDB entity: `PK=GROUP#{groupId}`, `SK=NOTIFICATION_TRACKER` |
+| `repository/GroupNotificationTrackerRepository.java` | DynamoDB access |
+
+### Usage Pattern
+
+```java
+// Before sending a momentum notification:
+boolean shouldSend = adaptiveNotificationService.shouldSendNotification(
+    groupId,
+    AdaptiveNotificationService.SIGNAL_BUILDING_TO_GAINING,
+    previousCategory,
+    newCategory
+);
+
+if (shouldSend) {
+    // send notification
+    adaptiveNotificationService.recordNotificationSent(groupId, signalType);
+}
+```
+
+### Signal Types
+
+| Constant | Always Sends? |
+|----------|--------------|
+| `SIGNAL_CONCRETE_ACTION` | Yes |
+| `SIGNAL_CONFIRMED` | Yes |
+| `SIGNAL_BUILDING_TO_GAINING` | Budget-gated |
+| `SIGNAL_GAINING_TO_CONFIRMED` | Budget-gated |
+| `SIGNAL_GENERAL` | Budget-gated |
+
+### Weekly Budget Algorithm
+
+```
+weeklyBudget = max(2, ceil(rollingWeeklyAverage × 1.5))
+shouldSend   = notificationsSentThisWeek < weeklyBudget
+```
+
+Rolling average is an 8-week exponential moving average (α = 1/8). Week boundaries are ISO week (Monday–Sunday, UTC). A new group defaults to budget = 2.
+
+### Momentum Notification Messages
+
+Static factory methods on `AdaptiveNotificationService`:
+
+| Method | Output |
+|--------|--------|
+| `gainingTractionMessage(title, count)` | `'[title]' is gaining traction — N people are interested` |
+| `ticketPurchasedMessage(name, title)` | `[name] bought tickets for '[title]'` |
+| `actionNudgeMessage(title, dayLabel)` | `'[title]' is [dayLabel] — consider buying tickets` |
+| `emptyWeekMessage()` | `Nothing planned next week — check out your group's ideas` |
+
+See `MOMENTUM_CONTEXT.md` Section 17 for full details.
+
+## 7. Adding New Notification Types
 
 To add a new notification type:
 

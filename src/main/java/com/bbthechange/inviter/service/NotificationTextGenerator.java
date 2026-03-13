@@ -24,6 +24,9 @@ public class NotificationTextGenerator {
     public static final String CARPOOL_NEW_CAR_TITLE = "Ride Available";
     public static final String CARPOOL_RIDER_ADDED_TITLE = "Ride Confirmed";
 
+    // Momentum notification titles
+    public static final String MOMENTUM_CHANGE_TITLE = "Hangout Update";
+
     /**
      * Generate body text for new hangout notification.
      * @param creatorName Name of user who created the hangout (can be null)

@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+
 /**
  * Repository interface for hangout/event management operations in the InviterTable.
  * Provides the powerful item collection pattern for efficient data retrieval.
@@ -237,4 +238,43 @@ public interface HangoutRepository {
      * @return List of all matching Hangouts
      */
     List<Hangout> findAllByExternalIdAndSource(String externalId, String externalSource);
+
+    // ============================================================================
+    // TIME SUGGESTION operations
+    // ============================================================================
+
+    /**
+     * Save (create or update) a TimeSuggestion.
+     *
+     * @param suggestion The suggestion to save
+     * @return The saved suggestion
+     */
+    TimeSuggestion saveTimeSuggestion(TimeSuggestion suggestion);
+
+    /**
+     * Find a specific TimeSuggestion by hangout ID and suggestion ID.
+     *
+     * @param hangoutId    The hangout's ID
+     * @param suggestionId The suggestion's ID
+     * @return Optional containing the suggestion if found
+     */
+    Optional<TimeSuggestion> findTimeSuggestionById(String hangoutId, String suggestionId);
+
+    /**
+     * Find all ACTIVE TimeSuggestions for a given hangout.
+     * Uses a begins_with query on PK=EVENT#{hangoutId}, SK begins_with TIME_SUGGESTION#.
+     *
+     * @param hangoutId The hangout's ID
+     * @return List of active time suggestions
+     */
+    List<TimeSuggestion> findActiveTimeSuggestions(String hangoutId);
+
+    /**
+     * Find ALL TimeSuggestions for a hangout (any status).
+     * Needed for the auto-adoption scheduled task.
+     *
+     * @param hangoutId The hangout's ID
+     * @return List of all time suggestions
+     */
+    List<TimeSuggestion> findAllTimeSuggestions(String hangoutId);
 }

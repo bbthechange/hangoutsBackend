@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.util.List;
+import java.util.ArrayList;
 
 /**
  * DTO for hangout detail response with all related data.
@@ -49,4 +50,20 @@ public class HangoutDetailDTO {
 
     // Momentum data (populated by MomentumService at read time)
     private MomentumDTO momentum;
+
+    // Time suggestions (active suggestions for timeless hangouts)
+    @Builder.Default
+    private List<TimeSuggestionDTO> timeSuggestions = List.of();
+
+    // Action-oriented nudges (computed by NudgeService at read time — never stored)
+    @Builder.Default
+    private List<NudgeDTO> nudges = List.of();
+
+    public List<NudgeDTO> getNudges() {
+        return nudges != null ? nudges : new ArrayList<>();
+    }
+
+    public void setNudges(List<NudgeDTO> nudges) {
+        this.nudges = nudges;
+    }
 }

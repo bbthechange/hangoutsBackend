@@ -7,6 +7,7 @@ import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.InviteCodeRepository;
 import com.bbthechange.inviter.repository.UserRepository;
 import com.bbthechange.inviter.service.HangoutService;
+import com.bbthechange.inviter.service.IdeaFeedSurfacingService;
 import com.bbthechange.inviter.service.InviteService;
 import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.UserService;
@@ -69,6 +70,12 @@ class GroupServiceMomentumFeedTest {
     @Mock
     private InviteCodeRepository inviteCodeRepository;
 
+    @Mock
+    private FeedSortingService feedSortingService;
+
+    @Mock
+    private IdeaFeedSurfacingService ideaFeedSurfacingService;
+
     @InjectMocks
     private GroupServiceImpl groupService;
 
@@ -76,6 +83,12 @@ class GroupServiceMomentumFeedTest {
     void setUp() {
         ReflectionTestUtils.setField(groupService, "appBaseUrl", "http://localhost:8080");
         ReflectionTestUtils.setField(groupService, "attendanceBackwardCompatEnabled", true);
+        // Default: sortFeed passes items through unchanged
+        lenient().when(feedSortingService.sortFeed(any(), any(), anyLong()))
+                .thenAnswer(inv -> new FeedSortingService.SortResult(inv.getArgument(0), inv.getArgument(1)));
+        // IdeaFeedSurfacingService returns empty list by default
+        lenient().when(ideaFeedSurfacingService.getSurfacedIdeas(any(), anyLong(), any()))
+                .thenReturn(List.of());
     }
 
     // ============================================================================

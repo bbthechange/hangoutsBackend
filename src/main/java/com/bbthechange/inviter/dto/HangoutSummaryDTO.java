@@ -89,6 +89,10 @@ public class HangoutSummaryDTO implements FeedItem {
     // Momentum data
     private MomentumDTO momentum;
 
+    // Action-oriented nudges (computed by NudgeService at read time — never stored)
+    @Builder.Default
+    private List<NudgeDTO> nudges = List.of();
+
     /**
      * Create HangoutSummaryDTO from HangoutPointer with transformed nested data.
      *
@@ -425,5 +429,13 @@ public class HangoutSummaryDTO implements FeedItem {
 
     public void setMomentum(MomentumDTO momentum) {
         this.momentum = momentum;
+    }
+
+    public List<NudgeDTO> getNudges() {
+        return nudges != null ? nudges : new ArrayList<>();
+    }
+
+    public void setNudges(List<NudgeDTO> nudges) {
+        this.nudges = nudges;
     }
 }

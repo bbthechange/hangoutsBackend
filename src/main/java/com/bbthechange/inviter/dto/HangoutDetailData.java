@@ -43,6 +43,8 @@ public class HangoutDetailData {
     private List<Participation> participations = List.of();
     @Builder.Default
     private List<ReservationOffer> reservationOffers = List.of();
+    @Builder.Default
+    private List<TimeSuggestion> timeSuggestions = List.of();
 
     /**
      * Full constructor for backward compatibility with existing production code.
@@ -65,5 +67,27 @@ public class HangoutDetailData {
         this.needsRide = needsRide != null ? needsRide : List.of();
         this.participations = participations != null ? participations : List.of();
         this.reservationOffers = reservationOffers != null ? reservationOffers : List.of();
+        this.timeSuggestions = List.of();
+    }
+
+    /**
+     * Extended constructor including time suggestions.
+     */
+    public HangoutDetailData(Hangout hangout, List<Poll> polls, List<PollOption> pollOptions,
+                             List<Car> cars, List<Vote> votes, List<InterestLevel> attendance,
+                             List<CarRider> carRiders, List<NeedsRide> needsRide,
+                             List<Participation> participations, List<ReservationOffer> reservationOffers,
+                             List<TimeSuggestion> timeSuggestions) {
+        this.hangout = hangout;
+        this.polls = polls != null ? polls : List.of();
+        this.pollOptions = pollOptions != null ? pollOptions : List.of();
+        this.cars = cars != null ? cars : List.of();
+        this.votes = votes != null ? votes : List.of();
+        this.attendance = attendance != null ? attendance : List.of();
+        this.carRiders = carRiders != null ? carRiders : List.of();
+        this.needsRide = needsRide != null ? needsRide : List.of();
+        this.participations = participations != null ? participations : List.of();
+        this.reservationOffers = reservationOffers != null ? reservationOffers : List.of();
+        this.timeSuggestions = timeSuggestions != null ? timeSuggestions : List.of();
     }
 }

@@ -93,4 +93,29 @@ public interface NotificationService {
      */
     void notifyCarpoolRiderAdded(String hangoutId, String hangoutTitle, List<String> groupIds,
                                   String driverName, String riderId);
+
+    /**
+     * Notify all members of a group about an attribute proposal (silence=consent flow).
+     * The proposer is excluded from notifications.
+     *
+     * @param groupId        Group whose members are notified
+     * @param proposerUserId The user who made the proposal (excluded from notifications)
+     * @param message        Notification message text
+     */
+    void notifyAttributeProposal(String groupId, String proposerUserId, String message);
+
+    /**
+     * Notify group members about a momentum state change.
+     * The notification is sent to all members of the primary group.
+     * Fire-and-forget — failures must not break the calling flow.
+     *
+     * @param hangoutId      The hangout ID
+     * @param hangoutTitle   The hangout title
+     * @param primaryGroupId The primary group for deep-link context
+     * @param allGroupIds    All group IDs associated with the hangout (for member collection)
+     * @param message        The notification body text
+     * @param signalType     The signal type from AdaptiveNotificationService
+     */
+    void notifyMomentumChange(String hangoutId, String hangoutTitle, String primaryGroupId,
+                               Set<String> allGroupIds, String message, String signalType);
 }

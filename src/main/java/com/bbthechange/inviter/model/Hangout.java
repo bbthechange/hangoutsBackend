@@ -59,6 +59,12 @@ public class Hangout extends BaseItem {
     private Boolean titleNotificationSent;  // Track if title notification has been sent
     private List<String> combinedExternalIds; // External IDs of episodes combined into this hangout
 
+    // Creator tracking
+    private String createdBy;                  // User ID who originally created the hangout (all modes)
+
+    // Place category for nudge computation (e.g. "restaurant", "bar", "event_space", "park", "trail", "other")
+    private String placeCategory;
+
     // Momentum fields
     private MomentumCategory momentumCategory; // Current momentum state (BUILDING, GAINING_MOMENTUM, CONFIRMED)
     private Integer momentumScore;             // Raw score (recomputed on each signal change)
@@ -352,6 +358,19 @@ public class Hangout extends BaseItem {
     }
 
     // ============================================================================
+    // CREATOR FIELD
+    // ============================================================================
+
+    public String getCreatedBy() {
+        return createdBy;
+    }
+
+    public void setCreatedBy(String createdBy) {
+        this.createdBy = createdBy;
+        touch();
+    }
+
+    // ============================================================================
     // WATCH PARTY FIELDS
     // ============================================================================
 
@@ -419,6 +438,19 @@ public class Hangout extends BaseItem {
      */
     public int getCombinedEpisodesCount() {
         return this.combinedExternalIds != null ? this.combinedExternalIds.size() : 0;
+    }
+
+    // ============================================================================
+    // PLACE CATEGORY FIELD
+    // ============================================================================
+
+    public String getPlaceCategory() {
+        return placeCategory;
+    }
+
+    public void setPlaceCategory(String placeCategory) {
+        this.placeCategory = placeCategory;
+        touch();
     }
 
     // ============================================================================

@@ -75,6 +75,9 @@ public class HangoutPointer extends BaseItem {
     // Host at place field (denormalized from Hangout)
     private String hostAtPlaceUserId;
 
+    // Place category for nudge computation (denormalized from Hangout)
+    private String placeCategory;
+
     // Momentum fields (denormalized from Hangout)
     private MomentumCategory momentumCategory; // Current momentum state
     private Integer momentumScore;             // Raw score
@@ -448,6 +451,19 @@ public class HangoutPointer extends BaseItem {
 
     public void setHostAtPlaceUserId(String hostAtPlaceUserId) {
         this.hostAtPlaceUserId = hostAtPlaceUserId;
+        touch();
+    }
+
+    // ============================================================================
+    // PLACE CATEGORY FIELD (Denormalized from canonical Hangout)
+    // ============================================================================
+
+    public String getPlaceCategory() {
+        return placeCategory;
+    }
+
+    public void setPlaceCategory(String placeCategory) {
+        this.placeCategory = placeCategory;
         touch();
     }
 

@@ -109,6 +109,10 @@ Each `HangoutSummaryDTO` in the feed includes a `momentum` object built from the
 
 **Note:** Feed score uses the raw stored value (not threshold-normalized), since threshold context is unavailable at feed query time. Clients should use `momentum.category` for rendering decisions.
 
-### Future: Slot-Based Interleaving
+### Slot-Based Feed Interleaving
 
-The current feed sorting is chronological (via EntityTimeIndex GSI). Slot-based interleaving by momentum category (CONFIRMED first, then GAINING_MOMENTUM, then BUILDING within time horizons) is deferred. Clients can sort by `momentum.category` client-side for v1.
+`GroupServiceImpl.getGroupFeed()` passes `withDay` and `needsDay` through `FeedSortingService.sortFeed()` before returning the response. Items are bucketed by time horizon (IMMINENT ≤48h, NEAR_TERM ≤7d, MID_TERM ≤21d, DISTANT), then sorted within each bucket: CONFIRMED → GAINING_MOMENTUM → BUILDING. Smart surfacing rules suppress low-signal BUILDING items when the week is busy (has confirmed events), and auto-surface the best candidate when the week is empty. See `MOMENTUM_CONTEXT.md` Section 12 for full details.
+
+### Idea List Feed Surfacing
+
+After feed items are assembled, `GroupServiceImpl` calls `IdeaFeedSurfacingServiceImpl.getSurfacedIdeas()` to inject idea suggestions. Suppression applies if all 3 upcoming ISO weeks already have a CONFIRMED hangout. Otherwise ideas with `interestCount >= 3` are appended, sorted by interest count descending. See `MOMENTUM_CONTEXT.md` Section 13 and `IDEA_LISTS_CONTEXT.md` Section 12 for details.

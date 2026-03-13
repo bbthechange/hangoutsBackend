@@ -40,6 +40,10 @@ public final class InviterKeyFactory {
     public static final String CREATED_PREFIX = "CREATED";
     public static final String PARTICIPATION_PREFIX = "PARTICIPATION";
     public static final String RESERVEOFFER_PREFIX = "RESERVEOFFER";
+    public static final String PROPOSAL_PREFIX = "PROPOSAL";
+
+    // Time Suggestion prefix
+    public static final String TIME_SUGGESTION_PREFIX = "TIME_SUGGESTION";
 
     // TVMaze Season prefixes
     public static final String TVMAZE_PREFIX = "TVMAZE";
@@ -308,6 +312,16 @@ public final class InviterKeyFactory {
         return sortKey != null && sortKey.startsWith(RESERVEOFFER_PREFIX + DELIMITER);
     }
 
+    // Attribute Proposal Keys
+    public static String getProposalSk(String proposalId) {
+        validateId(proposalId, "Proposal");
+        return PROPOSAL_PREFIX + DELIMITER + proposalId;
+    }
+
+    public static boolean isProposal(String sortKey) {
+        return sortKey != null && sortKey.startsWith(PROPOSAL_PREFIX + DELIMITER);
+    }
+
     // Invite Code Keys
     public static String getInviteCodePk(String inviteCodeId) {
         validateId(inviteCodeId, "InviteCode");
@@ -390,5 +404,16 @@ public final class InviterKeyFactory {
      */
     public static boolean isSeasonItem(String sortKey) {
         return sortKey != null && sortKey.startsWith(SEASON_PREFIX + DELIMITER);
+    }
+
+    // Time Suggestion Keys
+
+    public static String getTimeSuggestionSk(String suggestionId) {
+        validateId(suggestionId, "TimeSuggestion");
+        return TIME_SUGGESTION_PREFIX + DELIMITER + suggestionId;
+    }
+
+    public static boolean isTimeSuggestion(String sortKey) {
+        return sortKey != null && sortKey.startsWith(TIME_SUGGESTION_PREFIX + DELIMITER);
     }
 }

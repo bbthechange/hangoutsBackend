@@ -4,7 +4,9 @@ import com.bbthechange.inviter.dto.MomentumDTO;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.repository.HangoutRepository;
+import com.bbthechange.inviter.service.AdaptiveNotificationService;
 import com.bbthechange.inviter.service.MomentumService;
+import com.bbthechange.inviter.service.NotificationService;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import org.slf4j.Logger;
@@ -15,6 +17,7 @@ import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Implementation of MomentumService.
@@ -63,6 +66,8 @@ public class MomentumServiceImpl implements MomentumService {
     private final HangoutRepository hangoutRepository;
     private final GroupRepository groupRepository;
     private final PointerUpdateService pointerUpdateService;
+    private final AdaptiveNotificationService adaptiveNotificationService;
+    private final NotificationService notificationService;
 
     /**
      * Caffeine cache for group engagement data.
@@ -77,10 +82,14 @@ public class MomentumServiceImpl implements MomentumService {
     @Autowired
     public MomentumServiceImpl(HangoutRepository hangoutRepository,
                                 GroupRepository groupRepository,
-                                PointerUpdateService pointerUpdateService) {
+                                PointerUpdateService pointerUpdateService,
+                                AdaptiveNotificationService adaptiveNotificationService,
+                                NotificationService notificationService) {
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
         this.pointerUpdateService = pointerUpdateService;
+        this.adaptiveNotificationService = adaptiveNotificationService;
+        this.notificationService = notificationService;
     }
 
     // ============================================================================
@@ -126,21 +135,26 @@ public class MomentumServiceImpl implements MomentumService {
             return;
         }
 
-        // Step 2: Load all hangout detail data in a single query (attendance + car riders)
+        // Step 2: Capture the previous category before any changes
+        MomentumCategory previousCategory = hangout.getMomentumCategory();
+
+        // Step 3: Load all hangout detail data in a single query (attendance + car riders)
         com.bbthechange.inviter.dto.HangoutDetailData detailData = loadDetailData(hangoutId);
         List<InterestLevel> interestLevels = detailData.getAttendance();
 
-        // Step 3: Check for concrete action (instant CONFIRMED)
+        // Step 4: Check for concrete action (instant CONFIRMED)
         if (hasConcreteAction(hangout, detailData)) {
             applyConfirmation(hangout, SYSTEM_CONFIRMED_BY);
             saveAndUpdatePointers(hangout);
+            maybeNotifyMomentumChange(hangout, previousCategory, MomentumCategory.CONFIRMED,
+                    AdaptiveNotificationService.SIGNAL_CONCRETE_ACTION, interestLevels);
             return;
         }
 
-        // Step 4: Compute raw score from RSVPs + bonuses
+        // Step 5: Compute raw score from RSVPs + bonuses
         int rawScore = computeRawScore(hangout, interestLevels);
 
-        // Step 5: Apply multipliers (compound)
+        // Step 6: Apply multipliers (compound)
         long nowSeconds = System.currentTimeMillis() / 1000;
         boolean hasRecentActivity = hasRecentActivity(interestLevels, nowSeconds);
 
@@ -158,14 +172,14 @@ public class MomentumServiceImpl implements MomentumService {
         }
         int finalScore = (int) Math.round(rawScore * multiplier);
 
-        // Step 6: Compute dynamic threshold
+        // Step 7: Compute dynamic threshold
         String primaryGroupId = getPrimaryGroupId(hangout);
         int threshold = computeThreshold(primaryGroupId);
 
-        // Step 7: Determine new category
+        // Step 8: Determine new category
         MomentumCategory newCategory = determineCategory(hangout, finalScore, threshold);
 
-        // Step 8: Apply changes
+        // Step 9: Apply changes
         hangout.setMomentumScore(finalScore);
         if (newCategory == MomentumCategory.CONFIRMED
                 && !MomentumCategory.CONFIRMED.equals(hangout.getMomentumCategory())) {
@@ -174,8 +188,16 @@ public class MomentumServiceImpl implements MomentumService {
             hangout.setMomentumCategory(newCategory);
         }
 
-        // Step 9: Save and propagate to pointers
+        // Step 10: Save and propagate to pointers
         saveAndUpdatePointers(hangout);
+
+        // Step 11: Fire adaptive notification if category changed
+        if (newCategory != previousCategory) {
+            String signal = newCategory == MomentumCategory.CONFIRMED
+                    ? AdaptiveNotificationService.SIGNAL_GAINING_TO_CONFIRMED
+                    : AdaptiveNotificationService.SIGNAL_BUILDING_TO_GAINING;
+            maybeNotifyMomentumChange(hangout, previousCategory, newCategory, signal, interestLevels);
+        }
 
         logger.debug("Recomputed momentum for hangout {}: score={}, category={}, threshold={}",
                 hangoutId, finalScore, hangout.getMomentumCategory(), threshold);
@@ -194,8 +216,13 @@ public class MomentumServiceImpl implements MomentumService {
             return;
         }
 
+        MomentumCategory previousCategory = hangout.getMomentumCategory();
         applyConfirmation(hangout, confirmedByUserId);
         saveAndUpdatePointers(hangout);
+
+        // Manual confirmation always notifies (explicit "It's on!" signal)
+        maybeNotifyMomentumChange(hangout, previousCategory, MomentumCategory.CONFIRMED,
+                AdaptiveNotificationService.SIGNAL_CONFIRMED, List.of());
 
         logger.info("Hangout {} manually confirmed by user {}", hangoutId, confirmedByUserId);
     }
@@ -353,6 +380,80 @@ public class MomentumServiceImpl implements MomentumService {
                 pointer.setSuggestedBy(suggestedBy);
             }, "momentum");
         }
+    }
+
+    // ============================================================================
+    // ADAPTIVE NOTIFICATION INTEGRATION
+    // ============================================================================
+
+    /**
+     * Ask AdaptiveNotificationService whether to send a momentum change notification,
+     * and if approved, send it via NotificationService.
+     *
+     * <p>This is fire-and-forget: failures are logged but never propagated to the caller.
+     */
+    private void maybeNotifyMomentumChange(Hangout hangout,
+                                            MomentumCategory previousCategory,
+                                            MomentumCategory newCategory,
+                                            String signalType,
+                                            List<InterestLevel> interestLevels) {
+        try {
+            String primaryGroupId = getPrimaryGroupId(hangout);
+            if (primaryGroupId == null) {
+                return;
+            }
+
+            boolean approved = adaptiveNotificationService.shouldSendNotification(
+                    primaryGroupId, signalType, previousCategory, newCategory);
+
+            if (!approved) {
+                logger.debug("Adaptive notification suppressed for hangout {} (group {}, signal {})",
+                        hangout.getHangoutId(), primaryGroupId, signalType);
+                return;
+            }
+
+            // Build message and notify group members
+            String message = buildMomentumNotificationMessage(hangout, newCategory, signalType, interestLevels);
+            Set<String> groupIds = new java.util.HashSet<>(
+                    hangout.getAssociatedGroups() != null ? hangout.getAssociatedGroups() : List.of());
+
+            notificationService.notifyMomentumChange(
+                    hangout.getHangoutId(), hangout.getTitle(), primaryGroupId, groupIds, message, signalType);
+
+            logger.info("Momentum notification sent for hangout {} (group {}, signal {}, category {}→{})",
+                    hangout.getHangoutId(), primaryGroupId, signalType, previousCategory, newCategory);
+
+        } catch (Exception e) {
+            // Notifications must never break momentum computation
+            logger.error("Failed to send momentum notification for hangout {}: {}",
+                    hangout.getHangoutId(), e.getMessage());
+        }
+    }
+
+    /**
+     * Build the notification message body for a momentum change.
+     */
+    private String buildMomentumNotificationMessage(Hangout hangout,
+                                                     MomentumCategory newCategory,
+                                                     String signalType,
+                                                     List<InterestLevel> interestLevels) {
+        String title = hangout.getTitle() != null ? hangout.getTitle() : "A hangout";
+
+        if (AdaptiveNotificationService.SIGNAL_CONCRETE_ACTION.equals(signalType)) {
+            return AdaptiveNotificationService.ticketPurchasedMessage(null, title);
+        }
+
+        if (AdaptiveNotificationService.SIGNAL_CONFIRMED.equals(signalType)
+                || newCategory == MomentumCategory.CONFIRMED) {
+            return "'" + title + "' is confirmed — it's happening!";
+        }
+
+        // GAINING_MOMENTUM: count interested people
+        int interestedCount = (int) interestLevels.stream()
+                .filter(il -> "GOING".equalsIgnoreCase(il.getStatus())
+                        || "INTERESTED".equalsIgnoreCase(il.getStatus()))
+                .count();
+        return AdaptiveNotificationService.gainingTractionMessage(title, interestedCount);
     }
 
     // ============================================================================

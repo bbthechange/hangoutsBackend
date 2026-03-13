@@ -31,6 +31,9 @@ public class CreateHangoutRequest {
     // Host at place field
     private String hostAtPlaceUserId;   // User ID when hosting at their place
 
+    // Place category for nudge computation (e.g. "restaurant", "bar", "event_space", "park", "trail", "other")
+    private String placeCategory;
+
     // Momentum field: true = "Lock it in" (CONFIRMED), false/null = "Float it" (BUILDING)
     private Boolean confirmed;
 }

@@ -205,6 +205,7 @@ class HangoutServiceMomentumTest extends HangoutServiceTestBase {
         Hangout existingHangout = createTestHangout(hangoutId);
         existingHangout.setLocation(null); // no existing location
         existingHangout.setAssociatedGroups(List.of(GROUP_ID));
+        existingHangout.setCreatedBy(USER_ID); // ensure requesting user is the creator (bypasses silence=consent)
         when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(existingHangout));
 
         Address newLocation = new Address();
