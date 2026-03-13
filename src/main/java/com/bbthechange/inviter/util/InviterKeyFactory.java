@@ -40,7 +40,6 @@ public final class InviterKeyFactory {
     public static final String CREATED_PREFIX = "CREATED";
     public static final String PARTICIPATION_PREFIX = "PARTICIPATION";
     public static final String RESERVEOFFER_PREFIX = "RESERVEOFFER";
-    public static final String PROPOSAL_PREFIX = "PROPOSAL";
 
     // Time Suggestion prefix
     public static final String TIME_SUGGESTION_PREFIX = "TIME_SUGGESTION";
@@ -310,16 +309,6 @@ public final class InviterKeyFactory {
 
     public static boolean isReservationOffer(String sortKey) {
         return sortKey != null && sortKey.startsWith(RESERVEOFFER_PREFIX + DELIMITER);
-    }
-
-    // Attribute Proposal Keys
-    public static String getProposalSk(String proposalId) {
-        validateId(proposalId, "Proposal");
-        return PROPOSAL_PREFIX + DELIMITER + proposalId;
-    }
-
-    public static boolean isProposal(String sortKey) {
-        return sortKey != null && sortKey.startsWith(PROPOSAL_PREFIX + DELIMITER);
     }
 
     // Invite Code Keys

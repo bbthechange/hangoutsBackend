@@ -20,7 +20,9 @@ public class Poll extends BaseItem {
     private String description;
     private boolean multipleChoice; // Allow multiple selections
     private boolean isActive;
-    
+    private String attributeType;   // nullable: "LOCATION", "DESCRIPTION", or null for regular polls
+    private Long promotedAt;        // nullable: epoch millis when suggestion was auto-promoted
+
     // Default constructor for DynamoDB
     public Poll() {
         super();
@@ -91,9 +93,25 @@ public class Poll extends BaseItem {
     public boolean isActive() {
         return isActive;
     }
-    
+
     public void setActive(boolean active) {
         this.isActive = active;
         touch();
+    }
+
+    public String getAttributeType() {
+        return attributeType;
+    }
+
+    public void setAttributeType(String attributeType) {
+        this.attributeType = attributeType;
+    }
+
+    public Long getPromotedAt() {
+        return promotedAt;
+    }
+
+    public void setPromotedAt(Long promotedAt) {
+        this.promotedAt = promotedAt;
     }
 }

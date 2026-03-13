@@ -294,44 +294,50 @@ TimeSuggestion items live in the hangout's item collection:
 
 They are retrieved with a `begins_with(sk, "TIME_SUGGESTION#")` query.
 
-## 15. Attribute Promotion / Silence=Consent (Feature 4)
+## 15. Attribute Suggestions via Polls (Feature 4)
 
-**Status: Implemented.** When a non-creator edits a hangout's location or description, a proposal is created instead of applying the change immediately.
+**Status: Implemented.** Replaced the old "silence=consent" AttributeProposal system. Attribute suggestions are now regular polls tagged with `attributeType`. Non-creator edits apply directly (no more interception).
 
 ### Key Files
 
 | File | Purpose |
 |------|---------|
-| `model/AttributeProposal.java` | DynamoDB entity. PK=EVENT#{hangoutId}, SK=PROPOSAL#{proposalId} |
-| `model/AttributeProposalType.java` | Enum: LOCATION, DESCRIPTION |
-| `model/AttributeProposalStatus.java` | Enum: PENDING, ADOPTED, REJECTED, SUPERSEDED |
-| `service/AttributeProposalService.java` | Interface |
-| `service/impl/AttributeProposalServiceImpl.java` | Create, vote, auto-adopt logic |
-| `repository/AttributeProposalRepository.java` | DynamoDB access |
-| `service/impl/HangoutServiceImpl.java` | Intercepts non-creator edits in `updateHangout()` |
+| `model/Poll.java` | Added `attributeType` (nullable: "LOCATION", "DESCRIPTION") and `promotedAt` fields |
+| `model/PollOption.java` | Added `createdBy` (userId) and `structuredValue` (JSON for location data) fields |
+| `service/AttributeSuggestionService.java` | Interface for suggestion computation, supersession, promotion |
+| `service/impl/AttributeSuggestionServiceImpl.java` | Pure computation + supersession + auto-promotion logic |
+| `service/impl/AttributeSuggestionAutoPromotionTask.java` | Hourly scheduled task (gated by config) |
+| `dto/SuggestedAttributeDTO.java` | Computed suggestion state: attributeType, suggestedValue, status, voteCount |
+| `dto/HangoutDetailDTO.java` | `Map<String, SuggestedAttributeDTO> suggestedAttributes` field |
+| `dto/HangoutSummaryDTO.java` | Same field for feed responses |
 
-### Update Hangout Interception
+### How It Works
 
-In `HangoutServiceImpl.updateHangout()`, when a non-creator submits a location or description change:
-1. The change is **not** applied directly.
-2. `AttributeProposalServiceImpl.createProposal()` is called instead.
-3. Any existing PENDING proposal for the same attribute type is SUPERSEDED first.
-4. Group members are notified of the proposal (fire-and-forget).
+1. Users create a poll with `attributeType: "LOCATION"` or `"DESCRIPTION"` via the existing poll endpoints.
+2. `PollServiceImpl.createPoll()` forces `multipleChoice = false` for suggestion polls and supersedes any existing active suggestion poll of the same type.
+3. `getHangoutDetail()` and group feed call `computeSuggestedAttributes()` to build the `suggestedAttributes` map from active suggestion polls — pure computation over already-fetched data.
+4. When a direct edit sets location or description, `supersedeSuggestionPolls()` deactivates the corresponding suggestion polls.
+5. Non-creator edits now apply directly — the old interception block in `updateHangout()` has been removed.
 
-Creator's own edits always apply directly — this flow is bypassed.
+### Auto-Promotion Rules
 
-### Auto-Adoption Rules
+| Scenario | Window | Action |
+|----------|--------|--------|
+| Single option, no competing options | 24h | Auto-promote |
+| Single option with votes, no competing votes | 24h | Auto-promote |
+| Multiple options with votes | Never | Leave as contested poll |
+| Direct edit applied | Immediate | Supersede (deactivate poll) |
 
-After 24 hours:
-- **No alternatives submitted** → proposal is ADOPTED (silence = consent); hangout field is updated and pointers are synced
-- **Alternatives submitted** → lightweight vote determines outcome; proposal with most votes is adopted
+After promotion: write winning value to hangout, sync pointers, set `poll.isActive = false` + `poll.promotedAt = now`, recompute momentum.
 
-### DynamoDB Key Pattern
+### API Contract (No New Endpoints)
 
 ```
-PK = EVENT#{hangoutId}
-SK = PROPOSAL#{proposalId}
-itemType = PROPOSAL
+POST /hangouts/{eventId}/polls              — create suggestion poll (attributeType in body)
+POST /hangouts/{eventId}/polls/{id}/options  — add counter-suggestion (createdBy auto-set)
+POST /hangouts/{eventId}/polls/{id}/vote     — vote for a suggestion
+GET  /hangouts/{eventId}                     — detail includes suggestedAttributes map
+PATCH /hangouts/{eventId}                    — direct edit supersedes suggestions
 ```
 
 ## 16. Action-Oriented Nudges (Feature 5)
@@ -345,7 +351,7 @@ itemType = PROPOSAL
 | `model/NudgeType.java` | Enum: SUGGEST_TIME, ADD_LOCATION, MAKE_RESERVATION, CONSIDER_TICKETS |
 | `dto/NudgeDTO.java` | type, message, actionUrl |
 | `service/NudgeService.java` | Interface |
-| `service/impl/NudgeServiceImpl.java` | Computes nudges from hangout state + interest levels |
+| `service/impl/NudgeServiceImpl.java` | Computes nudges from hangout state + interest levels + suggestion polls |
 | `dto/HangoutDetailDTO.java` | `List<NudgeDTO> nudges` field (computed at read time) |
 | `service/impl/HangoutServiceImpl.java` | Calls `nudgeService.computeNudges()` in `getHangoutDetail()` |
 
@@ -354,7 +360,7 @@ itemType = PROPOSAL
 | Nudge Type | Condition |
 |------------|-----------|
 | SUGGEST_TIME | `startTimestamp == null` AND ≥1 non-creator interest signal |
-| ADD_LOCATION | `location == null` AND ≥1 non-creator interest signal |
+| ADD_LOCATION | `location == null` AND ≥1 non-creator interest signal (message changes to "Vote on location suggestions" when a suggestion poll exists) |
 | MAKE_RESERVATION | `placeCategory` is restaurant/bar/food AND momentum is GAINING_MOMENTUM or CONFIRMED |
 | CONSIDER_TICKETS | `placeCategory` is event/entertainment/concert/theater/sports AND momentum is GAINING_MOMENTUM or CONFIRMED |
 
@@ -410,4 +416,4 @@ SK = NOTIFICATION_TRACKER
 - **Active member tracking** — `engagementMultiplier` currently uses total membership count; should track members with InterestLevel records in last 8 weeks.
 - **Group confirmation rate** — currently uses default 0.6 multiplier; should compute from rolling 8-week data.
 - **TimeSuggestion GSI** — auto-adoption task uses DynamoDB scan (acceptable at small scale). A GSI on (itemType, status) would enable efficient querying without full-table scan.
-- **AttributeProposal vote tie-breaking** — not yet defined; current implementation adopts first proposal by creation time on tie.
+- **Attribute suggestion poll GSI** — auto-promotion task uses DynamoDB scan filtered by itemType=POLL + attributeType. Same trade-off as TimeSuggestion scan: acceptable at small scale, should use a GSI for production scale.

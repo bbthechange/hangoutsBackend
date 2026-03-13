@@ -18,7 +18,9 @@ public class PollOption extends BaseItem {
     private String pollId;
     private String optionId;
     private String text;
-    
+    private String createdBy;        // nullable: userId who suggested this option
+    private String structuredValue;  // nullable: JSON string for location data
+
     // Default constructor for DynamoDB
     public PollOption() {
         super();
@@ -72,5 +74,21 @@ public class PollOption extends BaseItem {
     public void setText(String text) {
         this.text = text;
         touch();
+    }
+
+    public String getCreatedBy() {
+        return createdBy;
+    }
+
+    public void setCreatedBy(String createdBy) {
+        this.createdBy = createdBy;
+    }
+
+    public String getStructuredValue() {
+        return structuredValue;
+    }
+
+    public void setStructuredValue(String structuredValue) {
+        this.structuredValue = structuredValue;
     }
 }

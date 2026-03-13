@@ -19,9 +19,11 @@ public class CreatePollRequest {
     private boolean multipleChoice = false;
     
     private List<String> options;
-    
+
+    private String attributeType; // nullable: "LOCATION", "DESCRIPTION" for suggestion polls
+
     public CreatePollRequest() {}
-    
+
     public CreatePollRequest(String title, String description, boolean multipleChoice, List<String> options) {
         this.title = title;
         this.description = description;
@@ -59,5 +61,13 @@ public class CreatePollRequest {
     
     public void setOptions(List<String> options) {
         this.options = options;
+    }
+
+    public String getAttributeType() {
+        return attributeType;
+    }
+
+    public void setAttributeType(String attributeType) {
+        this.attributeType = attributeType;
     }
 }

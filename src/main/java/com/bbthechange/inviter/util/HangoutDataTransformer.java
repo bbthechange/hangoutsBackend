@@ -61,7 +61,8 @@ public class HangoutDataTransformer {
                                                 && vote.getUserId().equals(requestingUserId));
 
                                 return new PollOptionDTO(option.getOptionId(), option.getText(),
-                                        voteCount, userVoted);
+                                        voteCount, userVoted,
+                                        option.getCreatedBy(), option.getStructuredValue());
                             })
                             .collect(Collectors.toList());
 

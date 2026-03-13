@@ -36,17 +36,21 @@ public class PollServiceImpl implements PollService {
     private final AuthorizationService authorizationService;
     private final PointerUpdateService pointerUpdateService;
     private final GroupTimestampService groupTimestampService;
+    private final com.bbthechange.inviter.service.AttributeSuggestionService attributeSuggestionService;
 
     @Autowired
     public PollServiceImpl(HangoutRepository hangoutRepository, GroupRepository groupRepository,
                           AuthorizationService authorizationService,
                           PointerUpdateService pointerUpdateService,
-                          GroupTimestampService groupTimestampService) {
+                          GroupTimestampService groupTimestampService,
+                          @org.springframework.context.annotation.Lazy
+                          com.bbthechange.inviter.service.AttributeSuggestionService attributeSuggestionService) {
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
         this.authorizationService = authorizationService;
         this.pointerUpdateService = pointerUpdateService;
         this.groupTimestampService = groupTimestampService;
+        this.attributeSuggestionService = attributeSuggestionService;
     }
     
     @Override
@@ -66,12 +70,28 @@ public class PollServiceImpl implements PollService {
         
         // Create poll
         Poll poll = new Poll(eventId, request.getTitle(), request.getDescription(), request.isMultipleChoice());
+
+        // If this is a suggestion poll, validate, set attributeType, and force single-choice
+        if (request.getAttributeType() != null) {
+            String attrType = request.getAttributeType();
+            if (!"LOCATION".equals(attrType) && !"DESCRIPTION".equals(attrType)) {
+                throw new com.bbthechange.inviter.exception.ValidationException(
+                    "Invalid attributeType: " + attrType + ". Must be LOCATION or DESCRIPTION.");
+            }
+            poll.setAttributeType(attrType);
+            poll.setMultipleChoice(false);
+
+            // Supersede existing active suggestion polls of the same type (with pointer update)
+            attributeSuggestionService.supersedeSuggestionPolls(eventId, attrType);
+        }
+
         Poll savedPoll = hangoutRepository.savePoll(poll);
 
         // Create poll options individually (following UI flow)
         if (request.getOptions() != null && !request.getOptions().isEmpty()) {
             for (String optionText : request.getOptions()) {
                 PollOption option = new PollOption(eventId, poll.getPollId(), optionText);
+                option.setCreatedBy(userId);
                 hangoutRepository.savePollOption(option);
             }
         }
@@ -278,6 +298,7 @@ public class PollServiceImpl implements PollService {
         
         // Create and save the new poll option
         PollOption option = new PollOption(eventId, pollId, request.getText());
+        option.setCreatedBy(userId);
         PollOption savedOption = hangoutRepository.savePollOption(option);
 
         // Update pointer records with new option data
@@ -427,14 +448,15 @@ public class PollServiceImpl implements PollService {
                             .anyMatch(vote -> vote.getOptionId().equals(option.getOptionId()) 
                                            && vote.getUserId().equals(userId));
                         
-                        return new PollOptionDTO(option.getOptionId(), option.getText(), 
-                                               voteCount, userVoted);
+                        return new PollOptionDTO(option.getOptionId(), option.getText(),
+                                               voteCount, userVoted,
+                                               option.getCreatedBy(), option.getStructuredValue());
                     })
                     .collect(Collectors.toList());
-                
+
                 // Total votes = sum of all votes for this poll
                 int totalVotes = allVotes.size();
-                
+
                 return new PollWithOptionsDTO(poll, optionDTOs, totalVotes);
             })
             .collect(Collectors.toList());

@@ -8,7 +8,7 @@ import com.bbthechange.inviter.service.EventSeriesService;
 import com.bbthechange.inviter.service.FuzzyTimeService;
 import com.bbthechange.inviter.service.GroupTimestampService;
 import com.bbthechange.inviter.service.HangoutSchedulerService;
-import com.bbthechange.inviter.service.AttributeProposalService;
+import com.bbthechange.inviter.service.AttributeSuggestionService;
 import com.bbthechange.inviter.service.MomentumService;
 import com.bbthechange.inviter.service.NudgeService;
 import com.bbthechange.inviter.service.NotificationService;
@@ -64,7 +64,7 @@ abstract class HangoutServiceTestBase {
     protected NudgeService nudgeService;
 
     @Mock
-    protected AttributeProposalService attributeProposalService;
+    protected AttributeSuggestionService attributeSuggestionService;
 
     @InjectMocks
     protected HangoutServiceImpl hangoutService;

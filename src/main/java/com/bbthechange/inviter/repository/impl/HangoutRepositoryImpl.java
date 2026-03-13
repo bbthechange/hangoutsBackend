@@ -1789,6 +1789,48 @@ public class HangoutRepositoryImpl implements HangoutRepository {
         return queryTimeSuggestionsWithFilter(hangoutId, false);
     }
 
+    @Override
+    public List<Poll> findActiveSuggestionPolls() {
+        return performanceTracker.trackQuery("ScanActiveSuggestionPolls", TABLE_NAME, () -> {
+            try {
+                List<Poll> results = new ArrayList<>();
+                Map<String, AttributeValue> lastKey = null;
+
+                do {
+                    ScanRequest.Builder builder = ScanRequest.builder()
+                            .tableName(TABLE_NAME)
+                            .filterExpression(
+                                    "itemType = :pollType AND attribute_exists(attributeType) AND isActive = :active AND attribute_not_exists(promotedAt)"
+                            )
+                            .expressionAttributeValues(Map.of(
+                                    ":pollType", AttributeValue.builder().s("POLL").build(),
+                                    ":active", AttributeValue.builder().bool(true).build()
+                            ));
+
+                    if (lastKey != null) {
+                        builder.exclusiveStartKey(lastKey);
+                    }
+
+                    ScanResponse response = dynamoDbClient.scan(builder.build());
+                    response.items().forEach(item -> {
+                        try {
+                            results.add(pollSchema.mapToItem(item));
+                        } catch (Exception e) {
+                            logger.warn("Failed to deserialize suggestion poll: {}", e.getMessage());
+                        }
+                    });
+                    lastKey = response.lastEvaluatedKey().isEmpty() ? null : response.lastEvaluatedKey();
+                } while (lastKey != null);
+
+                logger.debug("Found {} active suggestion polls", results.size());
+                return results;
+            } catch (DynamoDbException e) {
+                logger.error("Failed to scan for active suggestion polls", e);
+                throw new RepositoryException("Failed to scan for active suggestion polls", e);
+            }
+        });
+    }
+
     private List<TimeSuggestion> queryTimeSuggestionsWithFilter(String hangoutId, boolean activeOnly) {
         return performanceTracker.trackQuery("QueryTimeSuggestions", TABLE_NAME, () -> {
             try {

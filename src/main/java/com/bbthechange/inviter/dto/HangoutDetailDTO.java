@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.util.List;
+import java.util.Map;
 import java.util.ArrayList;
 
 /**
@@ -54,6 +55,10 @@ public class HangoutDetailDTO {
     // Time suggestions (active suggestions for timeless hangouts)
     @Builder.Default
     private List<TimeSuggestionDTO> timeSuggestions = List.of();
+
+    // Suggested attributes from active suggestion polls (computed at read time — never stored)
+    @Builder.Default
+    private Map<String, SuggestedAttributeDTO> suggestedAttributes = Map.of();
 
     // Action-oriented nudges (computed by NudgeService at read time — never stored)
     @Builder.Default

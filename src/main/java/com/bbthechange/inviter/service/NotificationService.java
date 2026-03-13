@@ -95,16 +95,6 @@ public interface NotificationService {
                                   String driverName, String riderId);
 
     /**
-     * Notify all members of a group about an attribute proposal (silence=consent flow).
-     * The proposer is excluded from notifications.
-     *
-     * @param groupId        Group whose members are notified
-     * @param proposerUserId The user who made the proposal (excluded from notifications)
-     * @param message        Notification message text
-     */
-    void notifyAttributeProposal(String groupId, String proposerUserId, String message);
-
-    /**
      * Notify group members about a momentum state change.
      * The notification is sent to all members of the primary group.
      * Fire-and-forget — failures must not break the calling flow.

@@ -77,6 +77,12 @@ class GroupServiceInviteCodeTest {
     @Mock
     private IdeaFeedSurfacingService ideaFeedSurfacingService;
 
+    @Mock
+    private com.bbthechange.inviter.service.AttributeSuggestionService attributeSuggestionService;
+
+    @Mock
+    private com.bbthechange.inviter.service.NudgeService nudgeService;
+
     private GroupServiceImpl groupService;
 
     @BeforeEach
@@ -93,7 +99,9 @@ class GroupServiceInviteCodeTest {
             inviteCodeRepository,
             APP_BASE_URL,
             feedSortingService,
-            ideaFeedSurfacingService
+            ideaFeedSurfacingService,
+            attributeSuggestionService,
+            nudgeService
         );
     }
 

@@ -72,6 +72,12 @@ class GroupServiceImplTest {
     @Mock
     private IdeaFeedSurfacingService ideaFeedSurfacingService;
 
+    @Mock
+    private com.bbthechange.inviter.service.AttributeSuggestionService attributeSuggestionService;
+
+    @Mock
+    private com.bbthechange.inviter.service.NudgeService nudgeService;
+
     @InjectMocks
     private GroupServiceImpl groupService;
 

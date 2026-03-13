@@ -75,6 +75,8 @@ public class GroupServiceImpl implements GroupService {
     private final String appBaseUrl;
     private final FeedSortingService feedSortingService;
     private final IdeaFeedSurfacingService ideaFeedSurfacingService;
+    private final com.bbthechange.inviter.service.AttributeSuggestionService attributeSuggestionService;
+    private final com.bbthechange.inviter.service.NudgeService nudgeService;
 
     @Value("${inviter.attendance.backward-compat-interested:true}")
     private boolean attendanceBackwardCompatEnabled;
@@ -86,7 +88,9 @@ public class GroupServiceImpl implements GroupService {
                            S3Service s3Service, InviteCodeRepository inviteCodeRepository,
                            @Value("${app.base-url}") String appBaseUrl,
                            FeedSortingService feedSortingService,
-                           IdeaFeedSurfacingService ideaFeedSurfacingService) {
+                           IdeaFeedSurfacingService ideaFeedSurfacingService,
+                           com.bbthechange.inviter.service.AttributeSuggestionService attributeSuggestionService,
+                           com.bbthechange.inviter.service.NudgeService nudgeService) {
         this.groupRepository = groupRepository;
         this.hangoutRepository = hangoutRepository;
         this.userRepository = userRepository;
@@ -99,6 +103,8 @@ public class GroupServiceImpl implements GroupService {
         this.appBaseUrl = appBaseUrl;
         this.feedSortingService = feedSortingService;
         this.ideaFeedSurfacingService = ideaFeedSurfacingService;
+        this.attributeSuggestionService = attributeSuggestionService;
+        this.nudgeService = nudgeService;
     }
     
     @Override
@@ -716,7 +722,12 @@ public class GroupServiceImpl implements GroupService {
                     hangoutService.enrichHostAtPlaceInfo(hangoutDTO);
                     // Compute and set action-oriented nudges (gated to 2.0.0+)
                     if (supportsNewFeedFeatures) {
-                        hangoutService.enrichNudges(hangoutDTO, hangoutPointer);
+                        // Compute suggested attributes from the pointer's poll data
+                        hangoutDTO.setSuggestedAttributes(
+                            attributeSuggestionService.computeSuggestedAttributes(null, hangoutDTO.getPolls()));
+                        // Compute nudges with suggestion poll awareness
+                        hangoutDTO.setNudges(
+                            nudgeService.computeNudgesFromPointer(hangoutPointer, hangoutDTO.getPolls()));
                     }
                     feedItems.add(hangoutDTO);
                 }

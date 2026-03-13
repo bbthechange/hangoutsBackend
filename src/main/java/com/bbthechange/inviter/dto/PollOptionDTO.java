@@ -8,14 +8,26 @@ public class PollOptionDTO {
     private String text;
     private int voteCount;
     private boolean userVoted;
-    
+    private String createdBy;
+    private String structuredValue;
+
     public PollOptionDTO() {}
-    
+
     public PollOptionDTO(String optionId, String text, int voteCount, boolean userVoted) {
         this.optionId = optionId;
         this.text = text;
         this.voteCount = voteCount;
         this.userVoted = userVoted;
+    }
+
+    public PollOptionDTO(String optionId, String text, int voteCount, boolean userVoted,
+                         String createdBy, String structuredValue) {
+        this.optionId = optionId;
+        this.text = text;
+        this.voteCount = voteCount;
+        this.userVoted = userVoted;
+        this.createdBy = createdBy;
+        this.structuredValue = structuredValue;
     }
     
     public String getOptionId() {
@@ -48,5 +60,21 @@ public class PollOptionDTO {
     
     public void setUserVoted(boolean userVoted) {
         this.userVoted = userVoted;
+    }
+
+    public String getCreatedBy() {
+        return createdBy;
+    }
+
+    public void setCreatedBy(String createdBy) {
+        this.createdBy = createdBy;
+    }
+
+    public String getStructuredValue() {
+        return structuredValue;
+    }
+
+    public void setStructuredValue(String structuredValue) {
+        this.structuredValue = structuredValue;
     }
 }

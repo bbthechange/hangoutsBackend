@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.service.impl;
 
 import com.bbthechange.inviter.dto.NudgeDTO;
+import com.bbthechange.inviter.dto.PollWithOptionsDTO;
 import com.bbthechange.inviter.model.Hangout;
 import com.bbthechange.inviter.model.HangoutPointer;
 import com.bbthechange.inviter.model.InterestLevel;
@@ -50,7 +51,18 @@ public class NudgeServiceImpl implements NudgeService {
         return buildNudges(
             hangout.getStartTimestamp(), hangout.getLocation(),
             hangout.getPlaceCategory(), hangout.getMomentumCategory(),
-            hasNonCreatorInterest);
+            hasNonCreatorInterest, false);
+    }
+
+    @Override
+    public List<NudgeDTO> computeNudges(Hangout hangout, List<InterestLevel> interestLevels, List<PollWithOptionsDTO> polls) {
+        boolean hasNonCreatorInterest = hasNonCreatorInterest(
+            interestLevels, hangout.getSuggestedBy());
+        boolean hasLocationSuggestion = hasActiveSuggestionPoll(polls, "LOCATION");
+        return buildNudges(
+            hangout.getStartTimestamp(), hangout.getLocation(),
+            hangout.getPlaceCategory(), hangout.getMomentumCategory(),
+            hasNonCreatorInterest, hasLocationSuggestion);
     }
 
     @Override
@@ -60,12 +72,24 @@ public class NudgeServiceImpl implements NudgeService {
         return buildNudges(
             pointer.getStartTimestamp(), pointer.getLocation(),
             pointer.getPlaceCategory(), pointer.getMomentumCategory(),
-            hasNonCreatorInterest);
+            hasNonCreatorInterest, false);
+    }
+
+    @Override
+    public List<NudgeDTO> computeNudgesFromPointer(HangoutPointer pointer, List<PollWithOptionsDTO> polls) {
+        boolean hasNonCreatorInterest = hasNonCreatorInterest(
+            pointer.getInterestLevels(), pointer.getSuggestedBy());
+        boolean hasLocationSuggestion = hasActiveSuggestionPoll(polls, "LOCATION");
+        return buildNudges(
+            pointer.getStartTimestamp(), pointer.getLocation(),
+            pointer.getPlaceCategory(), pointer.getMomentumCategory(),
+            hasNonCreatorInterest, hasLocationSuggestion);
     }
 
     private List<NudgeDTO> buildNudges(Long startTimestamp, Object location,
                                         String placeCategory, MomentumCategory momentumCategory,
-                                        boolean hasNonCreatorInterest) {
+                                        boolean hasNonCreatorInterest,
+                                        boolean hasLocationSuggestion) {
         List<NudgeDTO> nudges = new ArrayList<>();
 
         if (startTimestamp == null && hasNonCreatorInterest) {
@@ -73,7 +97,11 @@ public class NudgeServiceImpl implements NudgeService {
         }
 
         if (location == null && hasNonCreatorInterest) {
-            nudges.add(new NudgeDTO(NudgeType.ADD_LOCATION, "Add a location", null));
+            if (hasLocationSuggestion) {
+                nudges.add(new NudgeDTO(NudgeType.ADD_LOCATION, "Vote on location suggestions", null));
+            } else {
+                nudges.add(new NudgeDTO(NudgeType.ADD_LOCATION, "Add a location", null));
+            }
         }
 
         if (isRestaurantType(placeCategory) && hasTraction(momentumCategory)) {
@@ -109,5 +137,11 @@ public class NudgeServiceImpl implements NudgeService {
 
     private boolean hasTraction(MomentumCategory category) {
         return category != null && TRACTION_CATEGORIES.contains(category);
+    }
+
+    private boolean hasActiveSuggestionPoll(List<PollWithOptionsDTO> polls, String attributeType) {
+        if (polls == null) return false;
+        return polls.stream()
+            .anyMatch(p -> attributeType.equals(p.getAttributeType()) && p.getPromotedAt() == null);
     }
 }

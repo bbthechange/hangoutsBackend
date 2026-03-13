@@ -8,6 +8,7 @@ import lombok.Builder;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -88,6 +89,10 @@ public class HangoutSummaryDTO implements FeedItem {
 
     // Momentum data
     private MomentumDTO momentum;
+
+    // Suggested attributes from active suggestion polls (computed at read time — never stored)
+    @Builder.Default
+    private Map<String, SuggestedAttributeDTO> suggestedAttributes = Map.of();
 
     // Action-oriented nudges (computed by NudgeService at read time — never stored)
     @Builder.Default
@@ -429,6 +434,14 @@ public class HangoutSummaryDTO implements FeedItem {
 
     public void setMomentum(MomentumDTO momentum) {
         this.momentum = momentum;
+    }
+
+    public Map<String, SuggestedAttributeDTO> getSuggestedAttributes() {
+        return suggestedAttributes != null ? suggestedAttributes : Map.of();
+    }
+
+    public void setSuggestedAttributes(Map<String, SuggestedAttributeDTO> suggestedAttributes) {
+        this.suggestedAttributes = suggestedAttributes;
     }
 
     public List<NudgeDTO> getNudges() {

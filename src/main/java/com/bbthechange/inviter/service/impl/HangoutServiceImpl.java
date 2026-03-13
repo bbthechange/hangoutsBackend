@@ -1,7 +1,7 @@
 package com.bbthechange.inviter.service.impl;
 
 import com.bbthechange.inviter.config.ClientInfo;
-import com.bbthechange.inviter.service.AttributeProposalService;
+import com.bbthechange.inviter.service.AttributeSuggestionService;
 import com.bbthechange.inviter.service.HangoutService;
 import com.bbthechange.inviter.service.HangoutSchedulerService;
 import com.bbthechange.inviter.service.FuzzyTimeService;
@@ -55,7 +55,7 @@ public class HangoutServiceImpl implements HangoutService {
     private final HangoutSchedulerService hangoutSchedulerService;
     private final MomentumService momentumService;
     private final NudgeService nudgeService;
-    private final AttributeProposalService attributeProposalService;
+    private final AttributeSuggestionService attributeSuggestionService;
 
     @Value("${inviter.attendance.backward-compat-interested:true}")
     private boolean attendanceBackwardCompatEnabled;
@@ -71,7 +71,7 @@ public class HangoutServiceImpl implements HangoutService {
                               HangoutSchedulerService hangoutSchedulerService,
                               MomentumService momentumService,
                               NudgeService nudgeService,
-                              AttributeProposalService attributeProposalService) {
+                              AttributeSuggestionService attributeSuggestionService) {
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
         this.fuzzyTimeService = fuzzyTimeService;
@@ -84,7 +84,7 @@ public class HangoutServiceImpl implements HangoutService {
         this.hangoutSchedulerService = hangoutSchedulerService;
         this.momentumService = momentumService;
         this.nudgeService = nudgeService;
-        this.attributeProposalService = attributeProposalService;
+        this.attributeSuggestionService = attributeSuggestionService;
     }
     
     @Override
@@ -365,8 +365,13 @@ public class HangoutServiceImpl implements HangoutService {
 
         // Compute action-oriented nudges (never stored — computed fresh each request)
         List<NudgeDTO> nudges = supportsNewFeatures
-                ? nudgeService.computeNudges(hangout, hangoutDetail.getAttendance())
+                ? nudgeService.computeNudges(hangout, hangoutDetail.getAttendance(), pollsWithOptions)
                 : List.of();
+
+        // Compute suggested attributes from active suggestion polls
+        Map<String, SuggestedAttributeDTO> suggestedAttributes = supportsNewFeatures
+                ? attributeSuggestionService.computeSuggestedAttributes(hangout, pollsWithOptions)
+                : Map.of();
 
         // Map time suggestions to DTOs (active suggestions for timeless hangouts)
         List<TimeSuggestionDTO> timeSuggestionDTOs = supportsNewFeatures
@@ -390,7 +395,8 @@ public class HangoutServiceImpl implements HangoutService {
                 .withReservationOffers(offerDTOs)
                 .withMomentum(momentumDTO)
                 .withTimeSuggestions(timeSuggestionDTOs)
-                .withNudges(nudges);
+                .withNudges(nudges)
+                .withSuggestedAttributes(suggestedAttributes);
 
         // Resolve host at place display name and image
         if (hangout.getHostAtPlaceUserId() != null) {
@@ -414,54 +420,6 @@ public class HangoutServiceImpl implements HangoutService {
             throw new UnauthorizedException("Cannot edit hangout");
         }
 
-        // --- Attribute promotion / silence=consent ---
-        // When a non-creator edits location or description, intercept and create a proposal
-        // instead of applying immediately. Creator's own edits bypass this flow.
-        boolean isCreator = requestingUserId.equals(hangout.getCreatedBy());
-        if (!isCreator) {
-            boolean proposedLocation = request.getLocation() != null
-                    && !Objects.equals(hangout.getLocation(), request.getLocation());
-            boolean proposedDescription = request.getDescription() != null
-                    && !Objects.equals(hangout.getDescription(), request.getDescription());
-
-            if (proposedLocation || proposedDescription) {
-                String primaryGroupId = (hangout.getAssociatedGroups() != null && !hangout.getAssociatedGroups().isEmpty())
-                        ? hangout.getAssociatedGroups().get(0) : null;
-
-                if (primaryGroupId != null) {
-                    if (proposedLocation) {
-                        String locationValue = request.getLocation().getName() != null
-                                ? request.getLocation().getName()
-                                : (request.getLocation().getStreetAddress() != null
-                                        ? request.getLocation().getStreetAddress() : "");
-                        try {
-                            attributeProposalService.createProposal(
-                                    hangoutId, primaryGroupId, requestingUserId,
-                                    AttributeProposalType.LOCATION, locationValue);
-                            logger.info("Created LOCATION proposal for hangout {} by non-creator {}", hangoutId, requestingUserId);
-                        } catch (Exception e) {
-                            logger.warn("Failed to create location proposal for hangout {}: {}", hangoutId, e.getMessage());
-                        }
-                        // Do NOT apply location directly; clear from request so the rest of updateHangout skips it
-                        request.setLocation(null);
-                    }
-                    if (proposedDescription) {
-                        try {
-                            attributeProposalService.createProposal(
-                                    hangoutId, primaryGroupId, requestingUserId,
-                                    AttributeProposalType.DESCRIPTION, request.getDescription());
-                            logger.info("Created DESCRIPTION proposal for hangout {} by non-creator {}", hangoutId, requestingUserId);
-                        } catch (Exception e) {
-                            logger.warn("Failed to create description proposal for hangout {}: {}", hangoutId, e.getMessage());
-                        }
-                        // Do NOT apply description directly; clear from request
-                        request.setDescription(null);
-                    }
-                }
-            }
-        }
-        // --- End attribute promotion intercept ---
-
         // Track if any pointer-denormalized fields changed
         boolean needsPointerUpdate = false;
         String oldMainImagePath = null;
@@ -469,6 +427,7 @@ public class HangoutServiceImpl implements HangoutService {
         // Track specific changes for notifications and momentum recomputation
         boolean timeChanged = false;
         boolean locationChanged = false;
+        boolean descriptionChanged = false;
         boolean ticketFieldChanged = false;
 
         // Update canonical record fields
@@ -478,6 +437,9 @@ public class HangoutServiceImpl implements HangoutService {
         }
 
         if (request.getDescription() != null) {
+            if (!Objects.equals(hangout.getDescription(), request.getDescription())) {
+                descriptionChanged = true;
+            }
             hangout.setDescription(request.getDescription());
             needsPointerUpdate = true;
         }
@@ -591,6 +553,14 @@ public class HangoutServiceImpl implements HangoutService {
         // Update pointer records using read-modify-write pattern with optimistic locking
         if (needsPointerUpdate && hangout.getAssociatedGroups() != null) {
             updatePointersWithBasicFields(hangout);
+        }
+
+        // Supersede active suggestion polls when direct edits are made
+        if (locationChanged) {
+            attributeSuggestionService.supersedeSuggestionPolls(hangoutId, "LOCATION");
+        }
+        if (descriptionChanged) {
+            attributeSuggestionService.supersedeSuggestionPolls(hangoutId, "DESCRIPTION");
         }
 
         // Recompute momentum if scoring-relevant fields changed (time, location, tickets)

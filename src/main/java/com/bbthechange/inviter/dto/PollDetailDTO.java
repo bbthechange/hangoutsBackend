@@ -14,9 +14,11 @@ public class PollDetailDTO {
     private boolean multipleChoice;
     private List<PollOptionDetailDTO> options;
     private int totalVotes;
-    
+    private String attributeType;
+    private Long promotedAt;
+
     public PollDetailDTO() {}
-    
+
     public PollDetailDTO(Poll poll, List<PollOptionDetailDTO> options, int totalVotes) {
         this.pollId = poll.getPollId();
         this.title = poll.getTitle();
@@ -24,6 +26,8 @@ public class PollDetailDTO {
         this.multipleChoice = poll.isMultipleChoice();
         this.options = options;
         this.totalVotes = totalVotes;
+        this.attributeType = poll.getAttributeType();
+        this.promotedAt = poll.getPromotedAt();
     }
     
     public String getPollId() {
@@ -72,5 +76,21 @@ public class PollDetailDTO {
     
     public void setTotalVotes(int totalVotes) {
         this.totalVotes = totalVotes;
+    }
+
+    public String getAttributeType() {
+        return attributeType;
+    }
+
+    public void setAttributeType(String attributeType) {
+        this.attributeType = attributeType;
+    }
+
+    public Long getPromotedAt() {
+        return promotedAt;
+    }
+
+    public void setPromotedAt(Long promotedAt) {
+        this.promotedAt = promotedAt;
     }
 }

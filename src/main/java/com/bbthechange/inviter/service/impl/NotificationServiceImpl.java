@@ -765,40 +765,6 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     @Override
-    public void notifyAttributeProposal(String groupId, String proposerUserId, String message) {
-        if (groupId == null || message == null) {
-            logger.debug("Skipping attribute proposal notification — missing groupId or message");
-            return;
-        }
-
-        try {
-            List<GroupMembership> members = groupRepository.findMembersByGroupId(groupId);
-            List<String> userIds = members.stream()
-                    .map(GroupMembership::getUserId)
-                    .filter(uid -> !uid.equals(proposerUserId))
-                    .toList();
-
-            if (userIds.isEmpty()) {
-                logger.debug("No users to notify for attribute proposal in group {}", groupId);
-                return;
-            }
-
-            logger.info("Sending attribute proposal notifications to {} users in group {}", userIds.size(), groupId);
-
-            for (String userId : userIds) {
-                try {
-                    sendMomentumChangeNotificationToUser(userId, null, groupId, null, message);
-                } catch (Exception e) {
-                    logger.warn("Failed to send attribute proposal notification to user {}: {}", userId, e.getMessage());
-                }
-            }
-
-        } catch (Exception e) {
-            logger.error("Error sending attribute proposal notifications for group {}: {}", groupId, e.getMessage(), e);
-        }
-    }
-
-    @Override
     public void notifyMomentumChange(String hangoutId, String hangoutTitle, String primaryGroupId,
                                       Set<String> allGroupIds, String message, String signalType) {
         if (allGroupIds == null || allGroupIds.isEmpty()) {
