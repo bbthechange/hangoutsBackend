@@ -4,6 +4,7 @@ import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.model.Event;
 import com.bbthechange.inviter.model.Hangout;
 
+import com.bbthechange.inviter.config.ClientInfo;
 import java.util.List;
 
 /**
@@ -27,6 +28,12 @@ public interface HangoutService {
      * Get hangout details by ID using item collection pattern.
      */
     HangoutDetailDTO getHangoutDetail(String hangoutId, String requestingUserId);
+
+    /**
+     * Get hangout details with version-aware field gating.
+     * When clientInfo indicates an old app version, new fields (nudges, timeSuggestions) are omitted.
+     */
+    HangoutDetailDTO getHangoutDetail(String hangoutId, String requestingUserId, ClientInfo clientInfo);
     
     /**
      * Update hangout metadata with pointer coordination.

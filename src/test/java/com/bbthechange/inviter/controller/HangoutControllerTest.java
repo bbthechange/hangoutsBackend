@@ -138,7 +138,7 @@ class HangoutControllerTest {
             hangout.setTitle("Test Hangout");
             HangoutDetailDTO mockDetail = HangoutDetailDTO.builder().withHangout(hangout).build();
             
-            when(hangoutService.getHangoutDetail(eq(testHangoutId), eq(testUserId)))
+            when(hangoutService.getHangoutDetail(eq(testHangoutId), eq(testUserId), any()))
                     .thenReturn(mockDetail);
 
             // When & Then
@@ -147,7 +147,7 @@ class HangoutControllerTest {
                     .andExpect(jsonPath("$.hangout.hangoutId").value(testHangoutId))
                     .andExpect(jsonPath("$.hangout.title").value("Test Hangout"));
 
-            verify(hangoutService).getHangoutDetail(eq(testHangoutId), eq(testUserId));
+            verify(hangoutService).getHangoutDetail(eq(testHangoutId), eq(testUserId), any());
         }
     }
 

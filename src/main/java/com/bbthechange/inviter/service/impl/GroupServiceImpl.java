@@ -57,6 +57,12 @@ public class GroupServiceImpl implements GroupService {
      */
     private static final String WATCH_PARTY_MIN_VERSION = "2.0.0";
 
+    /**
+     * Minimum app version required for new feed features (idea suggestions, nudges).
+     * Old clients can't deserialize idea_suggestion feed items and may choke on nudges.
+     */
+    private static final String NEW_FEED_FEATURES_MIN_VERSION = "2.0.0";
+
     private final GroupRepository groupRepository;
     private final HangoutRepository hangoutRepository;
     private final UserRepository userRepository;
@@ -498,10 +504,14 @@ public class GroupServiceImpl implements GroupService {
                     feedSortingService.sortFeed(feedItems, needsDay, nowTimestamp);
 
             // Append high-interest idea suggestions (sorted by interest, after main feed items)
+            // Gated to 2.0.0+ — old clients can't deserialize idea_suggestion feed items
+            boolean supportsNewFeedFeatures = clientInfo == null || clientInfo.isVersionAtLeast(NEW_FEED_FEATURES_MIN_VERSION);
             List<FeedItem> finalWithDay = new ArrayList<>(sorted.withDay);
-            List<IdeaFeedItemDTO> surfacedIdeas =
-                    ideaFeedSurfacingService.getSurfacedIdeas(groupId, nowTimestamp, requestingUserId);
-            finalWithDay.addAll(surfacedIdeas);
+            if (supportsNewFeedFeatures) {
+                List<IdeaFeedItemDTO> surfacedIdeas =
+                        ideaFeedSurfacingService.getSurfacedIdeas(groupId, nowTimestamp, requestingUserId);
+                finalWithDay.addAll(surfacedIdeas);
+            }
 
             // Repository is the source of truth for pagination tokens
             String nextPageToken = null;
@@ -654,6 +664,7 @@ public class GroupServiceImpl implements GroupService {
     List<FeedItem> hydrateFeed(List<BaseItem> baseItems, String requestingUserId, ClientInfo clientInfo) {
         // Determine if client supports watch parties (version >= 2.0.0 or null/unknown version)
         boolean supportsWatchParty = clientInfo == null || clientInfo.isVersionAtLeast(WATCH_PARTY_MIN_VERSION);
+        boolean supportsNewFeedFeatures = clientInfo == null || clientInfo.isVersionAtLeast(NEW_FEED_FEATURES_MIN_VERSION);
 
         // First Pass: Identify all hangouts that are part of series that will be shown
         // For watch parties with old clients, we DON'T add their hangouts here so they
@@ -703,8 +714,10 @@ public class GroupServiceImpl implements GroupService {
                             hangoutDTO.getInterestLevels(), attendanceBackwardCompatEnabled));
                     // Enrich host at place info
                     hangoutService.enrichHostAtPlaceInfo(hangoutDTO);
-                    // Compute and set action-oriented nudges
-                    hangoutService.enrichNudges(hangoutDTO, hangoutPointer);
+                    // Compute and set action-oriented nudges (gated to 2.0.0+)
+                    if (supportsNewFeedFeatures) {
+                        hangoutService.enrichNudges(hangoutDTO, hangoutPointer);
+                    }
                     feedItems.add(hangoutDTO);
                 }
                 // If it's part of a series, ignore it (already included in SeriesSummaryDTO)

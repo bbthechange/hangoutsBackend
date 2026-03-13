@@ -1,5 +1,6 @@
 package com.bbthechange.inviter.controller;
 
+import com.bbthechange.inviter.config.ClientInfo;
 import com.bbthechange.inviter.service.HangoutService;
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.model.Hangout;
@@ -54,8 +55,9 @@ public class HangoutController extends BaseController {
             HttpServletRequest httpRequest) {
         
         String userId = extractUserId(httpRequest);
-        
-        HangoutDetailDTO detail = hangoutService.getHangoutDetail(hangoutId, userId);
+        ClientInfo clientInfo = ClientInfo.fromRequestAttribute(httpRequest);
+
+        HangoutDetailDTO detail = hangoutService.getHangoutDetail(hangoutId, userId, clientInfo);
         
         logger.debug("Retrieved hangout detail for {} - {} polls, {} cars, {} attendance records", 
             hangoutId, 

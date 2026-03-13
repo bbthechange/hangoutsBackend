@@ -1,5 +1,6 @@
 package com.bbthechange.inviter.service.impl;
 
+import com.bbthechange.inviter.config.ClientInfo;
 import com.bbthechange.inviter.service.AttributeProposalService;
 import com.bbthechange.inviter.service.HangoutService;
 import com.bbthechange.inviter.service.HangoutSchedulerService;
@@ -40,6 +41,7 @@ import java.util.Objects;
 public class HangoutServiceImpl implements HangoutService {
 
     private static final Logger logger = LoggerFactory.getLogger(HangoutServiceImpl.class);
+    private static final String NEW_FEATURES_MIN_VERSION = "2.0.0";
 
     private final HangoutRepository hangoutRepository;
     private final GroupRepository groupRepository;
@@ -262,7 +264,16 @@ public class HangoutServiceImpl implements HangoutService {
     }
 
     @Override
+    public HangoutDetailDTO getHangoutDetail(String hangoutId, String requestingUserId, ClientInfo clientInfo) {
+        return getHangoutDetailInternal(hangoutId, requestingUserId, clientInfo);
+    }
+
+    @Override
     public HangoutDetailDTO getHangoutDetail(String hangoutId, String requestingUserId) {
+        return getHangoutDetailInternal(hangoutId, requestingUserId, null);
+    }
+
+    private HangoutDetailDTO getHangoutDetailInternal(String hangoutId, String requestingUserId, ClientInfo clientInfo) {
         // Single item collection query gets EVERYTHING (the power pattern!)
         HangoutDetailData hangoutDetail = hangoutRepository.getHangoutDetailData(hangoutId);
         // Authorization check
@@ -349,14 +360,21 @@ public class HangoutServiceImpl implements HangoutService {
             }
         }
 
+        // Gate new detail fields for old client versions
+        boolean supportsNewFeatures = clientInfo == null || clientInfo.isVersionAtLeast(NEW_FEATURES_MIN_VERSION);
+
         // Compute action-oriented nudges (never stored — computed fresh each request)
-        List<NudgeDTO> nudges = nudgeService.computeNudges(hangout, hangoutDetail.getAttendance());
+        List<NudgeDTO> nudges = supportsNewFeatures
+                ? nudgeService.computeNudges(hangout, hangoutDetail.getAttendance())
+                : List.of();
 
         // Map time suggestions to DTOs (active suggestions for timeless hangouts)
-        List<TimeSuggestionDTO> timeSuggestionDTOs = hangoutDetail.getTimeSuggestions().stream()
-                .filter(ts -> TimeSuggestionStatus.ACTIVE.equals(ts.getStatus()))
-                .map(TimeSuggestionDTO::from)
-                .collect(Collectors.toList());
+        List<TimeSuggestionDTO> timeSuggestionDTOs = supportsNewFeatures
+                ? hangoutDetail.getTimeSuggestions().stream()
+                    .filter(ts -> TimeSuggestionStatus.ACTIVE.equals(ts.getStatus()))
+                    .map(TimeSuggestionDTO::from)
+                    .collect(Collectors.toList())
+                : List.of();
 
         // Build the DTO
         HangoutDetailDTO.HangoutDetailDTOBuilder dtoBuilder = HangoutDetailDTO.builder()
