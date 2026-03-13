@@ -127,66 +127,7 @@ public class AdaptiveNotificationService {
         if (groupId == null) {
             return;
         }
-
-        GroupNotificationTracker tracker = loadOrCreate(groupId);
-        rolloverIfNeeded(tracker);
-
-        tracker.setNotificationsSentThisWeek(tracker.getNotificationsSentThisWeek() + 1);
-
-        Map<String, Integer> counts = tracker.getSignalCounts();
-        counts.merge(signalType, 1, Integer::sum);
-        tracker.setSignalCounts(counts);
-
-        trackerRepository.save(tracker);
-
-        logger.debug("Recorded notification for group {}: signal={}, weekTotal={}",
-                groupId, signalType, tracker.getNotificationsSentThisWeek());
-    }
-
-    /**
-     * Generate the message body for a "gaining traction" momentum notification.
-     *
-     * @param hangoutTitle the hangout title
-     * @param interestedCount number of people interested (GOING + INTERESTED)
-     * @return the notification body text
-     */
-    public static String gainingTractionMessage(String hangoutTitle, int interestedCount) {
-        return String.format("'%s' is gaining traction — %d %s interested",
-                hangoutTitle, interestedCount, interestedCount == 1 ? "person is" : "people are");
-    }
-
-    /**
-     * Generate the message body for a ticket action notification.
-     *
-     * @param actorName the display name of the user who bought tickets
-     * @param hangoutTitle the hangout title
-     * @return the notification body text
-     */
-    public static String ticketPurchasedMessage(String actorName, String hangoutTitle) {
-        if (actorName != null && !actorName.isBlank()) {
-            return String.format("%s bought tickets for '%s'", actorName, hangoutTitle);
-        }
-        return String.format("Tickets were purchased for '%s'", hangoutTitle);
-    }
-
-    /**
-     * Generate the message body for an action nudge notification.
-     *
-     * @param hangoutTitle the hangout title
-     * @param dayLabel e.g. "Friday", "this weekend"
-     * @return the notification body text
-     */
-    public static String actionNudgeMessage(String hangoutTitle, String dayLabel) {
-        return String.format("'%s' is %s — consider buying tickets", hangoutTitle, dayLabel);
-    }
-
-    /**
-     * Generate the message body for an empty-week nudge notification.
-     *
-     * @return the notification body text
-     */
-    public static String emptyWeekMessage() {
-        return "Nothing planned next week — check out your group's ideas";
+        recordSignal(groupId, signalType, true);
     }
 
     // ============================================================================

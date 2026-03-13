@@ -64,6 +64,9 @@ class AttributeProposalServiceImplTest {
     @Mock
     private UserService userService;
 
+    @Mock
+    private PointerUpdateService pointerUpdateService;
+
     @InjectMocks
     private AttributeProposalServiceImpl service;
 

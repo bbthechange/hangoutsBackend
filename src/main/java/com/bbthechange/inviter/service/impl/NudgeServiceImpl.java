@@ -45,84 +45,43 @@ public class NudgeServiceImpl implements NudgeService {
 
     @Override
     public List<NudgeDTO> computeNudges(Hangout hangout, List<InterestLevel> interestLevels) {
-        List<NudgeDTO> nudges = new ArrayList<>();
-
         boolean hasNonCreatorInterest = hasNonCreatorInterest(
             interestLevels, hangout.getSuggestedBy());
-
-        if (hangout.getStartTimestamp() == null && hasNonCreatorInterest) {
-            nudges.add(new NudgeDTO(
-                NudgeType.SUGGEST_TIME,
-                "Suggest a time",
-                null
-            ));
-        }
-
-        if (hangout.getLocation() == null && hasNonCreatorInterest) {
-            nudges.add(new NudgeDTO(
-                NudgeType.ADD_LOCATION,
-                "Add a location",
-                null
-            ));
-        }
-
-        if (isRestaurantType(hangout.getPlaceCategory()) && hasTraction(hangout.getMomentumCategory())) {
-            nudges.add(new NudgeDTO(
-                NudgeType.MAKE_RESERVATION,
-                "Make a reservation",
-                null
-            ));
-        }
-
-        if (isEventType(hangout.getPlaceCategory()) && hasTraction(hangout.getMomentumCategory())) {
-            nudges.add(new NudgeDTO(
-                NudgeType.CONSIDER_TICKETS,
-                "Consider buying tickets",
-                null
-            ));
-        }
-
-        return nudges;
+        return buildNudges(
+            hangout.getStartTimestamp(), hangout.getLocation(),
+            hangout.getPlaceCategory(), hangout.getMomentumCategory(),
+            hasNonCreatorInterest);
     }
 
     @Override
     public List<NudgeDTO> computeNudgesFromPointer(HangoutPointer pointer) {
+        boolean hasNonCreatorInterest = hasNonCreatorInterest(
+            pointer.getInterestLevels(), pointer.getSuggestedBy());
+        return buildNudges(
+            pointer.getStartTimestamp(), pointer.getLocation(),
+            pointer.getPlaceCategory(), pointer.getMomentumCategory(),
+            hasNonCreatorInterest);
+    }
+
+    private List<NudgeDTO> buildNudges(Long startTimestamp, Object location,
+                                        String placeCategory, MomentumCategory momentumCategory,
+                                        boolean hasNonCreatorInterest) {
         List<NudgeDTO> nudges = new ArrayList<>();
 
-        List<InterestLevel> interestLevels = pointer.getInterestLevels();
-        boolean hasNonCreatorInterest = hasNonCreatorInterest(
-            interestLevels, pointer.getSuggestedBy());
-
-        if (pointer.getStartTimestamp() == null && hasNonCreatorInterest) {
-            nudges.add(new NudgeDTO(
-                NudgeType.SUGGEST_TIME,
-                "Suggest a time",
-                null
-            ));
+        if (startTimestamp == null && hasNonCreatorInterest) {
+            nudges.add(new NudgeDTO(NudgeType.SUGGEST_TIME, "Suggest a time", null));
         }
 
-        if (pointer.getLocation() == null && hasNonCreatorInterest) {
-            nudges.add(new NudgeDTO(
-                NudgeType.ADD_LOCATION,
-                "Add a location",
-                null
-            ));
+        if (location == null && hasNonCreatorInterest) {
+            nudges.add(new NudgeDTO(NudgeType.ADD_LOCATION, "Add a location", null));
         }
 
-        if (isRestaurantType(pointer.getPlaceCategory()) && hasTraction(pointer.getMomentumCategory())) {
-            nudges.add(new NudgeDTO(
-                NudgeType.MAKE_RESERVATION,
-                "Make a reservation",
-                null
-            ));
+        if (isRestaurantType(placeCategory) && hasTraction(momentumCategory)) {
+            nudges.add(new NudgeDTO(NudgeType.MAKE_RESERVATION, "Make a reservation", null));
         }
 
-        if (isEventType(pointer.getPlaceCategory()) && hasTraction(pointer.getMomentumCategory())) {
-            nudges.add(new NudgeDTO(
-                NudgeType.CONSIDER_TICKETS,
-                "Consider buying tickets",
-                null
-            ));
+        if (isEventType(placeCategory) && hasTraction(momentumCategory)) {
+            nudges.add(new NudgeDTO(NudgeType.CONSIDER_TICKETS, "Consider buying tickets", null));
         }
 
         return nudges;

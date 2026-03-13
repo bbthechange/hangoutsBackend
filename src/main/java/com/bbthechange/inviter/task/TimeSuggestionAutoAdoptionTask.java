@@ -109,7 +109,26 @@ public class TimeSuggestionAutoAdoptionTask {
                 .expressionAttributeValues(expressionValues)
                 .build();
 
-        ScanResponse response = dynamoDbClient.scan(scanRequest);
+        ScanResponse response;
+        do {
+            response = dynamoDbClient.scan(scanRequest);
+            extractHangoutIds(response, hangoutIds);
+
+            if (response.hasLastEvaluatedKey()) {
+                scanRequest = ScanRequest.builder()
+                        .tableName(TABLE_NAME)
+                        .filterExpression("itemType = :itemType AND #status = :status")
+                        .expressionAttributeNames(Map.of("#status", "status"))
+                        .expressionAttributeValues(expressionValues)
+                        .exclusiveStartKey(response.lastEvaluatedKey())
+                        .build();
+            }
+        } while (response.hasLastEvaluatedKey());
+
+        return hangoutIds;
+    }
+
+    private void extractHangoutIds(ScanResponse response, Set<String> hangoutIds) {
         for (Map<String, AttributeValue> item : response.items()) {
             AttributeValue pkAttr = item.get("pk");
             if (pkAttr != null && pkAttr.s() != null && pkAttr.s().startsWith("EVENT#")) {
@@ -117,27 +136,5 @@ public class TimeSuggestionAutoAdoptionTask {
                 hangoutIds.add(hangoutId);
             }
         }
-
-        // Handle pagination
-        while (response.hasLastEvaluatedKey()) {
-            scanRequest = ScanRequest.builder()
-                    .tableName(TABLE_NAME)
-                    .filterExpression("itemType = :itemType AND #status = :status")
-                    .expressionAttributeNames(Map.of("#status", "status"))
-                    .expressionAttributeValues(expressionValues)
-                    .exclusiveStartKey(response.lastEvaluatedKey())
-                    .build();
-
-            response = dynamoDbClient.scan(scanRequest);
-            for (Map<String, AttributeValue> item : response.items()) {
-                AttributeValue pkAttr = item.get("pk");
-                if (pkAttr != null && pkAttr.s() != null && pkAttr.s().startsWith("EVENT#")) {
-                    String hangoutId = pkAttr.s().substring("EVENT#".length());
-                    hangoutIds.add(hangoutId);
-                }
-            }
-        }
-
-        return hangoutIds;
     }
 }

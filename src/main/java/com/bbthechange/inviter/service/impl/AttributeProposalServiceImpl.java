@@ -45,18 +45,21 @@ public class AttributeProposalServiceImpl implements AttributeProposalService {
     private final GroupRepository groupRepository;
     private final NotificationService notificationService;
     private final UserService userService;
+    private final PointerUpdateService pointerUpdateService;
 
     @Autowired
     public AttributeProposalServiceImpl(AttributeProposalRepository proposalRepository,
                                          HangoutRepository hangoutRepository,
                                          GroupRepository groupRepository,
                                          NotificationService notificationService,
-                                         UserService userService) {
+                                         UserService userService,
+                                         PointerUpdateService pointerUpdateService) {
         this.proposalRepository = proposalRepository;
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
         this.notificationService = notificationService;
         this.userService = userService;
+        this.pointerUpdateService = pointerUpdateService;
     }
 
     @Override
@@ -257,17 +260,12 @@ public class AttributeProposalServiceImpl implements AttributeProposalService {
 
         // Trigger momentum recomputation if location was changed (adds a scoring signal)
         if (AttributeProposalType.LOCATION.equals(proposal.getAttributeType())) {
-            // Pointer update for all associated groups
+            // Pointer update for all associated groups (with optimistic locking retry)
             if (hangout.getAssociatedGroups() != null) {
                 for (String gid : hangout.getAssociatedGroups()) {
-                    try {
-                        groupRepository.updateHangoutPointer(gid, hangoutId,
-                                java.util.Map.of("locationName",
-                                        software.amazon.awssdk.services.dynamodb.model.AttributeValue.builder()
-                                                .s(proposal.getProposedValue()).build()));
-                    } catch (Exception e) {
-                        logger.warn("Failed to update pointer location for group {}: {}", gid, e.getMessage());
-                    }
+                    pointerUpdateService.updatePointerWithRetry(gid, hangoutId,
+                            pointer -> pointer.setLocation(hangout.getLocation()),
+                            "attribute-proposal-adoption");
                 }
             }
         }

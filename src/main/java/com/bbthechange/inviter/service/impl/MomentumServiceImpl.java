@@ -5,6 +5,7 @@ import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.service.AdaptiveNotificationService;
+import com.bbthechange.inviter.service.NotificationTextGenerator;
 import com.bbthechange.inviter.service.MomentumService;
 import com.bbthechange.inviter.service.NotificationService;
 import com.github.benmanes.caffeine.cache.Cache;
@@ -440,7 +441,7 @@ public class MomentumServiceImpl implements MomentumService {
         String title = hangout.getTitle() != null ? hangout.getTitle() : "A hangout";
 
         if (AdaptiveNotificationService.SIGNAL_CONCRETE_ACTION.equals(signalType)) {
-            return AdaptiveNotificationService.ticketPurchasedMessage(null, title);
+            return NotificationTextGenerator.ticketPurchasedMessage(null, title);
         }
 
         if (AdaptiveNotificationService.SIGNAL_CONFIRMED.equals(signalType)
@@ -453,7 +454,7 @@ public class MomentumServiceImpl implements MomentumService {
                 .filter(il -> "GOING".equalsIgnoreCase(il.getStatus())
                         || "INTERESTED".equalsIgnoreCase(il.getStatus()))
                 .count();
-        return AdaptiveNotificationService.gainingTractionMessage(title, interestedCount);
+        return NotificationTextGenerator.gainingTractionMessage(title, interestedCount);
     }
 
     // ============================================================================

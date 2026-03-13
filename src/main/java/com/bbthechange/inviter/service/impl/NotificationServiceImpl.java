@@ -787,22 +787,7 @@ public class NotificationServiceImpl implements NotificationService {
 
             for (String userId : userIds) {
                 try {
-                    List<Device> devices = deviceService.getActiveDevicesForUser(UUID.fromString(userId));
-                    for (Device device : devices) {
-                        try {
-                            if (device.getPlatform() == Device.Platform.IOS) {
-                                pushNotificationService.sendMomentumChangeNotification(
-                                        device.getToken(), null, groupId, null, message);
-                            } else if (device.getPlatform() == Device.Platform.ANDROID) {
-                                fcmNotificationService.sendMomentumChangeNotification(
-                                        device.getToken(), null, groupId, null, message);
-                            }
-                        } catch (Exception e) {
-                            logger.error("Failed to send attribute proposal notification to device {}: {}",
-                                    device.getToken().substring(0, Math.min(8, device.getToken().length())),
-                                    e.getMessage());
-                        }
-                    }
+                    sendMomentumChangeNotificationToUser(userId, null, groupId, null, message);
                 } catch (Exception e) {
                     logger.warn("Failed to send attribute proposal notification to user {}: {}", userId, e.getMessage());
                 }

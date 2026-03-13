@@ -383,45 +383,45 @@ class AdaptiveNotificationServiceTest {
 
         @Test
         void gainingTractionMessage_singlePerson_usesIsSingular() {
-            String msg = AdaptiveNotificationService.gainingTractionMessage("Beach Day", 1);
+            String msg = NotificationTextGenerator.gainingTractionMessage("Beach Day", 1);
             assertThat(msg).contains("1 person is");
         }
 
         @Test
         void gainingTractionMessage_multiplePeople_usesArePlural() {
-            String msg = AdaptiveNotificationService.gainingTractionMessage("Beach Day", 5);
+            String msg = NotificationTextGenerator.gainingTractionMessage("Beach Day", 5);
             assertThat(msg).contains("5 people are");
         }
 
         @Test
         void ticketPurchasedMessage_withName_includesName() {
-            String msg = AdaptiveNotificationService.ticketPurchasedMessage("Alex", "Concert");
+            String msg = NotificationTextGenerator.ticketPurchasedMessage("Alex", "Concert");
             assertThat(msg).isEqualTo("Alex bought tickets for 'Concert'");
         }
 
         @Test
         void ticketPurchasedMessage_nullName_genericMessage() {
-            String msg = AdaptiveNotificationService.ticketPurchasedMessage(null, "Concert");
+            String msg = NotificationTextGenerator.ticketPurchasedMessage(null, "Concert");
             assertThat(msg).contains("Concert");
             assertThat(msg).doesNotContain("null");
         }
 
         @Test
         void ticketPurchasedMessage_blankActorName_usesFallback() {
-            String msg = AdaptiveNotificationService.ticketPurchasedMessage("  ", "Concert Night");
+            String msg = NotificationTextGenerator.ticketPurchasedMessage("  ", "Concert Night");
             assertThat(msg).isEqualTo("Tickets were purchased for 'Concert Night'");
         }
 
         @Test
         void actionNudgeMessage_includesDayAndTitle() {
-            String msg = AdaptiveNotificationService.actionNudgeMessage("Pool Party", "Friday");
+            String msg = NotificationTextGenerator.actionNudgeMessage("Pool Party", "Friday");
             assertThat(msg).contains("Pool Party");
             assertThat(msg).contains("Friday");
         }
 
         @Test
         void emptyWeekMessage_returnsExpectedText() {
-            String msg = AdaptiveNotificationService.emptyWeekMessage();
+            String msg = NotificationTextGenerator.emptyWeekMessage();
             assertThat(msg).contains("Nothing planned next week");
         }
     }
