@@ -429,11 +429,12 @@ public class GroupServiceImpl implements GroupService {
         }
 
         // Apply momentum filter post-query (filter=EVERYTHING is same as ALL for now)
-        if ("CONFIRMED".equals(filter)) {
+        if ("CONFIRMED".equalsIgnoreCase(filter)) {
             List<FeedItem> filteredWithDay = feed.getWithDay().stream()
                 .filter(item -> {
                     if (item instanceof HangoutSummaryDTO h) {
-                        return h.getMomentum() != null &&
+                        // null momentum = legacy hangout, treated as confirmed
+                        return h.getMomentum() == null ||
                                "CONFIRMED".equals(h.getMomentum().getCategory());
                     }
                     return true; // Keep series items
@@ -441,7 +442,7 @@ public class GroupServiceImpl implements GroupService {
                 .collect(Collectors.toList());
 
             List<HangoutSummaryDTO> filteredNeedsDay = feed.getNeedsDay().stream()
-                .filter(h -> h.getMomentum() != null &&
+                .filter(h -> h.getMomentum() == null ||
                              "CONFIRMED".equals(h.getMomentum().getCategory()))
                 .collect(Collectors.toList());
 

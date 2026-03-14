@@ -1684,6 +1684,227 @@ class GroupServiceImplTest {
         assertThat(resultHangoutIds).containsExactlyInAnyOrder(hangoutId1, hangoutId2);
     }
 
+    // ==================== Feed Filter Tests ====================
+
+    @Test
+    void getGroupFeed_ConfirmedFilter_ReturnsOnlyConfirmedHangouts() {
+        // Given
+        String groupId = GROUP_ID;
+        String userId = USER_ID;
+
+        when(groupRepository.findMembership(groupId, userId)).thenReturn(
+            Optional.of(createTestMembership(groupId, userId, "Test Group", GroupRole.MEMBER)));
+
+        HangoutPointer confirmedPointer = createHangoutPointer(groupId,
+            "11111111-1111-1111-1111-111111111111", "Confirmed Hangout",
+            java.time.Instant.now().plusSeconds(3600));
+        confirmedPointer.setMomentumCategory(MomentumCategory.CONFIRMED);
+
+        HangoutPointer buildingPointer = createHangoutPointer(groupId,
+            "22222222-2222-2222-2222-222222222222", "Building Hangout",
+            java.time.Instant.now().plusSeconds(7200));
+        buildingPointer.setMomentumCategory(MomentumCategory.BUILDING);
+
+        HangoutPointer gainingPointer = createHangoutPointer(groupId,
+            "33333333-3333-3333-3333-333333333333", "Gaining Hangout",
+            java.time.Instant.now().plusSeconds(10800));
+        gainingPointer.setMomentumCategory(MomentumCategory.GAINING_MOMENTUM);
+
+        PaginatedResult<BaseItem> futureResult = new PaginatedResult<>(
+            List.of(confirmedPointer, buildingPointer, gainingPointer), null);
+        PaginatedResult<BaseItem> inProgressResult = new PaginatedResult<>(List.of(), null);
+
+        when(hangoutRepository.getFutureEventsPage(eq(groupId), anyLong(), isNull(), isNull()))
+            .thenReturn(futureResult);
+        when(hangoutRepository.getInProgressEventsPage(eq(groupId), anyLong(), isNull(), isNull()))
+            .thenReturn(inProgressResult);
+
+        // When
+        GroupFeedDTO result = groupService.getGroupFeed(groupId, userId, null, null, null, null, "CONFIRMED");
+
+        // Then: only the confirmed hangout remains
+        assertThat(result.getWithDay()).hasSize(1);
+        HangoutSummaryDTO summary = (HangoutSummaryDTO) result.getWithDay().get(0);
+        assertThat(summary.getHangoutId()).isEqualTo("11111111-1111-1111-1111-111111111111");
+    }
+
+    @Test
+    void getGroupFeed_ConfirmedFilter_IncludesLegacyNullMomentumHangouts() {
+        // Given
+        String groupId = GROUP_ID;
+        String userId = USER_ID;
+
+        when(groupRepository.findMembership(groupId, userId)).thenReturn(
+            Optional.of(createTestMembership(groupId, userId, "Test Group", GroupRole.MEMBER)));
+
+        // Legacy hangout with null momentum
+        HangoutPointer legacyPointer = createHangoutPointer(groupId,
+            "11111111-1111-1111-1111-111111111111", "Legacy Hangout",
+            java.time.Instant.now().plusSeconds(3600));
+        // No momentum fields set — this is a pre-momentum hangout
+
+        HangoutPointer buildingPointer = createHangoutPointer(groupId,
+            "22222222-2222-2222-2222-222222222222", "Building Hangout",
+            java.time.Instant.now().plusSeconds(7200));
+        buildingPointer.setMomentumCategory(MomentumCategory.BUILDING);
+
+        PaginatedResult<BaseItem> futureResult = new PaginatedResult<>(
+            List.of(legacyPointer, buildingPointer), null);
+        PaginatedResult<BaseItem> inProgressResult = new PaginatedResult<>(List.of(), null);
+
+        when(hangoutRepository.getFutureEventsPage(eq(groupId), anyLong(), isNull(), isNull()))
+            .thenReturn(futureResult);
+        when(hangoutRepository.getInProgressEventsPage(eq(groupId), anyLong(), isNull(), isNull()))
+            .thenReturn(inProgressResult);
+
+        // When: CONFIRMED filter applied
+        GroupFeedDTO result = groupService.getGroupFeed(groupId, userId, null, null, null, null, "CONFIRMED");
+
+        // Then: legacy hangout (null momentum) should be included, BUILDING excluded
+        assertThat(result.getWithDay()).hasSize(1);
+        HangoutSummaryDTO summary = (HangoutSummaryDTO) result.getWithDay().get(0);
+        assertThat(summary.getHangoutId()).isEqualTo("11111111-1111-1111-1111-111111111111");
+    }
+
+    @Test
+    void getGroupFeed_ConfirmedFilter_KeepsSeriesItems() {
+        // Given
+        String groupId = GROUP_ID;
+        String userId = USER_ID;
+
+        when(groupRepository.findMembership(groupId, userId)).thenReturn(
+            Optional.of(createTestMembership(groupId, userId, "Test Group", GroupRole.MEMBER)));
+
+        SeriesPointer seriesPointer = createTestSeriesPointer();
+        HangoutPointer buildingPointer = createHangoutPointer(groupId,
+            "22222222-2222-2222-2222-222222222222", "Building Hangout",
+            java.time.Instant.now().plusSeconds(7200));
+        buildingPointer.setMomentumCategory(MomentumCategory.BUILDING);
+
+        PaginatedResult<BaseItem> futureResult = new PaginatedResult<>(
+            List.of(seriesPointer, buildingPointer), null);
+        PaginatedResult<BaseItem> inProgressResult = new PaginatedResult<>(List.of(), null);
+
+        when(hangoutRepository.getFutureEventsPage(eq(groupId), anyLong(), isNull(), isNull()))
+            .thenReturn(futureResult);
+        when(hangoutRepository.getInProgressEventsPage(eq(groupId), anyLong(), isNull(), isNull()))
+            .thenReturn(inProgressResult);
+
+        // When
+        GroupFeedDTO result = groupService.getGroupFeed(groupId, userId, null, null, null, null, "CONFIRMED");
+
+        // Then: series items should be kept, building filtered out
+        assertThat(result.getWithDay()).hasSize(1);
+        assertThat(result.getWithDay().get(0)).isInstanceOf(SeriesSummaryDTO.class);
+    }
+
+    @Test
+    void getGroupFeed_AllFilter_ReturnsEverything() {
+        // Given
+        String groupId = GROUP_ID;
+        String userId = USER_ID;
+
+        when(groupRepository.findMembership(groupId, userId)).thenReturn(
+            Optional.of(createTestMembership(groupId, userId, "Test Group", GroupRole.MEMBER)));
+
+        HangoutPointer confirmedPointer = createHangoutPointer(groupId,
+            "11111111-1111-1111-1111-111111111111", "Confirmed",
+            java.time.Instant.now().plusSeconds(3600));
+        confirmedPointer.setMomentumCategory(MomentumCategory.CONFIRMED);
+
+        HangoutPointer buildingPointer = createHangoutPointer(groupId,
+            "22222222-2222-2222-2222-222222222222", "Building",
+            java.time.Instant.now().plusSeconds(7200));
+        buildingPointer.setMomentumCategory(MomentumCategory.BUILDING);
+
+        PaginatedResult<BaseItem> futureResult = new PaginatedResult<>(
+            List.of(confirmedPointer, buildingPointer), null);
+        PaginatedResult<BaseItem> inProgressResult = new PaginatedResult<>(List.of(), null);
+
+        when(hangoutRepository.getFutureEventsPage(eq(groupId), anyLong(), isNull(), isNull()))
+            .thenReturn(futureResult);
+        when(hangoutRepository.getInProgressEventsPage(eq(groupId), anyLong(), isNull(), isNull()))
+            .thenReturn(inProgressResult);
+
+        // When
+        GroupFeedDTO result = groupService.getGroupFeed(groupId, userId, null, null, null, null, "ALL");
+
+        // Then: both items should be present
+        assertThat(result.getWithDay()).hasSize(2);
+    }
+
+    @Test
+    void getGroupFeed_EverythingFilter_SameAsAll() {
+        // Given
+        String groupId = GROUP_ID;
+        String userId = USER_ID;
+
+        when(groupRepository.findMembership(groupId, userId)).thenReturn(
+            Optional.of(createTestMembership(groupId, userId, "Test Group", GroupRole.MEMBER)));
+
+        HangoutPointer confirmedPointer = createHangoutPointer(groupId,
+            "11111111-1111-1111-1111-111111111111", "Confirmed",
+            java.time.Instant.now().plusSeconds(3600));
+        confirmedPointer.setMomentumCategory(MomentumCategory.CONFIRMED);
+
+        HangoutPointer buildingPointer = createHangoutPointer(groupId,
+            "22222222-2222-2222-2222-222222222222", "Building",
+            java.time.Instant.now().plusSeconds(7200));
+        buildingPointer.setMomentumCategory(MomentumCategory.BUILDING);
+
+        PaginatedResult<BaseItem> futureResult = new PaginatedResult<>(
+            List.of(confirmedPointer, buildingPointer), null);
+        PaginatedResult<BaseItem> inProgressResult = new PaginatedResult<>(List.of(), null);
+
+        when(hangoutRepository.getFutureEventsPage(eq(groupId), anyLong(), isNull(), isNull()))
+            .thenReturn(futureResult);
+        when(hangoutRepository.getInProgressEventsPage(eq(groupId), anyLong(), isNull(), isNull()))
+            .thenReturn(inProgressResult);
+
+        // When
+        GroupFeedDTO result = groupService.getGroupFeed(groupId, userId, null, null, null, null, "EVERYTHING");
+
+        // Then: same as ALL — both items present
+        assertThat(result.getWithDay()).hasSize(2);
+    }
+
+    @Test
+    void getGroupFeed_ConfirmedFilter_FiltersNeedsDayToo() {
+        // Given
+        String groupId = GROUP_ID;
+        String userId = USER_ID;
+
+        when(groupRepository.findMembership(groupId, userId)).thenReturn(
+            Optional.of(createTestMembership(groupId, userId, "Test Group", GroupRole.MEMBER)));
+
+        // Unscheduled confirmed hangout
+        HangoutPointer confirmedNeedsDay = createHangoutPointer(groupId,
+            "11111111-1111-1111-1111-111111111111", "Confirmed No Date", null);
+        confirmedNeedsDay.setMomentumCategory(MomentumCategory.CONFIRMED);
+
+        // Unscheduled building hangout
+        HangoutPointer buildingNeedsDay = createHangoutPointer(groupId,
+            "22222222-2222-2222-2222-222222222222", "Building No Date", null);
+        buildingNeedsDay.setMomentumCategory(MomentumCategory.BUILDING);
+
+        PaginatedResult<BaseItem> futureResult = new PaginatedResult<>(
+            List.of(confirmedNeedsDay, buildingNeedsDay), null);
+        PaginatedResult<BaseItem> inProgressResult = new PaginatedResult<>(List.of(), null);
+
+        when(hangoutRepository.getFutureEventsPage(eq(groupId), anyLong(), isNull(), isNull()))
+            .thenReturn(futureResult);
+        when(hangoutRepository.getInProgressEventsPage(eq(groupId), anyLong(), isNull(), isNull()))
+            .thenReturn(inProgressResult);
+
+        // When
+        GroupFeedDTO result = groupService.getGroupFeed(groupId, userId, null, null, null, null, "CONFIRMED");
+
+        // Then: only the confirmed one appears in needsDay
+        assertThat(result.getNeedsDay()).hasSize(1);
+        assertThat(result.getNeedsDay().get(0).getHangoutId())
+            .isEqualTo("11111111-1111-1111-1111-111111111111");
+    }
+
     @Test
     void hydrateFeed_NewAppVersion_WatchPartyHangoutsNotDuplicated() {
         // Given: A watch party series pointer with hangout parts

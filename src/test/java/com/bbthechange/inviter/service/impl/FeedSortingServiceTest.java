@@ -419,10 +419,10 @@ class FeedSortingServiceTest {
     class EmptyWeekAutoSurfacing {
 
         @Test
-        void sortFeed_emptyWeek_autosurfacesBestCandidate() {
+        void sortFeed_emptyWeek_surgingItemAlwaysSurfaces() {
             long ts = inSeconds(TimeUnit.DAYS.toSeconds(5));
 
-            // Two BUILDING items — different last-support timestamps
+            // One surging item (2+ signals in 24h) and one older item
             List<InterestLevel> olderSupport = List.of(
                     buildInterestLevel("u1", nowSeconds - TimeUnit.DAYS.toSeconds(2)),
                     buildInterestLevel("u2", nowSeconds - TimeUnit.DAYS.toSeconds(2))
@@ -438,8 +438,34 @@ class FeedSortingServiceTest {
             List<FeedItem> withDay = new ArrayList<>(List.of(olderItem, recentItem));
             FeedSortingService.SortResult result = service.sortFeed(withDay, new ArrayList<>(), nowSeconds);
 
-            // Both items should be present (empty week, no suppression)
-            assertThat(result.withDay).hasSize(2);
+            // Only the surging item surfaces; non-surging items are not auto-added
+            assertThat(result.withDay).hasSize(1);
+            assertThat(((HangoutSummaryDTO) result.withDay.get(0)).getHangoutId()).isEqualTo("new");
+        }
+
+        @Test
+        void sortFeed_emptyWeek_noSurgingItems_autosurfacesBestCandidate() {
+            long ts = inSeconds(TimeUnit.DAYS.toSeconds(5));
+
+            // Two BUILDING items, both with old support (not surging)
+            List<InterestLevel> olderSupport = List.of(
+                    buildInterestLevel("u1", nowSeconds - TimeUnit.DAYS.toSeconds(3)),
+                    buildInterestLevel("u2", nowSeconds - TimeUnit.DAYS.toSeconds(3))
+            );
+            List<InterestLevel> lessOldSupport = List.of(
+                    buildInterestLevel("u3", nowSeconds - TimeUnit.DAYS.toSeconds(2)),
+                    buildInterestLevel("u4", nowSeconds - TimeUnit.DAYS.toSeconds(2))
+            );
+
+            HangoutSummaryDTO olderItem    = buildHangout("old", "BUILDING", ts, olderSupport);
+            HangoutSummaryDTO lessOldItem  = buildHangout("less-old", "BUILDING", ts, lessOldSupport);
+
+            List<FeedItem> withDay = new ArrayList<>(List.of(olderItem, lessOldItem));
+            FeedSortingService.SortResult result = service.sortFeed(withDay, new ArrayList<>(), nowSeconds);
+
+            // Only the best candidate (most recent support) is auto-surfaced
+            assertThat(result.withDay).hasSize(1);
+            assertThat(((HangoutSummaryDTO) result.withDay.get(0)).getHangoutId()).isEqualTo("less-old");
         }
 
         @Test
@@ -511,6 +537,8 @@ class FeedSortingServiceTest {
 
         @Test
         void sortFeed_needsDay_zeroSupportCapApplied() {
+            // 3 zero-support BUILDING items — empty week auto-surfaces best candidate only
+            // Best candidate is also zero-support, so cap applies (but only 1 item to cap)
             HangoutSummaryDTO zs1 = buildHangout("z1", "BUILDING", null, List.of());
             HangoutSummaryDTO zs2 = buildHangout("z2", "BUILDING", null, List.of());
             HangoutSummaryDTO zs3 = buildHangout("z3", "BUILDING", null, List.of());
@@ -518,29 +546,33 @@ class FeedSortingServiceTest {
             List<HangoutSummaryDTO> needsDay = new ArrayList<>(List.of(zs1, zs2, zs3));
             FeedSortingService.SortResult result = service.sortFeed(new ArrayList<>(), needsDay, nowSeconds);
 
-            assertThat(result.needsDay).hasSize(2);
+            // Only the best candidate is auto-surfaced (1 item, subject to zero-support cap)
+            assertThat(result.needsDay).hasSize(1);
         }
 
         @Test
         void sortFeed_needsDay_zeroSupportCountSharedWithWithDay() {
-            // 2 zero-support items in withDay already hit the cap
-            long ts = inSeconds(TimeUnit.DAYS.toSeconds(5));
-            HangoutSummaryDTO withDayZs1 = buildHangout("wd1", "BUILDING", ts, List.of());
-            HangoutSummaryDTO withDayZs2 = buildHangout("wd2", "BUILDING", ts, List.of());
+            // Put 2 zero-support items in different horizons so each horizon auto-surfaces its best
+            long imminentTs = inSeconds(TimeUnit.HOURS.toSeconds(10));  // imminent — no suppression
+            long nearTs = inSeconds(TimeUnit.DAYS.toSeconds(5));        // near-term — empty week, auto-surface
+
+            HangoutSummaryDTO withDayImm = buildHangout("wd-imm", "BUILDING", imminentTs, List.of());
+            HangoutSummaryDTO withDayNear = buildHangout("wd-near", "BUILDING", nearTs, List.of());
 
             // 1 zero-support item in needsDay — should be excluded since cap already hit
             HangoutSummaryDTO needsDayZs = buildHangout("nd1", "BUILDING", null, List.of());
 
             FeedSortingService.SortResult result = service.sortFeed(
-                    new ArrayList<>(List.of(withDayZs1, withDayZs2)),
+                    new ArrayList<>(List.of(withDayImm, withDayNear)),
                     new ArrayList<>(List.of(needsDayZs)),
                     nowSeconds);
 
-            // withDay got 2 zero-support items (cap reached), needsDay should get 0
+            // withDay: imminent item always surfaces (1), near-term auto-surfaces best (1) = 2 zero-support total
             long withDayZsCount = result.withDay.stream()
                     .filter(i -> service.isZeroSupport((FeedItem) i))
                     .count();
             assertThat(withDayZsCount).isEqualTo(2);
+            // needsDay: cap already at 2, so zero-support item excluded
             assertThat(result.needsDay).isEmpty();
         }
     }
@@ -577,5 +609,120 @@ class FeedSortingServiceTest {
                 .map(i -> ((HangoutSummaryDTO) i).getHangoutId())
                 .toList();
         assertThat(ids.indexOf("c2")).isLessThan(ids.indexOf("c1"));
+    }
+
+    // -------------------------------------------------------------------------
+    // 10. Legacy/null momentum — treated as CONFIRMED
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class LegacyNullMomentum {
+
+        @Test
+        void sortFeed_nullMomentum_treatedAsConfirmed_withDay() {
+            // Use imminent horizon so BUILDING items are not suppressed by busy-week rule
+            long ts = inSeconds(TimeUnit.HOURS.toSeconds(10));
+
+            // null momentum (legacy hangout) and a BUILDING hangout in same horizon
+            HangoutSummaryDTO legacy   = buildHangout("legacy", null, ts);
+            HangoutSummaryDTO building = buildHangout("b", "BUILDING", ts);
+
+            List<FeedItem> withDay = new ArrayList<>(List.of(building, legacy));
+            FeedSortingService.SortResult result = service.sortFeed(withDay, new ArrayList<>(), nowSeconds);
+
+            List<String> ids = result.withDay.stream()
+                    .map(i -> ((HangoutSummaryDTO) i).getHangoutId())
+                    .toList();
+            // Legacy (treated as CONFIRMED) should sort before BUILDING
+            assertThat(ids.indexOf("legacy")).isLessThan(ids.indexOf("b"));
+        }
+
+        @Test
+        void sortFeed_nullMomentum_treatedAsConfirmed_needsDay() {
+            HangoutSummaryDTO legacy   = buildHangout("legacy", null, null);
+            HangoutSummaryDTO building = buildHangout("b", "BUILDING", null);
+
+            List<HangoutSummaryDTO> needsDay = new ArrayList<>(List.of(building, legacy));
+            FeedSortingService.SortResult result = service.sortFeed(new ArrayList<>(), needsDay, nowSeconds);
+
+            List<String> ids = result.needsDay.stream()
+                    .map(HangoutSummaryDTO::getHangoutId).toList();
+            assertThat(ids.indexOf("legacy")).isLessThan(ids.indexOf("b"));
+        }
+
+        @Test
+        void sortFeed_nullMomentum_notSubjectToZeroSupportCap() {
+            // Legacy items are CONFIRMED, not BUILDING — they bypass zero-support cap
+            long ts1 = inSeconds(TimeUnit.HOURS.toSeconds(10));
+            long ts2 = inSeconds(TimeUnit.DAYS.toSeconds(5));
+            long ts3 = inSeconds(TimeUnit.DAYS.toSeconds(15));
+
+            HangoutSummaryDTO l1 = buildHangout("l1", null, ts1, List.of());
+            HangoutSummaryDTO l2 = buildHangout("l2", null, ts2, List.of());
+            HangoutSummaryDTO l3 = buildHangout("l3", null, ts3, List.of());
+
+            List<FeedItem> withDay = new ArrayList<>(List.of(l1, l2, l3));
+            FeedSortingService.SortResult result = service.sortFeed(withDay, new ArrayList<>(), nowSeconds);
+
+            // All 3 should be present — they're CONFIRMED, not subject to BUILDING caps
+            assertThat(result.withDay).hasSize(3);
+        }
+
+        @Test
+        void sortFeed_nullMomentum_suppressesBuildingInBusyWeek() {
+            // Legacy item acts as confirmed, triggering busy-week suppression for BUILDING
+            long ts = inSeconds(TimeUnit.DAYS.toSeconds(5));
+
+            HangoutSummaryDTO legacy   = buildHangout("legacy", null, ts);
+            HangoutSummaryDTO building = buildHangout("b", "BUILDING", ts, List.of());
+
+            List<FeedItem> withDay = new ArrayList<>(List.of(legacy, building));
+            FeedSortingService.SortResult result = service.sortFeed(withDay, new ArrayList<>(), nowSeconds);
+
+            // Legacy counts as confirmed → busy week → BUILDING suppressed
+            assertThat(result.withDay).hasSize(1);
+            assertThat(((HangoutSummaryDTO) result.withDay.get(0)).getHangoutId()).isEqualTo("legacy");
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // 11. Distant horizon — no busy-week suppression
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class DistantHorizonSuppression {
+
+        @Test
+        void sortFeed_distantHorizon_buildingNotSuppressedEvenWithConfirmed() {
+            long ts = inSeconds(TimeUnit.DAYS.toSeconds(30));
+
+            HangoutSummaryDTO confirmed = buildHangout("c", "CONFIRMED", ts);
+            HangoutSummaryDTO building  = buildHangout("b", "BUILDING", ts, List.of());
+
+            List<FeedItem> withDay = new ArrayList<>(List.of(confirmed, building));
+            FeedSortingService.SortResult result = service.sortFeed(withDay, new ArrayList<>(), nowSeconds);
+
+            // Distant horizon is suppression-exempt: BUILDING item should appear
+            List<String> ids = result.withDay.stream()
+                    .map(i -> ((HangoutSummaryDTO) i).getHangoutId())
+                    .toList();
+            assertThat(ids).containsExactlyInAnyOrder("c", "b");
+        }
+
+        @Test
+        void sortFeed_nearTermHorizon_buildingIsSuppressedWithConfirmed() {
+            // Contrast with distant — near-term DOES suppress
+            long ts = inSeconds(TimeUnit.DAYS.toSeconds(5));
+
+            HangoutSummaryDTO confirmed = buildHangout("c", "CONFIRMED", ts);
+            HangoutSummaryDTO building  = buildHangout("b", "BUILDING", ts, List.of());
+
+            List<FeedItem> withDay = new ArrayList<>(List.of(confirmed, building));
+            FeedSortingService.SortResult result = service.sortFeed(withDay, new ArrayList<>(), nowSeconds);
+
+            // Near-term: busy week, BUILDING suppressed
+            assertThat(result.withDay).hasSize(1);
+            assertThat(((HangoutSummaryDTO) result.withDay.get(0)).getHangoutId()).isEqualTo("c");
+        }
     }
 }

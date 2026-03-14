@@ -104,7 +104,7 @@ public class FeedSortingService {
         sortedWithDay.addAll(sortHorizon(imminent,  nowSeconds, zeroSupportCounter, true));
         sortedWithDay.addAll(sortHorizon(nearTerm,  nowSeconds, zeroSupportCounter, false));
         sortedWithDay.addAll(sortHorizon(midTerm,   nowSeconds, zeroSupportCounter, false));
-        sortedWithDay.addAll(sortHorizon(distant,   nowSeconds, zeroSupportCounter, false));
+        sortedWithDay.addAll(sortHorizon(distant,   nowSeconds, zeroSupportCounter, true));  // Distant: no suppression (like imminent)
 
         // -----------------------------------------------------------------------
         // 3. Sort needsDay (no timestamp): CONFIRMED > GAINING_MOMENTUM > BUILDING
@@ -128,11 +128,11 @@ public class FeedSortingService {
      * @param items              Items in this horizon bucket
      * @param nowSeconds         Current time (epoch seconds)
      * @param counter            Shared zero-support counter across the whole feed
-     * @param isImminentHorizon  True if this is the Imminent bucket (affects 24h signal boost)
+     * @param suppressionExempt  True if this is the Imminent bucket (affects 24h signal boost)
      * @return Sorted list with smart surfacing applied
      */
     private List<FeedItem> sortHorizon(List<FeedItem> items, long nowSeconds,
-                                        ZeroSupportCounter counter, boolean isImminentHorizon) {
+                                        ZeroSupportCounter counter, boolean suppressionExempt) {
         if (items.isEmpty()) {
             return List.of();
         }
@@ -143,12 +143,13 @@ public class FeedSortingService {
 
         for (FeedItem item : items) {
             String category = getMomentumCategory(item);
-            if ("CONFIRMED".equals(category) || item instanceof SeriesSummaryDTO) {
+            if ("CONFIRMED".equals(category) || category == null || item instanceof SeriesSummaryDTO) {
+                // null/legacy hangouts are treated as CONFIRMED (backward compat)
                 confirmed.add(item);
             } else if ("GAINING_MOMENTUM".equals(category)) {
                 gainingMomentum.add(item);
             } else {
-                // BUILDING or null/legacy
+                // BUILDING
                 building.add(item);
             }
         }
@@ -165,7 +166,7 @@ public class FeedSortingService {
 
         // Smart surfacing for BUILDING items
         // Imminent items (< 48h away) always show — suppression only applies to longer horizons
-        boolean weekHasConfirmedItems = !isImminentHorizon && !confirmed.isEmpty();
+        boolean weekHasConfirmedItems = !suppressionExempt && !confirmed.isEmpty();
         List<FeedItem> filteredBuilding = applySmartSurfacing(
                 building, weekHasConfirmedItems, nowSeconds, counter);
 
@@ -192,15 +193,18 @@ public class FeedSortingService {
 
         for (HangoutSummaryDTO item : needsDay) {
             String category = getMomentumCategory(item);
-            if ("CONFIRMED".equals(category)) {
+            if ("CONFIRMED".equals(category) || category == null) {
+                // null/legacy hangouts are treated as CONFIRMED (backward compat)
                 confirmed.add(item);
             } else if ("GAINING_MOMENTUM".equals(category)) {
                 gainingMomentum.add(item);
             } else {
+                // BUILDING
                 building.add(item);
             }
         }
 
+        // needsDay items have no time horizon — "busy week" suppression doesn't apply
         List<FeedItem> filteredBuildingFeed = applySmartSurfacing(
                 new ArrayList<>(building), false, nowSeconds, counter);
         List<HangoutSummaryDTO> filteredBuilding = filteredBuildingFeed.stream()
@@ -255,21 +259,15 @@ public class FeedSortingService {
             // Busy week: only recently-surging items pass through — no more BUILDING shown
             // (recently-surging are already added above)
         } else {
-            // Empty week: auto-surface best candidate if none have already been added
+            // Empty week: auto-surface best candidate if no surging items were found
             if (result.isEmpty() && !normal.isEmpty()) {
                 // Sort normal by most recent support signal, then add the best one
                 List<FeedItem> sorted = new ArrayList<>(normal);
                 sorted.sort(Comparator.comparingLong(
                         (FeedItem i) -> getLastSupportTimestamp(i)).reversed());
                 result.add(sorted.get(0));
-                normal.removeIf(i -> i == sorted.get(0));
             }
-            // Add remaining normal items, subject to zero-support cap
-            for (FeedItem item : normal) {
-                if (!result.contains(item)) {
-                    result.add(item);
-                }
-            }
+            // Remaining normal items are NOT added — spec says "auto-surface best candidate" only
         }
 
         // Apply global zero-support cap

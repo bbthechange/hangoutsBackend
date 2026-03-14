@@ -98,10 +98,10 @@ The feed endpoint (`GET /groups/{groupId}/feed`) accepts a `filter` query parame
 | Filter | Behavior |
 |--------|----------|
 | `ALL` (default) | Returns all hangouts |
-| `CONFIRMED` | Returns only hangouts where `momentumCategory == CONFIRMED` |
+| `CONFIRMED` | Returns hangouts where `momentumCategory == CONFIRMED` or `null` (legacy = confirmed) |
 | `EVERYTHING` | Same as ALL for now (fading is client-side) |
 
-**Implementation:** `GroupController` passes the filter to `GroupServiceImpl.getGroupFeed()`. Filtering is post-query on both `withDay` and `needsDay` lists. Series items are always kept regardless of filter.
+**Implementation:** `GroupController` validates the filter parameter (case-insensitive, returns 400 for invalid values), normalizes to uppercase, and passes to `GroupServiceImpl.getGroupFeed()`. Filtering is post-query on both `withDay` and `needsDay` lists. Series items are always kept regardless of filter.
 
 ### MomentumDTO in Feed Response
 

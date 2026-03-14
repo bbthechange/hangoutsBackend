@@ -180,6 +180,12 @@ public class GroupController extends BaseController {
 
         String userId = extractUserId(httpRequest);
 
+        // Validate filter parameter
+        String normalizedFilter = filter.toUpperCase();
+        if (!"ALL".equals(normalizedFilter) && !"CONFIRMED".equals(normalizedFilter) && !"EVERYTHING".equals(normalizedFilter)) {
+            return ResponseEntity.badRequest().build();
+        }
+
         // Extract client info for version filtering (e.g., watch parties require >= 2.0.0)
         ClientInfo clientInfo = ClientInfo.fromRequestAttribute(httpRequest);
 
@@ -197,7 +203,7 @@ public class GroupController extends BaseController {
         }
 
         // Step 3: ETag doesn't match - do the expensive feed query with version filtering
-        GroupFeedDTO feed = groupService.getGroupFeed(groupId, userId, limit, startingAfter, endingBefore, clientInfo, filter);
+        GroupFeedDTO feed = groupService.getGroupFeed(groupId, userId, limit, startingAfter, endingBefore, clientInfo, normalizedFilter);
         logger.debug("Retrieved group feed for group {} with {} chronological events",
                     groupId, feed.getWithDay().size());
 

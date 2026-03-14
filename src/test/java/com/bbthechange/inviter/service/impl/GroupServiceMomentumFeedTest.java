@@ -35,7 +35,7 @@ import static org.mockito.Mockito.*;
  * - filter=EVERYTHING behaves like ALL
  * - filter=CONFIRMED keeps series items
  * - No filter defaults to ALL behavior
- * - filter=CONFIRMED excludes hangouts with null momentum
+ * - filter=CONFIRMED includes legacy hangouts with null momentum (treated as confirmed)
  */
 @ExtendWith(MockitoExtension.class)
 class GroupServiceMomentumFeedTest {
@@ -238,7 +238,7 @@ class GroupServiceMomentumFeedTest {
     }
 
     @Test
-    void getGroupFeed_filterConfirmed_nullMomentumOnHangout_excluded() {
+    void getGroupFeed_filterConfirmed_nullMomentumOnHangout_included() {
         GroupMembership membership = buildMembership(GROUP_ID, USER_ID);
         when(groupRepository.findMembership(GROUP_ID, USER_ID)).thenReturn(Optional.of(membership));
 
@@ -258,9 +258,9 @@ class GroupServiceMomentumFeedTest {
 
         GroupFeedDTO feed = groupService.getGroupFeed(GROUP_ID, USER_ID, 20, null, null, null, "CONFIRMED");
 
-        // Legacy hangout with null momentum is excluded from CONFIRMED filter
-        assertThat(feed.getNeedsDay()).isEmpty();
-        assertThat(feed.getWithDay()).isEmpty();
+        // Legacy hangout with null momentum is treated as CONFIRMED — included in CONFIRMED filter
+        assertThat(feed.getNeedsDay()).hasSize(1);
+        assertThat(feed.getNeedsDay().get(0).getHangoutId()).isEqualTo("h-legacy");
     }
 
     // ============================================================================

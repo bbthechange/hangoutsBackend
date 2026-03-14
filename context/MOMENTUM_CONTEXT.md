@@ -154,7 +154,7 @@ The feed endpoint (`GET /groups/{groupId}/feed`) accepts a `filter` query parame
 | Filter | Behavior |
 |--------|----------|
 | `ALL` (default) | Returns all hangouts |
-| `CONFIRMED` | Returns only hangouts where `momentumCategory == CONFIRMED` |
+| `CONFIRMED` | Returns hangouts where `momentumCategory == CONFIRMED` or `null` (legacy hangouts treated as confirmed) |
 | `EVERYTHING` | Same as ALL for now (fading is client-side) |
 
 Filtering is post-query on both `withDay` and `needsDay` lists.
@@ -184,7 +184,7 @@ Filtering is post-query on both `withDay` and `needsDay` lists.
 | IMMINENT | ≤ 48h | Exempt from busy-week suppression |
 | NEAR_TERM | ≤ 7 days | Busy-week and empty-week rules apply |
 | MID_TERM | ≤ 21 days | Same smart-surfacing rules |
-| DISTANT | > 21 days | No suppression |
+| DISTANT | > 21 days | Suppression-exempt (like imminent) |
 | needsDay | No timestamp | Sorted by momentum category only |
 
 ### Sort Order Within Each Horizon
@@ -193,8 +193,9 @@ Filtering is post-query on both `withDay` and `needsDay` lists.
 
 ### Smart Surfacing Rules for BUILDING Items
 
-- **Busy week** (confirmed item in same horizon): BUILDING items are suppressed unless they have a recent support surge (2+ interest signals in last 24h). Imminent horizon is always exempt.
-- **Empty week** (no confirmed items): Best BUILDING candidate is auto-surfaced (most recent support signal).
+- **Busy week** (confirmed item in same horizon): BUILDING items are suppressed unless they have a recent support surge (2+ interest signals in last 24h). Imminent and Distant horizons are always exempt.
+- **Empty week** (no confirmed items): Single best BUILDING candidate is auto-surfaced (most recent support signal). Surging items (2+ signals in 24h) always surface independently.
+- **Null/legacy momentum**: Items with null momentum category are treated as CONFIRMED for sorting and filtering purposes.
 - **Zero-support cap**: Max 2 zero-support BUILDING items across the entire feed (shared between `withDay` and `needsDay`). A zero-support item has 0 or 1 interest levels (creator only = zero support).
 
 ### Constants
