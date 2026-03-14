@@ -532,6 +532,57 @@ class IdeaFeedSurfacingServiceImplTest {
 
             assertThat(service.allUpcomingWeeksCovered(GROUP_ID, NOW)).isFalse();
         }
+
+        @Test
+        void hangoutPointerWithNullStartTimestamp_Skipped() {
+            // Dateless pointers should be skipped, not cause errors
+            HangoutPointer dateless = new HangoutPointer();
+            dateless.setHangoutId("hangout-dateless");
+            dateless.setStartTimestamp(null);
+            dateless.setMomentumCategory(MomentumCategory.CONFIRMED);
+
+            when(hangoutRepository.getFutureEventsPage(eq(GROUP_ID), anyLong(), anyInt(), any()))
+                    .thenReturn(pageOf(List.of(dateless)));
+
+            // Dateless pointer doesn't cover any week
+            assertThat(service.allUpcomingWeeksCovered(GROUP_ID, NOW)).isFalse();
+        }
+
+        @Test
+        void hangoutPointerWithNullMomentumCategory_NotCountedAsConfirmed() {
+            // Pre-momentum hangouts (null category) should not count for suppression
+            HangoutPointer preMomentum = new HangoutPointer();
+            preMomentum.setHangoutId("hangout-legacy");
+            preMomentum.setStartTimestamp(NOW + 1000);
+            preMomentum.setMomentumCategory(null);
+
+            when(hangoutRepository.getFutureEventsPage(eq(GROUP_ID), anyLong(), anyInt(), any()))
+                    .thenReturn(pageOf(List.of(preMomentum)));
+
+            assertThat(service.allUpcomingWeeksCovered(GROUP_ID, NOW)).isFalse();
+        }
+
+        @Test
+        void yearBoundary_WeeksComputedCorrectly() {
+            // Now = Monday Dec 29, 2025 18:00 UTC
+            // Calendar year is 2025, but ISO week-based year is 2026 (ISO week 1 starts Mon Dec 29)
+            long yearBoundaryNow = 1767031200L; // 2025-12-29T18:00:00Z (Monday, ISO week 1 of 2026)
+
+            // Confirmed hangouts in ISO weeks 1, 2, 3 of 2026
+            long isoWeek1 = yearBoundaryNow + 1000;          // Dec 29, 2025 (ISO week 1 of 2026)
+            long isoWeek2 = yearBoundaryNow + (7 * 86400L);  // Jan 5, 2026 (ISO week 2 of 2026)
+            long isoWeek3 = yearBoundaryNow + (14 * 86400L); // Jan 12, 2026 (ISO week 3 of 2026)
+
+            List<BaseItem> items = List.of(
+                    confirmedPointer(isoWeek1),
+                    confirmedPointer(isoWeek2),
+                    confirmedPointer(isoWeek3)
+            );
+            when(hangoutRepository.getFutureEventsPage(eq(GROUP_ID), anyLong(), anyInt(), any()))
+                    .thenReturn(pageOf(items));
+
+            assertThat(service.allUpcomingWeeksCovered(GROUP_ID, yearBoundaryNow)).isTrue();
+        }
     }
 
     // =========================================================================

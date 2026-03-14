@@ -17,7 +17,7 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
-import java.time.temporal.ChronoField;
+import java.time.temporal.IsoFields;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -113,7 +113,7 @@ public class IdeaFeedSurfacingServiceImpl implements IdeaFeedSurfacingService {
 
         for (int offset = 0; offset < WEEKS_TO_CHECK; offset++) {
             ZonedDateTime weekStart = now.plusWeeks(offset);
-            int weekKey = weekKey(weekStart.getYear(), weekStart.get(ChronoField.ALIGNED_WEEK_OF_YEAR));
+            int weekKey = weekKey(weekStart.get(IsoFields.WEEK_BASED_YEAR), weekStart.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR));
             if (!weeksWithConfirmed.contains(weekKey)) {
                 return false; // Found a week without coverage
             }
@@ -122,7 +122,7 @@ public class IdeaFeedSurfacingServiceImpl implements IdeaFeedSurfacingService {
     }
 
     /**
-     * Returns a set of week keys ({@code year * 100 + isoWeek}) for weeks that
+     * Returns a set of week keys ({@code weekBasedYear * 100 + isoWeek}) for weeks that
      * have at least one CONFIRMED hangout within the look-ahead window.
      */
     private Set<Integer> findWeeksWithConfirmedHangouts(String groupId, long nowTimestamp) {
@@ -154,10 +154,9 @@ public class IdeaFeedSurfacingServiceImpl implements IdeaFeedSurfacingService {
                     // Beyond our window — stop iterating pages too
                     return coveredWeeks;
                 }
-                if (MomentumCategory.CONFIRMED.name().equals(
-                        hp.getMomentumCategory() != null ? hp.getMomentumCategory().name() : null)) {
+                if (MomentumCategory.CONFIRMED == hp.getMomentumCategory()) {
                     ZonedDateTime dt = Instant.ofEpochSecond(hp.getStartTimestamp()).atZone(ZoneOffset.UTC);
-                    coveredWeeks.add(weekKey(dt.getYear(), dt.get(ChronoField.ALIGNED_WEEK_OF_YEAR)));
+                    coveredWeeks.add(weekKey(dt.get(IsoFields.WEEK_BASED_YEAR), dt.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR)));
                 }
             }
 
