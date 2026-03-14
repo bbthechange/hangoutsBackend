@@ -9,6 +9,7 @@ import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.service.MomentumService;
+import com.bbthechange.inviter.service.TimeSuggestionSchedulerService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -46,6 +47,7 @@ class TimeSuggestionServiceImplTest {
     @Mock private GroupRepository groupRepository;
     @Mock private MomentumService momentumService;
     @Mock private PointerUpdateService pointerUpdateService;
+    @Mock private TimeSuggestionSchedulerService timeSuggestionSchedulerService;
 
     @InjectMocks
     private TimeSuggestionServiceImpl service;

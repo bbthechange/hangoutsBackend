@@ -3,12 +3,14 @@ package com.bbthechange.inviter.listener;
 import com.bbthechange.inviter.model.Hangout;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.service.NotificationService;
+import com.bbthechange.inviter.service.TimeSuggestionService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.awspring.cloud.sqs.annotation.SqsListener;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -16,13 +18,13 @@ import java.time.Instant;
 import java.util.Optional;
 
 /**
- * SQS listener for hangout reminder messages from EventBridge Scheduler.
- * Processes reminder requests and sends push notifications.
+ * SQS listener for scheduled event messages from EventBridge Scheduler.
+ * Routes messages by type:
+ * - No type / unknown type: hangout reminder (backward compatible)
+ * - TIME_SUGGESTION_ADOPTION: time suggestion auto-adoption check
  *
- * Message format: {"hangoutId":"..."}
- *
- * Idempotency: Uses atomic DynamoDB update (setReminderSentAtIfNull) to ensure
- * only one reminder is sent even if message is delivered multiple times.
+ * Idempotency: Reminders use atomic DynamoDB update (setReminderSentAtIfNull).
+ * Adoption uses adoptForHangout() which checks suggestion status.
  */
 @Component
 @ConditionalOnProperty(name = "scheduler.enabled", havingValue = "true")
@@ -30,55 +32,91 @@ public class HangoutReminderListener {
 
     private static final Logger logger = LoggerFactory.getLogger(HangoutReminderListener.class);
 
+    private static final String TYPE_TIME_SUGGESTION_ADOPTION = "TIME_SUGGESTION_ADOPTION";
+
     // Reminder window: 90-150 minutes before start (2 hours +/- 30 min tolerance)
     private static final long MIN_MINUTES_BEFORE_START = 90;
     private static final long MAX_MINUTES_BEFORE_START = 150;
 
     private final HangoutRepository hangoutRepository;
     private final NotificationService notificationService;
+    private final TimeSuggestionService timeSuggestionService;
     private final MeterRegistry meterRegistry;
     private final ObjectMapper objectMapper;
+    private final int shortWindowHours;
+    private final int longWindowHours;
 
     public HangoutReminderListener(HangoutRepository hangoutRepository,
                                    NotificationService notificationService,
+                                   TimeSuggestionService timeSuggestionService,
                                    MeterRegistry meterRegistry,
-                                   ObjectMapper objectMapper) {
+                                   ObjectMapper objectMapper,
+                                   @Value("${time-suggestion.auto-adoption.short-window-hours:24}") int shortWindowHours,
+                                   @Value("${time-suggestion.auto-adoption.long-window-hours:48}") int longWindowHours) {
         this.hangoutRepository = hangoutRepository;
         this.notificationService = notificationService;
+        this.timeSuggestionService = timeSuggestionService;
         this.meterRegistry = meterRegistry;
         this.objectMapper = objectMapper;
+        this.shortWindowHours = shortWindowHours;
+        this.longWindowHours = longWindowHours;
     }
 
     @SqsListener(value = "${scheduler.queue-name:hangout-reminders}")
-    public void handleReminder(String messageBody) {
-        String hangoutId = null;
+    public void handleMessage(String messageBody) {
         try {
-            // Parse hangoutId from message
             JsonNode node = objectMapper.readTree(messageBody);
-            JsonNode hangoutIdNode = node.get("hangoutId");
+            String type = node.has("type") ? node.get("type").asText() : null;
 
-            if (hangoutIdNode == null || hangoutIdNode.isNull()) {
-                logger.warn("Received reminder with missing hangoutId field: {}", messageBody);
-                meterRegistry.counter("hangout_reminder_total", "status", "missing_id").increment();
-                return;
+            if (TYPE_TIME_SUGGESTION_ADOPTION.equals(type)) {
+                handleTimeSuggestionAdoption(node, messageBody);
+            } else {
+                handleReminder(node, messageBody);
             }
-
-            hangoutId = hangoutIdNode.asText();
-            if (hangoutId.isBlank()) {
-                logger.warn("Received reminder with blank hangoutId: {}", messageBody);
-                meterRegistry.counter("hangout_reminder_total", "status", "missing_id").increment();
-                return;
-            }
-
-            logger.info("Processing reminder for hangout: {}", hangoutId);
-            processReminder(hangoutId);
-
         } catch (Exception e) {
-            logger.error("Error processing reminder message: {}", messageBody, e);
-            meterRegistry.counter("hangout_reminder_total", "status", "error").increment();
-            // Don't rethrow - message will be acknowledged and deleted
-            // Retrying won't help for parse errors or DB issues we've already logged
+            logger.error("Error processing scheduled event message: {}", messageBody, e);
+            // Don't rethrow — acknowledge and delete the message
         }
+    }
+
+    private void handleTimeSuggestionAdoption(JsonNode node, String messageBody) {
+        JsonNode hangoutIdNode = node.get("hangoutId");
+        if (hangoutIdNode == null || hangoutIdNode.isNull() || hangoutIdNode.asText().isBlank()) {
+            logger.warn("Received adoption message with missing hangoutId: {}", messageBody);
+            meterRegistry.counter("time_suggestion_adoption_total", "status", "missing_id").increment();
+            return;
+        }
+
+        String hangoutId = hangoutIdNode.asText();
+        logger.info("Processing time suggestion adoption for hangout: {}", hangoutId);
+
+        try {
+            timeSuggestionService.adoptForHangout(hangoutId, shortWindowHours, longWindowHours);
+            meterRegistry.counter("time_suggestion_adoption_total", "status", "processed").increment();
+        } catch (Exception e) {
+            logger.error("Error during time suggestion adoption for hangout {}: {}", hangoutId, e.getMessage(), e);
+            meterRegistry.counter("time_suggestion_adoption_total", "status", "error").increment();
+        }
+    }
+
+    private void handleReminder(JsonNode node, String messageBody) {
+        JsonNode hangoutIdNode = node.get("hangoutId");
+
+        if (hangoutIdNode == null || hangoutIdNode.isNull()) {
+            logger.warn("Received reminder with missing hangoutId field: {}", messageBody);
+            meterRegistry.counter("hangout_reminder_total", "status", "missing_id").increment();
+            return;
+        }
+
+        String hangoutId = hangoutIdNode.asText();
+        if (hangoutId.isBlank()) {
+            logger.warn("Received reminder with blank hangoutId: {}", messageBody);
+            meterRegistry.counter("hangout_reminder_total", "status", "missing_id").increment();
+            return;
+        }
+
+        logger.info("Processing reminder for hangout: {}", hangoutId);
+        processReminder(hangoutId);
     }
 
     private void processReminder(String hangoutId) {

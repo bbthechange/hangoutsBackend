@@ -252,8 +252,8 @@ WEEKS_TO_CHECK = 3
 | `dto/TimeSuggestionDTO.java` | API response DTO |
 | `service/TimeSuggestionService.java` | Interface |
 | `service/impl/TimeSuggestionServiceImpl.java` | Business logic + auto-adoption |
+| `service/TimeSuggestionSchedulerService.java` | Schedules EventBridge one-shot events for adoption checks |
 | `controller/TimeSuggestionController.java` | REST endpoints |
-| `task/TimeSuggestionAutoAdoptionTask.java` | Hourly scheduled task (disabled by default) |
 
 ### REST Endpoints
 
@@ -271,12 +271,11 @@ GET    /groups/{groupId}/hangouts/{hangoutId}/time-suggestions         — list 
 | Single suggestion + 0 votes, no competition | `long-window-hours` (default 48h) |
 | Multiple competing suggestions | Leave as poll; no auto-adopt |
 
-**Config** (disabled by default):
+**Triggering**: When a time suggestion is created, `TimeSuggestionSchedulerService` schedules two EventBridge one-shot events — one at `createdAt + shortWindowHours` and one at `createdAt + longWindowHours`. Both fire via SQS → `HangoutReminderListener` → `adoptForHangout()`, which is idempotent. Schedules auto-delete after execution.
+
 ```properties
-time-suggestion.auto-adoption.enabled=true          # enable task
 time-suggestion.auto-adoption.short-window-hours=24
 time-suggestion.auto-adoption.long-window-hours=48
-time-suggestion.auto-adoption.interval-ms=3600000   # hourly
 ```
 
 ### Adoption Flow
@@ -304,9 +303,8 @@ They are retrieved with a `begins_with(sk, "TIME_SUGGESTION#")` query.
 |------|---------|
 | `model/Poll.java` | Added `attributeType` (nullable: "LOCATION", "DESCRIPTION") and `promotedAt` fields |
 | `model/PollOption.java` | Added `createdBy` (userId) and `structuredValue` (JSON for location data) fields |
-| `service/AttributeSuggestionService.java` | Interface for suggestion computation, supersession, promotion |
-| `service/impl/AttributeSuggestionServiceImpl.java` | Pure computation + supersession + auto-promotion logic |
-| `service/impl/AttributeSuggestionAutoPromotionTask.java` | Hourly scheduled task (gated by config) |
+| `service/AttributeSuggestionService.java` | Interface for suggestion computation and supersession |
+| `service/impl/AttributeSuggestionServiceImpl.java` | Pure computation + supersession logic |
 | `dto/SuggestedAttributeDTO.java` | Computed suggestion state: attributeType, suggestedValue, status, voteCount |
 | `dto/HangoutDetailDTO.java` | `Map<String, SuggestedAttributeDTO> suggestedAttributes` field |
 | `dto/HangoutSummaryDTO.java` | Same field for feed responses |
@@ -319,16 +317,17 @@ They are retrieved with a `begins_with(sk, "TIME_SUGGESTION#")` query.
 4. When a direct edit sets location or description, `supersedeSuggestionPolls()` deactivates the corresponding suggestion polls.
 5. Non-creator edits now apply directly — the old interception block in `updateHangout()` has been removed.
 
-### Auto-Promotion Rules
+### Suggestion Status (Computed at Runtime)
 
-| Scenario | Window | Action |
-|----------|--------|--------|
-| Single option, no competing options | 24h | Auto-promote |
-| Single option with votes, no competing votes | 24h | Auto-promote |
-| Multiple options with votes | Never | Leave as contested poll |
-| Direct edit applied | Immediate | Supersede (deactivate poll) |
+`computeSuggestedAttributes()` derives status from poll data already loaded — no writes or scheduled tasks needed:
 
-After promotion: write winning value to hangout, sync pointers, set `poll.isActive = false` + `poll.promotedAt = now`, recompute momentum.
+| Status | Condition |
+|--------|-----------|
+| PENDING | < 24h old, or no votes yet |
+| CONTESTED | Multiple options with votes |
+| READY_TO_PROMOTE | ≥ 24h old, single option or no opposing votes — client treats as effective value |
+
+When a direct edit sets location or description, `supersedeSuggestionPolls()` deactivates the corresponding suggestion polls immediately.
 
 ### API Contract (No New Endpoints)
 
@@ -415,5 +414,3 @@ SK = NOTIFICATION_TRACKER
 
 - **Active member tracking** — `engagementMultiplier` currently uses total membership count; should track members with InterestLevel records in last 8 weeks.
 - **Group confirmation rate** — currently uses default 0.6 multiplier; should compute from rolling 8-week data.
-- **TimeSuggestion GSI** — auto-adoption task uses DynamoDB scan (acceptable at small scale). A GSI on (itemType, status) would enable efficient querying without full-table scan.
-- **Attribute suggestion poll GSI** — auto-promotion task uses DynamoDB scan filtered by itemType=POLL + attributeType. Same trade-off as TimeSuggestion scan: acceptable at small scale, should use a GSI for production scale.

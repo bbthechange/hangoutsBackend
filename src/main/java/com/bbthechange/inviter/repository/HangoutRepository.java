@@ -278,17 +278,4 @@ public interface HangoutRepository {
      */
     List<TimeSuggestion> findAllTimeSuggestions(String hangoutId);
 
-    // ============================================================================
-    // ATTRIBUTE SUGGESTION POLL operations
-    // ============================================================================
-
-    /**
-     * Scan for all active suggestion polls (polls with attributeType set, isActive=true, promotedAt=null).
-     * Used by the hourly auto-promotion task. DynamoDB scan is acceptable because:
-     * 1. The feature is disabled by default (gated in scheduler).
-     * 2. Active suggestion polls are expected to be rare / short-lived.
-     *
-     * @return List of active suggestion polls across all hangouts
-     */
-    List<Poll> findActiveSuggestionPolls();
 }

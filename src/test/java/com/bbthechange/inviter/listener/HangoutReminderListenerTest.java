@@ -3,10 +3,12 @@ package com.bbthechange.inviter.listener;
 import com.bbthechange.inviter.model.Hangout;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.service.NotificationService;
+import com.bbthechange.inviter.service.TimeSuggestionService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -31,6 +33,9 @@ class HangoutReminderListenerTest {
     private NotificationService notificationService;
 
     @Mock
+    private TimeSuggestionService timeSuggestionService;
+
+    @Mock
     private MeterRegistry meterRegistry;
 
     @Mock
@@ -42,154 +47,129 @@ class HangoutReminderListenerTest {
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper();
-        when(meterRegistry.counter(anyString(), any(String[].class))).thenReturn(counter);
-        listener = new HangoutReminderListener(hangoutRepository, notificationService, meterRegistry, objectMapper);
+        lenient().when(meterRegistry.counter(anyString(), any(String[].class))).thenReturn(counter);
+        listener = new HangoutReminderListener(
+                hangoutRepository, notificationService, timeSuggestionService,
+                meterRegistry, objectMapper, 24, 48);
     }
 
-    @Test
-    void handleReminder_WithValidHangout_SendsNotification() {
-        // Given
-        String hangoutId = "test-hangout-123";
-        String messageBody = "{\"hangoutId\":\"" + hangoutId + "\"}";
-
-        Hangout hangout = new Hangout();
-        hangout.setHangoutId(hangoutId);
-        hangout.setStartTimestamp(Instant.now().getEpochSecond() + 7200); // 2 hours from now
-        hangout.setReminderSentAt(null);
-
-        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
-        when(hangoutRepository.setReminderSentAtIfNull(eq(hangoutId), anyLong())).thenReturn(true);
-
-        // When
-        listener.handleReminder(messageBody);
-
-        // Then
-        verify(notificationService).sendHangoutReminder(hangout);
-        verify(meterRegistry).counter("hangout_reminder_total", "status", "sent");
-    }
+    // ============================================================================
+    // Reminder message tests (no type field — backward compatible)
+    // ============================================================================
 
     @Test
-    void handleReminder_WithMissingHangoutId_DoesNotSendNotification() {
-        // Given
-        String messageBody = "{}";
-
-        // When
-        listener.handleReminder(messageBody);
-
-        // Then
-        verify(notificationService, never()).sendHangoutReminder(any());
-        verify(meterRegistry).counter("hangout_reminder_total", "status", "missing_id");
-    }
-
-    @Test
-    void handleReminder_WithBlankHangoutId_DoesNotSendNotification() {
-        // Given
-        String messageBody = "{\"hangoutId\":\"\"}";
-
-        // When
-        listener.handleReminder(messageBody);
-
-        // Then
-        verify(notificationService, never()).sendHangoutReminder(any());
-        verify(meterRegistry).counter("hangout_reminder_total", "status", "missing_id");
-    }
-
-    @Test
-    void handleReminder_WithNullHangoutId_DoesNotSendNotification() {
-        // Given
-        String messageBody = "{\"hangoutId\":null}";
-
-        // When
-        listener.handleReminder(messageBody);
-
-        // Then
-        verify(notificationService, never()).sendHangoutReminder(any());
-        verify(meterRegistry).counter("hangout_reminder_total", "status", "missing_id");
-    }
-
-    @Test
-    void handleReminder_WhenHangoutNotFound_DoesNotSendNotification() {
-        // Given
-        String hangoutId = "nonexistent-hangout";
-        String messageBody = "{\"hangoutId\":\"" + hangoutId + "\"}";
-
-        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.empty());
-
-        // When
-        listener.handleReminder(messageBody);
-
-        // Then
-        verify(notificationService, never()).sendHangoutReminder(any());
-        verify(meterRegistry).counter("hangout_reminder_total", "status", "not_found");
-    }
-
-    @Test
-    void handleReminder_WhenAlreadySent_DoesNotSendAgain() {
-        // Given
+    void handleMessage_WithValidHangout_SendsNotification() {
         String hangoutId = "test-hangout-123";
         String messageBody = "{\"hangoutId\":\"" + hangoutId + "\"}";
 
         Hangout hangout = new Hangout();
         hangout.setHangoutId(hangoutId);
         hangout.setStartTimestamp(Instant.now().getEpochSecond() + 7200);
-        hangout.setReminderSentAt(System.currentTimeMillis() - 60000); // Already sent
+        hangout.setReminderSentAt(null);
+
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
+        when(hangoutRepository.setReminderSentAtIfNull(eq(hangoutId), anyLong())).thenReturn(true);
+
+        listener.handleMessage(messageBody);
+
+        verify(notificationService).sendHangoutReminder(hangout);
+        verify(meterRegistry).counter("hangout_reminder_total", "status", "sent");
+    }
+
+    @Test
+    void handleMessage_WithMissingHangoutId_DoesNotSendNotification() {
+        listener.handleMessage("{}");
+
+        verify(notificationService, never()).sendHangoutReminder(any());
+        verify(meterRegistry).counter("hangout_reminder_total", "status", "missing_id");
+    }
+
+    @Test
+    void handleMessage_WithBlankHangoutId_DoesNotSendNotification() {
+        listener.handleMessage("{\"hangoutId\":\"\"}");
+
+        verify(notificationService, never()).sendHangoutReminder(any());
+        verify(meterRegistry).counter("hangout_reminder_total", "status", "missing_id");
+    }
+
+    @Test
+    void handleMessage_WithNullHangoutId_DoesNotSendNotification() {
+        listener.handleMessage("{\"hangoutId\":null}");
+
+        verify(notificationService, never()).sendHangoutReminder(any());
+        verify(meterRegistry).counter("hangout_reminder_total", "status", "missing_id");
+    }
+
+    @Test
+    void handleMessage_WhenHangoutNotFound_DoesNotSendNotification() {
+        String hangoutId = "nonexistent-hangout";
+        String messageBody = "{\"hangoutId\":\"" + hangoutId + "\"}";
+
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.empty());
+
+        listener.handleMessage(messageBody);
+
+        verify(notificationService, never()).sendHangoutReminder(any());
+        verify(meterRegistry).counter("hangout_reminder_total", "status", "not_found");
+    }
+
+    @Test
+    void handleMessage_WhenAlreadySent_DoesNotSendAgain() {
+        String hangoutId = "test-hangout-123";
+        String messageBody = "{\"hangoutId\":\"" + hangoutId + "\"}";
+
+        Hangout hangout = new Hangout();
+        hangout.setHangoutId(hangoutId);
+        hangout.setStartTimestamp(Instant.now().getEpochSecond() + 7200);
+        hangout.setReminderSentAt(System.currentTimeMillis() - 60000);
 
         when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
 
-        // When
-        listener.handleReminder(messageBody);
+        listener.handleMessage(messageBody);
 
-        // Then
         verify(notificationService, never()).sendHangoutReminder(any());
         verify(hangoutRepository, never()).setReminderSentAtIfNull(anyString(), anyLong());
         verify(meterRegistry).counter("hangout_reminder_total", "status", "already_sent");
     }
 
     @Test
-    void handleReminder_WhenTooCloseToStart_DoesNotSendNotification() {
-        // Given
+    void handleMessage_WhenTooCloseToStart_DoesNotSendNotification() {
         String hangoutId = "test-hangout-123";
         String messageBody = "{\"hangoutId\":\"" + hangoutId + "\"}";
 
         Hangout hangout = new Hangout();
         hangout.setHangoutId(hangoutId);
-        hangout.setStartTimestamp(Instant.now().getEpochSecond() + 300); // Only 5 minutes away
+        hangout.setStartTimestamp(Instant.now().getEpochSecond() + 300);
         hangout.setReminderSentAt(null);
 
         when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
 
-        // When
-        listener.handleReminder(messageBody);
+        listener.handleMessage(messageBody);
 
-        // Then
         verify(notificationService, never()).sendHangoutReminder(any());
         verify(meterRegistry).counter("hangout_reminder_total", "status", "outside_window");
     }
 
     @Test
-    void handleReminder_WhenTooFarFromStart_DoesNotSendNotification() {
-        // Given
+    void handleMessage_WhenTooFarFromStart_DoesNotSendNotification() {
         String hangoutId = "test-hangout-123";
         String messageBody = "{\"hangoutId\":\"" + hangoutId + "\"}";
 
         Hangout hangout = new Hangout();
         hangout.setHangoutId(hangoutId);
-        hangout.setStartTimestamp(Instant.now().getEpochSecond() + 14400); // 4 hours away
+        hangout.setStartTimestamp(Instant.now().getEpochSecond() + 14400);
         hangout.setReminderSentAt(null);
 
         when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
 
-        // When
-        listener.handleReminder(messageBody);
+        listener.handleMessage(messageBody);
 
-        // Then
         verify(notificationService, never()).sendHangoutReminder(any());
         verify(meterRegistry).counter("hangout_reminder_total", "status", "outside_window");
     }
 
     @Test
-    void handleReminder_WhenLostRace_DoesNotSendNotification() {
-        // Given
+    void handleMessage_WhenLostRace_DoesNotSendNotification() {
         String hangoutId = "test-hangout-123";
         String messageBody = "{\"hangoutId\":\"" + hangoutId + "\"}";
 
@@ -201,89 +181,124 @@ class HangoutReminderListenerTest {
         when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
         when(hangoutRepository.setReminderSentAtIfNull(eq(hangoutId), anyLong())).thenReturn(false);
 
-        // When
-        listener.handleReminder(messageBody);
+        listener.handleMessage(messageBody);
 
-        // Then
         verify(notificationService, never()).sendHangoutReminder(any());
         verify(meterRegistry).counter("hangout_reminder_total", "status", "lost_race");
     }
 
     @Test
-    void handleReminder_WhenNoStartTime_DoesNotSendNotification() {
-        // Given
+    void handleMessage_WhenNoStartTime_DoesNotSendNotification() {
         String hangoutId = "test-hangout-123";
         String messageBody = "{\"hangoutId\":\"" + hangoutId + "\"}";
 
         Hangout hangout = new Hangout();
         hangout.setHangoutId(hangoutId);
-        hangout.setStartTimestamp(null); // No start time
+        hangout.setStartTimestamp(null);
         hangout.setReminderSentAt(null);
 
         when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
 
-        // When
-        listener.handleReminder(messageBody);
+        listener.handleMessage(messageBody);
 
-        // Then
         verify(notificationService, never()).sendHangoutReminder(any());
         verify(meterRegistry).counter("hangout_reminder_total", "status", "no_start_time");
     }
 
     @Test
-    void handleReminder_WithInvalidJson_DoesNotCrash() {
-        // Given
-        String messageBody = "not valid json";
+    void handleMessage_WithInvalidJson_DoesNotCrash() {
+        listener.handleMessage("not valid json");
 
-        // When
-        listener.handleReminder(messageBody);
-
-        // Then
         verify(notificationService, never()).sendHangoutReminder(any());
-        verify(meterRegistry).counter("hangout_reminder_total", "status", "error");
     }
 
     @Test
-    void handleReminder_AtLowerBoundOfWindow_SendsNotification() {
-        // Given - exactly 90 minutes before start (lower bound)
+    void handleMessage_AtLowerBoundOfWindow_SendsNotification() {
         String hangoutId = "test-hangout-123";
         String messageBody = "{\"hangoutId\":\"" + hangoutId + "\"}";
 
         Hangout hangout = new Hangout();
         hangout.setHangoutId(hangoutId);
-        hangout.setStartTimestamp(Instant.now().getEpochSecond() + (90 * 60)); // 90 minutes
+        hangout.setStartTimestamp(Instant.now().getEpochSecond() + (90 * 60));
         hangout.setReminderSentAt(null);
 
         when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
         when(hangoutRepository.setReminderSentAtIfNull(eq(hangoutId), anyLong())).thenReturn(true);
 
-        // When
-        listener.handleReminder(messageBody);
+        listener.handleMessage(messageBody);
 
-        // Then
         verify(notificationService).sendHangoutReminder(hangout);
         verify(meterRegistry).counter("hangout_reminder_total", "status", "sent");
     }
 
     @Test
-    void handleReminder_AtUpperBoundOfWindow_SendsNotification() {
-        // Given - exactly 150 minutes before start (upper bound)
+    void handleMessage_AtUpperBoundOfWindow_SendsNotification() {
         String hangoutId = "test-hangout-123";
         String messageBody = "{\"hangoutId\":\"" + hangoutId + "\"}";
 
         Hangout hangout = new Hangout();
         hangout.setHangoutId(hangoutId);
-        hangout.setStartTimestamp(Instant.now().getEpochSecond() + (150 * 60)); // 150 minutes
+        hangout.setStartTimestamp(Instant.now().getEpochSecond() + (150 * 60));
         hangout.setReminderSentAt(null);
 
         when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(hangout));
         when(hangoutRepository.setReminderSentAtIfNull(eq(hangoutId), anyLong())).thenReturn(true);
 
-        // When
-        listener.handleReminder(messageBody);
+        listener.handleMessage(messageBody);
 
-        // Then
         verify(notificationService).sendHangoutReminder(hangout);
         verify(meterRegistry).counter("hangout_reminder_total", "status", "sent");
+    }
+
+    // ============================================================================
+    // Time suggestion adoption message tests
+    // ============================================================================
+
+    @Nested
+    class TimeSuggestionAdoption {
+
+        @Test
+        void handleMessage_WithAdoptionType_CallsAdoptForHangout() {
+            String hangoutId = "test-hangout-456";
+            String messageBody = "{\"type\":\"TIME_SUGGESTION_ADOPTION\",\"hangoutId\":\"" + hangoutId + "\",\"suggestionId\":\"sug-123\"}";
+
+            listener.handleMessage(messageBody);
+
+            verify(timeSuggestionService).adoptForHangout(hangoutId, 24, 48);
+            verify(notificationService, never()).sendHangoutReminder(any());
+        }
+
+        @Test
+        void handleMessage_WithAdoptionType_MissingHangoutId_LogsWarning() {
+            String messageBody = "{\"type\":\"TIME_SUGGESTION_ADOPTION\"}";
+
+            listener.handleMessage(messageBody);
+
+            verify(timeSuggestionService, never()).adoptForHangout(anyString(), anyInt(), anyInt());
+            verify(meterRegistry).counter("time_suggestion_adoption_total", "status", "missing_id");
+        }
+
+        @Test
+        void handleMessage_WithAdoptionType_BlankHangoutId_LogsWarning() {
+            String messageBody = "{\"type\":\"TIME_SUGGESTION_ADOPTION\",\"hangoutId\":\"\"}";
+
+            listener.handleMessage(messageBody);
+
+            verify(timeSuggestionService, never()).adoptForHangout(anyString(), anyInt(), anyInt());
+            verify(meterRegistry).counter("time_suggestion_adoption_total", "status", "missing_id");
+        }
+
+        @Test
+        void handleMessage_WithAdoptionType_WhenServiceThrows_CountsError() {
+            String hangoutId = "test-hangout-456";
+            String messageBody = "{\"type\":\"TIME_SUGGESTION_ADOPTION\",\"hangoutId\":\"" + hangoutId + "\"}";
+
+            doThrow(new RuntimeException("DB error")).when(timeSuggestionService)
+                    .adoptForHangout(anyString(), anyInt(), anyInt());
+
+            listener.handleMessage(messageBody);
+
+            verify(meterRegistry).counter("time_suggestion_adoption_total", "status", "error");
+        }
     }
 }

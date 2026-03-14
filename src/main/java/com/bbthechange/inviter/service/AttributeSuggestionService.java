@@ -35,9 +35,4 @@ public interface AttributeSuggestionService {
      */
     void supersedeSuggestionPolls(String hangoutId, String attributeType);
 
-    /**
-     * Find and auto-promote eligible suggestion polls that have passed the 24h window
-     * with a single unopposed leader. Called by the hourly scheduled task.
-     */
-    void promoteEligibleSuggestions();
 }

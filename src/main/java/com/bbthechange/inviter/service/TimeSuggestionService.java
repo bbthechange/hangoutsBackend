@@ -64,19 +64,17 @@ public interface TimeSuggestionService {
     List<TimeSuggestionDTO> listSuggestions(String groupId, String hangoutId, String userId);
 
     /**
-     * Run the auto-adoption pass for all ACTIVE suggestions that have passed their
-     * adoption window.  Called by the scheduled task.
+     * Evaluate and potentially adopt a time suggestion for a single hangout.
+     * Called by the EventBridge-triggered SQS listener after the adoption window elapses.
      *
-     * This method does NOT require a userId because it is invoked by the system.
-     * It operates on all hangouts known to have active suggestions.
-     *
-     * Rules (per spec section 8):
+     * Rules:
      *   1. Single suggestion with ≥1 supporter, no competitors → ADOPTED after shortWindow.
      *   2. Single suggestion with 0 votes, no competitors     → ADOPTED after longWindow.
      *   3. Multiple competing suggestions                      → leave as poll; skip.
      *
-     * @param shortWindowHours  Hours before a supported suggestion is auto-adopted
-     * @param longWindowHours   Hours before a zero-vote suggestion is auto-adopted
+     * @param hangoutId        The hangout to evaluate
+     * @param shortWindowHours Adoption window (hours) for suggestions with support
+     * @param longWindowHours  Adoption window (hours) for zero-vote suggestions
      */
-    void runAutoAdoption(int shortWindowHours, int longWindowHours);
+    void adoptForHangout(String hangoutId, int shortWindowHours, int longWindowHours);
 }

@@ -141,7 +141,9 @@ public class NudgeServiceImpl implements NudgeService {
 
     private boolean hasActiveSuggestionPoll(List<PollWithOptionsDTO> polls, String attributeType) {
         if (polls == null) return false;
+        long now = System.currentTimeMillis();
         return polls.stream()
-            .anyMatch(p -> attributeType.equals(p.getAttributeType()) && p.getPromotedAt() == null);
+            .filter(p -> attributeType.equals(p.getAttributeType()) && p.getPromotedAt() == null)
+            .anyMatch(p -> !AttributeSuggestionServiceImpl.isReadyToPromote(p, now));
     }
 }
