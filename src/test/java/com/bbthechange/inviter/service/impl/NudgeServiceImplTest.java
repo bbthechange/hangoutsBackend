@@ -1,6 +1,8 @@
 package com.bbthechange.inviter.service.impl;
 
 import com.bbthechange.inviter.dto.NudgeDTO;
+import com.bbthechange.inviter.dto.PollOptionDTO;
+import com.bbthechange.inviter.dto.PollWithOptionsDTO;
 import com.bbthechange.inviter.model.Hangout;
 import com.bbthechange.inviter.model.HangoutPointer;
 import com.bbthechange.inviter.model.InterestLevel;
@@ -76,6 +78,24 @@ class NudgeServiceImplTest {
         return il;
     }
 
+    private PollWithOptionsDTO buildSuggestionPoll(String attributeType, Long createdAtMillis,
+                                                    Long promotedAt, List<PollOptionDTO> options) {
+        PollWithOptionsDTO poll = new PollWithOptionsDTO();
+        poll.setPollId("poll-1");
+        poll.setAttributeType(attributeType);
+        poll.setCreatedAtMillis(createdAtMillis);
+        poll.setPromotedAt(promotedAt);
+        poll.setOptions(options != null ? options : List.of());
+        return poll;
+    }
+
+    private PollOptionDTO buildPollOption(String optionId, int voteCount) {
+        PollOptionDTO option = new PollOptionDTO();
+        option.setOptionId(optionId);
+        option.setVoteCount(voteCount);
+        return option;
+    }
+
     // ============================================================================
     // SUGGEST_TIME NUDGE
     // ============================================================================
@@ -130,7 +150,6 @@ class NudgeServiceImplTest {
 
         @Test
         void computeNudges_nullInterestLevels_noSuggestOrLocationNudge() {
-            // Null interest levels — no non-creator interest, no time or location nudges
             Hangout hangout = buildHangout(null, null, null, MomentumCategory.BUILDING, CREATOR_ID);
 
             List<NudgeDTO> nudges = nudgeService.computeNudges(hangout, null);
@@ -141,7 +160,6 @@ class NudgeServiceImplTest {
 
         @Test
         void computeNudges_nonCreatorWithNotGoingStatus_doesNotCountAsInterest() {
-            // NOT_GOING status does not qualify as interest
             Hangout hangout = buildHangout(null, null, null, MomentumCategory.BUILDING, CREATOR_ID);
             List<InterestLevel> attendance = List.of(
                 buildInterestLevel(OTHER_USER_ID, "NOT_GOING")
@@ -163,6 +181,76 @@ class NudgeServiceImplTest {
             List<NudgeDTO> nudges = nudgeService.computeNudges(hangout, attendance);
 
             assertThat(nudges).extracting(NudgeDTO::getType).contains(NudgeType.SUGGEST_TIME);
+        }
+    }
+
+    // ============================================================================
+    // CONFIRMED HANGOUT — ALWAYS NEEDS TIME/LOCATION
+    // ============================================================================
+
+    @Nested
+    class ConfirmedHangoutNudges {
+
+        @Test
+        void computeNudges_ConfirmedNoTimeOnlyCreator_ReturnsSuggestTime() {
+            // Confirmed hangouts always need a time, even with only creator going
+            Hangout hangout = buildHangout(null, "loc", null, MomentumCategory.CONFIRMED, CREATOR_ID);
+            List<InterestLevel> attendance = List.of(
+                buildInterestLevel(CREATOR_ID, "GOING")
+            );
+
+            List<NudgeDTO> nudges = nudgeService.computeNudges(hangout, attendance);
+
+            assertThat(nudges).extracting(NudgeDTO::getType).contains(NudgeType.SUGGEST_TIME);
+        }
+
+        @Test
+        void computeNudges_ConfirmedNoLocationOnlyCreator_ReturnsAddLocation() {
+            // Confirmed hangouts always need a location, even with only creator going
+            Hangout hangout = buildHangout(1700000000L, null, null, MomentumCategory.CONFIRMED, CREATOR_ID);
+            List<InterestLevel> attendance = List.of(
+                buildInterestLevel(CREATOR_ID, "GOING")
+            );
+
+            List<NudgeDTO> nudges = nudgeService.computeNudges(hangout, attendance);
+
+            assertThat(nudges).extracting(NudgeDTO::getType).contains(NudgeType.ADD_LOCATION);
+        }
+
+        @Test
+        void computeNudges_ConfirmedNoTimeNoAttendance_ReturnsSuggestTime() {
+            // Confirmed hangout with no attendance at all still needs a time
+            Hangout hangout = buildHangout(null, "loc", null, MomentumCategory.CONFIRMED, CREATOR_ID);
+
+            List<NudgeDTO> nudges = nudgeService.computeNudges(hangout, Collections.emptyList());
+
+            assertThat(nudges).extracting(NudgeDTO::getType).contains(NudgeType.SUGGEST_TIME);
+        }
+
+        @Test
+        void computeNudges_ConfirmedWithTimeAndLocation_NoCompletionNudges() {
+            Hangout hangout = buildHangout(1700000000L, "loc", null, MomentumCategory.CONFIRMED, CREATOR_ID);
+            List<InterestLevel> attendance = List.of(
+                buildInterestLevel(CREATOR_ID, "GOING")
+            );
+
+            List<NudgeDTO> nudges = nudgeService.computeNudges(hangout, attendance);
+
+            assertThat(nudges).extracting(NudgeDTO::getType)
+                .doesNotContain(NudgeType.SUGGEST_TIME, NudgeType.ADD_LOCATION);
+        }
+
+        @Test
+        void computeNudges_BuildingNoTimeOnlyCreator_NoSuggestTime() {
+            // BUILDING hangout with only creator — not enough interest, no nudge
+            Hangout hangout = buildHangout(null, "loc", null, MomentumCategory.BUILDING, CREATOR_ID);
+            List<InterestLevel> attendance = List.of(
+                buildInterestLevel(CREATOR_ID, "GOING")
+            );
+
+            List<NudgeDTO> nudges = nudgeService.computeNudges(hangout, attendance);
+
+            assertThat(nudges).extracting(NudgeDTO::getType).doesNotContain(NudgeType.SUGGEST_TIME);
         }
     }
 
@@ -207,6 +295,132 @@ class NudgeServiceImplTest {
             List<NudgeDTO> nudges = nudgeService.computeNudges(hangout, attendance);
 
             assertThat(nudges).extracting(NudgeDTO::getType).doesNotContain(NudgeType.ADD_LOCATION);
+        }
+    }
+
+    // ============================================================================
+    // ADD_LOCATION WITH SUGGESTION POLLS
+    // ============================================================================
+
+    @Nested
+    class AddLocationWithSuggestionPolls {
+
+        @Test
+        void computeNudges_ActiveSuggestionPoll_ReturnsVoteMessage() {
+            // PENDING poll (<24h old) should show "Vote on location suggestions"
+            Hangout hangout = buildHangout(1700000000L, null, null, MomentumCategory.BUILDING, CREATOR_ID);
+            List<InterestLevel> attendance = List.of(buildInterestLevel(OTHER_USER_ID, "INTERESTED"));
+
+            PollWithOptionsDTO poll = buildSuggestionPoll("LOCATION",
+                System.currentTimeMillis() - 1000, // just created
+                null,
+                List.of(buildPollOption("opt-1", 1)));
+
+            List<NudgeDTO> nudges = nudgeService.computeNudges(hangout, attendance, List.of(poll));
+
+            assertThat(nudges).extracting(NudgeDTO::getType).contains(NudgeType.ADD_LOCATION);
+            NudgeDTO locationNudge = nudges.stream()
+                .filter(n -> n.getType() == NudgeType.ADD_LOCATION).findFirst().orElseThrow();
+            assertThat(locationNudge.getMessage()).isEqualTo("Vote on location suggestions");
+        }
+
+        @Test
+        void computeNudges_ContestedSuggestionPoll_ReturnsVoteMessage() {
+            // CONTESTED poll (multiple options with votes) should show "Vote on location suggestions"
+            Hangout hangout = buildHangout(1700000000L, null, null, MomentumCategory.BUILDING, CREATOR_ID);
+            List<InterestLevel> attendance = List.of(buildInterestLevel(OTHER_USER_ID, "INTERESTED"));
+
+            long moreThan24hAgo = System.currentTimeMillis() - (25 * 60 * 60 * 1000L);
+            PollWithOptionsDTO poll = buildSuggestionPoll("LOCATION", moreThan24hAgo, null,
+                List.of(buildPollOption("opt-1", 2), buildPollOption("opt-2", 1)));
+
+            List<NudgeDTO> nudges = nudgeService.computeNudges(hangout, attendance, List.of(poll));
+
+            assertThat(nudges).extracting(NudgeDTO::getType).contains(NudgeType.ADD_LOCATION);
+            NudgeDTO locationNudge = nudges.stream()
+                .filter(n -> n.getType() == NudgeType.ADD_LOCATION).findFirst().orElseThrow();
+            assertThat(locationNudge.getMessage()).isEqualTo("Vote on location suggestions");
+        }
+
+        @Test
+        void computeNudges_ReadyToPromoteSuggestionPoll_SuppressesNudge() {
+            // READY_TO_PROMOTE poll (>24h, unopposed) — location effectively decided
+            Hangout hangout = buildHangout(1700000000L, null, null, MomentumCategory.BUILDING, CREATOR_ID);
+            List<InterestLevel> attendance = List.of(buildInterestLevel(OTHER_USER_ID, "INTERESTED"));
+
+            long moreThan24hAgo = System.currentTimeMillis() - (25 * 60 * 60 * 1000L);
+            PollWithOptionsDTO poll = buildSuggestionPoll("LOCATION", moreThan24hAgo, null,
+                List.of(buildPollOption("opt-1", 1)));
+
+            List<NudgeDTO> nudges = nudgeService.computeNudges(hangout, attendance, List.of(poll));
+
+            assertThat(nudges).extracting(NudgeDTO::getType).doesNotContain(NudgeType.ADD_LOCATION);
+        }
+
+        @Test
+        void computeNudges_AlreadyPromotedPoll_ReturnsAddLocationMessage() {
+            // Poll already promoted (promotedAt set) — treated as no active poll
+            Hangout hangout = buildHangout(1700000000L, null, null, MomentumCategory.BUILDING, CREATOR_ID);
+            List<InterestLevel> attendance = List.of(buildInterestLevel(OTHER_USER_ID, "INTERESTED"));
+
+            long moreThan24hAgo = System.currentTimeMillis() - (25 * 60 * 60 * 1000L);
+            PollWithOptionsDTO poll = buildSuggestionPoll("LOCATION", moreThan24hAgo,
+                System.currentTimeMillis(), // already promoted
+                List.of(buildPollOption("opt-1", 1)));
+
+            List<NudgeDTO> nudges = nudgeService.computeNudges(hangout, attendance, List.of(poll));
+
+            assertThat(nudges).extracting(NudgeDTO::getType).contains(NudgeType.ADD_LOCATION);
+            NudgeDTO locationNudge = nudges.stream()
+                .filter(n -> n.getType() == NudgeType.ADD_LOCATION).findFirst().orElseThrow();
+            assertThat(locationNudge.getMessage()).isEqualTo("Add a location");
+        }
+
+        @Test
+        void computeNudges_DescriptionPollDoesNotAffectLocationNudge() {
+            // A DESCRIPTION suggestion poll should not affect the ADD_LOCATION nudge
+            Hangout hangout = buildHangout(1700000000L, null, null, MomentumCategory.BUILDING, CREATOR_ID);
+            List<InterestLevel> attendance = List.of(buildInterestLevel(OTHER_USER_ID, "INTERESTED"));
+
+            PollWithOptionsDTO poll = buildSuggestionPoll("DESCRIPTION",
+                System.currentTimeMillis() - 1000, null,
+                List.of(buildPollOption("opt-1", 1)));
+
+            List<NudgeDTO> nudges = nudgeService.computeNudges(hangout, attendance, List.of(poll));
+
+            NudgeDTO locationNudge = nudges.stream()
+                .filter(n -> n.getType() == NudgeType.ADD_LOCATION).findFirst().orElseThrow();
+            assertThat(locationNudge.getMessage()).isEqualTo("Add a location");
+        }
+
+        @Test
+        void computeNudges_NullPollsList_ReturnsAddLocationMessage() {
+            Hangout hangout = buildHangout(1700000000L, null, null, MomentumCategory.BUILDING, CREATOR_ID);
+            List<InterestLevel> attendance = List.of(buildInterestLevel(OTHER_USER_ID, "INTERESTED"));
+
+            List<NudgeDTO> nudges = nudgeService.computeNudges(hangout, attendance, null);
+
+            NudgeDTO locationNudge = nudges.stream()
+                .filter(n -> n.getType() == NudgeType.ADD_LOCATION).findFirst().orElseThrow();
+            assertThat(locationNudge.getMessage()).isEqualTo("Add a location");
+        }
+
+        @Test
+        void computeNudgesFromPointer_ActiveSuggestionPoll_ReturnsVoteMessage() {
+            // Verify the pointer path also handles suggestion polls correctly
+            List<InterestLevel> attendance = List.of(buildInterestLevel(OTHER_USER_ID, "INTERESTED"));
+            HangoutPointer pointer = buildPointer(1700000000L, null, null,
+                MomentumCategory.BUILDING, CREATOR_ID, attendance);
+
+            PollWithOptionsDTO poll = buildSuggestionPoll("LOCATION",
+                System.currentTimeMillis() - 1000, null,
+                List.of(buildPollOption("opt-1", 1)));
+
+            List<NudgeDTO> nudges = nudgeService.computeNudgesFromPointer(pointer, List.of(poll));
+
+            NudgeDTO locationNudge = nudges.stream()
+                .filter(n -> n.getType() == NudgeType.ADD_LOCATION).findFirst().orElseThrow();
+            assertThat(locationNudge.getMessage()).isEqualTo("Vote on location suggestions");
         }
     }
 
@@ -357,6 +571,43 @@ class NudgeServiceImplTest {
     }
 
     // ============================================================================
+    // SUGGESTED_BY NULL (legacy hangouts)
+    // ============================================================================
+
+    @Nested
+    class SuggestedByNull {
+
+        @Test
+        void computeNudges_NullSuggestedByBuildingNoTime_NoSuggestTime() {
+            // Legacy/pre-momentum hangout with null suggestedBy and BUILDING state.
+            // No non-creator interest can be determined, so no nudge.
+            Hangout hangout = buildHangout(null, "loc", null, MomentumCategory.BUILDING, null);
+            List<InterestLevel> attendance = List.of(
+                buildInterestLevel("some-user", "GOING")
+            );
+
+            List<NudgeDTO> nudges = nudgeService.computeNudges(hangout, attendance);
+
+            // With null suggestedBy, all interest counts as non-creator, so the nudge fires
+            assertThat(nudges).extracting(NudgeDTO::getType).contains(NudgeType.SUGGEST_TIME);
+        }
+
+        @Test
+        void computeNudgesFromPointer_NullSuggestedByBuilding_TreatsAllAsNonCreator() {
+            // When suggestedBy is null, all interest levels count as non-creator interest
+            List<InterestLevel> attendance = List.of(
+                buildInterestLevel("some-user", "INTERESTED")
+            );
+            HangoutPointer pointer = buildPointer(null, "loc", null,
+                MomentumCategory.BUILDING, null, attendance);
+
+            List<NudgeDTO> nudges = nudgeService.computeNudgesFromPointer(pointer);
+
+            assertThat(nudges).extracting(NudgeDTO::getType).contains(NudgeType.SUGGEST_TIME);
+        }
+    }
+
+    // ============================================================================
     // NO NUDGES CASES
     // ============================================================================
 
@@ -364,7 +615,7 @@ class NudgeServiceImplTest {
     class NoNudges {
 
         @Test
-        void computeNudges_ConfirmedWithTimAndLocationNonRestaurant_ReturnsEmpty() {
+        void computeNudges_ConfirmedWithTimeAndLocationNonRestaurant_ReturnsEmpty() {
             Hangout hangout = buildHangout(1700000000L, "loc", "park",
                 MomentumCategory.CONFIRMED, CREATOR_ID);
             List<InterestLevel> attendance = List.of(
@@ -451,7 +702,6 @@ class NudgeServiceImplTest {
 
         @Test
         void computeNudgesFromPointer_nullInterestLevels_noNudge() {
-            // null interestLevels (not empty list) — should not throw and should produce no time/location nudges
             HangoutPointer pointer = buildPointer(null, null, null,
                 MomentumCategory.BUILDING, CREATOR_ID, null);
 
@@ -469,6 +719,78 @@ class NudgeServiceImplTest {
             List<NudgeDTO> nudges = nudgeService.computeNudgesFromPointer(pointer);
 
             assertThat(nudges).extracting(NudgeDTO::getType).contains(NudgeType.CONSIDER_TICKETS);
+        }
+    }
+
+    // ============================================================================
+    // SUGGESTION POLL STATE HELPER
+    // ============================================================================
+
+    @Nested
+    class SuggestionPollStateTests {
+
+        @Test
+        void getSuggestionPollState_NullPolls_ReturnsNone() {
+            NudgeServiceImpl.SuggestionPollState state = nudgeService.getSuggestionPollState(null, "LOCATION");
+            assertThat(state).isEqualTo(NudgeServiceImpl.SuggestionPollState.NONE);
+        }
+
+        @Test
+        void getSuggestionPollState_EmptyPolls_ReturnsNone() {
+            NudgeServiceImpl.SuggestionPollState state = nudgeService.getSuggestionPollState(List.of(), "LOCATION");
+            assertThat(state).isEqualTo(NudgeServiceImpl.SuggestionPollState.NONE);
+        }
+
+        @Test
+        void getSuggestionPollState_NoMatchingAttributeType_ReturnsNone() {
+            PollWithOptionsDTO poll = buildSuggestionPoll("DESCRIPTION",
+                System.currentTimeMillis() - 1000, null,
+                List.of(buildPollOption("opt-1", 1)));
+
+            NudgeServiceImpl.SuggestionPollState state = nudgeService.getSuggestionPollState(List.of(poll), "LOCATION");
+            assertThat(state).isEqualTo(NudgeServiceImpl.SuggestionPollState.NONE);
+        }
+
+        @Test
+        void getSuggestionPollState_PendingPoll_ReturnsActive() {
+            PollWithOptionsDTO poll = buildSuggestionPoll("LOCATION",
+                System.currentTimeMillis() - 1000, null,
+                List.of(buildPollOption("opt-1", 0)));
+
+            NudgeServiceImpl.SuggestionPollState state = nudgeService.getSuggestionPollState(List.of(poll), "LOCATION");
+            assertThat(state).isEqualTo(NudgeServiceImpl.SuggestionPollState.ACTIVE);
+        }
+
+        @Test
+        void getSuggestionPollState_ContestedPoll_ReturnsActive() {
+            long moreThan24hAgo = System.currentTimeMillis() - (25 * 60 * 60 * 1000L);
+            PollWithOptionsDTO poll = buildSuggestionPoll("LOCATION", moreThan24hAgo, null,
+                List.of(buildPollOption("opt-1", 2), buildPollOption("opt-2", 1)));
+
+            NudgeServiceImpl.SuggestionPollState state = nudgeService.getSuggestionPollState(List.of(poll), "LOCATION");
+            assertThat(state).isEqualTo(NudgeServiceImpl.SuggestionPollState.ACTIVE);
+        }
+
+        @Test
+        void getSuggestionPollState_ReadyToPromotePoll_ReturnsResolved() {
+            long moreThan24hAgo = System.currentTimeMillis() - (25 * 60 * 60 * 1000L);
+            PollWithOptionsDTO poll = buildSuggestionPoll("LOCATION", moreThan24hAgo, null,
+                List.of(buildPollOption("opt-1", 1)));
+
+            NudgeServiceImpl.SuggestionPollState state = nudgeService.getSuggestionPollState(List.of(poll), "LOCATION");
+            assertThat(state).isEqualTo(NudgeServiceImpl.SuggestionPollState.RESOLVED);
+        }
+
+        @Test
+        void getSuggestionPollState_AlreadyPromotedPoll_ReturnsNone() {
+            // Promoted polls (promotedAt set) are ignored
+            long moreThan24hAgo = System.currentTimeMillis() - (25 * 60 * 60 * 1000L);
+            PollWithOptionsDTO poll = buildSuggestionPoll("LOCATION", moreThan24hAgo,
+                System.currentTimeMillis(),
+                List.of(buildPollOption("opt-1", 1)));
+
+            NudgeServiceImpl.SuggestionPollState state = nudgeService.getSuggestionPollState(List.of(poll), "LOCATION");
+            assertThat(state).isEqualTo(NudgeServiceImpl.SuggestionPollState.NONE);
         }
     }
 

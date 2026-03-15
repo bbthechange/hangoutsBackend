@@ -101,20 +101,21 @@ public class MomentumServiceImpl implements MomentumService {
     public void initializeMomentum(Hangout hangout, boolean confirmed, String creatorUserId) {
         long now = System.currentTimeMillis();
 
+        // Always track creator for nudge logic (exclude creator from "non-creator interest" checks)
+        hangout.setSuggestedBy(creatorUserId);
+
         if (confirmed) {
             // "Lock it in" — start confirmed
             hangout.setMomentumCategory(MomentumCategory.CONFIRMED);
             hangout.setMomentumScore(0);
             hangout.setConfirmedAt(now);
             hangout.setConfirmedBy(creatorUserId);
-            hangout.setSuggestedBy(null);
         } else {
             // "Float it" — start building
             hangout.setMomentumCategory(MomentumCategory.BUILDING);
             hangout.setMomentumScore(0);
             hangout.setConfirmedAt(null);
             hangout.setConfirmedBy(null);
-            hangout.setSuggestedBy(creatorUserId);
         }
 
         logger.debug("Initialized momentum for hangout {} to {} (confirmed={}, creator={})",

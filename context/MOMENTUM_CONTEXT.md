@@ -359,12 +359,16 @@ PATCH /hangouts/{eventId}                    — direct edit supersedes suggesti
 
 | Nudge Type | Condition |
 |------------|-----------|
-| SUGGEST_TIME | `startTimestamp == null` AND ≥1 non-creator interest signal |
-| ADD_LOCATION | `location == null` AND ≥1 non-creator interest signal (message changes to "Vote on location suggestions" when a suggestion poll exists) |
+| SUGGEST_TIME | `startTimestamp == null` AND (CONFIRMED, or ≥1 non-creator interest signal) |
+| ADD_LOCATION | `location == null` AND (CONFIRMED, or ≥1 non-creator interest signal). Message changes to "Vote on location suggestions" when a PENDING/CONTESTED suggestion poll exists. Suppressed entirely when a suggestion poll is READY_TO_PROMOTE (location effectively decided). |
 | MAKE_RESERVATION | `placeCategory` is restaurant/bar/food AND momentum is GAINING_MOMENTUM or CONFIRMED |
 | CONSIDER_TICKETS | `placeCategory` is event/entertainment/concert/theater/sports AND momentum is GAINING_MOMENTUM or CONFIRMED |
 
-Multiple nudges can be active simultaneously. Nudges are in `HangoutDetailDTO.nudges` — not in the feed summary.
+**CONFIRMED always gets completion nudges:** A CONFIRMED hangout always shows SUGGEST_TIME/ADD_LOCATION if the corresponding field is missing, regardless of interest count. The hangout is happening — it needs a time and location.
+
+**`suggestedBy` is always set** to the creator's userId for both "Float it" and "Lock it in" modes. It's used by nudge logic to exclude the creator from non-creator interest checks.
+
+Multiple nudges can be active simultaneously. Nudges are in both `HangoutDetailDTO.nudges` and `HangoutSummaryDTO.nudges` (version-gated to 2.0.0+).
 
 ## 17. Adaptive Notifications (Feature 6)
 

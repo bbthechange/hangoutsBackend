@@ -6,6 +6,8 @@ import com.bbthechange.inviter.dto.MomentumDTO;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.repository.HangoutRepository;
+import com.bbthechange.inviter.service.AdaptiveNotificationService;
+import com.bbthechange.inviter.service.NotificationService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -15,6 +17,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -29,6 +32,7 @@ import static org.mockito.Mockito.*;
  * - computeThreshold: dynamic threshold calculation
  * - buildMomentumDTO: score normalization, null handling
  * - buildMomentumDTOFromPointer: field mapping
+ * - adaptive notification integration: shouldSendNotification + notifyMomentumChange calls
  */
 @ExtendWith(MockitoExtension.class)
 class MomentumServiceImplTest {
@@ -41,6 +45,12 @@ class MomentumServiceImplTest {
 
     @Mock
     private PointerUpdateService pointerUpdateService;
+
+    @Mock
+    private AdaptiveNotificationService adaptiveNotificationService;
+
+    @Mock
+    private NotificationService notificationService;
 
     @InjectMocks
     private MomentumServiceImpl momentumService;
@@ -110,7 +120,7 @@ class MomentumServiceImplTest {
         assertThat(hangout.getMomentumScore()).isEqualTo(0);
         assertThat(hangout.getConfirmedAt()).isNotNull();
         assertThat(hangout.getConfirmedBy()).isEqualTo("user-456");
-        assertThat(hangout.getSuggestedBy()).isNull();
+        assertThat(hangout.getSuggestedBy()).isEqualTo("user-456");
     }
 
     @Test
@@ -711,5 +721,145 @@ class MomentumServiceImplTest {
         MomentumDTO dto = momentumService.buildMomentumDTOFromPointer(pointer);
 
         assertThat(dto.getCategory()).isNull();
+    }
+
+    // ============================================================================
+    // 1.1.9 Adaptive Notification Integration Tests
+    // ============================================================================
+
+    @Test
+    void recomputeMomentum_stateChange_callsAdaptiveNotificationService() {
+        // BUILDING → GAINING_MOMENTUM should trigger notification check
+        Hangout hangout = buildHangout("h-notif1", MomentumCategory.BUILDING);
+        when(hangoutRepository.findHangoutById("h-notif1")).thenReturn(Optional.of(hangout));
+
+        InterestLevel going = interestLevel("GOING", Instant.now());
+        HangoutDetailData detail = detailData(List.of(going));
+        when(hangoutRepository.getHangoutDetailData("h-notif1")).thenReturn(detail);
+        mockFiveMembers();
+
+        when(adaptiveNotificationService.shouldSendNotification(
+                eq("group-1"),
+                eq(AdaptiveNotificationService.SIGNAL_BUILDING_TO_GAINING),
+                eq(MomentumCategory.BUILDING),
+                eq(MomentumCategory.GAINING_MOMENTUM)))
+                .thenReturn(true);
+
+        momentumService.recomputeMomentum("h-notif1");
+
+        verify(adaptiveNotificationService).shouldSendNotification(
+                eq("group-1"),
+                eq(AdaptiveNotificationService.SIGNAL_BUILDING_TO_GAINING),
+                eq(MomentumCategory.BUILDING),
+                eq(MomentumCategory.GAINING_MOMENTUM));
+        verify(notificationService).notifyMomentumChange(
+                eq("h-notif1"), any(), eq("group-1"), any(Set.class), any(), any());
+    }
+
+    @Test
+    void recomputeMomentum_stateChange_suppressedByBudget_doesNotNotify() {
+        Hangout hangout = buildHangout("h-notif2", MomentumCategory.BUILDING);
+        when(hangoutRepository.findHangoutById("h-notif2")).thenReturn(Optional.of(hangout));
+
+        InterestLevel going = interestLevel("GOING", Instant.now());
+        HangoutDetailData detail = detailData(List.of(going));
+        when(hangoutRepository.getHangoutDetailData("h-notif2")).thenReturn(detail);
+        mockFiveMembers();
+
+        when(adaptiveNotificationService.shouldSendNotification(
+                any(), any(), any(), any()))
+                .thenReturn(false);
+
+        momentumService.recomputeMomentum("h-notif2");
+
+        verify(notificationService, never()).notifyMomentumChange(
+                any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void recomputeMomentum_noStateChange_doesNotCallAdaptiveNotification() {
+        // State stays BUILDING → no notification attempted
+        Hangout hangout = buildHangout("h-notif3", MomentumCategory.BUILDING);
+        when(hangoutRepository.findHangoutById("h-notif3")).thenReturn(Optional.of(hangout));
+
+        HangoutDetailData detail = detailData(List.of());
+        when(hangoutRepository.getHangoutDetailData("h-notif3")).thenReturn(detail);
+        mockFiveMembers();
+
+        momentumService.recomputeMomentum("h-notif3");
+
+        verifyNoInteractions(adaptiveNotificationService);
+        verifyNoInteractions(notificationService);
+    }
+
+    @Test
+    void recomputeMomentum_concreteAction_usesConcreteActionSignal() {
+        Hangout hangout = buildHangout("h-notif4", MomentumCategory.BUILDING);
+        hangout.setTicketsRequired(true);
+        hangout.setTicketLink("https://tickets.example.com");
+        when(hangoutRepository.findHangoutById("h-notif4")).thenReturn(Optional.of(hangout));
+
+        HangoutDetailData detail = detailData(List.of());
+        when(hangoutRepository.getHangoutDetailData("h-notif4")).thenReturn(detail);
+
+        when(adaptiveNotificationService.shouldSendNotification(
+                eq("group-1"),
+                eq(AdaptiveNotificationService.SIGNAL_CONCRETE_ACTION),
+                eq(MomentumCategory.BUILDING),
+                eq(MomentumCategory.CONFIRMED)))
+                .thenReturn(true);
+
+        momentumService.recomputeMomentum("h-notif4");
+
+        verify(adaptiveNotificationService).shouldSendNotification(
+                eq("group-1"),
+                eq(AdaptiveNotificationService.SIGNAL_CONCRETE_ACTION),
+                eq(MomentumCategory.BUILDING),
+                eq(MomentumCategory.CONFIRMED));
+    }
+
+    @Test
+    void confirmHangout_manualConfirmation_usesConfirmedSignal() {
+        Hangout hangout = buildHangout("h-notif5", MomentumCategory.BUILDING);
+        when(hangoutRepository.findHangoutById("h-notif5")).thenReturn(Optional.of(hangout));
+
+        when(adaptiveNotificationService.shouldSendNotification(
+                eq("group-1"),
+                eq(AdaptiveNotificationService.SIGNAL_CONFIRMED),
+                eq(MomentumCategory.BUILDING),
+                eq(MomentumCategory.CONFIRMED)))
+                .thenReturn(true);
+
+        momentumService.confirmHangout("h-notif5", "user-abc");
+
+        verify(adaptiveNotificationService).shouldSendNotification(
+                eq("group-1"),
+                eq(AdaptiveNotificationService.SIGNAL_CONFIRMED),
+                eq(MomentumCategory.BUILDING),
+                eq(MomentumCategory.CONFIRMED));
+        verify(notificationService).notifyMomentumChange(
+                eq("h-notif5"), any(), eq("group-1"), any(Set.class), any(),
+                eq(AdaptiveNotificationService.SIGNAL_CONFIRMED));
+    }
+
+    @Test
+    void recomputeMomentum_notificationFailure_doesNotBreakMomentumUpdate() {
+        // Notification error should be swallowed — momentum still saved
+        Hangout hangout = buildHangout("h-notif6", MomentumCategory.BUILDING);
+        when(hangoutRepository.findHangoutById("h-notif6")).thenReturn(Optional.of(hangout));
+
+        InterestLevel going = interestLevel("GOING", Instant.now());
+        HangoutDetailData detail = detailData(List.of(going));
+        when(hangoutRepository.getHangoutDetailData("h-notif6")).thenReturn(detail);
+        mockFiveMembers();
+
+        when(adaptiveNotificationService.shouldSendNotification(any(), any(), any(), any()))
+                .thenThrow(new RuntimeException("Notification service unavailable"));
+
+        momentumService.recomputeMomentum("h-notif6");
+
+        // Momentum should still be saved despite notification failure
+        verify(hangoutRepository).save(any(Hangout.class));
+        assertThat(hangout.getMomentumCategory()).isEqualTo(MomentumCategory.GAINING_MOMENTUM);
     }
 }

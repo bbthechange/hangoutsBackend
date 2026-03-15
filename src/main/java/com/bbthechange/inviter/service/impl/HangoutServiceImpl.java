@@ -1397,10 +1397,5 @@ public class HangoutServiceImpl implements HangoutService {
         }
     }
 
-    @Override
-    public void enrichNudges(HangoutSummaryDTO dto, HangoutPointer pointer) {
-        List<NudgeDTO> nudges = nudgeService.computeNudgesFromPointer(pointer);
-        dto.setNudges(nudges);
-    }
 
 }

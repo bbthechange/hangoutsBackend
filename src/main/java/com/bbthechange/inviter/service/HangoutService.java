@@ -134,14 +134,4 @@ public interface HangoutService {
      */
     void enrichHostAtPlaceInfo(HangoutSummaryDTO dto);
 
-    /**
-     * Computes and sets action-oriented nudges on a HangoutSummaryDTO using the pointer's data.
-     * Used by GroupServiceImpl to add nudges to feed items without direct NudgeService access.
-     * Nudges are computed fresh — never stored.
-     *
-     * @param dto     The HangoutSummaryDTO to enrich (modified in place)
-     * @param pointer The source HangoutPointer with denormalized interest levels
-     */
-    void enrichNudges(HangoutSummaryDTO dto, com.bbthechange.inviter.model.HangoutPointer pointer);
-
 }

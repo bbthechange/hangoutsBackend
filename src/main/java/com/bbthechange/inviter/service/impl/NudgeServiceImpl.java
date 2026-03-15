@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.service.impl;
 
 import com.bbthechange.inviter.dto.NudgeDTO;
+import com.bbthechange.inviter.dto.PollOptionDTO;
 import com.bbthechange.inviter.dto.PollWithOptionsDTO;
 import com.bbthechange.inviter.model.Hangout;
 import com.bbthechange.inviter.model.HangoutPointer;
@@ -11,6 +12,7 @@ import com.bbthechange.inviter.service.NudgeService;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
 
@@ -21,8 +23,9 @@ import java.util.Set;
  *
  * <h3>Nudge Logic:</h3>
  * <ul>
- *   <li>SUGGEST_TIME — hangout has no time AND ≥1 non-creator interested/going person</li>
- *   <li>ADD_LOCATION — hangout has no location AND ≥1 non-creator interested/going person</li>
+ *   <li>SUGGEST_TIME — hangout has no time AND (CONFIRMED, or ≥1 non-creator interested/going)</li>
+ *   <li>ADD_LOCATION — hangout has no location AND (CONFIRMED, or ≥1 non-creator interested/going),
+ *       suppressed when a location suggestion poll is resolved (READY_TO_PROMOTE)</li>
  *   <li>MAKE_RESERVATION — restaurant/food place type AND momentum is GAINING_MOMENTUM or CONFIRMED</li>
  *   <li>CONSIDER_TICKETS — event/entertainment place type AND momentum is GAINING_MOMENTUM or CONFIRMED</li>
  * </ul>
@@ -44,6 +47,8 @@ public class NudgeServiceImpl implements NudgeService {
         MomentumCategory.GAINING_MOMENTUM, MomentumCategory.CONFIRMED
     );
 
+    private static final long TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000L;
+
     @Override
     public List<NudgeDTO> computeNudges(Hangout hangout, List<InterestLevel> interestLevels) {
         boolean hasNonCreatorInterest = hasNonCreatorInterest(
@@ -51,18 +56,18 @@ public class NudgeServiceImpl implements NudgeService {
         return buildNudges(
             hangout.getStartTimestamp(), hangout.getLocation(),
             hangout.getPlaceCategory(), hangout.getMomentumCategory(),
-            hasNonCreatorInterest, false);
+            hasNonCreatorInterest, SuggestionPollState.NONE);
     }
 
     @Override
     public List<NudgeDTO> computeNudges(Hangout hangout, List<InterestLevel> interestLevels, List<PollWithOptionsDTO> polls) {
         boolean hasNonCreatorInterest = hasNonCreatorInterest(
             interestLevels, hangout.getSuggestedBy());
-        boolean hasLocationSuggestion = hasActiveSuggestionPoll(polls, "LOCATION");
+        SuggestionPollState locationState = getSuggestionPollState(polls, "LOCATION");
         return buildNudges(
             hangout.getStartTimestamp(), hangout.getLocation(),
             hangout.getPlaceCategory(), hangout.getMomentumCategory(),
-            hasNonCreatorInterest, hasLocationSuggestion);
+            hasNonCreatorInterest, locationState);
     }
 
     @Override
@@ -72,35 +77,44 @@ public class NudgeServiceImpl implements NudgeService {
         return buildNudges(
             pointer.getStartTimestamp(), pointer.getLocation(),
             pointer.getPlaceCategory(), pointer.getMomentumCategory(),
-            hasNonCreatorInterest, false);
+            hasNonCreatorInterest, SuggestionPollState.NONE);
     }
 
     @Override
     public List<NudgeDTO> computeNudgesFromPointer(HangoutPointer pointer, List<PollWithOptionsDTO> polls) {
         boolean hasNonCreatorInterest = hasNonCreatorInterest(
             pointer.getInterestLevels(), pointer.getSuggestedBy());
-        boolean hasLocationSuggestion = hasActiveSuggestionPoll(polls, "LOCATION");
+        SuggestionPollState locationState = getSuggestionPollState(polls, "LOCATION");
         return buildNudges(
             pointer.getStartTimestamp(), pointer.getLocation(),
             pointer.getPlaceCategory(), pointer.getMomentumCategory(),
-            hasNonCreatorInterest, hasLocationSuggestion);
+            hasNonCreatorInterest, locationState);
     }
 
     private List<NudgeDTO> buildNudges(Long startTimestamp, Object location,
                                         String placeCategory, MomentumCategory momentumCategory,
                                         boolean hasNonCreatorInterest,
-                                        boolean hasLocationSuggestion) {
+                                        SuggestionPollState locationSuggestionState) {
         List<NudgeDTO> nudges = new ArrayList<>();
 
-        if (startTimestamp == null && hasNonCreatorInterest) {
+        // CONFIRMED hangouts always need time/location; BUILDING/GAINING require non-creator interest
+        boolean needsCompletionNudge = momentumCategory == MomentumCategory.CONFIRMED || hasNonCreatorInterest;
+
+        if (startTimestamp == null && needsCompletionNudge) {
             nudges.add(new NudgeDTO(NudgeType.SUGGEST_TIME, "Suggest a time", null));
         }
 
-        if (location == null && hasNonCreatorInterest) {
-            if (hasLocationSuggestion) {
-                nudges.add(new NudgeDTO(NudgeType.ADD_LOCATION, "Vote on location suggestions", null));
-            } else {
-                nudges.add(new NudgeDTO(NudgeType.ADD_LOCATION, "Add a location", null));
+        if (location == null && needsCompletionNudge) {
+            switch (locationSuggestionState) {
+                case NONE:
+                    nudges.add(new NudgeDTO(NudgeType.ADD_LOCATION, "Add a location", null));
+                    break;
+                case ACTIVE:
+                    nudges.add(new NudgeDTO(NudgeType.ADD_LOCATION, "Vote on location suggestions", null));
+                    break;
+                case RESOLVED:
+                    // Location effectively decided via suggestion poll — no nudge needed
+                    break;
             }
         }
 
@@ -123,7 +137,7 @@ public class NudgeServiceImpl implements NudgeService {
             return false;
         }
         return interestLevels.stream()
-            .filter(il -> !il.getUserId().equals(creatorUserId))
+            .filter(il -> creatorUserId == null || !il.getUserId().equals(creatorUserId))
             .anyMatch(il -> "GOING".equals(il.getStatus()) || "INTERESTED".equals(il.getStatus()));
     }
 
@@ -139,11 +153,65 @@ public class NudgeServiceImpl implements NudgeService {
         return category != null && TRACTION_CATEGORIES.contains(category);
     }
 
-    private boolean hasActiveSuggestionPoll(List<PollWithOptionsDTO> polls, String attributeType) {
-        if (polls == null) return false;
+    // ============================================================================
+    // SUGGESTION POLL STATE
+    // ============================================================================
+
+    /**
+     * Tri-state for how a suggestion poll affects nudge behavior.
+     */
+    enum SuggestionPollState {
+        /** No un-promoted suggestion poll exists. */
+        NONE,
+        /** A suggestion poll exists and is still being voted on (PENDING or CONTESTED). */
+        ACTIVE,
+        /** A suggestion poll exists and is effectively decided (READY_TO_PROMOTE). */
+        RESOLVED
+    }
+
+    /**
+     * Determine the state of suggestion polls for the given attribute type.
+     * Avoids tight coupling to AttributeSuggestionServiceImpl by inlining the status logic.
+     */
+    SuggestionPollState getSuggestionPollState(List<PollWithOptionsDTO> polls, String attributeType) {
+        if (polls == null) return SuggestionPollState.NONE;
+
         long now = System.currentTimeMillis();
-        return polls.stream()
+
+        List<PollWithOptionsDTO> matchingPolls = polls.stream()
             .filter(p -> attributeType.equals(p.getAttributeType()) && p.getPromotedAt() == null)
-            .anyMatch(p -> !AttributeSuggestionServiceImpl.isReadyToPromote(p, now));
+            .toList();
+
+        if (matchingPolls.isEmpty()) return SuggestionPollState.NONE;
+
+        // If any matching poll is resolved (unopposed, >24h old), the attribute is effectively decided
+        boolean anyResolved = matchingPolls.stream()
+            .anyMatch(p -> isUnopposedAndMature(p, now));
+
+        return anyResolved ? SuggestionPollState.RESOLVED : SuggestionPollState.ACTIVE;
+    }
+
+    /**
+     * A suggestion poll is effectively resolved when it's >24h old and has no opposing votes.
+     */
+    private boolean isUnopposedAndMature(PollWithOptionsDTO poll, long nowMillis) {
+        if (poll.getCreatedAtMillis() == null || (nowMillis - poll.getCreatedAtMillis()) < TWENTY_FOUR_HOURS_MS) {
+            return false;
+        }
+        List<PollOptionDTO> options = poll.getOptions();
+        if (options == null || options.isEmpty()) return false; // no options = still pending
+        if (options.size() == 1) return true; // single option, unopposed
+
+        // Contested if multiple options have votes
+        PollOptionDTO leader = options.stream()
+            .max(Comparator.comparingInt(PollOptionDTO::getVoteCount))
+            .orElse(null);
+        if (leader == null) return true;
+
+        boolean hasOpposition = options.stream()
+            .filter(o -> !o.getOptionId().equals(leader.getOptionId()))
+            .anyMatch(o -> o.getVoteCount() > 0);
+
+        return !hasOpposition;
     }
 }
