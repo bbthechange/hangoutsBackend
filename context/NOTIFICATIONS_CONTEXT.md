@@ -351,10 +351,12 @@ boolean shouldSend = adaptiveNotificationService.shouldSendNotification(
     previousCategory,
     newCategory
 );
+// shouldSendNotification atomically records the signal and increments the
+// weekly counter if approved — no separate recordNotificationSent() call needed.
 
 if (shouldSend) {
     // send notification
-    adaptiveNotificationService.recordNotificationSent(groupId, signalType);
+    notificationService.notifyMomentumChange(...);
 }
 ```
 
@@ -379,7 +381,7 @@ Rolling average is an 8-week exponential moving average (α = 1/8). Week boundar
 
 ### Momentum Notification Messages
 
-Static factory methods on `AdaptiveNotificationService`:
+Static factory methods on `NotificationTextGenerator`:
 
 | Method | Output |
 |--------|--------|

@@ -23,8 +23,7 @@ import static org.mockito.Mockito.*;
  *
  * Coverage:
  * - shouldSendNotification: concrete actions always notify, explicit confirmations always notify,
- *   state changes respect weekly budget, same-state no-op
- * - recordNotificationSent: increments weekly counter
+ *   state changes respect weekly budget, same-state no-op, budget-gated recording
  * - rolloverIfNeeded: rolls over week counter into rolling average
  * - computeWeeklyBudget: new group defaults, budget based on rolling average
  * - currentWeekKey: returns well-formed ISO week string
@@ -194,46 +193,124 @@ class AdaptiveNotificationServiceTest {
     }
 
     // ============================================================================
-    // recordNotificationSent
+    // Budget-gated recording behavior
     // ============================================================================
 
     @Nested
-    class RecordNotificationSent {
+    class BudgetGatedRecording {
 
         @Test
-        void recordNotificationSent_incrementsCounterAndSaves() {
-            GroupNotificationTracker tracker = freshTracker(service.currentWeekKey(), 1, 1.5);
-            when(trackerRepository.findByGroupId(GROUP_ID)).thenReturn(Optional.of(tracker));
+        void approvedNotification_incrementsWeeklyCounterAndRecordsSignal() {
+            // New group → default budget 2, 0 sent → approved
+            when(trackerRepository.findByGroupId(GROUP_ID)).thenReturn(Optional.empty());
 
-            service.recordNotificationSent(GROUP_ID, AdaptiveNotificationService.SIGNAL_BUILDING_TO_GAINING);
+            service.shouldSendNotification(
+                    GROUP_ID,
+                    AdaptiveNotificationService.SIGNAL_BUILDING_TO_GAINING,
+                    MomentumCategory.BUILDING,
+                    MomentumCategory.GAINING_MOMENTUM);
 
             ArgumentCaptor<GroupNotificationTracker> captor = ArgumentCaptor.forClass(GroupNotificationTracker.class);
             verify(trackerRepository).save(captor.capture());
 
             GroupNotificationTracker saved = captor.getValue();
-            assertThat(saved.getNotificationsSentThisWeek()).isEqualTo(2);
+            assertThat(saved.getNotificationsSentThisWeek()).isEqualTo(1);
             assertThat(saved.getSignalCounts())
                     .containsEntry(AdaptiveNotificationService.SIGNAL_BUILDING_TO_GAINING, 1);
         }
 
         @Test
-        void recordNotificationSent_updatesSignalCounts() {
-            // Fresh tracker with no prior signal counts
-            GroupNotificationTracker tracker = freshTracker(service.currentWeekKey(), 0, 0.0);
+        void rejectedNotification_recordsSignalButDoesNotIncrementCounter() {
+            // Budget exhausted: 2/2 sent
+            GroupNotificationTracker tracker = freshTracker(service.currentWeekKey(), 2, 0.0);
             when(trackerRepository.findByGroupId(GROUP_ID)).thenReturn(Optional.of(tracker));
 
-            service.recordNotificationSent(GROUP_ID, AdaptiveNotificationService.SIGNAL_GENERAL);
+            service.shouldSendNotification(
+                    GROUP_ID,
+                    AdaptiveNotificationService.SIGNAL_BUILDING_TO_GAINING,
+                    MomentumCategory.BUILDING,
+                    MomentumCategory.GAINING_MOMENTUM);
 
             ArgumentCaptor<GroupNotificationTracker> captor = ArgumentCaptor.forClass(GroupNotificationTracker.class);
             verify(trackerRepository).save(captor.capture());
-            assertThat(captor.getValue().getSignalCounts())
-                    .containsEntry(AdaptiveNotificationService.SIGNAL_GENERAL, 1);
+
+            GroupNotificationTracker saved = captor.getValue();
+            assertThat(saved.getNotificationsSentThisWeek()).isEqualTo(2); // unchanged
+            assertThat(saved.getSignalCounts())
+                    .containsEntry(AdaptiveNotificationService.SIGNAL_BUILDING_TO_GAINING, 1);
         }
 
         @Test
-        void recordNotificationSent_nullGroupId_doesNothing() {
-            service.recordNotificationSent(null, AdaptiveNotificationService.SIGNAL_BUILDING_TO_GAINING);
-            verifyNoInteractions(trackerRepository);
+        void concreteAction_incrementsCounterAndRecordsSignal() {
+            GroupNotificationTracker tracker = freshTracker(service.currentWeekKey(), 0, 0.0);
+            when(trackerRepository.findByGroupId(GROUP_ID)).thenReturn(Optional.of(tracker));
+
+            service.shouldSendNotification(
+                    GROUP_ID,
+                    AdaptiveNotificationService.SIGNAL_CONCRETE_ACTION,
+                    MomentumCategory.BUILDING,
+                    MomentumCategory.CONFIRMED);
+
+            ArgumentCaptor<GroupNotificationTracker> captor = ArgumentCaptor.forClass(GroupNotificationTracker.class);
+            verify(trackerRepository).save(captor.capture());
+
+            GroupNotificationTracker saved = captor.getValue();
+            assertThat(saved.getNotificationsSentThisWeek()).isEqualTo(1);
+            assertThat(saved.getSignalCounts())
+                    .containsEntry(AdaptiveNotificationService.SIGNAL_CONCRETE_ACTION, 1);
+        }
+
+        @Test
+        void budgetGatedPath_dbExceptionDuringLoad_returnsFalse() {
+            // DB failure on the budget-gated path should return false (fail-closed)
+            when(trackerRepository.findByGroupId(GROUP_ID))
+                    .thenThrow(new RuntimeException("DynamoDB timeout"));
+
+            boolean result = service.shouldSendNotification(
+                    GROUP_ID,
+                    AdaptiveNotificationService.SIGNAL_BUILDING_TO_GAINING,
+                    MomentumCategory.BUILDING,
+                    MomentumCategory.GAINING_MOMENTUM);
+
+            assertThat(result).isFalse();
+            verify(trackerRepository, never()).save(any());
+        }
+
+        @Test
+        void alwaysNotifyPath_dbExceptionInRecordSignal_stillReturnsTrue() {
+            // DB failure when recording a concrete action should NOT prevent the
+            // notification from being sent — the method must still return true
+            when(trackerRepository.findByGroupId(GROUP_ID))
+                    .thenThrow(new RuntimeException("DynamoDB timeout"));
+
+            boolean result = service.shouldSendNotification(
+                    GROUP_ID,
+                    AdaptiveNotificationService.SIGNAL_CONCRETE_ACTION,
+                    MomentumCategory.BUILDING,
+                    MomentumCategory.CONFIRMED);
+
+            assertThat(result).isTrue();
+        }
+
+        @Test
+        void sameCategoryPath_recordsSignalButDoesNotIncrementCounter() {
+            // Same-state calls recordSignalOnTracker with notified=false
+            GroupNotificationTracker tracker = freshTracker(service.currentWeekKey(), 1, 2.0);
+            when(trackerRepository.findByGroupId(GROUP_ID)).thenReturn(Optional.of(tracker));
+
+            service.shouldSendNotification(
+                    GROUP_ID,
+                    AdaptiveNotificationService.SIGNAL_GENERAL,
+                    MomentumCategory.BUILDING,
+                    MomentumCategory.BUILDING);
+
+            ArgumentCaptor<GroupNotificationTracker> captor = ArgumentCaptor.forClass(GroupNotificationTracker.class);
+            verify(trackerRepository).save(captor.capture());
+
+            GroupNotificationTracker saved = captor.getValue();
+            assertThat(saved.getNotificationsSentThisWeek()).isEqualTo(1); // unchanged
+            assertThat(saved.getSignalCounts())
+                    .containsEntry(AdaptiveNotificationService.SIGNAL_GENERAL, 1);
         }
     }
 

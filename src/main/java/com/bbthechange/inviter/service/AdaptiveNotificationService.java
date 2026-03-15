@@ -8,12 +8,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.time.DayOfWeek;
-import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.temporal.IsoFields;
 import java.time.ZonedDateTime;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -95,39 +92,38 @@ public class AdaptiveNotificationService {
 
         // Concrete actions and explicit confirmations always notify
         if (SIGNAL_CONCRETE_ACTION.equals(signalType) || SIGNAL_CONFIRMED.equals(signalType)) {
-            recordSignal(groupId, signalType, true);
+            recordSignalOnTracker(groupId, signalType, true);
             return true;
         }
 
         // State unchanged — no notification
         if (previousCategory == newCategory) {
-            recordSignal(groupId, signalType, false);
+            recordSignalOnTracker(groupId, signalType, false);
             return false;
         }
 
-        // Check weekly budget
-        GroupNotificationTracker tracker = loadOrCreate(groupId);
-        rolloverIfNeeded(tracker);
+        // Check weekly budget — single load, decide, record, save
+        try {
+            GroupNotificationTracker tracker = loadOrCreate(groupId);
+            rolloverIfNeeded(tracker);
 
-        int budget = computeWeeklyBudget(tracker);
-        boolean approved = tracker.getNotificationsSentThisWeek() < budget;
+            int budget = computeWeeklyBudget(tracker);
+            boolean approved = tracker.getNotificationsSentThisWeek() < budget;
 
-        recordSignal(groupId, signalType, approved);
-        return approved;
-    }
+            // Record signal and save in one shot (no second DB read)
+            Map<String, Integer> counts = tracker.getSignalCounts();
+            counts.merge(signalType, 1, Integer::sum);
+            tracker.setSignalCounts(counts);
+            if (approved) {
+                tracker.setNotificationsSentThisWeek(tracker.getNotificationsSentThisWeek() + 1);
+            }
+            trackerRepository.save(tracker);
 
-    /**
-     * Record that a notification was actually sent for a group.
-     * Increments the weekly counter and persists the tracker.
-     *
-     * @param groupId the group
-     * @param signalType one of the SIGNAL_* constants
-     */
-    public void recordNotificationSent(String groupId, String signalType) {
-        if (groupId == null) {
-            return;
+            return approved;
+        } catch (Exception e) {
+            logger.warn("Failed to check notification budget for group {}", groupId, e);
+            return false;
         }
-        recordSignal(groupId, signalType, true);
     }
 
     // ============================================================================
@@ -197,10 +193,12 @@ public class AdaptiveNotificationService {
     }
 
     /**
-     * Record a signal observation (whether or not a notification was approved).
-     * This is a best-effort operation — failures are logged but not propagated.
+     * Record a signal on a tracker and persist it.
+     * Used for always-notify paths (concrete actions, explicit confirmations)
+     * where the budget is not checked.
+     * Best-effort — failures are logged but not propagated.
      */
-    private void recordSignal(String groupId, String signalType, boolean notified) {
+    private void recordSignalOnTracker(String groupId, String signalType, boolean notified) {
         try {
             GroupNotificationTracker tracker = loadOrCreate(groupId);
             rolloverIfNeeded(tracker);
