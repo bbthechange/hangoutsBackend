@@ -154,7 +154,7 @@ public class IdeaFeedSurfacingServiceImpl implements IdeaFeedSurfacingService {
                     // Beyond our window — stop iterating pages too
                     return coveredWeeks;
                 }
-                if (MomentumCategory.CONFIRMED == hp.getMomentumCategory()) {
+                if (hp.getMomentumCategory() == null || MomentumCategory.CONFIRMED == hp.getMomentumCategory()) {
                     ZonedDateTime dt = Instant.ofEpochSecond(hp.getStartTimestamp()).atZone(ZoneOffset.UTC);
                     coveredWeeks.add(weekKey(dt.get(IsoFields.WEEK_BASED_YEAR), dt.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR)));
                 }

@@ -950,4 +950,38 @@ class HangoutServiceUpdateTest extends HangoutServiceTestBase {
             assertThat(capturedUserIds).doesNotContain("user-not-going");
         }
     }
+
+    // =========================================================================
+    // PlaceCategory preservation
+    // =========================================================================
+
+    @Test
+    void updateHangout_WithoutPlaceCategory_DoesNotClearExisting() {
+        // Given: hangout with an existing placeCategory
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+
+        Hangout existingHangout = createTestHangout(hangoutId);
+        existingHangout.setPlaceCategory("restaurant");
+        existingHangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111")));
+
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(existingHangout));
+
+        GroupMembership membership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Test Group");
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(membership));
+
+        when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+
+        // Request that doesn't include placeCategory (null)
+        UpdateHangoutRequest request = new UpdateHangoutRequest();
+        request.setTitle("New Title");
+
+        // When
+        hangoutService.updateHangout(hangoutId, request, userId);
+
+        // Then: placeCategory should be preserved, not cleared
+        ArgumentCaptor<Hangout> hangoutCaptor = ArgumentCaptor.forClass(Hangout.class);
+        verify(hangoutRepository).createHangout(hangoutCaptor.capture());
+        assertThat(hangoutCaptor.getValue().getPlaceCategory()).isEqualTo("restaurant");
+    }
 }

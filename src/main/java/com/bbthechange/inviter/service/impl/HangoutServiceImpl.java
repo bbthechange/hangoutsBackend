@@ -530,7 +530,7 @@ public class HangoutServiceImpl implements HangoutService {
         }
 
         // Place category field
-        if (!Objects.equals(request.getPlaceCategory(), hangout.getPlaceCategory())) {
+        if (request.getPlaceCategory() != null && !Objects.equals(request.getPlaceCategory(), hangout.getPlaceCategory())) {
             hangout.setPlaceCategory(request.getPlaceCategory());
             needsPointerUpdate = true;
         }

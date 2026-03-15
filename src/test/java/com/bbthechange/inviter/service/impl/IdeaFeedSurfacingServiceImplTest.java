@@ -362,7 +362,7 @@ class IdeaFeedSurfacingServiceImplTest {
         }
 
         @Test
-        void nonConfirmedHangoutsInAll3Weeks_DoesNotSuppressIdeas() {
+        void buildingHangoutsInAll3Weeks_DoesNotSuppressIdeas() {
             // BUILDING hangouts do not count for suppression
             long week11Ts = NOW + 1000;
             long week12Ts = NOW + (7 * 24 * 3600L);
@@ -383,6 +383,31 @@ class IdeaFeedSurfacingServiceImplTest {
             List<IdeaFeedItemDTO> result = service.getSurfacedIdeas(GROUP_ID, NOW, USER_ID);
 
             assertThat(result).hasSize(1);
+        }
+
+        @Test
+        void legacyNullMomentumHangoutsInAll3Weeks_SuppressesIdeas() {
+            // Legacy (pre-momentum) hangouts with null category are treated as confirmed
+            long week11Ts = NOW + 1000;
+            long week12Ts = NOW + (7 * 24 * 3600L);
+            long week13Ts = NOW + (14 * 24 * 3600L);
+
+            List<BaseItem> items = new ArrayList<>();
+            for (long ts : new long[]{week11Ts, week12Ts, week13Ts}) {
+                HangoutPointer hp = new HangoutPointer();
+                hp.setHangoutId("hangout-legacy-" + ts);
+                hp.setStartTimestamp(ts);
+                hp.setMomentumCategory(null); // legacy — no momentum set
+                items.add(hp);
+            }
+
+            when(hangoutRepository.getFutureEventsPage(eq(GROUP_ID), anyLong(), anyInt(), any()))
+                    .thenReturn(pageOf(items));
+
+            List<IdeaFeedItemDTO> result = service.getSurfacedIdeas(GROUP_ID, NOW, USER_ID);
+
+            assertThat(result).isEmpty();
+            verify(ideaListService, never()).getIdeaListsForGroup(anyString(), anyString());
         }
 
         @Test
@@ -549,8 +574,8 @@ class IdeaFeedSurfacingServiceImplTest {
         }
 
         @Test
-        void hangoutPointerWithNullMomentumCategory_NotCountedAsConfirmed() {
-            // Pre-momentum hangouts (null category) should not count for suppression
+        void hangoutPointerWithNullMomentumCategory_TreatedAsConfirmed() {
+            // Legacy (pre-momentum) hangouts have null category and are effectively confirmed
             HangoutPointer preMomentum = new HangoutPointer();
             preMomentum.setHangoutId("hangout-legacy");
             preMomentum.setStartTimestamp(NOW + 1000);
@@ -559,6 +584,7 @@ class IdeaFeedSurfacingServiceImplTest {
             when(hangoutRepository.getFutureEventsPage(eq(GROUP_ID), anyLong(), anyInt(), any()))
                     .thenReturn(pageOf(List.of(preMomentum)));
 
+            // Single week covered (current week only) — not all 3, so still false
             assertThat(service.allUpcomingWeeksCovered(GROUP_ID, NOW)).isFalse();
         }
 
