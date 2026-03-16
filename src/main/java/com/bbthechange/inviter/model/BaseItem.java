@@ -1,5 +1,6 @@
 package com.bbthechange.inviter.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.*;
 import com.bbthechange.inviter.util.InstantAsLongAttributeConverter;
 
@@ -29,6 +30,7 @@ public abstract class BaseItem {
         this.updatedAt = Instant.now();
     }
     
+    @JsonIgnore
     @DynamoDbPartitionKey
     public String getPk() {
         return pk;
@@ -38,6 +40,7 @@ public abstract class BaseItem {
         this.pk = pk;
     }
     
+    @JsonIgnore
     @DynamoDbSortKey
     public String getSk() {
         return sk;
@@ -47,6 +50,7 @@ public abstract class BaseItem {
         this.sk = sk;
     }
     
+    @JsonIgnore
     @DynamoDbSecondaryPartitionKey(indexNames = "UserGroupIndex")
     public String getGsi1pk() {
         return gsi1pk;
@@ -56,7 +60,8 @@ public abstract class BaseItem {
         this.gsi1pk = gsi1pk;
     }
     
-    @DynamoDbSecondarySortKey(indexNames = "UserGroupIndex")  
+    @JsonIgnore
+    @DynamoDbSecondarySortKey(indexNames = "UserGroupIndex")
     public String getGsi1sk() {
         return gsi1sk;
     }
@@ -65,6 +70,7 @@ public abstract class BaseItem {
         this.gsi1sk = gsi1sk;
     }
 
+    @JsonIgnore
     public String getGsi2pk() {
         return gsi2pk;
     }
@@ -73,6 +79,7 @@ public abstract class BaseItem {
         this.gsi2pk = gsi2pk;
     }
 
+    @JsonIgnore
     public String getGsi2sk() {
         return gsi2sk;
     }
@@ -81,6 +88,7 @@ public abstract class BaseItem {
         this.gsi2sk = gsi2sk;
     }
 
+    @JsonIgnore
     @DynamoDbSecondaryPartitionKey(indexNames = "InviteCodeIndex")
     public String getGsi3pk() {
         return gsi3pk;
@@ -90,6 +98,7 @@ public abstract class BaseItem {
         this.gsi3pk = gsi3pk;
     }
 
+    @JsonIgnore
     @DynamoDbSecondarySortKey(indexNames = "InviteCodeIndex")
     public String getGsi3sk() {
         return gsi3sk;
@@ -99,6 +108,7 @@ public abstract class BaseItem {
         this.gsi3sk = gsi3sk;
     }
 
+    @JsonIgnore
     @DynamoDbAttribute("itemType")
     public String getItemType() {
         return itemType;
