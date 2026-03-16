@@ -7,6 +7,8 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
+import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbConvertedBy;
+import com.bbthechange.inviter.util.InstantAsLongAttributeConverter;
 
 import java.time.Instant;
 import java.util.Set;
@@ -61,6 +63,16 @@ public class IdeaListMember extends BaseItem {
     // Enrichment Metadata
     private Instant lastEnrichedAt;   // When last enriched via Google
     private String enrichmentStatus;  // "PENDING", "ENRICHED", "FAILED", "NOT_APPLICABLE"
+
+    /**
+     * Override Lombok getter to add DynamoDB converter annotation.
+     * lastEnrichedAt is written as epoch millis (Number) by PlaceEnrichmentServiceImpl
+     * via raw UpdateItem, so it must use InstantAsLongAttributeConverter to read correctly.
+     */
+    @DynamoDbConvertedBy(InstantAsLongAttributeConverter.class)
+    public Instant getLastEnrichedAt() {
+        return lastEnrichedAt;
+    }
 
     public void setInterestedUserIds(Set<String> interestedUserIds) {
         if (interestedUserIds == null || interestedUserIds.isEmpty()) {
