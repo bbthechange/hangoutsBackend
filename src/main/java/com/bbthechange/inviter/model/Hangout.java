@@ -72,6 +72,10 @@ public class Hangout extends BaseItem {
     private String confirmedBy;                // User ID who confirmed ("SYSTEM" for auto-promotion)
     private String suggestedBy;                // User ID of creator for "Float it" hangouts
 
+    // Idea provenance fields (set when hangout is created from an idea suggestion)
+    private String sourceIdeaId;               // ID of the idea this hangout was created from
+    private String sourceIdeaListId;           // ID of the idea list containing the source idea
+
     // Default constructor for DynamoDB
     public Hangout() {
         super();
@@ -499,6 +503,28 @@ public class Hangout extends BaseItem {
 
     public void setSuggestedBy(String suggestedBy) {
         this.suggestedBy = suggestedBy;
+        touch();
+    }
+
+    // ============================================================================
+    // IDEA PROVENANCE FIELDS
+    // ============================================================================
+
+    public String getSourceIdeaId() {
+        return sourceIdeaId;
+    }
+
+    public void setSourceIdeaId(String sourceIdeaId) {
+        this.sourceIdeaId = sourceIdeaId;
+        touch();
+    }
+
+    public String getSourceIdeaListId() {
+        return sourceIdeaListId;
+    }
+
+    public void setSourceIdeaListId(String sourceIdeaListId) {
+        this.sourceIdeaListId = sourceIdeaListId;
         touch();
     }
 }

@@ -36,4 +36,8 @@ public class CreateHangoutRequest {
 
     // Momentum field: true = "Lock it in" (CONFIRMED), false/null = "Float it" (BUILDING)
     private Boolean confirmed;
+
+    // Idea provenance: set when creating a hangout from an idea suggestion card
+    private String sourceIdeaId;        // ID of the idea this hangout was created from
+    private String sourceIdeaListId;    // ID of the idea list containing the source idea
 }

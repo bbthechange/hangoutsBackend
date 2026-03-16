@@ -248,6 +248,15 @@ public class HangoutServiceImpl implements HangoutService {
             hangout.setPlaceCategory(request.getPlaceCategory());
         }
 
+        // Set idea provenance fields (when creating from an idea suggestion)
+        if (request.getSourceIdeaId() != null) {
+            if (request.getSourceIdeaListId() == null) {
+                throw new ValidationException("sourceIdeaListId is required when sourceIdeaId is provided");
+            }
+            hangout.setSourceIdeaId(request.getSourceIdeaId());
+            hangout.setSourceIdeaListId(request.getSourceIdeaListId());
+        }
+
         // Track who created the hangout for attribute proposal system
         hangout.setCreatedBy(requestingUserId);
 
