@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -55,7 +56,7 @@ public class IdeaListServiceImpl implements IdeaListService {
         // Trigger re-enrichment for stale place data across all lists (async, non-blocking)
         if (placeEnrichmentService != null && placeEnrichmentService.isEnabled()) {
             for (IdeaList ideaList : ideaLists) {
-                placeEnrichmentService.triggerStaleReEnrichment(ideaList.getMembers(), groupId, ideaList.getListId());
+                placeEnrichmentService.triggerReadPathEnrichment(ideaList.getMembers(), groupId, ideaList.getListId());
             }
         }
 
@@ -77,7 +78,7 @@ public class IdeaListServiceImpl implements IdeaListService {
 
         // Trigger re-enrichment for stale place data (async, non-blocking)
         if (placeEnrichmentService != null && placeEnrichmentService.isEnabled()) {
-            placeEnrichmentService.triggerStaleReEnrichment(ideaList.getMembers(), groupId, listId);
+            placeEnrichmentService.triggerReadPathEnrichment(ideaList.getMembers(), groupId, listId);
         }
 
         return convertToDTO(ideaList);
@@ -197,21 +198,48 @@ public class IdeaListServiceImpl implements IdeaListService {
         member.setLongitude(request.getLongitude());
         member.setPlaceCategory(request.getPlaceCategory());
 
-        // Set enrichment status based on whether enrichment is possible
-        if (request.getGooglePlaceId() != null && !request.getGooglePlaceId().isBlank()) {
-            member.setEnrichmentStatus("PENDING");
-        } else {
-            member.setEnrichmentStatus("NOT_APPLICABLE");
+        // Determine if this is a place idea
+        boolean isPlaceIdea = request.getGooglePlaceId() != null
+                || request.getApplePlaceId() != null
+                || request.getAddress() != null
+                || request.getLatitude() != null
+                || request.getPlaceCategory() != null;
+
+        // For place ideas: look up enrichment cache before saving
+        boolean cacheHit = false;
+        if (isPlaceIdea && placeEnrichmentService != null && placeEnrichmentService.isEnabled()) {
+            var cached = placeEnrichmentService.lookupCache(
+                    request.getName(), request.getLatitude(), request.getLongitude(), request.getGooglePlaceId());
+            if (cached.isPresent() && "ENRICHED".equals(cached.get().getStatus())) {
+                var entry = cached.get();
+                member.setCachedPhotoUrl(entry.getCachedPhotoUrl());
+                member.setCachedRating(entry.getCachedRating());
+                member.setCachedPriceLevel(entry.getCachedPriceLevel());
+                member.setCachedHoursJson(entry.getCachedHoursJson());
+                member.setPhoneNumber(entry.getPhoneNumber());
+                member.setWebsiteUrl(entry.getWebsiteUrl());
+                member.setMenuUrl(entry.getMenuUrl());
+                if (entry.getGooglePlaceId() != null) {
+                    member.setGooglePlaceId(entry.getGooglePlaceId());
+                }
+                member.setEnrichmentStatus("ENRICHED");
+                member.setLastEnrichedAt(Instant.now());
+                cacheHit = true;
+            }
+        }
+        if (!cacheHit) {
+            member.setEnrichmentStatus(isPlaceIdea ? "PENDING" : null);
         }
 
         IdeaListMember savedMember = ideaListRepository.saveIdeaListMember(member);
         logger.debug("Added idea: {} to list: {} in group: {} by user: {}",
                 savedMember.getIdeaId(), listId, groupId, requestingUserId);
 
-        // Trigger async enrichment if a Google Place ID is provided
-        if (savedMember.getGooglePlaceId() != null && !savedMember.getGooglePlaceId().isBlank()
-                && placeEnrichmentService != null && placeEnrichmentService.isEnabled()) {
-            placeEnrichmentService.enrichPlaceAsync(groupId, listId, savedMember.getIdeaId(), savedMember.getGooglePlaceId());
+        // For place ideas without a cache hit, trigger async enrichment
+        if (isPlaceIdea && !cacheHit && placeEnrichmentService != null && placeEnrichmentService.isEnabled()) {
+            placeEnrichmentService.enrichPlaceAsync(groupId, listId, savedMember.getIdeaId(),
+                savedMember.getName(), savedMember.getLatitude(), savedMember.getLongitude(),
+                savedMember.getGooglePlaceId(), savedMember.getApplePlaceId());
         }
 
         IdeaDTO dto = new IdeaDTO(savedMember);
@@ -301,10 +329,10 @@ public class IdeaListServiceImpl implements IdeaListService {
             logger.debug("Updated idea: {} in list: {} group: {} by user: {}", ideaId, listId, groupId, requestingUserId);
 
             // Trigger async enrichment if googlePlaceId was changed
-            if (googlePlaceIdChanged && savedMember.getGooglePlaceId() != null
-                    && !savedMember.getGooglePlaceId().isBlank()
-                    && placeEnrichmentService != null && placeEnrichmentService.isEnabled()) {
-                placeEnrichmentService.enrichPlaceAsync(groupId, listId, ideaId, savedMember.getGooglePlaceId());
+            if (googlePlaceIdChanged && placeEnrichmentService != null && placeEnrichmentService.isEnabled()) {
+                placeEnrichmentService.enrichPlaceAsync(groupId, listId, ideaId,
+                    savedMember.getName(), savedMember.getLatitude(), savedMember.getLongitude(),
+                    savedMember.getGooglePlaceId(), savedMember.getApplePlaceId());
             }
 
             IdeaDTO dto = new IdeaDTO(savedMember);

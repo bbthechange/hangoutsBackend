@@ -62,7 +62,7 @@ public class IdeaListMember extends BaseItem {
 
     // Enrichment Metadata
     private Instant lastEnrichedAt;   // When last enriched via Google
-    private String enrichmentStatus;  // "PENDING", "ENRICHED", "FAILED", "NOT_APPLICABLE"
+    private String enrichmentStatus;  // "PENDING", "ENRICHED", "FAILED", "PERMANENTLY_FAILED", or null for non-place ideas
 
     /**
      * Override Lombok getter to add DynamoDB converter annotation.

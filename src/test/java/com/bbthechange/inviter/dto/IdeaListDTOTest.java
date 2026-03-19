@@ -341,7 +341,7 @@ class IdeaListDTOTest {
         assertThat(dto.getMenuUrl()).isEqualTo("http://joespizza.com/menu");
         assertThat(dto.getCachedHoursJson()).isEqualTo("{\"monday\":\"9:00-22:00\"}");
         assertThat(dto.getPlaceCategory()).isEqualTo("restaurant");
-        assertThat(dto.getLastEnrichedAt()).isEqualTo(Instant.parse("2025-06-15T10:00:00Z"));
+        assertThat(dto.getLastEnrichedAt()).isEqualTo("2025-06-15T10:00:00Z");
         assertThat(dto.getEnrichmentStatus()).isEqualTo("ENRICHED");
 
         // Original fields also mapped

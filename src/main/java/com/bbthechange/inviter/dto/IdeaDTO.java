@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.dto;
 
 import com.bbthechange.inviter.model.IdeaListMember;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -13,6 +14,7 @@ import java.util.List;
  */
 @Data
 @NoArgsConstructor
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class IdeaDTO {
     
     private String id;
@@ -43,7 +45,7 @@ public class IdeaDTO {
     private String menuUrl;
     private String cachedHoursJson;
     private String placeCategory;
-    private Instant lastEnrichedAt;
+    private String lastEnrichedAt;
     private String enrichmentStatus;
 
     // Constructor from IdeaListMember entity
@@ -73,7 +75,7 @@ public class IdeaDTO {
         this.menuUrl = member.getMenuUrl();
         this.cachedHoursJson = member.getCachedHoursJson();
         this.placeCategory = member.getPlaceCategory();
-        this.lastEnrichedAt = member.getLastEnrichedAt();
+        this.lastEnrichedAt = member.getLastEnrichedAt() != null ? member.getLastEnrichedAt().toString() : null;
         this.enrichmentStatus = member.getEnrichmentStatus();
     }
 }

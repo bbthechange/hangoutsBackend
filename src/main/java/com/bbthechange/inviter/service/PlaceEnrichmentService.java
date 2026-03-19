@@ -1,8 +1,16 @@
 package com.bbthechange.inviter.service;
 
+import com.bbthechange.inviter.dto.EnrichmentResult;
+import com.bbthechange.inviter.model.IdeaListMember;
+import com.bbthechange.inviter.model.PlaceEnrichmentCacheEntry;
+
+import java.util.List;
+import java.util.Optional;
+
 /**
- * Service interface for asynchronous place enrichment via Google Places API.
- * Enriches idea records with photos, ratings, hours, etc.
+ * Service interface for place enrichment via Google Places API (New).
+ * Provides synchronous enrichment for the /places/enrich endpoint and
+ * async enrichment for read-path safety nets.
  */
 public interface PlaceEnrichmentService {
 
@@ -12,25 +20,40 @@ public interface PlaceEnrichmentService {
     boolean isEnabled();
 
     /**
-     * Asynchronously enrich an idea with Google Places data.
-     * Returns immediately; enrichment happens in background.
+     * Synchronous enrichment. Cache lookup first, then full pipeline if miss.
+     * Used by POST /places/enrich endpoint.
+     * Blocks until enrichment completes or times out.
      *
-     * @param groupId       the group containing the idea list
-     * @param listId        the idea list ID
-     * @param ideaId        the idea to enrich
-     * @param googlePlaceId the Google Places API place_id
+     * @return enrichment result with status (CACHED, ENRICHED, FAILED)
      */
-    void enrichPlaceAsync(String groupId, String listId, String ideaId, String googlePlaceId);
+    EnrichmentResult enrichPlaceSync(String name, double latitude, double longitude,
+                                     String googlePlaceId, String applePlaceId);
 
     /**
-     * Check idea list members for stale enrichment data and trigger
-     * async re-enrichment for up to 5 stale items per call.
-     * Stale = lastEnrichedAt older than configured threshold (default 30 days).
+     * Look up enrichment cache only (no Google API calls).
+     * Used by idea creation to copy cached data onto new ideas.
      *
-     * @param members the list of idea members to check
-     * @param groupId the group ID
-     * @param listId  the list ID
+     * @return cached entry if found
      */
-    void triggerStaleReEnrichment(java.util.List<com.bbthechange.inviter.model.IdeaListMember> members,
-                                  String groupId, String listId);
+    Optional<PlaceEnrichmentCacheEntry> lookupCache(String name, Double latitude, Double longitude,
+                                                    String googlePlaceId);
+
+    /**
+     * Async enrichment for a specific idea. Runs the full sync pipeline in a background thread,
+     * then copies the result onto the idea record.
+     * Used by read-path safety net and idea creation fallback.
+     */
+    void enrichPlaceAsync(String groupId, String listId, String ideaId,
+                          String name, Double latitude, Double longitude,
+                          String googlePlaceId, String applePlaceId);
+
+    /**
+     * Read-path safety net. Scans returned ideas and triggers async enrichment for those that need it:
+     * - null enrichmentStatus (legacy data)
+     * - PENDING (write-time enrichment not complete)
+     * - FAILED with failureCount &lt; 3 (retryable)
+     * - ENRICHED but stale (&gt;30 days)
+     * Max 5 triggers per call.
+     */
+    void triggerReadPathEnrichment(List<IdeaListMember> members, String groupId, String listId);
 }

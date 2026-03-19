@@ -439,8 +439,8 @@ class IdeaListRepositoryImplUnitTest {
         member.setEnrichmentStatus("FAILED");
         assertThat(member.getEnrichmentStatus()).isEqualTo("FAILED");
 
-        member.setEnrichmentStatus("NOT_APPLICABLE");
-        assertThat(member.getEnrichmentStatus()).isEqualTo("NOT_APPLICABLE");
+        member.setEnrichmentStatus("PERMANENTLY_FAILED");
+        assertThat(member.getEnrichmentStatus()).isEqualTo("PERMANENTLY_FAILED");
 
         member.setEnrichmentStatus(null);
         assertThat(member.getEnrichmentStatus()).isNull();
