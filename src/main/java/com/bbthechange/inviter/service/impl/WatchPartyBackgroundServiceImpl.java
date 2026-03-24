@@ -578,7 +578,7 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
             LocalTime time = LocalTime.parse(defaultTime, DateTimeFormatter.ofPattern("HH:mm"));
 
             Instant airInstant = Instant.ofEpochSecond(airTimestamp);
-            LocalDate airDate = airInstant.atZone(ZoneOffset.UTC).toLocalDate();
+            LocalDate airDate = airInstant.atZone(zone).toLocalDate();
 
             LocalDate targetDate = airDate;
             if (dayOverride != null) {

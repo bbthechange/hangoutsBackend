@@ -2269,4 +2269,109 @@ class WatchPartyServiceImplTest {
                     .hasMessageContaining("exceeds maximum length");
         }
     }
+
+    // ============================================================================
+    // TIME CALCULATION TESTS
+    // ============================================================================
+
+    @Nested
+    class CalculateStartTimestamp {
+
+        @Test
+        void calculateStartTimestamp_LateEveningET_UsesCorrectLocalDate() {
+            // Friday March 21, 2025 at 9PM ET = Saturday March 22, 2025 at 1AM UTC
+            // The method should extract Friday (local), not Saturday (UTC)
+            long fridayNinepmEt = 1742609400L; // 2025-03-21T21:00:00-04:00 = 2025-03-22T01:00:00Z
+            String timezone = "America/New_York";
+            String defaultTime = "21:00";
+
+            long result = watchPartyService.calculateStartTimestamp(fridayNinepmEt, defaultTime, timezone, null);
+
+            // Should be Friday March 21 at 9PM ET, not Saturday March 22
+            java.time.ZonedDateTime resultZdt = java.time.Instant.ofEpochSecond(result)
+                    .atZone(java.time.ZoneId.of(timezone));
+            assertThat(resultZdt.getDayOfWeek()).isEqualTo(java.time.DayOfWeek.FRIDAY);
+            assertThat(resultZdt.getDayOfMonth()).isEqualTo(21);
+        }
+
+        @Test
+        void calculateStartTimestamp_DayOverrideMatchesAirDay_ReturnsSameDay() {
+            // Friday March 21, 2025 at 9PM ET; dayOverride=5 (Friday)
+            long fridayNinepmEt = 1742609400L;
+            String timezone = "America/New_York";
+            String defaultTime = "20:00";
+            Integer dayOverride = 5; // Friday
+
+            long result = watchPartyService.calculateStartTimestamp(fridayNinepmEt, defaultTime, timezone, dayOverride);
+
+            java.time.ZonedDateTime resultZdt = java.time.Instant.ofEpochSecond(result)
+                    .atZone(java.time.ZoneId.of(timezone));
+            assertThat(resultZdt.getDayOfWeek()).isEqualTo(java.time.DayOfWeek.FRIDAY);
+            assertThat(resultZdt.getDayOfMonth()).isEqualTo(21);
+        }
+
+        @Test
+        void calculateStartTimestamp_DayOverrideDifferentFromAirDay_FindsNextOccurrence() {
+            // Friday March 21, 2025 at 9PM ET; dayOverride=6 (Saturday)
+            long fridayNinepmEt = 1742609400L;
+            String timezone = "America/New_York";
+            String defaultTime = "19:00";
+            Integer dayOverride = 6; // Saturday
+
+            long result = watchPartyService.calculateStartTimestamp(fridayNinepmEt, defaultTime, timezone, dayOverride);
+
+            java.time.ZonedDateTime resultZdt = java.time.Instant.ofEpochSecond(result)
+                    .atZone(java.time.ZoneId.of(timezone));
+            // Should be Saturday March 22 (next Saturday after Friday)
+            assertThat(resultZdt.getDayOfWeek()).isEqualTo(java.time.DayOfWeek.SATURDAY);
+            assertThat(resultZdt.getDayOfMonth()).isEqualTo(22);
+        }
+
+        @Test
+        void calculateStartTimestamp_UtcDateMatchesLocalDate_NoBugEvenBefore() {
+            // Wednesday March 19, 2025 at 1PM ET = 5PM UTC (same day in both)
+            long wednesdayNoonEt = 1742403600L; // 2025-03-19T13:00:00-04:00
+            String timezone = "America/New_York";
+            String defaultTime = "12:00";
+
+            long result = watchPartyService.calculateStartTimestamp(wednesdayNoonEt, defaultTime, timezone, null);
+
+            java.time.ZonedDateTime resultZdt = java.time.Instant.ofEpochSecond(result)
+                    .atZone(java.time.ZoneId.of(timezone));
+            assertThat(resultZdt.getDayOfWeek()).isEqualTo(java.time.DayOfWeek.WEDNESDAY);
+            assertThat(resultZdt.getDayOfMonth()).isEqualTo(19);
+        }
+
+        @Test
+        void calculateStartTimestamp_SundayOverride_HandlesSpecialCase() {
+            // Friday March 21, 2025 at 9PM ET; dayOverride=0 (Sunday)
+            long fridayNinepmEt = 1742609400L;
+            String timezone = "America/New_York";
+            String defaultTime = "18:00";
+            Integer dayOverride = 0; // Sunday
+
+            long result = watchPartyService.calculateStartTimestamp(fridayNinepmEt, defaultTime, timezone, dayOverride);
+
+            java.time.ZonedDateTime resultZdt = java.time.Instant.ofEpochSecond(result)
+                    .atZone(java.time.ZoneId.of(timezone));
+            // Should be Sunday March 23 (next Sunday after Friday)
+            assertThat(resultZdt.getDayOfWeek()).isEqualTo(java.time.DayOfWeek.SUNDAY);
+            assertThat(resultZdt.getDayOfMonth()).isEqualTo(23);
+        }
+
+        @Test
+        void calculateStartTimestamp_PacificTimezone_LateNight() {
+            // Friday March 21, 2025 at 10PM PT = Saturday March 22, 2025 at 5AM UTC
+            long fridayTenpmPt = 1742622000L; // 2025-03-22T05:00:00Z
+            String timezone = "America/Los_Angeles";
+            String defaultTime = "22:00";
+
+            long result = watchPartyService.calculateStartTimestamp(fridayTenpmPt, defaultTime, timezone, null);
+
+            java.time.ZonedDateTime resultZdt = java.time.Instant.ofEpochSecond(result)
+                    .atZone(java.time.ZoneId.of(timezone));
+            assertThat(resultZdt.getDayOfWeek()).isEqualTo(java.time.DayOfWeek.FRIDAY);
+            assertThat(resultZdt.getDayOfMonth()).isEqualTo(21);
+        }
+    }
 }

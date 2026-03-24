@@ -759,9 +759,9 @@ public class WatchPartyServiceImpl implements WatchPartyService {
         ZoneId zone = ZoneId.of(timezone);
         LocalTime time = LocalTime.parse(defaultTime, DateTimeFormatter.ofPattern("HH:mm"));
 
-        // Convert air timestamp to date in UTC to establish the correct calendar day
+        // Convert air timestamp to date in user's timezone to establish the correct calendar day
         Instant airInstant = Instant.ofEpochSecond(airTimestamp);
-        LocalDate airDate = airInstant.atZone(ZoneOffset.UTC).toLocalDate();
+        LocalDate airDate = airInstant.atZone(zone).toLocalDate();
 
         // Apply day override if specified
         LocalDate targetDate = airDate;
