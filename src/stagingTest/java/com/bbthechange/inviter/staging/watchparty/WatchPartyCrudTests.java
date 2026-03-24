@@ -66,9 +66,9 @@ class WatchPartyCrudTests extends StagingTestBase {
         // Arrange
         String groupId = createTestGroup("WP Timezone");
 
-        // Use a specific future date to avoid DST edge cases
+        // Use a specific future date — air timestamp in LA timezone so the calendar day is correct
         LocalDate futureDate = LocalDate.now().plusDays(14);
-        long airTimestamp = futureDate.atStartOfDay(ZoneOffset.UTC).toEpochSecond();
+        long airTimestamp = futureDate.atTime(20, 0).atZone(ZoneId.of("America/Los_Angeles")).toEpochSecond();
 
         String requestBody = """
             {
