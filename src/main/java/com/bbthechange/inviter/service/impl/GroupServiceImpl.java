@@ -758,6 +758,7 @@ public class GroupServiceImpl implements GroupService {
         dto.setStartTimestamp(seriesPointer.getStartTimestamp());
         dto.setEndTimestamp(seriesPointer.getEndTimestamp());
         dto.setMainImagePath(seriesPointer.getMainImagePath());
+        dto.setEventSeriesType(seriesPointer.getEventSeriesType());
 
         // Convert denormalized parts to HangoutSummaryDTO objects with transformed data
         List<HangoutSummaryDTO> parts = new ArrayList<>();

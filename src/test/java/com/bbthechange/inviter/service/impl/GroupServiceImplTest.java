@@ -1267,6 +1267,7 @@ class GroupServiceImplTest {
         seriesPointer.setPrimaryEventId("primary-event-1");
         seriesPointer.setStartTimestamp(1000L);
         seriesPointer.setEndTimestamp(2000L);
+        seriesPointer.setEventSeriesType("WATCH_PARTY");
 
         // When
         SeriesSummaryDTO result = groupService.createSeriesSummaryDTO(seriesPointer, USER_ID);
@@ -1278,6 +1279,7 @@ class GroupServiceImplTest {
         assertThat(result.getStartTimestamp()).isEqualTo(1000L);
         assertThat(result.getEndTimestamp()).isEqualTo(2000L);
         assertThat(result.getType()).isEqualTo("series");
+        assertThat(result.getEventSeriesType()).isEqualTo("WATCH_PARTY");
     }
 
     @Test

@@ -18,6 +18,7 @@ public class SeriesSummaryDTO implements FeedItem {
     private List<HangoutSummaryDTO> parts; // Individual events in the series
     private int totalParts;
     private String type = "series"; // Type discriminator for client-side handling
+    private String eventSeriesType; // "WATCH_PARTY" for watch parties, null for regular series
 
     // External source fields (denormalized from SeriesPointer)
     private String externalId;
@@ -106,6 +107,14 @@ public class SeriesSummaryDTO implements FeedItem {
 
     public void setType(String type) {
         this.type = type;
+    }
+
+    public String getEventSeriesType() {
+        return eventSeriesType;
+    }
+
+    public void setEventSeriesType(String eventSeriesType) {
+        this.eventSeriesType = eventSeriesType;
     }
 
     public String getExternalId() {
