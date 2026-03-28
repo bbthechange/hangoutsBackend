@@ -39,10 +39,14 @@ import java.util.Set;
  *   threshold = ceil(activeMembers * engagementMultiplier * 0.4)
  *   engagementMultiplier clamped [0.3, 1.0], default 0.6 for new groups
  *
+ * Two-tier scoring:
+ *   momentumScore (includes Interested) — drives BUILDING -> GAINING_MOMENTUM
+ *   confirmScore  (excludes Interested) — drives GAINING_MOMENTUM -> CONFIRMED
+ *
  * Promotion rules:
- *   score >= threshold           -> GAINING_MOMENTUM
- *   score >= threshold*2 + date  -> CONFIRMED (auto)
- *   concrete action              -> CONFIRMED (instant)
+ *   momentumScore >= threshold           -> GAINING_MOMENTUM
+ *   confirmScore  >= threshold*2 + date  -> CONFIRMED (auto)
+ *   concrete action                      -> CONFIRMED (instant)
  *   Never demote from CONFIRMED
  */
 @Service
@@ -153,10 +157,11 @@ public class MomentumServiceImpl implements MomentumService {
             return;
         }
 
-        // Step 5: Compute raw score from RSVPs + bonuses
+        // Step 5: Compute raw scores (two-tier: momentum includes Interested, confirm excludes it)
         int rawScore = computeRawScore(hangout, interestLevels);
+        int rawConfirmScore = computeConfirmScore(hangout, interestLevels);
 
-        // Step 6: Apply multipliers (compound)
+        // Step 6: Apply multipliers (compound — same multipliers for both scores)
         long nowSeconds = System.currentTimeMillis() / 1000;
         boolean hasRecentActivity = hasRecentActivity(interestLevels, nowSeconds);
 
@@ -173,13 +178,14 @@ public class MomentumServiceImpl implements MomentumService {
             }
         }
         int finalScore = (int) Math.round(rawScore * multiplier);
+        int confirmFinalScore = (int) Math.round(rawConfirmScore * multiplier);
 
         // Step 7: Compute dynamic threshold
         String primaryGroupId = getPrimaryGroupId(hangout);
         int threshold = computeThreshold(primaryGroupId);
 
-        // Step 8: Determine new category
-        MomentumCategory newCategory = determineCategory(hangout, finalScore, threshold);
+        // Step 8: Determine new category (uses finalScore for gaining, confirmFinalScore for confirmed)
+        MomentumCategory newCategory = determineCategory(hangout, finalScore, confirmFinalScore, threshold);
 
         // Step 9: Apply changes
         hangout.setMomentumScore(finalScore);
@@ -290,6 +296,8 @@ public class MomentumServiceImpl implements MomentumService {
 
     /**
      * Compute raw score from RSVPs and attribute bonuses.
+     * Includes both GOING (+3) and INTERESTED (+1) signals.
+     * Used for BUILDING -> GAINING_MOMENTUM transitions.
      */
     private int computeRawScore(Hangout hangout, List<InterestLevel> interestLevels) {
         int score = 0;
@@ -299,6 +307,31 @@ public class MomentumServiceImpl implements MomentumService {
                 score += 3;
             } else if ("INTERESTED".equalsIgnoreCase(il.getStatus())) {
                 score += 1;
+            }
+        }
+
+        if (hangout.getStartTimestamp() != null) {
+            score += 1;
+        }
+        if (hangout.getLocation() != null) {
+            score += 1;
+        }
+
+        return score;
+    }
+
+    /**
+     * Compute confirmation-eligible score: only GOING RSVPs (+3) plus attribute bonuses.
+     * Excludes INTERESTED signals — "Interested" is a low-commitment signal that should
+     * drive visibility (GAINING_MOMENTUM) but not auto-confirm a hangout.
+     * Used for GAINING_MOMENTUM -> CONFIRMED auto-promotion threshold.
+     */
+    private int computeConfirmScore(Hangout hangout, List<InterestLevel> interestLevels) {
+        int score = 0;
+
+        for (InterestLevel il : interestLevels) {
+            if ("GOING".equalsIgnoreCase(il.getStatus())) {
+                score += 3;
             }
         }
 
@@ -323,20 +356,23 @@ public class MomentumServiceImpl implements MomentumService {
 
     /**
      * Determine the new momentum category based on score vs threshold.
+     * Uses two-tier scoring: {@code score} (includes Interested) for gaining momentum,
+     * {@code confirmScore} (excludes Interested) for auto-confirmation.
      * Never demotes from CONFIRMED.
      */
-    private MomentumCategory determineCategory(Hangout hangout, int score, int threshold) {
+    private MomentumCategory determineCategory(Hangout hangout, int score, int confirmScore, int threshold) {
         // Already confirmed — never demote
         if (MomentumCategory.CONFIRMED.equals(hangout.getMomentumCategory())) {
             return MomentumCategory.CONFIRMED;
         }
 
-        // Auto-confirm: score >= threshold*2 AND has a date
-        if (score >= threshold * 2 && hangout.getStartTimestamp() != null) {
+        // Auto-confirm: confirmScore >= threshold*2 AND has a date
+        // Uses confirmScore (excludes Interested) — only strong signals like Going can auto-confirm
+        if (confirmScore >= threshold * 2 && hangout.getStartTimestamp() != null) {
             return MomentumCategory.CONFIRMED;
         }
 
-        // Gaining momentum: score >= threshold
+        // Gaining momentum: score >= threshold (includes Interested — appropriate for visibility)
         if (score >= threshold) {
             return MomentumCategory.GAINING_MOMENTUM;
         }

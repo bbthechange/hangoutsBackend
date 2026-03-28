@@ -38,15 +38,22 @@ Two creation modes:
 
 ## 4. Scoring Algorithm
 
+### Two-Tier Scoring
+
+The system uses two separate scores to prevent low-commitment "Interested" signals from auto-confirming hangouts:
+
+- **momentumScore** (includes Interested) — drives BUILDING → GAINING_MOMENTUM. Appropriate because Interested signals indicate visibility/traction.
+- **confirmScore** (excludes Interested) — drives GAINING_MOMENTUM → CONFIRMED. Only strong commitment signals (Going RSVPs, planning actions) can auto-confirm.
+
 ### Signal Weights
 
-| Signal | Weight |
-|--------|--------|
-| Going RSVP | +3 each |
-| Interested RSVP | +1 each |
-| Time added (startTimestamp != null) | +1 |
-| Location added (location != null) | +1 |
-| Concrete action (tickets + link, or carpool riders) | Instant CONFIRMED |
+| Signal | momentumScore | confirmScore |
+|--------|--------------|-------------|
+| Going RSVP | +3 each | +3 each |
+| Interested RSVP | +1 each | **not counted** |
+| Time added (startTimestamp != null) | +1 | +1 |
+| Location added (location != null) | +1 | +1 |
+| Concrete action (tickets + link, or carpool riders) | Instant CONFIRMED | Instant CONFIRMED |
 
 ### Multipliers (compound — both can apply)
 
@@ -56,7 +63,7 @@ Two creation modes:
 | Time proximity (within 48h) | startTimestamp within 48 hours | ×1.5 |
 | Time proximity (within 7d) | startTimestamp within 7 days | ×1.2 |
 
-Multipliers stack: a hangout 2 days away with recent engagement gets ×1.5 × ×1.2 = ×1.8.
+Multipliers stack: a hangout 2 days away with recent engagement gets ×1.5 × ×1.2 = ×1.8. Both scores receive the same multipliers.
 
 ### Dynamic Threshold
 
@@ -72,8 +79,8 @@ Example: 8 members × 0.6 × 0.4 = threshold of 2.
 
 ### Promotion Rules
 
-- **BUILDING → GAINING_MOMENTUM**: score ≥ threshold
-- **GAINING_MOMENTUM → CONFIRMED**: score ≥ threshold × 2 AND hangout has a date
+- **BUILDING → GAINING_MOMENTUM**: momentumScore ≥ threshold (Interested counts here)
+- **GAINING_MOMENTUM → CONFIRMED**: confirmScore ≥ threshold × 2 AND hangout has a date (Interested excluded)
 - **Concrete action**: instant CONFIRMED regardless of score
 - **Date required for auto-confirm**: dateless hangouts cap at GAINING_MOMENTUM (can still be manually confirmed)
 

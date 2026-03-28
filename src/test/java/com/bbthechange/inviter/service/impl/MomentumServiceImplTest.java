@@ -862,4 +862,104 @@ class MomentumServiceImplTest {
         verify(hangoutRepository).save(any(Hangout.class));
         assertThat(hangout.getMomentumCategory()).isEqualTo(MomentumCategory.GAINING_MOMENTUM);
     }
+
+    // ============================================================================
+    // Two-Tier Scoring: Interested excluded from auto-confirmation
+    // ============================================================================
+
+    @Test
+    void recomputeMomentum_onlyInterestedRsvps_doesNotAutoConfirm() {
+        // Even with many Interested RSVPs + date, should NOT auto-confirm
+        Hangout hangout = buildHangout("h-int-noconf", MomentumCategory.BUILDING);
+        hangout.setStartTimestamp(System.currentTimeMillis() / 1000 + 10 * 86400L);
+        when(hangoutRepository.findHangoutById("h-int-noconf")).thenReturn(Optional.of(hangout));
+
+        // 6 INTERESTED RSVPs (momentumScore = 6+1(time) = 7, confirmScore = 0+1(time) = 1)
+        // Old activity — no recency multiplier
+        List<InterestLevel> attendance = List.of(
+                interestLevel("INTERESTED", Instant.now().minusSeconds(5 * 86400)),
+                interestLevel("INTERESTED", Instant.now().minusSeconds(5 * 86400)),
+                interestLevel("INTERESTED", Instant.now().minusSeconds(5 * 86400)),
+                interestLevel("INTERESTED", Instant.now().minusSeconds(5 * 86400)),
+                interestLevel("INTERESTED", Instant.now().minusSeconds(5 * 86400)),
+                interestLevel("INTERESTED", Instant.now().minusSeconds(5 * 86400))
+        );
+        when(hangoutRepository.getHangoutDetailData("h-int-noconf")).thenReturn(detailData(attendance));
+        mockFiveMembers(); // threshold = 2, threshold*2 = 4
+
+        momentumService.recomputeMomentum("h-int-noconf");
+
+        // momentumScore = 7 >= threshold(2) → GAINING_MOMENTUM, but NOT CONFIRMED
+        // because confirmScore = 1 (time bonus only) < threshold*2(4)
+        assertThat(hangout.getMomentumCategory()).isEqualTo(MomentumCategory.GAINING_MOMENTUM);
+        assertThat(hangout.getConfirmedBy()).isNull();
+    }
+
+    @Test
+    void recomputeMomentum_goingRsvpsWithDate_stillAutoConfirms() {
+        // Going RSVPs should still auto-confirm (unchanged behavior)
+        Hangout hangout = buildHangout("h-going-conf", MomentumCategory.BUILDING);
+        hangout.setStartTimestamp(System.currentTimeMillis() / 1000 + 10 * 86400L);
+        when(hangoutRepository.findHangoutById("h-going-conf")).thenReturn(Optional.of(hangout));
+
+        // 2 GOING RSVPs (confirmScore = 6+1(time) = 7), old activity
+        List<InterestLevel> attendance = List.of(
+                interestLevel("GOING", Instant.now().minusSeconds(5 * 86400)),
+                interestLevel("GOING", Instant.now().minusSeconds(5 * 86400))
+        );
+        when(hangoutRepository.getHangoutDetailData("h-going-conf")).thenReturn(detailData(attendance));
+        mockFiveMembers(); // threshold = 2, threshold*2 = 4
+
+        momentumService.recomputeMomentum("h-going-conf");
+
+        // confirmScore = 7 >= 4 AND has date → CONFIRMED
+        assertThat(hangout.getMomentumCategory()).isEqualTo(MomentumCategory.CONFIRMED);
+        assertThat(hangout.getConfirmedBy()).isEqualTo("SYSTEM");
+    }
+
+    @Test
+    void recomputeMomentum_interestedStillDrivesGainingMomentum() {
+        // Interested RSVPs should still push BUILDING → GAINING_MOMENTUM
+        Hangout hangout = buildHangout("h-int-gaining", MomentumCategory.BUILDING);
+        when(hangoutRepository.findHangoutById("h-int-gaining")).thenReturn(Optional.of(hangout));
+
+        // 3 INTERESTED RSVPs (score = 3), old activity
+        List<InterestLevel> attendance = List.of(
+                interestLevel("INTERESTED", Instant.now().minusSeconds(5 * 86400)),
+                interestLevel("INTERESTED", Instant.now().minusSeconds(5 * 86400)),
+                interestLevel("INTERESTED", Instant.now().minusSeconds(5 * 86400))
+        );
+        when(hangoutRepository.getHangoutDetailData("h-int-gaining")).thenReturn(detailData(attendance));
+        mockFiveMembers(); // threshold = 2
+
+        momentumService.recomputeMomentum("h-int-gaining");
+
+        // momentumScore = 3 >= threshold(2) → GAINING_MOMENTUM
+        assertThat(hangout.getMomentumCategory()).isEqualTo(MomentumCategory.GAINING_MOMENTUM);
+        assertThat(hangout.getMomentumScore()).isEqualTo(3);
+    }
+
+    @Test
+    void recomputeMomentum_mixedRsvps_onlyGoingCountsForConfirm() {
+        // Mixed Interested + Going: only Going counts toward confirmation threshold
+        Hangout hangout = buildHangout("h-mixed", MomentumCategory.BUILDING);
+        hangout.setStartTimestamp(System.currentTimeMillis() / 1000 + 10 * 86400L);
+        when(hangoutRepository.findHangoutById("h-mixed")).thenReturn(Optional.of(hangout));
+
+        // 1 GOING (3) + 3 INTERESTED (3) = momentumScore 6+1(time) = 7
+        // confirmScore = 3+1(time) = 4, threshold*2 = 4 → CONFIRMED
+        List<InterestLevel> attendance = List.of(
+                interestLevel("GOING", Instant.now().minusSeconds(5 * 86400)),
+                interestLevel("INTERESTED", Instant.now().minusSeconds(5 * 86400)),
+                interestLevel("INTERESTED", Instant.now().minusSeconds(5 * 86400)),
+                interestLevel("INTERESTED", Instant.now().minusSeconds(5 * 86400))
+        );
+        when(hangoutRepository.getHangoutDetailData("h-mixed")).thenReturn(detailData(attendance));
+        mockFiveMembers(); // threshold = 2, threshold*2 = 4
+
+        momentumService.recomputeMomentum("h-mixed");
+
+        // confirmScore = 4 >= 4 AND has date → CONFIRMED (Going drove it over the line)
+        assertThat(hangout.getMomentumCategory()).isEqualTo(MomentumCategory.CONFIRMED);
+    }
 }
