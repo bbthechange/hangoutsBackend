@@ -40,6 +40,7 @@ public class IdeaListMember extends BaseItem {
     private String externalId;      // ID from external source (e.g., Ticketmaster, Yelp)
     private String externalSource;  // Source system for externalId (e.g., "TICKETMASTER", "YELP")
     private Set<String> interestedUserIds; // User IDs who expressed interest ("I'd do this")
+    private String lastMilestoneSent;    // Highest milestone notification sent: FIRST_INTEREST, BROAD_INTEREST, GROUP_CONSENSUS
 
     // Place Identity
     private String googlePlaceId;     // Google Places API place_id

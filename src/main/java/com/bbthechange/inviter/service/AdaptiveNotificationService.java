@@ -102,7 +102,24 @@ public class AdaptiveNotificationService {
             return false;
         }
 
-        // Check weekly budget — single load, decide, record, save
+        // Check weekly budget
+        return hasBudgetForNotification(groupId, signalType);
+    }
+
+    /**
+     * Check whether the group's weekly notification budget allows another notification.
+     * Use this for non-momentum notifications (e.g., idea interest milestones) that
+     * need budget gating but have no momentum category transition.
+     *
+     * Atomically records the signal and increments the weekly counter if approved.
+     *
+     * @param groupId    the group to check
+     * @param signalType the signal type constant
+     * @return true if a notification should be sent
+     */
+    public boolean hasBudgetForNotification(String groupId, String signalType) {
+        if (groupId == null) return false;
+
         try {
             GroupNotificationTracker tracker = loadOrCreate(groupId);
             rolloverIfNeeded(tracker);
@@ -110,7 +127,6 @@ public class AdaptiveNotificationService {
             int budget = computeWeeklyBudget(tracker);
             boolean approved = tracker.getNotificationsSentThisWeek() < budget;
 
-            // Record signal and save in one shot (no second DB read)
             Map<String, Integer> counts = tracker.getSignalCounts();
             counts.merge(signalType, 1, Integer::sum);
             tracker.setSignalCounts(counts);
@@ -118,7 +134,6 @@ public class AdaptiveNotificationService {
                 tracker.setNotificationsSentThisWeek(tracker.getNotificationsSentThisWeek() + 1);
             }
             trackerRepository.save(tracker);
-
             return approved;
         } catch (Exception e) {
             logger.warn("Failed to check notification budget for group {}", groupId, e);

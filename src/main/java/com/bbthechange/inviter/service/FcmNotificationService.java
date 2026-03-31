@@ -299,6 +299,76 @@ public class FcmNotificationService {
     }
 
     /**
+     * Send idea list activity notification (list created or ideas added).
+     * Deep links to the idea list detail screen.
+     */
+    public void sendIdeaListNotification(String deviceToken, String groupId, String listId,
+                                          String title, String body, String notificationType) {
+        if (firebaseApp == null) {
+            logger.info("FCM not configured - skipping idea list notification");
+            return;
+        }
+
+        String tokenPrefix = deviceToken.substring(0, Math.min(8, deviceToken.length())) + "...";
+
+        try {
+            Message message = Message.builder()
+                    .setToken(deviceToken)
+                    .setNotification(Notification.builder()
+                            .setTitle(title)
+                            .setBody(body)
+                            .build())
+                    .putData("type", notificationType)
+                    .putData("groupId", groupId)
+                    .putData("listId", listId)
+                    .build();
+
+            String messageId = FirebaseMessaging.getInstance(firebaseApp).send(message);
+            logger.info("Idea list notification sent successfully to device: {}, messageId: {}",
+                    tokenPrefix, messageId);
+            meterRegistry.counter("fcm_notification_total", "status", "success", "type", notificationType).increment();
+
+        } catch (FirebaseMessagingException e) {
+            handleFcmError(e, deviceToken, tokenPrefix);
+        }
+    }
+
+    /**
+     * Send idea interest milestone notification.
+     * Deep links to the idea detail screen.
+     */
+    public void sendIdeaInterestNotification(String deviceToken, String groupId, String listId,
+                                              String ideaId, String title, String body) {
+        if (firebaseApp == null) {
+            logger.info("FCM not configured - skipping idea interest notification");
+            return;
+        }
+
+        String tokenPrefix = deviceToken.substring(0, Math.min(8, deviceToken.length())) + "...";
+
+        try {
+            Message message = Message.builder()
+                    .setToken(deviceToken)
+                    .setNotification(Notification.builder()
+                            .setTitle(title)
+                            .setBody(body)
+                            .build())
+                    .putData("type", "idea_interest")
+                    .putData("groupId", groupId)
+                    .putData("listId", listId)
+                    .putData("ideaId", ideaId)
+                    .build();
+
+            String messageId = FirebaseMessaging.getInstance(firebaseApp).send(message);
+            logger.info("Idea interest notification sent to device: {}, messageId: {}", tokenPrefix, messageId);
+            meterRegistry.counter("fcm_notification_total", "status", "success", "type", "idea_interest").increment();
+
+        } catch (FirebaseMessagingException e) {
+            handleFcmError(e, deviceToken, tokenPrefix);
+        }
+    }
+
+    /**
      * Handle FCM errors and clean up invalid tokens.
      */
     private void handleFcmError(FirebaseMessagingException e, String deviceToken, String tokenPrefix) {

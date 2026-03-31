@@ -5,6 +5,9 @@ import com.bbthechange.inviter.exception.*;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.repository.IdeaListRepository;
+import com.bbthechange.inviter.service.IdeaInterestMilestoneService;
+import com.bbthechange.inviter.service.IdeaNotificationBatchService;
+import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.PlaceEnrichmentService;
 import com.bbthechange.inviter.service.S3Service;
 import com.bbthechange.inviter.service.UserService;
@@ -45,6 +48,15 @@ class IdeaListServiceImplTest {
     @Mock
     private S3Service s3Service;
 
+    @Mock
+    private NotificationService notificationService;
+
+    @Mock
+    private IdeaNotificationBatchService ideaNotificationBatchService;
+
+    @Mock
+    private IdeaInterestMilestoneService ideaInterestMilestoneService;
+
     private IdeaListServiceImpl ideaListService;
 
     private String testGroupId;
@@ -58,7 +70,7 @@ class IdeaListServiceImplTest {
         testUserId = UUID.randomUUID().toString();
         testListId = UUID.randomUUID().toString();
         testIdeaId = UUID.randomUUID().toString();
-        ideaListService = new IdeaListServiceImpl(ideaListRepository, groupRepository, userService, s3Service, placeEnrichmentService);
+        ideaListService = new IdeaListServiceImpl(ideaListRepository, groupRepository, userService, s3Service, notificationService, ideaNotificationBatchService, ideaInterestMilestoneService, placeEnrichmentService);
     }
 
     // ===== AUTHORIZATION & SECURITY TESTS =====
@@ -243,7 +255,7 @@ class IdeaListServiceImplTest {
     void addIdeaToList_NonexistentList_ThrowsResourceNotFoundException() {
         // Given: User is member but list doesn't exist
         when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
-        when(ideaListRepository.ideaListExists(testGroupId, testListId)).thenReturn(false);
+        when(ideaListRepository.findIdeaListById(testGroupId, testListId)).thenReturn(Optional.empty());
 
         CreateIdeaRequest request = new CreateIdeaRequest();
         request.setName("Test Idea");
@@ -253,7 +265,7 @@ class IdeaListServiceImplTest {
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("Idea list not found");
 
-        verify(ideaListRepository).ideaListExists(testGroupId, testListId);
+        verify(ideaListRepository).findIdeaListById(testGroupId, testListId);
         verify(ideaListRepository, never()).saveIdeaListMember(any());
     }
 
@@ -667,7 +679,7 @@ class IdeaListServiceImplTest {
         void addIdeaToList_CacheMiss_SetsEnrichmentPendingAndTriggersEnrichment() {
             // Given: User is group member, list exists, request has googlePlaceId, cache miss
             when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
-            when(ideaListRepository.ideaListExists(testGroupId, testListId)).thenReturn(true);
+            when(ideaListRepository.findIdeaListById(testGroupId, testListId)).thenReturn(Optional.of(createTestIdeaList()));
             when(ideaListRepository.saveIdeaListMember(any(IdeaListMember.class)))
                     .thenAnswer(invocation -> invocation.getArgument(0));
             when(placeEnrichmentService.isEnabled()).thenReturn(true);
@@ -697,7 +709,7 @@ class IdeaListServiceImplTest {
         void addIdeaToList_CacheHit_ReturnsEnrichedIdeaImmediately() {
             // Given: Cache has enriched data for this place
             when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
-            when(ideaListRepository.ideaListExists(testGroupId, testListId)).thenReturn(true);
+            when(ideaListRepository.findIdeaListById(testGroupId, testListId)).thenReturn(Optional.of(createTestIdeaList()));
             when(ideaListRepository.saveIdeaListMember(any(IdeaListMember.class)))
                     .thenAnswer(invocation -> invocation.getArgument(0));
             when(placeEnrichmentService.isEnabled()).thenReturn(true);
@@ -741,7 +753,7 @@ class IdeaListServiceImplTest {
         void addIdeaToList_WithoutGooglePlaceId_SetsPendingStatus() {
             // Given: User is group member, list exists, request has address but no googlePlaceId
             when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
-            when(ideaListRepository.ideaListExists(testGroupId, testListId)).thenReturn(true);
+            when(ideaListRepository.findIdeaListById(testGroupId, testListId)).thenReturn(Optional.of(createTestIdeaList()));
             when(ideaListRepository.saveIdeaListMember(any(IdeaListMember.class)))
                     .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -760,7 +772,7 @@ class IdeaListServiceImplTest {
         void addIdeaToList_WithPlaceFields_SavesAllPlaceFields() {
             // Given: User is group member, list exists, request has all place fields, cache miss
             when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
-            when(ideaListRepository.ideaListExists(testGroupId, testListId)).thenReturn(true);
+            when(ideaListRepository.findIdeaListById(testGroupId, testListId)).thenReturn(Optional.of(createTestIdeaList()));
             when(ideaListRepository.saveIdeaListMember(any(IdeaListMember.class)))
                     .thenAnswer(invocation -> invocation.getArgument(0));
             when(placeEnrichmentService.isEnabled()).thenReturn(true);
@@ -793,7 +805,7 @@ class IdeaListServiceImplTest {
         void addIdeaToList_PlaceCategoryOnly_IsPlaceIdea() {
             // Given: request has only placeCategory (no coords, no googlePlaceId, no address)
             when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
-            when(ideaListRepository.ideaListExists(testGroupId, testListId)).thenReturn(true);
+            when(ideaListRepository.findIdeaListById(testGroupId, testListId)).thenReturn(Optional.of(createTestIdeaList()));
             when(ideaListRepository.saveIdeaListMember(any(IdeaListMember.class)))
                     .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -927,7 +939,7 @@ class IdeaListServiceImplTest {
         void addIdeaToList_WithoutGooglePlaceId_CustomPlace_NoEnrichmentTriggered() {
             // Given: User is group member, list exists, custom place (no Google/Apple IDs)
             when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
-            when(ideaListRepository.ideaListExists(testGroupId, testListId)).thenReturn(true);
+            when(ideaListRepository.findIdeaListById(testGroupId, testListId)).thenReturn(Optional.of(createTestIdeaList()));
             when(ideaListRepository.saveIdeaListMember(any(IdeaListMember.class)))
                     .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -951,7 +963,7 @@ class IdeaListServiceImplTest {
         void addIdeaToList_NonPlaceIdea_BackwardCompatible() {
             // Given: Traditional idea without any place fields (backward compat)
             when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
-            when(ideaListRepository.ideaListExists(testGroupId, testListId)).thenReturn(true);
+            when(ideaListRepository.findIdeaListById(testGroupId, testListId)).thenReturn(Optional.of(createTestIdeaList()));
             when(ideaListRepository.saveIdeaListMember(any(IdeaListMember.class)))
                     .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -978,7 +990,7 @@ class IdeaListServiceImplTest {
         void addIdeaToList_EnrichmentServiceDisabled_NoEnrichmentTriggered() {
             // Given: Enrichment service is disabled
             when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
-            when(ideaListRepository.ideaListExists(testGroupId, testListId)).thenReturn(true);
+            when(ideaListRepository.findIdeaListById(testGroupId, testListId)).thenReturn(Optional.of(createTestIdeaList()));
             when(ideaListRepository.saveIdeaListMember(any(IdeaListMember.class)))
                     .thenAnswer(invocation -> invocation.getArgument(0));
             when(placeEnrichmentService.isEnabled()).thenReturn(false);
@@ -1000,10 +1012,10 @@ class IdeaListServiceImplTest {
         void addIdeaToList_NullEnrichmentService_DoesNotThrow() {
             // Given: PlaceEnrichmentService is null (optional dependency)
             IdeaListServiceImpl serviceWithoutEnrichment = new IdeaListServiceImpl(
-                    ideaListRepository, groupRepository, userService, s3Service, null);
+                    ideaListRepository, groupRepository, userService, s3Service, notificationService, ideaNotificationBatchService, ideaInterestMilestoneService, null);
 
             when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
-            when(ideaListRepository.ideaListExists(testGroupId, testListId)).thenReturn(true);
+            when(ideaListRepository.findIdeaListById(testGroupId, testListId)).thenReturn(Optional.of(createTestIdeaList()));
             when(ideaListRepository.saveIdeaListMember(any(IdeaListMember.class)))
                     .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -1021,7 +1033,7 @@ class IdeaListServiceImplTest {
         void getIdeaList_NullEnrichmentService_DoesNotThrow() {
             // Given: PlaceEnrichmentService is null (optional dependency)
             IdeaListServiceImpl serviceWithoutEnrichment = new IdeaListServiceImpl(
-                    ideaListRepository, groupRepository, userService, s3Service, null);
+                    ideaListRepository, groupRepository, userService, s3Service, notificationService, ideaNotificationBatchService, ideaInterestMilestoneService, null);
 
             when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
             IdeaList ideaList = new IdeaList(testGroupId, "Test List", IdeaListCategory.RESTAURANT, null, testUserId);
@@ -1076,7 +1088,7 @@ class IdeaListServiceImplTest {
         void addIdeaToList_LatitudeOnly_ThrowsValidation() {
             // Given
             when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
-            when(ideaListRepository.ideaListExists(testGroupId, testListId)).thenReturn(true);
+            when(ideaListRepository.findIdeaListById(testGroupId, testListId)).thenReturn(Optional.of(createTestIdeaList()));
 
             CreateIdeaRequest request = new CreateIdeaRequest();
             request.setName("Test Place");
@@ -1092,7 +1104,7 @@ class IdeaListServiceImplTest {
         void addIdeaToList_LatitudeOutOfRange_ThrowsValidation() {
             // Given
             when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
-            when(ideaListRepository.ideaListExists(testGroupId, testListId)).thenReturn(true);
+            when(ideaListRepository.findIdeaListById(testGroupId, testListId)).thenReturn(Optional.of(createTestIdeaList()));
 
             CreateIdeaRequest request = new CreateIdeaRequest();
             request.setName("Test Place");
@@ -1109,7 +1121,7 @@ class IdeaListServiceImplTest {
         void addIdeaToList_LongitudeOutOfRange_ThrowsValidation() {
             // Given
             when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
-            when(ideaListRepository.ideaListExists(testGroupId, testListId)).thenReturn(true);
+            when(ideaListRepository.findIdeaListById(testGroupId, testListId)).thenReturn(Optional.of(createTestIdeaList()));
 
             CreateIdeaRequest request = new CreateIdeaRequest();
             request.setName("Test Place");
@@ -1125,7 +1137,7 @@ class IdeaListServiceImplTest {
         @Test
         void addIdeaToList_LongitudeWithoutLatitude_ThrowsValidationException() {
             when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
-            when(ideaListRepository.ideaListExists(testGroupId, testListId)).thenReturn(true);
+            when(ideaListRepository.findIdeaListById(testGroupId, testListId)).thenReturn(Optional.of(createTestIdeaList()));
 
             CreateIdeaRequest request = new CreateIdeaRequest();
             request.setName("Test Place");
@@ -1139,7 +1151,7 @@ class IdeaListServiceImplTest {
         @Test
         void addIdeaToList_InvalidLatitude91_ThrowsValidationException() {
             when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
-            when(ideaListRepository.ideaListExists(testGroupId, testListId)).thenReturn(true);
+            when(ideaListRepository.findIdeaListById(testGroupId, testListId)).thenReturn(Optional.of(createTestIdeaList()));
 
             CreateIdeaRequest request = new CreateIdeaRequest();
             request.setName("Test Place");
@@ -1154,7 +1166,7 @@ class IdeaListServiceImplTest {
         @Test
         void addIdeaToList_InvalidLongitude181_ThrowsValidationException() {
             when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
-            when(ideaListRepository.ideaListExists(testGroupId, testListId)).thenReturn(true);
+            when(ideaListRepository.findIdeaListById(testGroupId, testListId)).thenReturn(Optional.of(createTestIdeaList()));
 
             CreateIdeaRequest request = new CreateIdeaRequest();
             request.setName("Test Place");
@@ -1187,10 +1199,10 @@ class IdeaListServiceImplTest {
         @Test
         void addIdeaToList_EnrichmentServiceNull_PlaceIdeaStillSetsPending() {
             IdeaListServiceImpl serviceWithoutEnrichment = new IdeaListServiceImpl(
-                    ideaListRepository, groupRepository, userService, s3Service, null);
+                    ideaListRepository, groupRepository, userService, s3Service, notificationService, ideaNotificationBatchService, ideaInterestMilestoneService, null);
 
             when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
-            when(ideaListRepository.ideaListExists(testGroupId, testListId)).thenReturn(true);
+            when(ideaListRepository.findIdeaListById(testGroupId, testListId)).thenReturn(Optional.of(createTestIdeaList()));
             when(ideaListRepository.saveIdeaListMember(any(IdeaListMember.class)))
                     .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -1207,7 +1219,7 @@ class IdeaListServiceImplTest {
         @Test
         void addIdeaToList_EnrichmentDisabled_NoCacheOrAsyncCalls() {
             when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
-            when(ideaListRepository.ideaListExists(testGroupId, testListId)).thenReturn(true);
+            when(ideaListRepository.findIdeaListById(testGroupId, testListId)).thenReturn(Optional.of(createTestIdeaList()));
             when(ideaListRepository.saveIdeaListMember(any(IdeaListMember.class)))
                     .thenAnswer(invocation -> invocation.getArgument(0));
             when(placeEnrichmentService.isEnabled()).thenReturn(false);
@@ -1229,7 +1241,7 @@ class IdeaListServiceImplTest {
         @Test
         void addIdeaToList_NonPlaceIdea_EnrichmentStatusIsNull() {
             when(groupRepository.isUserMemberOfGroup(testGroupId, testUserId)).thenReturn(true);
-            when(ideaListRepository.ideaListExists(testGroupId, testListId)).thenReturn(true);
+            when(ideaListRepository.findIdeaListById(testGroupId, testListId)).thenReturn(Optional.of(createTestIdeaList()));
             when(ideaListRepository.saveIdeaListMember(any(IdeaListMember.class)))
                     .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -1288,5 +1300,10 @@ class IdeaListServiceImplTest {
             verify(placeEnrichmentService).triggerReadPathEnrichment(
                     eq(list2.getMembers()), eq(testGroupId), eq(list2.getListId()));
         }
+    }
+
+    private IdeaList createTestIdeaList() {
+        IdeaList list = new IdeaList(testGroupId, "Test List", null, null, testUserId);
+        return list;
     }
 }

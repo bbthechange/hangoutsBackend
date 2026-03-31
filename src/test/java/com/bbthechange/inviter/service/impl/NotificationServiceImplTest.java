@@ -8,6 +8,7 @@ import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.service.DeviceService;
 import com.bbthechange.inviter.service.FcmNotificationService;
+import com.bbthechange.inviter.service.NotificationTextGenerator;
 import com.bbthechange.inviter.service.PushNotificationService;
 import com.bbthechange.inviter.service.UserService;
 import io.micrometer.core.instrument.Counter;
@@ -48,6 +49,9 @@ class NotificationServiceImplTest {
 
     @Mock(lenient = true)
     private UserService userService;
+
+    @Mock(lenient = true)
+    private NotificationTextGenerator textGenerator;
 
     @Mock(lenient = true)
     private MeterRegistry meterRegistry;

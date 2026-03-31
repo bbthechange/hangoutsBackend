@@ -2,6 +2,7 @@ package com.bbthechange.inviter.service;
 
 import java.util.List;
 import java.util.Set;
+import java.util.Collection;
 
 /**
  * Service for managing and sending notifications across multiple channels.
@@ -108,4 +109,45 @@ public interface NotificationService {
      */
     void notifyMomentumChange(String hangoutId, String hangoutTitle, String primaryGroupId,
                                Set<String> allGroupIds, String message, String signalType);
+
+    /**
+     * Notify group members about ideas added to an idea list (batched).
+     * Called by the SQS listener after the batch window closes.
+     * Recipients: all group members except the adder.
+     * Exempt from per-group notification budget.
+     *
+     * @param groupId   the group containing the list
+     * @param listId    the idea list ID (for deep linking)
+     * @param listName  the list name (for notification copy)
+     * @param adderId   the user who added the ideas (excluded from recipients)
+     * @param ideaNames names of the added ideas (for notification copy)
+     */
+    void notifyIdeasAdded(String groupId, String listId, String listName,
+                           String adderId, List<String> ideaNames);
+
+    /**
+     * Notify group members that a new idea list was created.
+     * Recipients: all group members except the creator.
+     * Exempt from per-group notification budget.
+     *
+     * @param groupId    the group containing the list
+     * @param listId     the new list's ID (for deep linking)
+     * @param listName   the list name (for notification copy)
+     * @param creatorId  the user who created the list (excluded from recipients)
+     */
+    void notifyIdeaListCreated(String groupId, String listId, String listName, String creatorId);
+
+    /**
+     * Notify specific users about an idea interest milestone.
+     * Called by IdeaInterestMilestoneService which handles recipient selection,
+     * budget checks, and deduplication before calling this method.
+     *
+     * @param groupId          the group containing the idea
+     * @param listId           the idea list ID (for deep linking)
+     * @param ideaId           the idea ID (for deep linking)
+     * @param recipientUserIds the users to notify
+     * @param body             the notification body text
+     */
+    void notifyIdeaInterestMilestone(String groupId, String listId, String ideaId,
+                                      Collection<String> recipientUserIds, String body);
 }

@@ -480,4 +480,43 @@ public class IdeaListRepositoryImpl implements IdeaListRepository {
             }
         });
     }
+
+    @Override
+    public boolean updateLastMilestoneSentConditionally(String groupId, String listId, String ideaId,
+                                                          String newMilestone, String expectedCurrent) {
+        try {
+            Map<String, AttributeValue> expressionValues = new HashMap<>();
+            expressionValues.put(":new", AttributeValue.builder().s(newMilestone).build());
+            expressionValues.put(":now", AttributeValue.builder()
+                    .n(String.valueOf(Instant.now().toEpochMilli())).build());
+
+            String conditionExpression;
+            if (expectedCurrent == null) {
+                conditionExpression = "attribute_not_exists(lastMilestoneSent)";
+            } else {
+                conditionExpression = "lastMilestoneSent = :expected";
+                expressionValues.put(":expected", AttributeValue.builder().s(expectedCurrent).build());
+            }
+
+            UpdateItemRequest request = UpdateItemRequest.builder()
+                    .tableName(TABLE_NAME)
+                    .key(Map.of(
+                            "pk", AttributeValue.builder().s(InviterKeyFactory.getGroupPk(groupId)).build(),
+                            "sk", AttributeValue.builder().s(InviterKeyFactory.getIdeaListMemberSk(listId, ideaId)).build()
+                    ))
+                    .updateExpression("SET lastMilestoneSent = :new, updatedAt = :now")
+                    .conditionExpression(conditionExpression)
+                    .expressionAttributeValues(expressionValues)
+                    .build();
+
+            dynamoDbClient.updateItem(request);
+            return true;
+        } catch (ConditionalCheckFailedException e) {
+            return false; // Another thread already updated this milestone
+        } catch (Exception e) {
+            logger.error("Error updating lastMilestoneSent for idea: {} in list: {} group: {}",
+                    ideaId, listId, groupId, e);
+            return false;
+        }
+    }
 }

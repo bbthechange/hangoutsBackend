@@ -22,17 +22,20 @@ import java.util.Optional;
  * Routes messages by type:
  * - No type / unknown type: hangout reminder (backward compatible)
  * - TIME_SUGGESTION_ADOPTION: time suggestion auto-adoption check
+ * - IDEA_ADD_BATCH: batched idea addition notification
  *
  * Idempotency: Reminders use atomic DynamoDB update (setReminderSentAtIfNull).
  * Adoption uses adoptForHangout() which checks suggestion status.
+ * Idea batches use TTL-based batch records.
  */
 @Component
 @ConditionalOnProperty(name = "scheduler.enabled", havingValue = "true")
-public class HangoutReminderListener {
+public class ScheduledEventListener {
 
-    private static final Logger logger = LoggerFactory.getLogger(HangoutReminderListener.class);
+    private static final Logger logger = LoggerFactory.getLogger(ScheduledEventListener.class);
 
     private static final String TYPE_TIME_SUGGESTION_ADOPTION = "TIME_SUGGESTION_ADOPTION";
+    private static final String TYPE_IDEA_ADD_BATCH = "IDEA_ADD_BATCH";
 
     // Reminder window: 90-150 minutes before start (2 hours +/- 30 min tolerance)
     private static final long MIN_MINUTES_BEFORE_START = 90;
@@ -46,7 +49,10 @@ public class HangoutReminderListener {
     private final int shortWindowHours;
     private final int longWindowHours;
 
-    public HangoutReminderListener(HangoutRepository hangoutRepository,
+    // Injected via setter to avoid circular dependency — batch handling is optional
+    private IdeaAddBatchHandler ideaAddBatchHandler;
+
+    public ScheduledEventListener(HangoutRepository hangoutRepository,
                                    NotificationService notificationService,
                                    TimeSuggestionService timeSuggestionService,
                                    MeterRegistry meterRegistry,
@@ -62,6 +68,14 @@ public class HangoutReminderListener {
         this.longWindowHours = longWindowHours;
     }
 
+    /**
+     * Set the handler for IDEA_ADD_BATCH messages.
+     * Called by IdeaNotificationBatchService to register itself.
+     */
+    public void setIdeaAddBatchHandler(IdeaAddBatchHandler handler) {
+        this.ideaAddBatchHandler = handler;
+    }
+
     @SqsListener(value = "${scheduler.queue-name:hangout-reminders}")
     public void handleMessage(String messageBody) {
         try {
@@ -70,6 +84,8 @@ public class HangoutReminderListener {
 
             if (TYPE_TIME_SUGGESTION_ADOPTION.equals(type)) {
                 handleTimeSuggestionAdoption(node, messageBody);
+            } else if (TYPE_IDEA_ADD_BATCH.equals(type)) {
+                handleIdeaAddBatch(node, messageBody);
             } else {
                 handleReminder(node, messageBody);
             }
@@ -97,6 +113,34 @@ public class HangoutReminderListener {
             logger.error("Error during time suggestion adoption for hangout {}: {}", hangoutId, e.getMessage(), e);
             meterRegistry.counter("time_suggestion_adoption_total", "status", "error").increment();
         }
+    }
+
+    private void handleIdeaAddBatch(JsonNode node, String messageBody) {
+        if (ideaAddBatchHandler == null) {
+            logger.warn("Received IDEA_ADD_BATCH message but no handler registered: {}", messageBody);
+            meterRegistry.counter("idea_batch_notification_total", "status", "no_handler").increment();
+            return;
+        }
+
+        String groupId = getRequiredField(node, "groupId", messageBody, "idea_batch_notification_total");
+        String listId = getRequiredField(node, "listId", messageBody, "idea_batch_notification_total");
+        String adderId = getRequiredField(node, "adderId", messageBody, "idea_batch_notification_total");
+        if (groupId == null || listId == null || adderId == null) {
+            return;
+        }
+
+        logger.info("Processing idea add batch: group={}, list={}, adder={}", groupId, listId, adderId);
+        ideaAddBatchHandler.handleIdeaAddBatch(groupId, listId, adderId);
+    }
+
+    private String getRequiredField(JsonNode node, String fieldName, String messageBody, String metricName) {
+        JsonNode fieldNode = node.get(fieldName);
+        if (fieldNode == null || fieldNode.isNull() || fieldNode.asText().isBlank()) {
+            logger.warn("Received message with missing {}: {}", fieldName, messageBody);
+            meterRegistry.counter(metricName, "status", "missing_field").increment();
+            return null;
+        }
+        return fieldNode.asText();
     }
 
     private void handleReminder(JsonNode node, String messageBody) {
@@ -170,5 +214,13 @@ public class HangoutReminderListener {
 
         meterRegistry.counter("hangout_reminder_total", "status", "sent").increment();
         logger.info("Successfully sent reminder for hangout: {}", hangoutId);
+    }
+
+    /**
+     * Callback interface for handling IDEA_ADD_BATCH messages.
+     * Implemented by IdeaNotificationBatchService to avoid tight coupling.
+     */
+    public interface IdeaAddBatchHandler {
+        void handleIdeaAddBatch(String groupId, String listId, String adderId);
     }
 }

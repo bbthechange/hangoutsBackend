@@ -72,4 +72,20 @@ public interface IdeaListRepository {
      */
     void updateIdeaEnrichmentData(String groupId, String listId, String ideaId,
         Map<String, AttributeValue> enrichmentAttributes);
+
+    /**
+     * Atomically update lastMilestoneSent on an idea, but only if the current value
+     * matches the expected value (or is absent). Returns true if the update succeeded.
+     *
+     * This prevents concurrent interest additions from double-firing the same milestone.
+     *
+     * @param groupId           the group ID
+     * @param listId            the list ID
+     * @param ideaId            the idea ID
+     * @param newMilestone      the milestone to set (e.g., "BROAD_INTEREST")
+     * @param expectedCurrent   the expected current value, or null if expecting no milestone set
+     * @return true if the conditional update succeeded
+     */
+    boolean updateLastMilestoneSentConditionally(String groupId, String listId, String ideaId,
+                                                  String newMilestone, String expectedCurrent);
 }

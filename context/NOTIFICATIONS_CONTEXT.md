@@ -23,7 +23,7 @@ The system is designed to be extensible, with a clear separation between the hig
 | `ApnsConfig.java` | Configures the `ApnsClient` using credentials stored in AWS Parameter Store. |
 | `SnsConfig.java` | Configures the `SnsClient` for sending SMS messages. |
 | `HangoutSchedulerService.java` | Creates/updates/deletes EventBridge Scheduler schedules for hangout reminders. |
-| `HangoutReminderListener.java` | SQS listener that processes reminder messages and triggers notifications. |
+| `ScheduledEventListener.java` | SQS listener that routes scheduled event messages (reminders, time suggestion adoption, idea batches). |
 | `SchedulerConfig.java` | Configuration for EventBridge Scheduler client and queue settings. |
 | `SqsConfig.java` | Configuration for SQS message listener infrastructure. |
 
@@ -139,7 +139,7 @@ The hangout reminder system sends push notifications to users 2 hours before a h
 
 1. **EventBridge Scheduler** triggers at reminder time (±5 min flexible window)
 2. **SQS** receives message: `{"hangoutId":"..."}`
-3. **HangoutReminderListener** (`@SqsListener`) consumes message:
+3. **ScheduledEventListener** (`@SqsListener`) consumes message:
    - Parses `hangoutId` from JSON body
    - Fetches hangout from DynamoDB
    - Validates hangout exists and has start time
@@ -392,7 +392,70 @@ Static factory methods on `NotificationTextGenerator`:
 
 See `MOMENTUM_CONTEXT.md` Section 17 for full details.
 
-## 7. Adding New Notification Types
+## 7. Idea List Notifications
+
+Three notification types for idea list activity. All are fire-and-forget.
+
+### Notification Types
+
+| Event | Delivery | Recipients | Budget-Gated? |
+|-------|----------|-----------|---------------|
+| Ideas Added | Batched (90s window, 5min cap) via EventBridge → SQS | Group members except adder | No |
+| New Idea List Created | Immediate | Group members except creator | No |
+| Interest Milestones | Immediate, on interest add | Varies by milestone | FIRST/BROAD: Yes, CONSENSUS: No |
+
+### Batched Idea-Added Notifications
+
+Uses `IdeaNotificationBatchService` to accumulate ideas per list per user, then fires a single notification via EventBridge Scheduler → SQS → `ScheduledEventListener` (message type `IDEA_ADD_BATCH`).
+
+### Interest Milestones
+
+`IdeaInterestMilestoneService` detects milestones when users express interest:
+- **FIRST_INTEREST** (≥2): Notify idea adder only
+- **BROAD_INTEREST** (≥3): Notify all members (adder gets special copy)
+- **GROUP_CONSENSUS** (≥50% of group AND ≥4): Always fires, notify all members
+
+Milestones are one-shot per idea, tracked via `IdeaListMember.lastMilestoneSent`. Uses conditional DynamoDB updates to prevent concurrent double-fire.
+
+### Methods
+
+```java
+// NotificationServiceImpl
+void notifyIdeasAdded(groupId, listId, listName, adderId, ideaNames);
+void notifyIdeaListCreated(groupId, listId, listName, creatorId);
+void notifyIdeaInterestMilestone(groupId, listId, ideaId, recipientUserIds, body);
+```
+
+### Platform Methods
+
+```java
+// PushNotificationService & FcmNotificationService
+void sendIdeaListNotification(deviceToken, groupId, listId, title, body, notificationType);
+void sendIdeaInterestNotification(deviceToken, groupId, listId, ideaId, title, body);
+```
+
+### Idea Notification Text
+
+| Method | Output |
+|--------|--------|
+| `getIdeasAddedBody(name, list, ideas)` | `Alex added 'Sushi' to NYC Restaurants` / `Alex added 3 ideas to NYC Restaurants — ...` |
+| `getIdeaListCreatedBody(name, list)` | `Alex created a new list: NYC Restaurants` |
+| `getFirstInterestBody(name, idea)` | `Alex is also into 'Sushi'` |
+| `getBroadInterestAdderBody(idea, count)` | `Your idea 'Sushi' is popular — 3 people are interested` |
+| `getBroadInterestBody(idea, count)` | `3 people want to try Sushi — are you in?` |
+| `getGroupConsensusBody(idea)` | `Most of the group wants to do Sushi — time to make it happen?` |
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `service/IdeaNotificationBatchService.java` | Batch accumulation + EventBridge scheduling |
+| `service/IdeaInterestMilestoneService.java` | Milestone detection, budget check, notification routing |
+| `model/IdeaNotificationBatch.java` | DynamoDB entity: `PK=GROUP#{groupId}`, `SK=IDEA_NOTIFICATION_BATCH#{listId}#{adderId}` |
+
+See `IDEA_LISTS_CONTEXT.md` Section 12 for full details.
+
+## 8. Adding New Notification Types
 
 To add a new notification type:
 
@@ -404,6 +467,6 @@ To add a new notification type:
 
 For scheduled notifications (like reminders):
 1. **Add scheduling logic** to `HangoutSchedulerService` or create new scheduler service
-2. **Add listener** following `HangoutReminderListener` pattern
+2. **Add listener** following `ScheduledEventListener` pattern (add message type routing)
 3. **Add idempotency fields** to the entity model
 4. **Add repository methods** for atomic conditional updates

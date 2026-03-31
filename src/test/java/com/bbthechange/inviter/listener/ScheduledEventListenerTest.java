@@ -24,7 +24,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-class HangoutReminderListenerTest {
+class ScheduledEventListenerTest {
 
     @Mock
     private HangoutRepository hangoutRepository;
@@ -41,16 +41,20 @@ class HangoutReminderListenerTest {
     @Mock
     private Counter counter;
 
-    private HangoutReminderListener listener;
+    @Mock
+    private ScheduledEventListener.IdeaAddBatchHandler ideaAddBatchHandler;
+
+    private ScheduledEventListener listener;
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper();
         lenient().when(meterRegistry.counter(anyString(), any(String[].class))).thenReturn(counter);
-        listener = new HangoutReminderListener(
+        listener = new ScheduledEventListener(
                 hangoutRepository, notificationService, timeSuggestionService,
                 meterRegistry, objectMapper, 24, 48);
+        listener.setIdeaAddBatchHandler(ideaAddBatchHandler);
     }
 
     // ============================================================================
@@ -299,6 +303,54 @@ class HangoutReminderListenerTest {
             listener.handleMessage(messageBody);
 
             verify(meterRegistry).counter("time_suggestion_adoption_total", "status", "error");
+        }
+    }
+
+    // ============================================================================
+    // Idea add batch message tests
+    // ============================================================================
+
+    @Nested
+    class IdeaAddBatch {
+
+        @Test
+        void handleMessage_WithIdeaAddBatchType_CallsHandler() {
+            String messageBody = "{\"type\":\"IDEA_ADD_BATCH\",\"groupId\":\"group-1\",\"listId\":\"list-1\",\"adderId\":\"user-1\"}";
+
+            listener.handleMessage(messageBody);
+
+            verify(ideaAddBatchHandler).handleIdeaAddBatch("group-1", "list-1", "user-1");
+            verify(notificationService, never()).sendHangoutReminder(any());
+        }
+
+        @Test
+        void handleMessage_WithIdeaAddBatchType_MissingGroupId_Discards() {
+            String messageBody = "{\"type\":\"IDEA_ADD_BATCH\",\"listId\":\"list-1\",\"adderId\":\"user-1\"}";
+
+            listener.handleMessage(messageBody);
+
+            verify(ideaAddBatchHandler, never()).handleIdeaAddBatch(anyString(), anyString(), anyString());
+            verify(meterRegistry).counter("idea_batch_notification_total", "status", "missing_field");
+        }
+
+        @Test
+        void handleMessage_WithIdeaAddBatchType_MissingListId_Discards() {
+            String messageBody = "{\"type\":\"IDEA_ADD_BATCH\",\"groupId\":\"group-1\",\"adderId\":\"user-1\"}";
+
+            listener.handleMessage(messageBody);
+
+            verify(ideaAddBatchHandler, never()).handleIdeaAddBatch(anyString(), anyString(), anyString());
+            verify(meterRegistry).counter("idea_batch_notification_total", "status", "missing_field");
+        }
+
+        @Test
+        void handleMessage_WithIdeaAddBatchType_NoHandler_Discards() {
+            listener.setIdeaAddBatchHandler(null);
+            String messageBody = "{\"type\":\"IDEA_ADD_BATCH\",\"groupId\":\"group-1\",\"listId\":\"list-1\",\"adderId\":\"user-1\"}";
+
+            listener.handleMessage(messageBody);
+
+            verify(meterRegistry).counter("idea_batch_notification_total", "status", "no_handler");
         }
     }
 }

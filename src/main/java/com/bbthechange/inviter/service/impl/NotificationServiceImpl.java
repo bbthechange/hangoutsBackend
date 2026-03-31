@@ -13,6 +13,7 @@ import com.bbthechange.inviter.dto.UserSummaryDTO;
 import com.bbthechange.inviter.service.DeviceService;
 import com.bbthechange.inviter.service.FcmNotificationService;
 import com.bbthechange.inviter.service.NotificationService;
+import com.bbthechange.inviter.service.NotificationTextGenerator;
 import com.bbthechange.inviter.service.PushNotificationService;
 import com.bbthechange.inviter.service.UserService;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -21,11 +22,13 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Implementation of NotificationService that handles user deduplication,
@@ -43,6 +46,7 @@ public class NotificationServiceImpl implements NotificationService {
     private final PushNotificationService pushNotificationService;
     private final FcmNotificationService fcmNotificationService;
     private final UserService userService;
+    private final NotificationTextGenerator textGenerator;
     private final MeterRegistry meterRegistry;
 
     @Autowired
@@ -53,6 +57,7 @@ public class NotificationServiceImpl implements NotificationService {
                                    PushNotificationService pushNotificationService,
                                    FcmNotificationService fcmNotificationService,
                                    UserService userService,
+                                   NotificationTextGenerator textGenerator,
                                    MeterRegistry meterRegistry) {
         this.groupRepository = groupRepository;
         this.hangoutRepository = hangoutRepository;
@@ -61,6 +66,7 @@ public class NotificationServiceImpl implements NotificationService {
         this.pushNotificationService = pushNotificationService;
         this.fcmNotificationService = fcmNotificationService;
         this.userService = userService;
+        this.textGenerator = textGenerator;
         this.meterRegistry = meterRegistry;
     }
 
@@ -858,6 +864,153 @@ public class NotificationServiceImpl implements NotificationService {
             logger.warn("Failed to send momentum notification to user {}: {}", userId, e.getMessage());
             return false;
         }
+    }
+
+    // ============================================================================
+    // Idea List Notifications
+    // ============================================================================
+
+    @Override
+    public void notifyIdeasAdded(String groupId, String listId, String listName,
+                                  String adderId, List<String> ideaNames) {
+        try {
+            List<GroupMembership> members = groupRepository.findMembersByGroupId(groupId);
+            Set<String> recipientIds = members.stream()
+                    .map(GroupMembership::getUserId)
+                    .collect(Collectors.toSet());
+            recipientIds.remove(adderId);
+
+            if (recipientIds.isEmpty()) return;
+
+            String adderName = resolveDisplayName(adderId);
+            String title = NotificationTextGenerator.IDEAS_ADDED_TITLE;
+            String body = textGenerator.getIdeasAddedBody(adderName, listName, ideaNames);
+
+            logger.info("Sending ideas added notification: group={}, list={}, recipients={}",
+                    groupId, listId, recipientIds.size());
+
+            for (String userId : recipientIds) {
+                sendIdeaListNotificationToUser(userId, groupId, listId, title, body, "ideas_added");
+            }
+        } catch (Exception e) {
+            logger.error("Error sending ideas added notifications: group={}, list={}", groupId, listId, e);
+        }
+    }
+
+    @Override
+    public void notifyIdeaListCreated(String groupId, String listId, String listName, String creatorId) {
+        try {
+            List<GroupMembership> members = groupRepository.findMembersByGroupId(groupId);
+            Set<String> recipientIds = members.stream()
+                    .map(GroupMembership::getUserId)
+                    .collect(Collectors.toSet());
+            recipientIds.remove(creatorId);
+
+            if (recipientIds.isEmpty()) return;
+
+            String creatorName = resolveDisplayName(creatorId);
+            String title = NotificationTextGenerator.IDEA_LIST_CREATED_TITLE;
+            String body = textGenerator.getIdeaListCreatedBody(creatorName, listName);
+
+            logger.info("Sending idea list created notification: group={}, list={}, recipients={}",
+                    groupId, listId, recipientIds.size());
+
+            for (String userId : recipientIds) {
+                sendIdeaListNotificationToUser(userId, groupId, listId, title, body, "idea_list_created");
+            }
+        } catch (Exception e) {
+            logger.error("Error sending idea list created notifications: group={}, list={}", groupId, listId, e);
+        }
+    }
+
+    @Override
+    public void notifyIdeaInterestMilestone(String groupId, String listId, String ideaId,
+                                             Collection<String> recipientUserIds, String body) {
+        try {
+            String title = NotificationTextGenerator.IDEA_INTEREST_TITLE;
+
+            logger.info("Sending idea interest milestone notification: group={}, list={}, idea={}, recipients={}",
+                    groupId, listId, ideaId, recipientUserIds.size());
+
+            for (String userId : recipientUserIds) {
+                sendIdeaInterestNotificationToUser(userId, groupId, listId, ideaId, title, body);
+            }
+        } catch (Exception e) {
+            logger.error("Error sending idea interest milestone notifications: group={}, idea={}", groupId, ideaId, e);
+        }
+    }
+
+    /**
+     * Send idea list notification (list created or ideas added) to all active devices for a user.
+     */
+    private void sendIdeaListNotificationToUser(String userId, String groupId, String listId,
+                                                  String title, String body, String notificationType) {
+        try {
+            List<Device> devices = deviceService.getActiveDevicesForUser(UUID.fromString(userId));
+            if (devices.isEmpty()) return;
+
+            for (Device device : devices) {
+                try {
+                    if (device.getPlatform() == Device.Platform.IOS) {
+                        pushNotificationService.sendIdeaListNotification(
+                                device.getToken(), groupId, listId, title, body, notificationType);
+                    } else if (device.getPlatform() == Device.Platform.ANDROID) {
+                        fcmNotificationService.sendIdeaListNotification(
+                                device.getToken(), groupId, listId, title, body, notificationType);
+                    }
+                } catch (Exception e) {
+                    logger.error("Failed to send idea list notification to device {}: {}",
+                            device.getToken().substring(0, Math.min(8, device.getToken().length())),
+                            e.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to send idea list notification to user {}: {}", userId, e.getMessage());
+        }
+    }
+
+    /**
+     * Send idea interest milestone notification to all active devices for a user.
+     */
+    private void sendIdeaInterestNotificationToUser(String userId, String groupId, String listId,
+                                                      String ideaId, String title, String body) {
+        try {
+            List<Device> devices = deviceService.getActiveDevicesForUser(UUID.fromString(userId));
+            if (devices.isEmpty()) return;
+
+            for (Device device : devices) {
+                try {
+                    if (device.getPlatform() == Device.Platform.IOS) {
+                        pushNotificationService.sendIdeaInterestNotification(
+                                device.getToken(), groupId, listId, ideaId, title, body);
+                    } else if (device.getPlatform() == Device.Platform.ANDROID) {
+                        fcmNotificationService.sendIdeaInterestNotification(
+                                device.getToken(), groupId, listId, ideaId, title, body);
+                    }
+                } catch (Exception e) {
+                    logger.error("Failed to send idea interest notification to device {}: {}",
+                            device.getToken().substring(0, Math.min(8, device.getToken().length())),
+                            e.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to send idea interest notification to user {}: {}", userId, e.getMessage());
+        }
+    }
+
+    /**
+     * Resolve display name for a user with fallback.
+     */
+    private String resolveDisplayName(String userId) {
+        try {
+            Optional<UserSummaryDTO> userOpt = userService.getUserSummary(UUID.fromString(userId));
+            if (userOpt.isPresent() && userOpt.get().getDisplayName() != null) {
+                return userOpt.get().getDisplayName();
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to resolve display name for user {}: {}", userId, e.getMessage());
+        }
+        return "Unknown";
     }
 
 }

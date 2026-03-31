@@ -27,6 +27,11 @@ public class NotificationTextGenerator {
     // Momentum notification titles
     public static final String MOMENTUM_CHANGE_TITLE = "Hangout Update";
 
+    // Idea list notification titles
+    public static final String IDEAS_ADDED_TITLE = "New Ideas";
+    public static final String IDEA_LIST_CREATED_TITLE = "New Idea List";
+    public static final String IDEA_INTEREST_TITLE = "Idea Update";
+
     /**
      * Generate body text for new hangout notification.
      * @param creatorName Name of user who created the hangout (can be null)
@@ -141,6 +146,94 @@ public class NotificationTextGenerator {
      */
     public static String emptyWeekMessage() {
         return "Nothing planned next week — check out your group's ideas";
+    }
+
+    // === Idea List notification body generators ===
+
+    /**
+     * Generate body for batched ideas-added notification.
+     * "Alex added 'Sushi Nakazawa' to NYC Restaurants"
+     * "Alex added 3 ideas to NYC Restaurants — Sushi Nakazawa, Joe's Pizza, and 1 more"
+     * "Alex added 7 ideas to NYC Restaurants — tap to see what's new"
+     */
+    public String getIdeasAddedBody(String adderName, String listName, java.util.List<String> ideaNames) {
+        int count = (ideaNames != null) ? ideaNames.size() : 0;
+        String name = formatName(adderName);
+        if (count == 0) {
+            return String.format("%s added ideas to %s", name, listName);
+        }
+        if (count == 1) {
+            return String.format("%s added '%s' to %s", name, ideaNames.get(0), listName);
+        }
+        if (count <= 3) {
+            String summary = formatIdeaNameList(ideaNames);
+            return String.format("%s added %d ideas to %s — %s", name, count, listName, summary);
+        }
+        return String.format("%s added %d ideas to %s — tap to see what's new", name, count, listName);
+    }
+
+    /**
+     * Generate body for new idea list created notification.
+     * "Alex created a new list: NYC Restaurants"
+     */
+    public String getIdeaListCreatedBody(String creatorName, String listName) {
+        String name = formatName(creatorName);
+        return String.format("%s created a new list: %s", name, listName);
+    }
+
+    /**
+     * First Interest — sent to idea adder:
+     * "Alex is also into 'Sushi Nakazawa'"
+     */
+    public String getFirstInterestBody(String interestedUserName, String ideaName) {
+        return String.format("%s is also into '%s'", formatName(interestedUserName), ideaName);
+    }
+
+    /**
+     * Broad Interest — sent to adder:
+     * "Your idea 'Sushi Nakazawa' is popular — 3 people are interested"
+     */
+    public String getBroadInterestAdderBody(String ideaName, int interestCount) {
+        return String.format("Your idea '%s' is popular — %d people are interested", ideaName, interestCount);
+    }
+
+    /**
+     * Broad Interest — sent to non-interested members:
+     * "3 people want to try Sushi Nakazawa — are you in?"
+     */
+    public String getBroadInterestBody(String ideaName, int interestCount) {
+        return String.format("%d people want to try %s — are you in?", interestCount, ideaName);
+    }
+
+    /**
+     * Group Consensus — sent to all members:
+     * "Most of the group wants to do Sushi Nakazawa — time to make it happen?"
+     */
+    public String getGroupConsensusBody(String ideaName) {
+        return String.format("Most of the group wants to do %s — time to make it happen?", ideaName);
+    }
+
+    /**
+     * Format name with fallback to "Someone".
+     */
+    private String formatName(String name) {
+        if (name == null || name.trim().isEmpty() || "Unknown".equals(name)) {
+            return "Someone";
+        }
+        return name;
+    }
+
+    /**
+     * Format a list of idea names for notification display.
+     * "Sushi and Pizza" for 2 items
+     * "Sushi, Pizza, and 1 more" for 3+ items
+     */
+    private String formatIdeaNameList(java.util.List<String> names) {
+        if (names.size() == 2) {
+            return names.get(0) + " and " + names.get(1);
+        }
+        int remaining = names.size() - 2;
+        return names.get(0) + ", " + names.get(1) + ", and " + remaining + " more";
     }
 
     /**

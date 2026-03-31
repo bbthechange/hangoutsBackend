@@ -342,7 +342,67 @@ Each surfaced idea becomes an `IdeaFeedItemDTO` in the group feed:
 
 See `MOMENTUM_CONTEXT.md` Section 13 for more detail on the suppression algorithm.
 
-## 12. Testing
+## 12. Notifications
+
+Idea list activity triggers three types of push notifications. All are fire-and-forget — failures never break the calling operation.
+
+### Notification Types
+
+| Event | Delivery | Recipients | Budget-Gated? |
+|-------|----------|-----------|---------------|
+| **Ideas Added** | Batched (90s quiet window, 5min cap) via EventBridge Scheduler → SQS | All group members except adder | No |
+| **New Idea List Created** | Immediate | All group members except creator | No |
+| **Interest Milestones** | Immediate, on interest add | Varies by milestone | FIRST/BROAD: Yes, CONSENSUS: No |
+
+### Batched Idea-Added Notifications
+
+When a user adds ideas to a list, notifications are batched to prevent spam:
+- First idea: 90-second window opened, EventBridge schedule created
+- Subsequent ideas: window extended by 90 seconds (capped at 5 minutes from first idea)
+- When schedule fires: SQS message triggers single notification to all group members
+
+**DynamoDB Entity: `IdeaNotificationBatch`**
+```
+PK: GROUP#{groupId}
+SK: IDEA_NOTIFICATION_BATCH#{listId}#{adderId}
+itemType: IDEA_NOTIFICATION_BATCH
+```
+One batch per list per user. TTL-based cleanup ensures orphaned records are removed.
+
+**Key Files:**
+| File | Purpose |
+|------|---------|
+| `model/IdeaNotificationBatch.java` | DynamoDB entity for pending batches |
+| `repository/IdeaNotificationBatchRepository.java` | Interface |
+| `repository/impl/IdeaNotificationBatchRepositoryImpl.java` | DynamoDB implementation |
+| `service/IdeaNotificationBatchService.java` | Batch accumulation + EventBridge scheduling |
+
+### Interest Milestones
+
+| Milestone | Threshold | Recipients |
+|-----------|-----------|-----------|
+| `FIRST_INTEREST` | `interestCount >= 2` | Idea adder only |
+| `BROAD_INTEREST` | `interestCount >= 3` | All group members (adder gets special copy) |
+| `GROUP_CONSENSUS` | `interestCount >= ceil(groupSize * 0.5) AND >= 4` | All group members |
+
+Milestones are one-shot per idea, tracked via `lastMilestoneSent` field on `IdeaListMember`. Deduplication uses conditional DynamoDB updates (`updateLastMilestoneSentConditionally`) to prevent race conditions.
+
+**Interest Count (Deduplicated):** `interestedUserIds.size() + 1` (implicit creator), minus 1 if creator is explicitly in the set. Returns just explicit count when `addedBy` is null.
+
+**Key Files:**
+| File | Purpose |
+|------|---------|
+| `service/IdeaInterestMilestoneService.java` | Milestone detection, budget check, notification routing |
+| `IdeaListMember.lastMilestoneSent` | Tracks highest milestone sent per idea |
+
+### Events That Do NOT Generate Notifications
+
+- Idea edited/updated
+- Idea deleted
+- Idea list deleted
+- Interest removed
+
+## 13. Testing
 
 | Test File | Scope |
 | :--- | :--- |
@@ -353,3 +413,7 @@ See `MOMENTUM_CONTEXT.md` Section 13 for more detail on the suppression algorith
 | `repository/impl/IdeaListRepositoryImplMethodsTest.java` | Repository method tests |
 | `integration/repository/impl/IdeaListRepositoryImplTest.java` | Integration tests (TestContainers) |
 | `dto/IdeaListDTOTest.java` | DTO conversion tests |
+| `service/IdeaInterestMilestoneServiceTest.java` | Milestone detection and notification tests |
+| `service/IdeaNotificationBatchServiceTest.java` | Batch accumulation and SQS handler tests |
+| `service/NotificationTextGeneratorIdeaTest.java` | Idea notification text generation tests |
+| `service/impl/NotificationServiceImplIdeaTest.java` | Notification delivery for idea list events |

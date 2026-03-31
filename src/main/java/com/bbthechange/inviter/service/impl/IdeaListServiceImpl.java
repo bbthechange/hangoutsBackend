@@ -1,6 +1,9 @@
 package com.bbthechange.inviter.service.impl;
 
 import com.bbthechange.inviter.service.IdeaListService;
+import com.bbthechange.inviter.service.IdeaNotificationBatchService;
+import com.bbthechange.inviter.service.IdeaInterestMilestoneService;
+import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.PlaceEnrichmentService;
 import com.bbthechange.inviter.service.S3Service;
 import com.bbthechange.inviter.service.UserService;
@@ -33,15 +36,24 @@ public class IdeaListServiceImpl implements IdeaListService {
     private final UserService userService;
     private final PlaceEnrichmentService placeEnrichmentService;
     private final S3Service s3Service;
+    private final NotificationService notificationService;
+    private final IdeaNotificationBatchService ideaNotificationBatchService;
+    private final IdeaInterestMilestoneService ideaInterestMilestoneService;
 
     @Autowired
     public IdeaListServiceImpl(IdeaListRepository ideaListRepository, GroupRepository groupRepository,
                                UserService userService, S3Service s3Service,
+                               NotificationService notificationService,
+                               IdeaNotificationBatchService ideaNotificationBatchService,
+                               IdeaInterestMilestoneService ideaInterestMilestoneService,
                                @Autowired(required = false) PlaceEnrichmentService placeEnrichmentService) {
         this.ideaListRepository = ideaListRepository;
         this.groupRepository = groupRepository;
         this.userService = userService;
         this.s3Service = s3Service;
+        this.notificationService = notificationService;
+        this.ideaNotificationBatchService = ideaNotificationBatchService;
+        this.ideaInterestMilestoneService = ideaInterestMilestoneService;
         this.placeEnrichmentService = placeEnrichmentService;
     }
     
@@ -104,7 +116,15 @@ public class IdeaListServiceImpl implements IdeaListService {
 
         IdeaList savedList = ideaListRepository.saveIdeaList(ideaList);
         logger.debug("Created idea list: {} in group: {} by user: {}", savedList.getListId(), groupId, requestingUserId);
-        
+
+        // Fire-and-forget: notify group members about the new list
+        try {
+            notificationService.notifyIdeaListCreated(
+                    groupId, savedList.getListId(), savedList.getName(), requestingUserId);
+        } catch (Exception e) {
+            logger.warn("Failed to send list created notification: list={}, group={}", savedList.getListId(), groupId, e);
+        }
+
         return new IdeaListDTO(savedList);
     }
     
@@ -169,11 +189,10 @@ public class IdeaListServiceImpl implements IdeaListService {
         // Verify user is group member
         ensureUserIsGroupMember(groupId, requestingUserId);
         
-        // Verify idea list exists
-        if (!ideaListRepository.ideaListExists(groupId, listId)) {
-            throw new ResourceNotFoundException("Idea list not found: " + listId);
-        }
-        
+        // Verify idea list exists and get its name for notification
+        IdeaList parentList = ideaListRepository.findIdeaListById(groupId, listId)
+                .orElseThrow(() -> new ResourceNotFoundException("Idea list not found: " + listId));
+
         // Create idea list member
         IdeaListMember member = new IdeaListMember(
                 groupId,
@@ -242,11 +261,19 @@ public class IdeaListServiceImpl implements IdeaListService {
                 savedMember.getGooglePlaceId(), savedMember.getApplePlaceId());
         }
 
+        // Fire-and-forget: batch notification scheduling
+        try {
+            ideaNotificationBatchService.recordIdeaAdded(
+                    groupId, listId, parentList.getName(), requestingUserId, savedMember.getName());
+        } catch (Exception e) {
+            logger.warn("Failed to record idea for batch notification: list={}, group={}", listId, groupId, e);
+        }
+
         IdeaDTO dto = new IdeaDTO(savedMember);
         populateEnrichedData(dto, savedMember);
         return dto;
     }
-    
+
     @Override
     public IdeaDTO updateIdea(String groupId, String listId, String ideaId, UpdateIdeaRequest request, String requestingUserId) {
         // Verify user is group member
@@ -372,6 +399,13 @@ public class IdeaListServiceImpl implements IdeaListService {
 
         IdeaListMember member = ideaListRepository.findIdeaListMemberById(groupId, listId, ideaId)
                 .orElseThrow(() -> new ResourceNotFoundException("Idea not found: " + ideaId));
+
+        // Fire-and-forget: check and send milestone notifications
+        try {
+            ideaInterestMilestoneService.checkAndNotify(groupId, listId, member, requestingUserId);
+        } catch (Exception e) {
+            logger.warn("Failed to check interest milestones: idea={}, group={}", ideaId, groupId, e);
+        }
 
         IdeaDTO dto = new IdeaDTO(member);
         populateEnrichedData(dto, member);

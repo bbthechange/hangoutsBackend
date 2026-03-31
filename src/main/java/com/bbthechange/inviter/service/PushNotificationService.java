@@ -548,6 +548,120 @@ public class PushNotificationService {
     }
 
     /**
+     * Send idea list activity notification (list created or ideas added).
+     * Deep links to the idea list detail screen.
+     *
+     * @param notificationType "idea_list_created" or "ideas_added" — used by clients
+     *                          for analytics and navigation routing
+     */
+    public void sendIdeaListNotification(String deviceToken, String groupId, String listId,
+                                          String title, String body, String notificationType) {
+        if (apnsClient == null) {
+            logger.info("APNs not configured - skipping idea list notification");
+            return;
+        }
+
+        try {
+            SimpleApnsPayloadBuilder payloadBuilder = new SimpleApnsPayloadBuilder();
+            payloadBuilder.setAlertTitle(title);
+            payloadBuilder.setAlertBody(body);
+            payloadBuilder.setBadgeNumber(1);
+            payloadBuilder.setSound("default");
+            payloadBuilder.addCustomProperty("type", notificationType);
+            payloadBuilder.addCustomProperty("groupId", groupId);
+            payloadBuilder.addCustomProperty("listId", listId);
+
+            String payload = payloadBuilder.build();
+            String token = TokenUtil.sanitizeTokenString(deviceToken);
+
+            SimpleApnsPushNotification pushNotification = new SimpleApnsPushNotification(token, bundleId, payload);
+
+            PushNotificationResponse<SimpleApnsPushNotification> response = apnsClient.sendNotification(pushNotification).get();
+
+            if (response.isAccepted()) {
+                logger.info("Idea list notification sent successfully to device: {}", deviceToken.substring(0, 8) + "...");
+                meterRegistry.counter("apns_notification_total", "status", "success", "type", notificationType).increment();
+            } else {
+                Optional<String> rejectionReason = response.getRejectionReason();
+                String reason = rejectionReason.orElse("unknown");
+                logger.error("Idea list notification failed for device: {}. Reason: {}",
+                        deviceToken.substring(0, 8) + "...", reason);
+                meterRegistry.counter("apns_notification_total",
+                        "status", "rejected", "type", notificationType,
+                        "reason", reason, "category", categorizeApnsRejection(reason)).increment();
+            }
+
+        } catch (ExecutionException | InterruptedException e) {
+            logger.error("Error sending idea list notification to device: {}", deviceToken.substring(0, 8) + "...", e);
+            meterRegistry.counter("apns_notification_total",
+                    "status", "error", "type", notificationType,
+                    "error_type", "execution", "category", "transient").increment();
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            logger.error("Unexpected error sending idea list notification", e);
+            meterRegistry.counter("apns_notification_total",
+                    "status", "error", "type", notificationType,
+                    "error_type", "unexpected", "category", "unexpected").increment();
+        }
+    }
+
+    /**
+     * Send idea interest milestone notification.
+     * Deep links to the idea detail screen.
+     */
+    public void sendIdeaInterestNotification(String deviceToken, String groupId, String listId,
+                                              String ideaId, String title, String body) {
+        if (apnsClient == null) {
+            logger.info("APNs not configured - skipping idea interest notification");
+            return;
+        }
+
+        try {
+            SimpleApnsPayloadBuilder payloadBuilder = new SimpleApnsPayloadBuilder();
+            payloadBuilder.setAlertTitle(title);
+            payloadBuilder.setAlertBody(body);
+            payloadBuilder.setBadgeNumber(1);
+            payloadBuilder.setSound("default");
+            payloadBuilder.addCustomProperty("type", "idea_interest");
+            payloadBuilder.addCustomProperty("groupId", groupId);
+            payloadBuilder.addCustomProperty("listId", listId);
+            payloadBuilder.addCustomProperty("ideaId", ideaId);
+
+            String payload = payloadBuilder.build();
+            String token = TokenUtil.sanitizeTokenString(deviceToken);
+
+            SimpleApnsPushNotification pushNotification = new SimpleApnsPushNotification(token, bundleId, payload);
+
+            PushNotificationResponse<SimpleApnsPushNotification> response = apnsClient.sendNotification(pushNotification).get();
+
+            if (response.isAccepted()) {
+                logger.info("Idea interest notification sent successfully to device: {}", deviceToken.substring(0, 8) + "...");
+                meterRegistry.counter("apns_notification_total", "status", "success", "type", "idea_interest").increment();
+            } else {
+                Optional<String> rejectionReason = response.getRejectionReason();
+                String reason = rejectionReason.orElse("unknown");
+                logger.error("Idea interest notification failed for device: {}. Reason: {}",
+                        deviceToken.substring(0, 8) + "...", reason);
+                meterRegistry.counter("apns_notification_total",
+                        "status", "rejected", "type", "idea_interest",
+                        "reason", reason, "category", categorizeApnsRejection(reason)).increment();
+            }
+
+        } catch (ExecutionException | InterruptedException e) {
+            logger.error("Error sending idea interest notification to device: {}", deviceToken.substring(0, 8) + "...", e);
+            meterRegistry.counter("apns_notification_total",
+                    "status", "error", "type", "idea_interest",
+                    "error_type", "execution", "category", "transient").increment();
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            logger.error("Unexpected error sending idea interest notification", e);
+            meterRegistry.counter("apns_notification_total",
+                    "status", "error", "type", "idea_interest",
+                    "error_type", "unexpected", "category", "unexpected").increment();
+        }
+    }
+
+    /**
      * Categorize APNs rejection reason as expected or unexpected.
      * Expected: User/device issues (app uninstalled, token expired)
      * Unexpected: Configuration issues on our side
