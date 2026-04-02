@@ -167,7 +167,7 @@ All Hangout → HangoutPointer field copying is centralized in this factory. Whe
 
 ### Fields Copied by `applyHangoutFields`
 
-title, description, startTimestamp, endTimestamp, visibility, seriesId, mainImagePath, carpoolEnabled, hostAtPlaceUserId, timeInput, location, externalId, externalSource, isGeneratedTitle, ticketLink, ticketsRequired, discountCode, gsi1sk (when startTimestamp is non-null)
+title, description, startTimestamp, endTimestamp, visibility, seriesId, mainImagePath, carpoolEnabled, hostAtPlaceUserId, timeInput, location, externalId, externalSource, isGeneratedTitle, ticketLink, ticketsRequired, discountCode, gsi1sk (set to timestamp when startTimestamp is non-null, or `FLOATING#{createdAtMillis}` when null — enables floating hangouts to appear in group feed via UserGroupIndex)
 
 ### Usage Patterns
 

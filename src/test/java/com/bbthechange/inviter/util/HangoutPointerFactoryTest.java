@@ -112,12 +112,21 @@ class HangoutPointerFactoryTest {
         }
 
         @Test
-        void fromHangout_NullStartTimestamp_SkipsGsi1sk() {
+        void fromHangout_NullStartTimestamp_SetsFloatingGsi1sk() {
             hangout.setStartTimestamp(null);
             HangoutPointer pointer = HangoutPointerFactory.fromHangout(hangout, groupId);
 
             assertThat(pointer.getGsi1pk()).isEqualTo(InviterKeyFactory.getGroupPk(groupId));
-            assertThat(pointer.getGsi1sk()).isNull();
+            assertThat(pointer.getGsi1sk()).startsWith(InviterKeyFactory.FLOATING_SK_PREFIX);
+        }
+
+        @Test
+        void fromHangout_NullStartTimestamp_FloatingGsi1skUsesCreatedAtMillis() {
+            hangout.setStartTimestamp(null);
+            HangoutPointer pointer = HangoutPointerFactory.fromHangout(hangout, groupId);
+
+            String expectedSuffix = String.valueOf(pointer.getCreatedAt().toEpochMilli());
+            assertThat(pointer.getGsi1sk()).isEqualTo(InviterKeyFactory.FLOATING_SK_PREFIX + expectedSuffix);
         }
 
         @Test
@@ -203,15 +212,44 @@ class HangoutPointerFactoryTest {
         }
 
         @Test
-        void applyHangoutFields_NullStartTimestamp_DoesNotOverwriteGsi1sk() {
+        void applyHangoutFields_NullStartTimestamp_SetsFloatingGsi1sk() {
             HangoutPointer pointer = new HangoutPointer(groupId, HANGOUT_ID, "Old Title");
             pointer.setGsi1sk("999999999");
 
             hangout.setStartTimestamp(null);
             HangoutPointerFactory.applyHangoutFields(pointer, hangout);
 
-            // Should NOT overwrite with null or "null" string
-            assertThat(pointer.getGsi1sk()).isEqualTo("999999999");
+            // Floating hangouts get FLOATING# prefix for UserGroupIndex visibility
+            assertThat(pointer.getGsi1sk()).startsWith(InviterKeyFactory.FLOATING_SK_PREFIX);
+        }
+
+        @Test
+        void applyHangoutFields_TransitionFromFloatingToScheduled() {
+            HangoutPointer pointer = new HangoutPointer(groupId, HANGOUT_ID, "Test");
+            pointer.setGsi1sk("FLOATING#1711929600000");
+
+            hangout.setStartTimestamp(1700000000L);
+            HangoutPointerFactory.applyHangoutFields(pointer, hangout);
+
+            assertThat(pointer.getGsi1sk()).isEqualTo("1700000000");
+        }
+
+        @Test
+        void applyHangoutFields_FloatingGsi1skIsIdempotent() {
+            // Given — a pointer with a known createdAt, and a hangout with null startTimestamp
+            HangoutPointer pointer = new HangoutPointer(groupId, HANGOUT_ID, "Weekend Hike");
+            hangout.setStartTimestamp(null);
+
+            // When — apply twice
+            HangoutPointerFactory.applyHangoutFields(pointer, hangout);
+            String firstGsi1sk = pointer.getGsi1sk();
+
+            HangoutPointerFactory.applyHangoutFields(pointer, hangout);
+            String secondGsi1sk = pointer.getGsi1sk();
+
+            // Then — gsi1sk is the same both times (uses immutable createdAt, not a changing value)
+            assertThat(firstGsi1sk).startsWith(InviterKeyFactory.FLOATING_SK_PREFIX);
+            assertThat(firstGsi1sk).isEqualTo(secondGsi1sk);
         }
 
         @Test

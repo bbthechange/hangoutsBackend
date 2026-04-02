@@ -465,18 +465,30 @@ public class GroupServiceImpl implements GroupService {
                 CompletableFuture.supplyAsync(() -> 
                     hangoutRepository.getFutureEventsPage(groupId, nowTimestamp, limit, startingAfter));
                     
-            CompletableFuture<PaginatedResult<BaseItem>> inProgressEventsFuture = 
-                CompletableFuture.supplyAsync(() -> 
+            CompletableFuture<PaginatedResult<BaseItem>> inProgressEventsFuture =
+                CompletableFuture.supplyAsync(() ->
                     hangoutRepository.getInProgressEventsPage(groupId, nowTimestamp, limit, startingAfter));
-            
-            // Wait for both queries to complete
+
+            CompletableFuture<PaginatedResult<BaseItem>> floatingEventsFuture =
+                CompletableFuture.supplyAsync(() -> {
+                    try {
+                        return hangoutRepository.getFloatingHangoutsPage(groupId, null);
+                    } catch (RepositoryException e) {
+                        logger.warn("Failed to query floating hangouts for group {}, degrading gracefully", groupId, e);
+                        return new PaginatedResult<>(List.of(), null);
+                    }
+                });
+
+            // Wait for all queries to complete
             PaginatedResult<BaseItem> futureEvents = futureEventsFuture.get();
             PaginatedResult<BaseItem> inProgressEvents = inProgressEventsFuture.get();
-            
+            PaginatedResult<BaseItem> floatingEvents = floatingEventsFuture.get();
+
             // Merge results
             List<BaseItem> allItems = new ArrayList<>();
             allItems.addAll(futureEvents.getResults());
             allItems.addAll(inProgressEvents.getResults());
+            allItems.addAll(floatingEvents.getResults());
 
             // Hydrate the mixed feed into FeedItem objects (with version filtering)
             List<FeedItem> allFeedItems = hydrateFeed(allItems, requestingUserId, clientInfo);

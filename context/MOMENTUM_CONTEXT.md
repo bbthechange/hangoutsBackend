@@ -192,7 +192,7 @@ Filtering is post-query on both `withDay` and `needsDay` lists.
 | NEAR_TERM | ≤ 7 days | Busy-week and empty-week rules apply |
 | MID_TERM | ≤ 21 days | Same smart-surfacing rules |
 | DISTANT | > 21 days | Suppression-exempt (like imminent) |
-| needsDay | No timestamp | Sorted by momentum category only |
+| needsDay | No timestamp (floating) | Sorted by momentum category only. Floating hangouts are queried from UserGroupIndex via `begins_with(gsi1sk, "FLOATING#")` in `getFloatingHangoutsPage()` |
 
 ### Sort Order Within Each Horizon
 

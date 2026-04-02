@@ -95,6 +95,9 @@ class GroupServiceMomentumFeedTest {
         // IdeaFeedSurfacingService returns empty list by default
         lenient().when(ideaFeedSurfacingService.getSurfacedIdeas(any(), anyLong(), any()))
                 .thenReturn(List.of());
+        // Floating hangouts query returns empty by default
+        lenient().when(hangoutRepository.getFloatingHangoutsPage(any(), any()))
+                .thenReturn(new PaginatedResult<>(List.of(), null));
     }
 
     // ============================================================================

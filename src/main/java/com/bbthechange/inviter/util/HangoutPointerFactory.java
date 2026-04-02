@@ -82,6 +82,12 @@ public final class HangoutPointerFactory {
         // (EntityTimeIndex uses startTimestamp directly via @DynamoDbSecondarySortKey)
         if (hangout.getStartTimestamp() != null) {
             pointer.setGsi1sk(String.valueOf(hangout.getStartTimestamp()));
+        } else {
+            // Floating hangouts: index in UserGroupIndex with FLOATING# prefix
+            // so the feed query can find them via begins_with("FLOATING#").
+            // Uses createdAt (immutable) for stable pagination cursors.
+            pointer.setGsi1sk(InviterKeyFactory.FLOATING_SK_PREFIX
+                    + pointer.getCreatedAt().toEpochMilli());
         }
     }
 }

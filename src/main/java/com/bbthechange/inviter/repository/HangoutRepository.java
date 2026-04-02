@@ -148,6 +148,16 @@ public interface HangoutRepository {
                                                      Integer limit, String startToken);
     
     /**
+     * Get floating (unscheduled) hangouts for a group using UserGroupIndex.
+     * Queries HangoutPointers where gsi1sk begins with "FLOATING#".
+     *
+     * @param groupId The group ID
+     * @param limit Maximum number of events to return (null for no limit)
+     * @return PaginatedResult containing floating hangouts
+     */
+    PaginatedResult<BaseItem> getFloatingHangoutsPage(String groupId, Integer limit);
+
+    /**
      * Get past events for a group using EntityTimeIndex in reverse order.
      * Queries events with startTimestamp < nowTimestamp.
      * Now returns BaseItem to support both HangoutPointer and SeriesPointer.

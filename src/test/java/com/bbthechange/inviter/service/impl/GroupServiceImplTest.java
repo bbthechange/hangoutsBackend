@@ -90,6 +90,9 @@ class GroupServiceImplTest {
         // IdeaFeedSurfacingService returns empty list by default
         lenient().when(ideaFeedSurfacingService.getSurfacedIdeas(any(), anyLong(), any()))
                 .thenReturn(List.of());
+        // Floating hangouts query returns empty by default
+        lenient().when(hangoutRepository.getFloatingHangoutsPage(any(), any()))
+                .thenReturn(new PaginatedResult<>(List.of(), null));
     }
 
     @Test
@@ -1158,6 +1161,111 @@ class GroupServiceImplTest {
         
         // CompletableFuture.get() waits for both queries
         // (This is implicitly tested by the successful completion and merged results)
+    }
+
+    // ================= Floating Hangout Feed Tests =================
+
+    @Test
+    void getGroupFeed_FloatingHangouts_AppearInNeedsDay() {
+        // Given
+        when(groupRepository.findMembership(GROUP_ID, USER_ID))
+            .thenReturn(Optional.of(createTestMembership(GROUP_ID, USER_ID, "Test Group", GroupRole.MEMBER)));
+
+        HangoutPointer floatingPointer = createHangoutPointer(GROUP_ID, "floating1", "Weekend Hike", null);
+        PaginatedResult<BaseItem> floatingResult = new PaginatedResult<>(List.of(floatingPointer), null);
+
+        when(hangoutRepository.getFutureEventsPage(eq(GROUP_ID), anyLong(), isNull(), isNull()))
+            .thenReturn(new PaginatedResult<>(List.of(), null));
+        when(hangoutRepository.getInProgressEventsPage(eq(GROUP_ID), anyLong(), isNull(), isNull()))
+            .thenReturn(new PaginatedResult<>(List.of(), null));
+        when(hangoutRepository.getFloatingHangoutsPage(eq(GROUP_ID), any()))
+            .thenReturn(floatingResult);
+
+        // When
+        GroupFeedDTO result = groupService.getGroupFeed(GROUP_ID, USER_ID, null, null, null);
+
+        // Then
+        verify(hangoutRepository).getFloatingHangoutsPage(eq(GROUP_ID), any());
+        assertThat(result.getNeedsDay()).hasSize(1);
+        assertThat(result.getNeedsDay().get(0).getTitle()).isEqualTo("Weekend Hike");
+        assertThat(result.getWithDay()).isEmpty();
+    }
+
+    @Test
+    void getGroupFeed_FloatingQueryFailure_GracefulDegradation() {
+        // Given
+        when(groupRepository.findMembership(GROUP_ID, USER_ID))
+            .thenReturn(Optional.of(createTestMembership(GROUP_ID, USER_ID, "Test Group", GroupRole.MEMBER)));
+
+        HangoutPointer futurePointer = createHangoutPointer(GROUP_ID, "future1", "Movie Night",
+            java.time.Instant.now().plusSeconds(3600));
+        PaginatedResult<BaseItem> futureResult = new PaginatedResult<>(List.of(futurePointer), null);
+
+        when(hangoutRepository.getFutureEventsPage(eq(GROUP_ID), anyLong(), isNull(), isNull()))
+            .thenReturn(futureResult);
+        when(hangoutRepository.getInProgressEventsPage(eq(GROUP_ID), anyLong(), isNull(), isNull()))
+            .thenReturn(new PaginatedResult<>(List.of(), null));
+        when(hangoutRepository.getFloatingHangoutsPage(eq(GROUP_ID), any()))
+            .thenThrow(new RepositoryException("DynamoDB throttled"));
+
+        // When — feed should still return without error
+        GroupFeedDTO result = groupService.getGroupFeed(GROUP_ID, USER_ID, null, null, null);
+
+        // Then — scheduled events still present, floating failure is swallowed
+        assertThat(result.getWithDay()).hasSize(1);
+        assertThat(((HangoutSummaryDTO) result.getWithDay().get(0)).getTitle()).isEqualTo("Movie Night");
+    }
+
+    @Test
+    void getGroupFeed_MixedScheduledAndFloating_BothSectionsPopulated() {
+        // Given
+        when(groupRepository.findMembership(GROUP_ID, USER_ID))
+            .thenReturn(Optional.of(createTestMembership(GROUP_ID, USER_ID, "Test Group", GroupRole.MEMBER)));
+
+        HangoutPointer scheduledPointer = createHangoutPointer(GROUP_ID, "sched1", "Game Night",
+            java.time.Instant.now().plusSeconds(7200));
+        HangoutPointer floatingPointer = createHangoutPointer(GROUP_ID, "float1", "Beach Day", null);
+
+        when(hangoutRepository.getFutureEventsPage(eq(GROUP_ID), anyLong(), isNull(), isNull()))
+            .thenReturn(new PaginatedResult<>(List.of(scheduledPointer), null));
+        when(hangoutRepository.getInProgressEventsPage(eq(GROUP_ID), anyLong(), isNull(), isNull()))
+            .thenReturn(new PaginatedResult<>(List.of(), null));
+        when(hangoutRepository.getFloatingHangoutsPage(eq(GROUP_ID), any()))
+            .thenReturn(new PaginatedResult<>(List.of(floatingPointer), null));
+
+        // When
+        GroupFeedDTO result = groupService.getGroupFeed(GROUP_ID, USER_ID, null, null, null);
+
+        // Then
+        assertThat(result.getWithDay()).hasSize(1);
+        assertThat(((HangoutSummaryDTO) result.getWithDay().get(0)).getTitle()).isEqualTo("Game Night");
+        assertThat(result.getNeedsDay()).hasSize(1);
+        assertThat(result.getNeedsDay().get(0).getTitle()).isEqualTo("Beach Day");
+    }
+
+    @Test
+    void getGroupFeed_FloatingQueryReturnsEmpty_FeedStillWorks() {
+        // Given
+        when(groupRepository.findMembership(GROUP_ID, USER_ID))
+            .thenReturn(Optional.of(createTestMembership(GROUP_ID, USER_ID, "Test Group", GroupRole.MEMBER)));
+
+        HangoutPointer scheduledPointer = createHangoutPointer(GROUP_ID, "sched1", "Dinner Out",
+            java.time.Instant.now().plusSeconds(3600));
+
+        when(hangoutRepository.getFutureEventsPage(eq(GROUP_ID), anyLong(), isNull(), isNull()))
+            .thenReturn(new PaginatedResult<>(List.of(scheduledPointer), null));
+        when(hangoutRepository.getInProgressEventsPage(eq(GROUP_ID), anyLong(), isNull(), isNull()))
+            .thenReturn(new PaginatedResult<>(List.of(), null));
+        when(hangoutRepository.getFloatingHangoutsPage(eq(GROUP_ID), any()))
+            .thenReturn(new PaginatedResult<>(List.of(), null));
+
+        // When
+        GroupFeedDTO result = groupService.getGroupFeed(GROUP_ID, USER_ID, null, null, null);
+
+        // Then — feed works fine with no floating hangouts
+        assertThat(result.getWithDay()).hasSize(1);
+        assertThat(((HangoutSummaryDTO) result.getWithDay().get(0)).getTitle()).isEqualTo("Dinner Out");
+        assertThat(result.getNeedsDay()).isEmpty();
     }
 
     // ================= Enhanced Group Feed Hydration Tests =================

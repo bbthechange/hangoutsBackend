@@ -1358,6 +1358,46 @@ public class HangoutRepositoryImpl implements HangoutRepository {
     }
 
     @Override
+    public PaginatedResult<BaseItem> getFloatingHangoutsPage(String groupId, Integer limit) {
+        return performanceTracker.trackQuery("getFloatingHangoutsPage", "UserGroupIndex", () -> {
+            try {
+                String participantKey = InviterKeyFactory.getGroupPk(groupId);
+                String floatingPrefix = InviterKeyFactory.FLOATING_SK_PREFIX;
+
+                QueryRequest.Builder requestBuilder = QueryRequest.builder()
+                    .tableName(TABLE_NAME)
+                    .indexName("UserGroupIndex")
+                    .keyConditionExpression("gsi1pk = :participantKey AND begins_with(gsi1sk, :floatingPrefix)")
+                    .expressionAttributeValues(Map.of(
+                        ":participantKey", AttributeValue.builder().s(participantKey).build(),
+                        ":floatingPrefix", AttributeValue.builder().s(floatingPrefix).build()
+                    ))
+                    .scanIndexForward(false); // Newest first (highest createdAt millis)
+
+                if (limit != null) {
+                    requestBuilder.limit(limit);
+                }
+
+                QueryResponse response = dynamoDbClient.query(requestBuilder.build());
+
+                List<BaseItem> baseItems = response.items().stream()
+                    .map(this::deserializeItem)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+
+                logger.debug("Found {} floating hangouts for group {} (requested limit: {})",
+                    baseItems.size(), groupId, limit);
+
+                return new PaginatedResult<>(baseItems, null);
+
+            } catch (DynamoDbException e) {
+                logger.error("Failed to query floating hangouts for group {}", groupId, e);
+                throw new RepositoryException("Failed to query floating hangouts", e);
+            }
+        });
+    }
+
+    @Override
     public PaginatedResult<BaseItem> getPastEventsPage(String groupId, long nowTimestamp,
                                                       Integer limit, String endToken) {
         return performanceTracker.trackQuery("getPastEventsPage", "EntityTimeIndex", () -> {

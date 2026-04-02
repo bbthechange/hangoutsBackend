@@ -38,6 +38,7 @@ public final class InviterKeyFactory {
     public static final String INVITE_CODE_PREFIX = "INVITE_CODE";
     public static final String CODE_PREFIX = "CODE";
     public static final String CREATED_PREFIX = "CREATED";
+    public static final String FLOATING_SK_PREFIX = "FLOATING#";
     public static final String PARTICIPATION_PREFIX = "PARTICIPATION";
     public static final String RESERVEOFFER_PREFIX = "RESERVEOFFER";
 
