@@ -51,6 +51,9 @@ public class HangoutSummaryDTO implements FeedItem {
     private Long startTimestamp;
     private Long endTimestamp;
     private String seriesId;
+    private String seriesTitle;
+    private String seriesImagePath;  // Series image, distinct from mainImagePath (hangout's own image)
+    private String eventSeriesType;  // "WATCH_PARTY" or null for regular series
 
     // Transformed poll data (nested with vote counts and user voting status)
     @Builder.Default
@@ -292,6 +295,30 @@ public class HangoutSummaryDTO implements FeedItem {
 
     public void setSeriesId(String seriesId) {
         this.seriesId = seriesId;
+    }
+
+    public String getSeriesTitle() {
+        return seriesTitle;
+    }
+
+    public void setSeriesTitle(String seriesTitle) {
+        this.seriesTitle = seriesTitle;
+    }
+
+    public String getSeriesImagePath() {
+        return seriesImagePath;
+    }
+
+    public void setSeriesImagePath(String seriesImagePath) {
+        this.seriesImagePath = seriesImagePath;
+    }
+
+    public String getEventSeriesType() {
+        return eventSeriesType;
+    }
+
+    public void setEventSeriesType(String eventSeriesType) {
+        this.eventSeriesType = eventSeriesType;
     }
 
     // Poll data getters/setters (now nested DTOs)

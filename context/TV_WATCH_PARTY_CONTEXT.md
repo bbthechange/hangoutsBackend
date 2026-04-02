@@ -11,7 +11,8 @@ TV Watch Party allows users to schedule a series of hangouts for a TV season. Th
 - Episode titles auto-update when TVMaze updates them (unless user manually edited)
 - Only `regular` and `significant_special` episode types are tracked
 - User's IANA timezone is stored for DST-aware scheduling
-- Old app versions (< 2.0.0) don't see watch parties in feed
+- App versions < 3.0.0 see watch party episodes as standalone feed items (enriched with series metadata at read time)
+- App versions >= 3.0.0 see watch parties as grouped SeriesSummaryDTO (embedded parts path)
 
 ## 2. Key Files & Classes
 
@@ -317,18 +318,36 @@ void notifyWatchPartyEpisodeRemoved(String seriesId, String groupId, String titl
 
 The `titleNotificationSent` flag ensures only one title update notification is sent per hangout, even if TVMaze updates the title multiple times.
 
-## 9. Version Filtering
+## 9. Version Filtering & Series Metadata Enrichment
 
-Old app versions (< 2.0.0) don't see watch parties in group feed.
+### Version Gate
+
+The watch party version gate is `3.0.0`. Since no current client sends 3.0.0:
+- All clients see watch party episodes as **standalone `HangoutSummaryDTO` items** built from fresh `HangoutPointer` records
+- This solves the denormalization sync gap where `SeriesPointer.parts` had stale data (e.g., missing interest levels)
 
 ```java
 // GroupServiceImpl
-private static final String WATCH_PARTY_MIN_VERSION = "2.0.0";
-
-if (seriesPointer.isWatchParty() && !clientInfo.isVersionAtLeast(WATCH_PARTY_MIN_VERSION)) {
-    continue; // Filter out
-}
+private static final String WATCH_PARTY_MIN_VERSION = "3.0.0";
 ```
+
+### Read-Time Series Metadata Enrichment
+
+Standalone episode DTOs are enriched with series-level metadata at read time in `hydrateFeed()`:
+
+1. A `seriesPointerMap` is built from `SeriesPointer` items in the same query page
+2. Each `HangoutSummaryDTO` with a `seriesId` gets enriched via `enrichSeriesMetadata()`
+3. If the `SeriesPointer` isn't on the same page (pagination boundary), falls back to `groupRepository.findSeriesPointer()` with caching
+
+**Enriched fields on `HangoutSummaryDTO`:**
+- `seriesTitle` — from `SeriesPointer.seriesTitle`
+- `seriesImagePath` — from `SeriesPointer.mainImagePath` (distinct from the hangout's own `mainImagePath`)
+- `eventSeriesType` — "WATCH_PARTY" or null
+
+**Key behaviors:**
+- Graceful degradation: if SeriesPointer is missing, fields stay null, hangout still renders
+- Fallback fetches are cached per series to avoid per-episode DynamoDB reads
+- Regular (non-watch-party) series are unaffected — they still use the embedded parts path
 
 ## 10. TVMaze Client
 

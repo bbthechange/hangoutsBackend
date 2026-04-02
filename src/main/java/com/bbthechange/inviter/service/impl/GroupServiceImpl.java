@@ -31,6 +31,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.ArrayList;
 import java.util.Set;
 import java.util.HashSet;
+import java.util.HashMap;
 import java.util.Map;
 import com.bbthechange.inviter.util.PaginatedResult;
 import com.bbthechange.inviter.util.GroupFeedPaginationToken;
@@ -52,10 +53,10 @@ public class GroupServiceImpl implements GroupService {
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
-     * Minimum app version required to see watch party series in the feed.
-     * Clients with versions < 2.0.0 will have watch parties filtered out.
+     * Minimum app version required to see watch party series as grouped SeriesSummaryDTO.
+     * Clients with versions < 3.0.0 see watch party episodes as standalone enriched HangoutSummaryDTOs.
      */
-    private static final String WATCH_PARTY_MIN_VERSION = "2.0.0";
+    private static final String WATCH_PARTY_MIN_VERSION = "3.0.0";
 
     /**
      * Minimum app version required for new feed features (idea suggestions, nudges).
@@ -708,6 +709,14 @@ public class GroupServiceImpl implements GroupService {
             }
         }
 
+        // Build series metadata lookup from SeriesPointers in this page
+        Map<String, SeriesPointer> seriesPointerMap = new HashMap<>();
+        for (BaseItem item : baseItems) {
+            if (item instanceof SeriesPointer sp) {
+                seriesPointerMap.put(sp.getSeriesId(), sp);
+            }
+        }
+
         // Second Pass: Build the final feed list
 
         List<FeedItem> feedItems = new ArrayList<>();
@@ -721,27 +730,14 @@ public class GroupServiceImpl implements GroupService {
                 }
 
                 // Convert SeriesPointer to SeriesSummaryDTO
-                SeriesSummaryDTO seriesDTO = createSeriesSummaryDTO(seriesPointer, requestingUserId);
+                SeriesSummaryDTO seriesDTO = createSeriesSummaryDTO(seriesPointer, requestingUserId, seriesPointerMap);
                 feedItems.add(seriesDTO);
 
             } else if (item instanceof HangoutPointer hangoutPointer) {
                 // Only include standalone hangouts (not already part of a series)
                 if (!hangoutIdsInSeries.contains(hangoutPointer.getHangoutId())) {
-                    HangoutSummaryDTO hangoutDTO = new HangoutSummaryDTO(hangoutPointer, requestingUserId);
-                    // Apply backward compatibility transformation for interest levels
-                    hangoutDTO.setInterestLevels(HangoutDataTransformer.transformAttendanceForBackwardCompatibility(
-                            hangoutDTO.getInterestLevels(), attendanceBackwardCompatEnabled));
-                    // Enrich host at place info
-                    hangoutService.enrichHostAtPlaceInfo(hangoutDTO);
-                    // Compute and set action-oriented nudges (gated to 2.0.0+)
-                    if (supportsNewFeedFeatures) {
-                        // Compute suggested attributes from the pointer's poll data
-                        hangoutDTO.setSuggestedAttributes(
-                            attributeSuggestionService.computeSuggestedAttributes(null, hangoutDTO.getPolls()));
-                        // Compute nudges with suggestion poll awareness
-                        hangoutDTO.setNudges(
-                            nudgeService.computeNudgesFromPointer(hangoutPointer, hangoutDTO.getPolls()));
-                    }
+                    HangoutSummaryDTO hangoutDTO = buildEnrichedHangoutDTO(
+                        hangoutPointer, requestingUserId, supportsNewFeedFeatures, seriesPointerMap);
                     feedItems.add(hangoutDTO);
                 }
                 // If it's part of a series, ignore it (already included in SeriesSummaryDTO)
@@ -753,13 +749,58 @@ public class GroupServiceImpl implements GroupService {
     }
     
     /**
+     * Build a HangoutSummaryDTO from a HangoutPointer with all standard enrichment.
+     * Used for both standalone hangouts and series parts to ensure consistent processing.
+     */
+    private HangoutSummaryDTO buildEnrichedHangoutDTO(HangoutPointer pointer, String requestingUserId,
+                                                       boolean applyNudges,
+                                                       Map<String, SeriesPointer> seriesPointerMap) {
+        HangoutSummaryDTO dto = new HangoutSummaryDTO(pointer, requestingUserId);
+        dto.setInterestLevels(HangoutDataTransformer.transformAttendanceForBackwardCompatibility(
+                dto.getInterestLevels(), attendanceBackwardCompatEnabled));
+        hangoutService.enrichHostAtPlaceInfo(dto);
+        if (pointer.getSeriesId() != null) {
+            enrichSeriesMetadata(dto, pointer.getSeriesId(), pointer.getGroupId(), seriesPointerMap);
+        }
+        if (applyNudges) {
+            dto.setSuggestedAttributes(
+                attributeSuggestionService.computeSuggestedAttributes(null, dto.getPolls()));
+            dto.setNudges(
+                nudgeService.computeNudgesFromPointer(pointer, dto.getPolls()));
+        }
+        return dto;
+    }
+
+    /**
+     * Enrich a HangoutSummaryDTO with series-level metadata.
+     * Usually the SeriesPointer is already in the query results (same GSI page).
+     * On rare pagination boundaries it may not be, so we fall back to a direct lookup.
+     */
+    private void enrichSeriesMetadata(HangoutSummaryDTO dto, String seriesId,
+                                       String groupId, Map<String, SeriesPointer> seriesPointerMap) {
+        if (!seriesPointerMap.containsKey(seriesId)) {
+            // Pagination boundary: SeriesPointer on a different page — fetch and cache (hit or miss)
+            SeriesPointer fetched = groupRepository.findSeriesPointer(groupId, seriesId).orElse(null);
+            seriesPointerMap.put(seriesId, fetched);
+        }
+
+        SeriesPointer sp = seriesPointerMap.get(seriesId);
+        if (sp != null) {
+            dto.setSeriesTitle(sp.getSeriesTitle());
+            dto.setSeriesImagePath(sp.getMainImagePath());
+            dto.setEventSeriesType(sp.getEventSeriesType());
+        }
+    }
+
+    /**
      * Create a SeriesSummaryDTO from a SeriesPointer with all its denormalized parts.
      *
      * @param seriesPointer The series pointer with denormalized hangout parts
      * @param requestingUserId User ID for calculating poll voting status in parts
      * @return SeriesSummaryDTO with transformed parts
      */
-    SeriesSummaryDTO createSeriesSummaryDTO(SeriesPointer seriesPointer, String requestingUserId) {
+    SeriesSummaryDTO createSeriesSummaryDTO(SeriesPointer seriesPointer, String requestingUserId,
+                                               Map<String, SeriesPointer> seriesPointerMap) {
         SeriesSummaryDTO dto = new SeriesSummaryDTO();
 
         // Copy series-level information
@@ -776,12 +817,7 @@ public class GroupServiceImpl implements GroupService {
         List<HangoutSummaryDTO> parts = new ArrayList<>();
         if (seriesPointer.getParts() != null) {
             for (HangoutPointer part : seriesPointer.getParts()) {
-                HangoutSummaryDTO partDTO = new HangoutSummaryDTO(part, requestingUserId);
-                // Apply backward compatibility transformation for interest levels
-                partDTO.setInterestLevels(HangoutDataTransformer.transformAttendanceForBackwardCompatibility(
-                        partDTO.getInterestLevels(), attendanceBackwardCompatEnabled));
-                // Enrich host at place info
-                hangoutService.enrichHostAtPlaceInfo(partDTO);
+                HangoutSummaryDTO partDTO = buildEnrichedHangoutDTO(part, requestingUserId, false, seriesPointerMap);
                 parts.add(partDTO);
             }
         }

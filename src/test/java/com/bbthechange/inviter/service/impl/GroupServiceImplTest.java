@@ -1378,7 +1378,7 @@ class GroupServiceImplTest {
         seriesPointer.setEventSeriesType("WATCH_PARTY");
 
         // When
-        SeriesSummaryDTO result = groupService.createSeriesSummaryDTO(seriesPointer, USER_ID);
+        SeriesSummaryDTO result = groupService.createSeriesSummaryDTO(seriesPointer, USER_ID, new java.util.HashMap<>());
 
         // Then
         assertThat(result.getSeriesTitle()).isEqualTo("Movie Night Series");
@@ -1397,7 +1397,7 @@ class GroupServiceImplTest {
         seriesPointer.setParts(null);
 
         // When
-        SeriesSummaryDTO result = groupService.createSeriesSummaryDTO(seriesPointer, USER_ID);
+        SeriesSummaryDTO result = groupService.createSeriesSummaryDTO(seriesPointer, USER_ID, new java.util.HashMap<>());
 
         // Then
         assertThat(result.getParts()).isEmpty();
@@ -1657,9 +1657,9 @@ class GroupServiceImplTest {
         watchParty.setStartTimestamp(System.currentTimeMillis() / 1000 + 86400);
         List<BaseItem> items = List.of(watchParty);
 
-        // And: ClientInfo with new version (2.0.0)
+        // And: ClientInfo with new version (3.0.0)
         com.bbthechange.inviter.config.ClientInfo newClientInfo =
-            new com.bbthechange.inviter.config.ClientInfo("2.0.0", null, "ios", null, null, "ios");
+            new com.bbthechange.inviter.config.ClientInfo("3.0.0", null, "ios", null, null, "ios");
 
         // When: hydrateFeed is called with new version
         List<FeedItem> result = groupService.hydrateFeed(items, USER_ID, newClientInfo);
@@ -2034,9 +2034,9 @@ class GroupServiceImplTest {
         watchParty.setStartTimestamp(System.currentTimeMillis() / 1000 + 86400);
         watchParty.setParts(List.of(hangoutPart1, hangoutPart2));
 
-        // And: ClientInfo with new version (2.0.0)
+        // And: ClientInfo with new version (3.0.0)
         com.bbthechange.inviter.config.ClientInfo newClientInfo =
-            new com.bbthechange.inviter.config.ClientInfo("2.0.0", null, "ios", null, null, "ios");
+            new com.bbthechange.inviter.config.ClientInfo("3.0.0", null, "ios", null, null, "ios");
 
         // When: hydrateFeed is called with watch party and its hangouts
         List<BaseItem> items = List.of(watchParty, hangoutPart1, hangoutPart2);
@@ -2049,6 +2049,245 @@ class GroupServiceImplTest {
         // And: The series should contain the hangouts as parts
         SeriesSummaryDTO series = (SeriesSummaryDTO) result.get(0);
         assertThat(series.getParts()).hasSize(2);
+    }
+
+    // ==================== Series Metadata Enrichment Tests ====================
+
+    private HangoutPointer createTestHangoutPointer(String hangoutId, String seriesId) {
+        HangoutPointer pointer = createTestHangoutPointer(hangoutId);
+        pointer.setSeriesId(seriesId);
+        pointer.setGroupId(GROUP_ID);
+        return pointer;
+    }
+
+    private SeriesPointer createTestWatchPartySeriesPointer(String seriesId) {
+        SeriesPointer pointer = new SeriesPointer();
+        pointer.setGroupId(GROUP_ID);
+        pointer.setSeriesId(seriesId);
+        pointer.setSeriesTitle("Watch Party Title");
+        pointer.setEventSeriesType("WATCH_PARTY");
+        pointer.setMainImagePath("https://static.tvmaze.com/test-image.jpg");
+        pointer.setStartTimestamp(System.currentTimeMillis() / 1000 + 86400);
+        pointer.setPk("GROUP#" + GROUP_ID);
+        pointer.setSk("SERIES#" + seriesId);
+        pointer.setGsi1pk("GROUP#" + GROUP_ID);
+        return pointer;
+    }
+
+    @Test
+    void hydrateFeed_WatchPartyEpisodesEnrichedWithSeriesMetadata_HappyPath() {
+        // Given: A watch party SeriesPointer and 3 episode HangoutPointers on the same page
+        String seriesId = "wp-series-enrich-1";
+        SeriesPointer watchPartySP = createTestWatchPartySeriesPointer(seriesId);
+
+        HangoutPointer ep1 = createTestHangoutPointer("ep-1", seriesId);
+        HangoutPointer ep2 = createTestHangoutPointer("ep-2", seriesId);
+        HangoutPointer ep3 = createTestHangoutPointer("ep-3", seriesId);
+
+        List<BaseItem> items = List.of(watchPartySP, ep1, ep2, ep3);
+
+        // And: Client version < 3.0.0 (episodes appear as standalone)
+        com.bbthechange.inviter.config.ClientInfo clientInfo =
+            new com.bbthechange.inviter.config.ClientInfo("2.5.0", null, "ios", null, null, "ios");
+
+        // When
+        List<FeedItem> result = groupService.hydrateFeed(items, USER_ID, clientInfo);
+
+        // Then: 3 standalone HangoutSummaryDTOs (no SeriesSummaryDTO)
+        assertThat(result).hasSize(3);
+        for (FeedItem item : result) {
+            assertThat(item).isInstanceOf(HangoutSummaryDTO.class);
+            HangoutSummaryDTO dto = (HangoutSummaryDTO) item;
+            assertThat(dto.getSeriesTitle()).isEqualTo("Watch Party Title");
+            assertThat(dto.getSeriesImagePath()).isEqualTo("https://static.tvmaze.com/test-image.jpg");
+            assertThat(dto.getEventSeriesType()).isEqualTo("WATCH_PARTY");
+            assertThat(dto.getSeriesId()).isEqualTo(seriesId);
+        }
+
+        // And: No fallback fetch needed (SeriesPointer was on the same page)
+        verify(groupRepository, never()).findSeriesPointer(any(), any());
+    }
+
+    @Test
+    void hydrateFeed_PaginationBoundary_FallsBackToDirectLookup() {
+        // Given: 2 episode HangoutPointers with seriesId but NO SeriesPointer in the page
+        String seriesId = "wp-series-enrich-2";
+        HangoutPointer ep1 = createTestHangoutPointer("ep-boundary-1", seriesId);
+        HangoutPointer ep2 = createTestHangoutPointer("ep-boundary-2", seriesId);
+
+        List<BaseItem> items = List.of(ep1, ep2);
+
+        // And: findSeriesPointer returns the series pointer
+        SeriesPointer fallbackSP = createTestWatchPartySeriesPointer(seriesId);
+        when(groupRepository.findSeriesPointer(GROUP_ID, seriesId)).thenReturn(java.util.Optional.of(fallbackSP));
+
+        // When
+        List<FeedItem> result = groupService.hydrateFeed(items, USER_ID, null);
+
+        // Then: Both episodes enriched with series metadata
+        assertThat(result).hasSize(2);
+        for (FeedItem item : result) {
+            HangoutSummaryDTO dto = (HangoutSummaryDTO) item;
+            assertThat(dto.getSeriesTitle()).isEqualTo("Watch Party Title");
+            assertThat(dto.getSeriesImagePath()).isEqualTo("https://static.tvmaze.com/test-image.jpg");
+            assertThat(dto.getEventSeriesType()).isEqualTo("WATCH_PARTY");
+        }
+
+        // And: findSeriesPointer called exactly once (cached for second episode)
+        verify(groupRepository, times(1)).findSeriesPointer(GROUP_ID, seriesId);
+    }
+
+    @Test
+    void hydrateFeed_PaginationBoundary_SeriesPointerNotFound_GracefulDegradation() {
+        // Given: 2 episode HangoutPointers with seriesId, no SeriesPointer anywhere
+        String seriesId = "wp-series-missing";
+        HangoutPointer ep1 = createTestHangoutPointer("ep-missing-1", seriesId);
+        HangoutPointer ep2 = createTestHangoutPointer("ep-missing-2", seriesId);
+
+        List<BaseItem> items = List.of(ep1, ep2);
+
+        // And: findSeriesPointer returns empty
+        when(groupRepository.findSeriesPointer(GROUP_ID, seriesId)).thenReturn(java.util.Optional.empty());
+
+        // When
+        List<FeedItem> result = groupService.hydrateFeed(items, USER_ID, null);
+
+        // Then: Both hangouts still render (graceful degradation), series fields are null
+        assertThat(result).hasSize(2);
+        for (FeedItem item : result) {
+            HangoutSummaryDTO dto = (HangoutSummaryDTO) item;
+            assertThat(dto.getSeriesTitle()).isNull();
+            assertThat(dto.getSeriesImagePath()).isNull();
+            assertThat(dto.getEventSeriesType()).isNull();
+        }
+
+        // And: findSeriesPointer called exactly once (negative result cached for second episode)
+        verify(groupRepository, times(1)).findSeriesPointer(GROUP_ID, seriesId);
+    }
+
+    @Test
+    void hydrateFeed_Version3_OldEmbeddedPartsPathStillWorks() {
+        // Given: A watch party SeriesPointer with embedded parts
+        String seriesId = "wp-series-v3";
+        SeriesPointer watchPartySP = createTestWatchPartySeriesPointer(seriesId);
+        HangoutPointer part1 = createTestHangoutPointer("part-v3-1");
+        HangoutPointer part2 = createTestHangoutPointer("part-v3-2");
+        watchPartySP.setParts(List.of(part1, part2));
+
+        List<BaseItem> items = List.of(watchPartySP);
+
+        // And: Client version >= 3.0.0
+        com.bbthechange.inviter.config.ClientInfo clientInfo =
+            new com.bbthechange.inviter.config.ClientInfo("3.0.0", null, "ios", null, null, "ios");
+
+        // When
+        List<FeedItem> result = groupService.hydrateFeed(items, USER_ID, clientInfo);
+
+        // Then: Result contains a SeriesSummaryDTO (not standalone items)
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0)).isInstanceOf(SeriesSummaryDTO.class);
+        SeriesSummaryDTO series = (SeriesSummaryDTO) result.get(0);
+        assertThat(series.getParts()).hasSize(2);
+    }
+
+    @Test
+    void hydrateFeed_RegularSeriesUnaffected() {
+        // Given: A regular (non-watch-party) SeriesPointer with parts
+        SeriesPointer regularSeries = createTestSeriesPointer("regular-series-1");
+        regularSeries.setEventSeriesType(null); // Not a watch party
+        HangoutPointer part = createTestHangoutPointer("regular-part-1");
+        regularSeries.setParts(List.of(part));
+
+        List<BaseItem> items = List.of(regularSeries);
+
+        // And: Any client version
+        com.bbthechange.inviter.config.ClientInfo clientInfo =
+            new com.bbthechange.inviter.config.ClientInfo("2.0.0", null, "ios", null, null, "ios");
+
+        // When
+        List<FeedItem> result = groupService.hydrateFeed(items, USER_ID, clientInfo);
+
+        // Then: Regular series still uses embedded parts path → SeriesSummaryDTO
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0)).isInstanceOf(SeriesSummaryDTO.class);
+        SeriesSummaryDTO series = (SeriesSummaryDTO) result.get(0);
+        assertThat(series.getParts()).hasSize(1);
+    }
+
+    @Test
+    void hydrateFeed_MixedFeed_WatchPartyEpisodesAndStandaloneAndRegularSeries() {
+        // Given: Mixed feed items
+        String wpSeriesId = "wp-series-mixed";
+        SeriesPointer watchPartySP = createTestWatchPartySeriesPointer(wpSeriesId);
+        HangoutPointer wpEp1 = createTestHangoutPointer("wp-ep-1", wpSeriesId);
+        HangoutPointer wpEp2 = createTestHangoutPointer("wp-ep-2", wpSeriesId);
+
+        HangoutPointer standalone = createTestHangoutPointer("standalone-1"); // No seriesId
+
+        SeriesPointer regularSeries = createTestSeriesPointer("regular-mixed");
+        regularSeries.setEventSeriesType(null);
+        HangoutPointer regularPart = createTestHangoutPointer("regular-part-m");
+        regularSeries.setParts(List.of(regularPart));
+
+        List<BaseItem> items = List.of(watchPartySP, wpEp1, wpEp2, standalone, regularSeries, regularPart);
+
+        // And: Client version < 3.0.0
+        com.bbthechange.inviter.config.ClientInfo clientInfo =
+            new com.bbthechange.inviter.config.ClientInfo("2.5.0", null, "ios", null, null, "ios");
+
+        // When
+        List<FeedItem> result = groupService.hydrateFeed(items, USER_ID, clientInfo);
+
+        // Then: 2 watch party episodes (standalone with series metadata) + 1 standalone + 1 regular series = 4 items
+        long hangoutDTOs = result.stream().filter(i -> i instanceof HangoutSummaryDTO).count();
+        long seriesDTOs = result.stream().filter(i -> i instanceof SeriesSummaryDTO).count();
+        assertThat(hangoutDTOs).isEqualTo(3); // 2 watch party episodes + 1 standalone
+        assertThat(seriesDTOs).isEqualTo(1);  // 1 regular series
+        assertThat(result).hasSize(4);
+
+        // And: Watch party episodes have series metadata, standalone does not
+        for (FeedItem item : result) {
+            if (item instanceof HangoutSummaryDTO dto) {
+                if (dto.getSeriesId() != null && dto.getSeriesId().equals(wpSeriesId)) {
+                    assertThat(dto.getSeriesTitle()).isEqualTo("Watch Party Title");
+                    assertThat(dto.getEventSeriesType()).isEqualTo("WATCH_PARTY");
+                } else if (dto.getHangoutId().equals("standalone-1")) {
+                    assertThat(dto.getSeriesTitle()).isNull();
+                    assertThat(dto.getEventSeriesType()).isNull();
+                }
+            }
+        }
+    }
+
+    @Test
+    void hydrateFeed_RefactoredBuildEnrichedDTO_SeriesPartsGetSameEnrichmentNoNudges() {
+        // Given: A regular series with a part that has a seriesId
+        String seriesId = "regular-refactor-test";
+        SeriesPointer regularSeries = createTestSeriesPointer(seriesId);
+        HangoutPointer part = createTestHangoutPointer("refactor-part-1");
+        part.setSeriesId(seriesId);
+        regularSeries.setParts(List.of(part));
+
+        List<BaseItem> items = List.of(regularSeries);
+
+        // And: Client supports new feed features (version >= 2.0.0)
+        com.bbthechange.inviter.config.ClientInfo clientInfo =
+            new com.bbthechange.inviter.config.ClientInfo("2.5.0", null, "ios", null, null, "ios");
+
+        // When
+        List<FeedItem> result = groupService.hydrateFeed(items, USER_ID, clientInfo);
+
+        // Then: Series part should have backward compat and host enrichment applied
+        assertThat(result).hasSize(1);
+        SeriesSummaryDTO series = (SeriesSummaryDTO) result.get(0);
+        assertThat(series.getParts()).hasSize(1);
+
+        // And: enrichHostAtPlaceInfo was called for the part
+        verify(hangoutService, atLeastOnce()).enrichHostAtPlaceInfo(any(HangoutSummaryDTO.class));
+
+        // And: Nudges should NOT be computed for series parts (applyNudges=false)
+        verify(nudgeService, never()).computeNudgesFromPointer(eq(part), any());
+        verify(attributeSuggestionService, never()).computeSuggestedAttributes(any(), eq(series.getParts().get(0).getPolls()));
     }
 
 }
