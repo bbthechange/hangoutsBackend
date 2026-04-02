@@ -50,7 +50,8 @@ class GlobalExceptionHandlerTest {
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
             assertThat(response.getBody()).isNotNull();
-            assertThat(response.getBody().get("error")).isEqualTo("CONFLICT");
+            assertThat(response.getBody().get("error")).isEqualTo("Resource was modified concurrently. Please retry.");
+            assertThat(response.getBody().get("code")).isEqualTo("CONFLICT");
             assertThat(response.getBody().get("message")).isEqualTo("Resource was modified concurrently. Please retry.");
         }
 
@@ -87,7 +88,8 @@ class GlobalExceptionHandlerTest {
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
             assertThat(response.getBody()).isNotNull();
-            assertThat(response.getBody().get("error")).isEqualTo("TRANSACTION_CONFLICT");
+            assertThat(response.getBody().get("error")).isEqualTo("Operation conflicted with another request. Please retry.");
+            assertThat(response.getBody().get("code")).isEqualTo("TRANSACTION_CONFLICT");
             assertThat(response.getBody().get("message")).isEqualTo("Operation conflicted with another request. Please retry.");
         }
     }
@@ -108,7 +110,8 @@ class GlobalExceptionHandlerTest {
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
             assertThat(response.getBody()).isNotNull();
-            assertThat(response.getBody().get("error")).isEqualTo("SERVICE_UNAVAILABLE");
+            assertThat(response.getBody().get("error")).isEqualTo("Database capacity temporarily exceeded. Please retry later.");
+            assertThat(response.getBody().get("code")).isEqualTo("SERVICE_UNAVAILABLE");
             assertThat(response.getBody().get("message")).isEqualTo("Database capacity temporarily exceeded. Please retry later.");
         }
 
@@ -140,7 +143,8 @@ class GlobalExceptionHandlerTest {
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
             assertThat(response.getBody()).isNotNull();
-            assertThat(response.getBody().get("error")).isEqualTo("INTERNAL_ERROR");
+            assertThat(response.getBody().get("error")).isEqualTo("An internal error occurred.");
+            assertThat(response.getBody().get("code")).isEqualTo("INTERNAL_ERROR");
             assertThat(response.getBody().get("message")).isEqualTo("An internal error occurred.");
         }
 
@@ -173,7 +177,8 @@ class GlobalExceptionHandlerTest {
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
             assertThat(response.getBody()).isNotNull();
-            assertThat(response.getBody().get("error")).isEqualTo("TRANSACTION_FAILED");
+            assertThat(response.getBody().get("error")).isEqualTo("Operation could not be completed. Please retry.");
+            assertThat(response.getBody().get("code")).isEqualTo("TRANSACTION_FAILED");
             assertThat(response.getBody().get("message")).isEqualTo("Operation could not be completed. Please retry.");
         }
     }
@@ -193,7 +198,8 @@ class GlobalExceptionHandlerTest {
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
             assertThat(response.getBody()).isNotNull();
-            assertThat(response.getBody().get("error")).isEqualTo("SERVICE_UNAVAILABLE");
+            assertThat(response.getBody().get("error")).isEqualTo("Service temporarily unavailable.");
+            assertThat(response.getBody().get("code")).isEqualTo("SERVICE_UNAVAILABLE");
             assertThat(response.getBody().get("message")).isEqualTo("Service temporarily unavailable.");
         }
 
@@ -260,7 +266,8 @@ class GlobalExceptionHandlerTest {
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
             assertThat(response.getBody()).isNotNull();
-            assertThat(response.getBody().get("error")).isEqualTo("THROTTLED");
+            assertThat(response.getBody().get("error")).isEqualTo("Service is temporarily overloaded. Please retry later.");
+            assertThat(response.getBody().get("code")).isEqualTo("THROTTLED");
             assertThat(response.getBody().get("message")).isEqualTo("Service is temporarily overloaded. Please retry later.");
             assertThat(response.getHeaders().getFirst("Retry-After")).isEqualTo("5");
         }
@@ -344,6 +351,7 @@ class GlobalExceptionHandlerTest {
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
             assertThat(response.getBody()).isNotNull();
             assertThat(response.getBody().get("error")).isEqualTo("EVENT_NOT_FOUND");
+            assertThat(response.getBody().get("code")).isEqualTo("EVENT_NOT_FOUND");
             assertThat(response.getBody().get("message")).isEqualTo("Event with ID abc123 not found");
         }
 
@@ -453,6 +461,7 @@ class GlobalExceptionHandlerTest {
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
             assertThat(response.getBody()).isNotNull();
             assertThat(response.getBody().get("error")).isEqualTo("TVMAZE_SEASON_NOT_FOUND");
+            assertThat(response.getBody().get("code")).isEqualTo("TVMAZE_SEASON_NOT_FOUND");
             assertThat(response.getBody().get("seasonId")).isEqualTo(999);
         }
 

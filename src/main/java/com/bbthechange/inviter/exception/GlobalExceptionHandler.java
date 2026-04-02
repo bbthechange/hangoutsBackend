@@ -27,7 +27,8 @@ public class GlobalExceptionHandler {
         logger.warn("Conditional check failed (requestId={}): {}", e.requestId(), e.getMessage());
 
         Map<String, Object> errorResponse = new HashMap<>();
-        errorResponse.put("error", "CONFLICT");
+        errorResponse.put("error", "Resource was modified concurrently. Please retry.");
+        errorResponse.put("code", "CONFLICT");
         errorResponse.put("message", "Resource was modified concurrently. Please retry.");
 
         return new ResponseEntity<>(errorResponse, HttpStatus.CONFLICT);
@@ -40,7 +41,8 @@ public class GlobalExceptionHandler {
                 e.requestId(), e.cancellationReasons());
 
         Map<String, Object> errorResponse = new HashMap<>();
-        errorResponse.put("error", "TRANSACTION_CONFLICT");
+        errorResponse.put("error", "Operation conflicted with another request. Please retry.");
+        errorResponse.put("code", "TRANSACTION_CONFLICT");
         errorResponse.put("message", "Operation conflicted with another request. Please retry.");
 
         return new ResponseEntity<>(errorResponse, HttpStatus.CONFLICT);
@@ -52,7 +54,8 @@ public class GlobalExceptionHandler {
         logger.error("DynamoDB throughput exceeded after SDK retries (requestId={})", e.requestId());
 
         Map<String, Object> errorResponse = new HashMap<>();
-        errorResponse.put("error", "SERVICE_UNAVAILABLE");
+        errorResponse.put("error", "Database capacity temporarily exceeded. Please retry later.");
+        errorResponse.put("code", "SERVICE_UNAVAILABLE");
         errorResponse.put("message", "Database capacity temporarily exceeded. Please retry later.");
 
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
@@ -65,7 +68,8 @@ public class GlobalExceptionHandler {
         logger.error("Repository operation failed: {}", e.getMessage(), e);
 
         Map<String, Object> errorResponse = new HashMap<>();
-        errorResponse.put("error", "INTERNAL_ERROR");
+        errorResponse.put("error", "An internal error occurred.");
+        errorResponse.put("code", "INTERNAL_ERROR");
         errorResponse.put("message", "An internal error occurred.");
 
         return new ResponseEntity<>(errorResponse, HttpStatus.INTERNAL_SERVER_ERROR);
@@ -76,7 +80,8 @@ public class GlobalExceptionHandler {
         logger.error("Transaction failed: {}", e.getMessage(), e);
 
         Map<String, Object> errorResponse = new HashMap<>();
-        errorResponse.put("error", "TRANSACTION_FAILED");
+        errorResponse.put("error", "Operation could not be completed. Please retry.");
+        errorResponse.put("code", "TRANSACTION_FAILED");
         errorResponse.put("message", "Operation could not be completed. Please retry.");
 
         return new ResponseEntity<>(errorResponse, HttpStatus.CONFLICT);
@@ -87,7 +92,8 @@ public class GlobalExceptionHandler {
         logger.error("AWS SDK client error (network/config): {}", e.getMessage(), e);
 
         Map<String, Object> errorResponse = new HashMap<>();
-        errorResponse.put("error", "SERVICE_UNAVAILABLE");
+        errorResponse.put("error", "Service temporarily unavailable.");
+        errorResponse.put("code", "SERVICE_UNAVAILABLE");
         errorResponse.put("message", "Service temporarily unavailable.");
 
         return new ResponseEntity<>(errorResponse, HttpStatus.SERVICE_UNAVAILABLE);
@@ -99,7 +105,8 @@ public class GlobalExceptionHandler {
             logger.error("DynamoDB throttling after SDK retries (requestId={})", e.requestId());
 
             Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("error", "THROTTLED");
+            errorResponse.put("error", "Service is temporarily overloaded. Please retry later.");
+            errorResponse.put("code", "THROTTLED");
             errorResponse.put("message", "Service is temporarily overloaded. Please retry later.");
 
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
@@ -152,6 +159,7 @@ public class GlobalExceptionHandler {
 
         Map<String, Object> errorResponse = new HashMap<>();
         errorResponse.put("error", "EVENT_NOT_FOUND");
+        errorResponse.put("code", "EVENT_NOT_FOUND");
         errorResponse.put("message", e.getMessage());
         errorResponse.put("timestamp", System.currentTimeMillis());
 
@@ -165,6 +173,7 @@ public class GlobalExceptionHandler {
 
         Map<String, Object> errorResponse = new HashMap<>();
         errorResponse.put("error", "TVMAZE_" + e.getErrorType().name());
+        errorResponse.put("code", "TVMAZE_" + e.getErrorType().name());
         errorResponse.put("message", e.getMessage());
         errorResponse.put("timestamp", System.currentTimeMillis());
         if (e.getSeasonId() != null) {
