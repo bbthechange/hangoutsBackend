@@ -6,11 +6,17 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
 import software.amazon.awssdk.services.dynamodb.model.DynamoDbException;
+import software.amazon.awssdk.services.dynamodb.model.ProvisionedThroughputExceededException;
+import software.amazon.awssdk.services.dynamodb.model.TransactionCanceledException;
 
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for GlobalExceptionHandler
@@ -29,21 +35,197 @@ class GlobalExceptionHandlerTest {
     }
 
     @Nested
-    @DisplayName("handleDynamoDbException")
+    @DisplayName("handleConditionalCheckFailed")
+    class HandleConditionalCheckFailedTests {
+
+        @Test
+        @DisplayName("Should return 409 Conflict for conditional check failures")
+        void handleConditionalCheckFailed_Returns409() {
+            ConditionalCheckFailedException exception =
+                    (ConditionalCheckFailedException) ConditionalCheckFailedException.builder()
+                            .message("The conditional request failed")
+                            .build();
+
+            ResponseEntity<Map<String, Object>> response = handler.handleConditionalCheckFailed(exception);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+            assertThat(response.getBody()).isNotNull();
+            assertThat(response.getBody().get("error")).isEqualTo("CONFLICT");
+            assertThat(response.getBody().get("message")).isEqualTo("Resource was modified concurrently. Please retry.");
+        }
+
+        @Test
+        @DisplayName("Should not expose internal condition expression details")
+        void handleConditionalCheckFailed_HidesInternalDetails() {
+            ConditionalCheckFailedException exception =
+                    (ConditionalCheckFailedException) ConditionalCheckFailedException.builder()
+                            .message("ConditionalCheckFailedException: attribute_not_exists(version)")
+                            .build();
+
+            ResponseEntity<Map<String, Object>> response = handler.handleConditionalCheckFailed(exception);
+
+            assertThat(response.getBody()).isNotNull();
+            assertThat(response.getBody().get("message").toString())
+                    .doesNotContain("attribute_not_exists")
+                    .doesNotContain("version");
+        }
+    }
+
+    @Nested
+    @DisplayName("handleTransactionCanceled")
+    class HandleTransactionCanceledTests {
+
+        @Test
+        @DisplayName("Should return 409 Conflict for canceled transactions")
+        void handleTransactionCanceled_Returns409() {
+            TransactionCanceledException exception =
+                    (TransactionCanceledException) TransactionCanceledException.builder()
+                            .message("Transaction cancelled")
+                            .build();
+
+            ResponseEntity<Map<String, Object>> response = handler.handleTransactionCanceled(exception);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+            assertThat(response.getBody()).isNotNull();
+            assertThat(response.getBody().get("error")).isEqualTo("TRANSACTION_CONFLICT");
+            assertThat(response.getBody().get("message")).isEqualTo("Operation conflicted with another request. Please retry.");
+        }
+    }
+
+    @Nested
+    @DisplayName("handleThroughputExceeded")
+    class HandleThroughputExceededTests {
+
+        @Test
+        @DisplayName("Should return 503 Service Unavailable for throughput exceeded")
+        void handleThroughputExceeded_Returns503() {
+            ProvisionedThroughputExceededException exception =
+                    (ProvisionedThroughputExceededException) ProvisionedThroughputExceededException.builder()
+                            .message("Throughput exceeds the current capacity")
+                            .build();
+
+            ResponseEntity<Map<String, Object>> response = handler.handleThroughputExceeded(exception);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+            assertThat(response.getBody()).isNotNull();
+            assertThat(response.getBody().get("error")).isEqualTo("SERVICE_UNAVAILABLE");
+            assertThat(response.getBody().get("message")).isEqualTo("Database capacity temporarily exceeded. Please retry later.");
+        }
+
+        @Test
+        @DisplayName("Should include Retry-After header")
+        void handleThroughputExceeded_IncludesRetryAfterHeader() {
+            ProvisionedThroughputExceededException exception =
+                    (ProvisionedThroughputExceededException) ProvisionedThroughputExceededException.builder()
+                            .message("Throughput exceeds the current capacity")
+                            .build();
+
+            ResponseEntity<Map<String, Object>> response = handler.handleThroughputExceeded(exception);
+
+            assertThat(response.getHeaders().getFirst("Retry-After")).isEqualTo("10");
+        }
+    }
+
+    @Nested
+    @DisplayName("handleRepositoryException")
+    class HandleRepositoryExceptionTests {
+
+        @Test
+        @DisplayName("Should return 500 Internal Server Error for repository exceptions")
+        void handleRepositoryException_Returns500() {
+            RepositoryException exception = new RepositoryException("Failed to save group",
+                    new RuntimeException("DynamoDB connection timeout"));
+
+            ResponseEntity<Map<String, Object>> response = handler.handleRepositoryException(exception);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+            assertThat(response.getBody()).isNotNull();
+            assertThat(response.getBody().get("error")).isEqualTo("INTERNAL_ERROR");
+            assertThat(response.getBody().get("message")).isEqualTo("An internal error occurred.");
+        }
+
+        @Test
+        @DisplayName("Should not expose cause details to client")
+        void handleRepositoryException_HidesCauseDetails() {
+            RepositoryException exception = new RepositoryException("Failed to save group",
+                    new RuntimeException("Connection to dynamodb-local:8000 refused"));
+
+            ResponseEntity<Map<String, Object>> response = handler.handleRepositoryException(exception);
+
+            assertThat(response.getBody()).isNotNull();
+            assertThat(response.getBody().get("message").toString())
+                    .doesNotContain("dynamodb-local")
+                    .doesNotContain("Connection");
+        }
+    }
+
+    @Nested
+    @DisplayName("handleTransactionFailed")
+    class HandleTransactionFailedTests {
+
+        @Test
+        @DisplayName("Should return 409 Conflict for transaction failures")
+        void handleTransactionFailed_Returns409() {
+            TransactionFailedException exception = new TransactionFailedException("Transaction failed",
+                    new RuntimeException("Version conflict"));
+
+            ResponseEntity<Map<String, Object>> response = handler.handleTransactionFailed(exception);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+            assertThat(response.getBody()).isNotNull();
+            assertThat(response.getBody().get("error")).isEqualTo("TRANSACTION_FAILED");
+            assertThat(response.getBody().get("message")).isEqualTo("Operation could not be completed. Please retry.");
+        }
+    }
+
+    @Nested
+    @DisplayName("handleSdkClientException")
+    class HandleSdkClientExceptionTests {
+
+        @Test
+        @DisplayName("Should return 503 Service Unavailable for SDK client errors")
+        void handleSdkClientException_Returns503() {
+            SdkClientException exception = SdkClientException.builder()
+                    .message("Unable to execute HTTP request: Connection refused")
+                    .build();
+
+            ResponseEntity<Map<String, Object>> response = handler.handleSdkClientException(exception);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+            assertThat(response.getBody()).isNotNull();
+            assertThat(response.getBody().get("error")).isEqualTo("SERVICE_UNAVAILABLE");
+            assertThat(response.getBody().get("message")).isEqualTo("Service temporarily unavailable.");
+        }
+
+        @Test
+        @DisplayName("Should not expose internal network details to client")
+        void handleSdkClientException_HidesInternalDetails() {
+            SdkClientException exception = SdkClientException.builder()
+                    .message("Unable to execute HTTP request: dynamodb.us-west-2.amazonaws.com")
+                    .build();
+
+            ResponseEntity<Map<String, Object>> response = handler.handleSdkClientException(exception);
+
+            assertThat(response.getBody()).isNotNull();
+            assertThat(response.getBody().get("message").toString())
+                    .doesNotContain("dynamodb")
+                    .doesNotContain("amazonaws");
+        }
+    }
+
+    @Nested
+    @DisplayName("handleDynamoDbException (fallback)")
     class HandleDynamoDbExceptionTests {
 
         @Test
-        @DisplayName("Should return 500 Internal Server Error for DynamoDB exceptions")
+        @DisplayName("Should return 500 Internal Server Error for unmapped DynamoDB exceptions")
         void handleDynamoDbException_Returns500() {
-            // Arrange
             DynamoDbException exception = (DynamoDbException) DynamoDbException.builder()
                     .message("Connection failed")
                     .build();
 
-            // Act
             ResponseEntity<Map<String, Object>> response = handler.handleDynamoDbException(exception);
 
-            // Assert
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
             assertThat(response.getBody()).isNotNull();
             assertThat(response.getBody().get("error")).isEqualTo("Database error occurred");
@@ -53,19 +235,34 @@ class GlobalExceptionHandlerTest {
         @Test
         @DisplayName("Should not expose internal DynamoDB error details to client")
         void handleDynamoDbException_HidesInternalDetails() {
-            // Arrange
             DynamoDbException exception = (DynamoDbException) DynamoDbException.builder()
                     .message("ValidationException: The provided key element does not match the schema")
                     .build();
 
-            // Act
             ResponseEntity<Map<String, Object>> response = handler.handleDynamoDbException(exception);
 
-            // Assert
             assertThat(response.getBody()).isNotNull();
             assertThat(response.getBody().get("message").toString())
                     .doesNotContain("ValidationException")
                     .doesNotContain("schema");
+        }
+
+        @Test
+        @DisplayName("Should return 429 Too Many Requests for throttling exceptions")
+        void handleDynamoDbException_Throttling_Returns429() {
+            // Use a mock to simulate a DynamoDbException where isThrottlingException() is true
+            // This covers throttling variants that don't have their own dedicated handler
+            DynamoDbException exception = mock(DynamoDbException.class);
+            when(exception.isThrottlingException()).thenReturn(true);
+            when(exception.requestId()).thenReturn("test-request-id");
+
+            ResponseEntity<Map<String, Object>> response = handler.handleDynamoDbException(exception);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+            assertThat(response.getBody()).isNotNull();
+            assertThat(response.getBody().get("error")).isEqualTo("THROTTLED");
+            assertThat(response.getBody().get("message")).isEqualTo("Service is temporarily overloaded. Please retry later.");
+            assertThat(response.getHeaders().getFirst("Retry-After")).isEqualTo("5");
         }
     }
 
