@@ -170,7 +170,7 @@ Updates watch party settings.
 }
 ```
 
-**`changeExistingUpcomingHangouts`** (default: true): If true, cascades changes to all future hangouts.
+**`changeExistingUpcomingHangouts`** (default: true): If true, cascades changes to all future hangouts. When cascading a timezone change, the original timezone is used for air date extraction to prevent date drift (see Time Calculation section).
 **`showImageUrl`**: Set to new URL to change image, `""` to clear, omit to leave unchanged.
 
 ### DELETE /groups/{groupId}/watch-parties/{seriesId}
@@ -227,6 +227,10 @@ long startTimestamp = zdt.toEpochSecond();
 ```
 
 IANA timezone handles DST automatically.
+
+### Cascade Timezone Change
+
+When cascading a timezone change to existing hangouts, the air date must be extracted using the **original** timezone (before the update), not the new one. The air timestamp is an absolute UTC instant, and interpreting it in a different timezone can land on a different calendar date (e.g., Friday 11:28 PM PDT vs Saturday 2:28 AM EDT). The 5-param overload `calculateStartTimestamp(airTimestamp, defaultTime, timezone, dayOverride, airDateTimezone)` handles this — pass the original timezone as `airDateTimezone`.
 
 ### Day Override
 

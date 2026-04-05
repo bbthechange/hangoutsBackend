@@ -324,7 +324,8 @@ public class WatchPartyServiceImpl implements WatchPartyService {
             }
         }
 
-        // 6. Check if time-related settings changed
+        // 6. Check if time-related settings changed (capture original timezone before mutation for cascade)
+        String originalTimezone = series.getTimezone();
         boolean timeSettingsChanged = !Objects.equals(effectiveDefaultTime, series.getDefaultTime()) ||
                 !Objects.equals(effectiveTimezone, series.getTimezone()) ||
                 !Objects.equals(effectiveDayOverride, series.getDayOverride());
@@ -376,12 +377,14 @@ public class WatchPartyServiceImpl implements WatchPartyService {
                                 ? hangout.getEndTimestamp() - hangout.getStartTimestamp()
                                 : 3600L; // Default 1 hour if not set
 
-                        // Calculate new timestamp
+                        // Calculate new timestamp (use original timezone for air date extraction
+                        // to prevent date drift when timezone changes)
                         long newStartTimestamp = calculateStartTimestamp(
                                 originalAirTimestamp,
                                 effectiveDefaultTime,
                                 effectiveTimezone,
-                                effectiveDayOverride
+                                effectiveDayOverride,
+                                originalTimezone
                         );
                         long newEndTimestamp = newStartTimestamp + originalDuration;
 
@@ -756,12 +759,23 @@ public class WatchPartyServiceImpl implements WatchPartyService {
      * DST-aware using IANA timezone.
      */
     long calculateStartTimestamp(Long airTimestamp, String defaultTime, String timezone, Integer dayOverride) {
+        return calculateStartTimestamp(airTimestamp, defaultTime, timezone, dayOverride, timezone);
+    }
+
+    /**
+     * Calculate start timestamp with a separate timezone for air date extraction.
+     * Use this overload during cascade updates where the scheduling timezone has changed
+     * but the air date should be derived using the original timezone to prevent date drift.
+     */
+    long calculateStartTimestamp(Long airTimestamp, String defaultTime, String timezone,
+                                 Integer dayOverride, String airDateTimezone) {
         ZoneId zone = ZoneId.of(timezone);
+        ZoneId airZone = ZoneId.of(airDateTimezone);
         LocalTime time = LocalTime.parse(defaultTime, DateTimeFormatter.ofPattern("HH:mm"));
 
-        // Convert air timestamp to date in user's timezone to establish the correct calendar day
+        // Convert air timestamp to date using airDateTimezone to establish the correct calendar day
         Instant airInstant = Instant.ofEpochSecond(airTimestamp);
-        LocalDate airDate = airInstant.atZone(zone).toLocalDate();
+        LocalDate airDate = airInstant.atZone(airZone).toLocalDate();
 
         // Apply day override if specified
         LocalDate targetDate = airDate;

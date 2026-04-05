@@ -2373,5 +2373,35 @@ class WatchPartyServiceImplTest {
             assertThat(resultZdt.getDayOfWeek()).isEqualTo(java.time.DayOfWeek.FRIDAY);
             assertThat(resultZdt.getDayOfMonth()).isEqualTo(21);
         }
+
+        @Test
+        void calculateStartTimestamp_TimezoneChangeCascade_PreservesOriginalDate() {
+            // Simulate the flaky staging test scenario:
+            // Air timestamp at ~6:28 AM UTC on a given day (e.g., Saturday April 5, 2025)
+            // In LA (PDT, UTC-7): Friday April 4 at 11:28 PM → airDate = April 4
+            // In NY (EDT, UTC-4): Saturday April 5 at 2:28 AM → airDate = April 5 (WRONG)
+            // Using the 5-param overload with LA as airDateTimezone should keep April 4
+            long earlyMorningUtc = 1743833280L; // 2025-04-05T06:28:00Z
+            String newTimezone = "America/New_York";
+            String originalTimezone = "America/Los_Angeles";
+            String defaultTime = "20:00";
+
+            // With airDateTimezone = original LA timezone, date should be April 4
+            long result = watchPartyService.calculateStartTimestamp(
+                    earlyMorningUtc, defaultTime, newTimezone, null, originalTimezone);
+
+            java.time.ZonedDateTime resultZdt = java.time.Instant.ofEpochSecond(result)
+                    .atZone(java.time.ZoneId.of(newTimezone));
+            // Should be Friday April 4 at 8PM ET (date from LA timezone, time in NY timezone)
+            assertThat(resultZdt.getDayOfMonth()).isEqualTo(4);
+            assertThat(resultZdt.getHour()).isEqualTo(20);
+
+            // Verify: without the fix (using NY for both), it would incorrectly be April 5
+            long wrongResult = watchPartyService.calculateStartTimestamp(
+                    earlyMorningUtc, defaultTime, newTimezone, null, newTimezone);
+            java.time.ZonedDateTime wrongZdt = java.time.Instant.ofEpochSecond(wrongResult)
+                    .atZone(java.time.ZoneId.of(newTimezone));
+            assertThat(wrongZdt.getDayOfMonth()).isEqualTo(5); // confirms the bug without the fix
+        }
     }
 }
