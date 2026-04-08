@@ -1,5 +1,7 @@
 package com.bbthechange.inviter.dto;
 
+import java.util.List;
+
 /**
  * DTO for poll option with vote count.
  */
@@ -10,6 +12,7 @@ public class PollOptionDTO {
     private boolean userVoted;
     private String createdBy;
     private String structuredValue;
+    private List<VoteDTO> votes = List.of();
 
     public PollOptionDTO() {}
 
@@ -76,5 +79,13 @@ public class PollOptionDTO {
 
     public void setStructuredValue(String structuredValue) {
         this.structuredValue = structuredValue;
+    }
+
+    public List<VoteDTO> getVotes() {
+        return votes;
+    }
+
+    public void setVotes(List<VoteDTO> votes) {
+        this.votes = votes;
     }
 }

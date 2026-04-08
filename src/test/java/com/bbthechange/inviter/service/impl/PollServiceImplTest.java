@@ -9,6 +9,7 @@ import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.service.AuthorizationService;
 import com.bbthechange.inviter.service.GroupTimestampService;
 import com.bbthechange.inviter.service.PollService;
+import com.bbthechange.inviter.service.UserService;
 import com.bbthechange.inviter.testutil.HangoutPointerTestBuilder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -43,6 +44,12 @@ class PollServiceImplTest {
 
     @Mock
     private GroupTimestampService groupTimestampService;
+
+    @Mock
+    private com.bbthechange.inviter.service.AttributeSuggestionService attributeSuggestionService;
+
+    @Mock
+    private UserService userService;
 
     @InjectMocks
     private PollServiceImpl pollService;

@@ -28,7 +28,8 @@ This hierarchical key structure is powerful because it allows fetching all data 
 | `Poll.java` | The `@DynamoDbBean` for the poll record. |
 | `PollOption.java` | The `@DynamoDbBean` for a poll option record. |
 | `Vote.java` | The `@DynamoDbBean` for a user's vote record. |
-| `PollWithOptionsDTO.java` | A DTO used to return poll data with calculated vote counts. |
+| `PollWithOptionsDTO.java` | A DTO used to return poll data with calculated vote counts. Each `PollOptionDTO` includes a `votes` list with `userId`, `voteType`, and `displayName`. |
+| `VoteDTO.java` | Individual vote with `userId`, `voteType`, and `displayName` (enriched from username cache). |
 
 ## 4. Core Flows
 
@@ -64,3 +65,4 @@ This is the most critical flow to understand.
     *   `SK` = `begins_with(POLL#{pollId})`
     *   This one query efficiently retrieves the `Poll` record, all of its `PollOption` records, and all of its `Vote` records.
 5.  **Runtime Calculation:** Back in `PollServiceImpl`, the `transformToPollDetailDTO` method receives this list of items. It then iterates through the `Vote` records in application memory to calculate the total votes for each option before building the final DTO to send to the client. **Vote counts are not stored or updated in DynamoDB.**
+6.  **Display Name Enrichment:** Each `VoteDTO` is enriched with the voter's `displayName` via `UserService.getUserSummary()` (Caffeine-cached). This happens in `PollServiceImpl.transformToPollDetailDTO()` for the poll detail endpoint, and in `HangoutServiceImpl.getHangoutDetailInternal()` for the hangout detail endpoint.

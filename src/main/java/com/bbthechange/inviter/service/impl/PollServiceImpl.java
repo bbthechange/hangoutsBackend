@@ -4,6 +4,7 @@ import com.bbthechange.inviter.model.Hangout;
 import com.bbthechange.inviter.service.PollService;
 import com.bbthechange.inviter.service.AuthorizationService;
 import com.bbthechange.inviter.service.GroupTimestampService;
+import com.bbthechange.inviter.service.UserService;
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.HangoutRepository;
@@ -37,6 +38,7 @@ public class PollServiceImpl implements PollService {
     private final PointerUpdateService pointerUpdateService;
     private final GroupTimestampService groupTimestampService;
     private final com.bbthechange.inviter.service.AttributeSuggestionService attributeSuggestionService;
+    private final UserService userService;
 
     @Autowired
     public PollServiceImpl(HangoutRepository hangoutRepository, GroupRepository groupRepository,
@@ -44,13 +46,15 @@ public class PollServiceImpl implements PollService {
                           PointerUpdateService pointerUpdateService,
                           GroupTimestampService groupTimestampService,
                           @org.springframework.context.annotation.Lazy
-                          com.bbthechange.inviter.service.AttributeSuggestionService attributeSuggestionService) {
+                          com.bbthechange.inviter.service.AttributeSuggestionService attributeSuggestionService,
+                          UserService userService) {
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
         this.authorizationService = authorizationService;
         this.pointerUpdateService = pointerUpdateService;
         this.groupTimestampService = groupTimestampService;
         this.attributeSuggestionService = attributeSuggestionService;
+        this.userService = userService;
     }
     
     @Override
@@ -489,7 +493,12 @@ public class PollServiceImpl implements PollService {
                     .anyMatch(vote -> vote.getUserId().equals(userId));
                 
                 List<VoteDTO> voteDTOs = optionVotes.stream()
-                    .map(VoteDTO::new)
+                    .map(vote -> {
+                        VoteDTO dto = new VoteDTO(vote);
+                        userService.getUserSummary(UUID.fromString(vote.getUserId()))
+                            .ifPresent(u -> dto.setDisplayName(u.getDisplayName()));
+                        return dto;
+                    })
                     .collect(Collectors.toList());
                 
                 // Runtime calculation - count the actual votes

@@ -47,22 +47,31 @@ public class HangoutDataTransformer {
                     List<PollOption> options = optionsByPoll.getOrDefault(poll.getPollId(), List.of());
                     List<Vote> pollVotes = votesByPoll.getOrDefault(poll.getPollId(), List.of());
 
-                    // Calculate vote counts by option at runtime
-                    Map<String, Long> voteCountsByOption = pollVotes.stream()
-                            .collect(Collectors.groupingBy(Vote::getOptionId, Collectors.counting()));
+                    // Group votes by option for efficient lookup
+                    Map<String, List<Vote>> votesByOption = pollVotes.stream()
+                            .collect(Collectors.groupingBy(Vote::getOptionId));
 
                     List<PollOptionDTO> optionDTOs = options.stream()
                             .map(option -> {
+                                List<Vote> optionVotes = votesByOption.getOrDefault(option.getOptionId(), List.of());
+
                                 // Runtime calculation - no denormalized count field needed
-                                int voteCount = voteCountsByOption.getOrDefault(option.getOptionId(), 0L).intValue();
+                                int voteCount = optionVotes.size();
 
-                                boolean userVoted = pollVotes.stream()
-                                        .anyMatch(vote -> vote.getOptionId().equals(option.getOptionId())
-                                                && vote.getUserId().equals(requestingUserId));
+                                boolean userVoted = optionVotes.stream()
+                                        .anyMatch(vote -> vote.getUserId().equals(requestingUserId));
 
-                                return new PollOptionDTO(option.getOptionId(), option.getText(),
+                                PollOptionDTO optionDTO = new PollOptionDTO(option.getOptionId(), option.getText(),
                                         voteCount, userVoted,
                                         option.getCreatedBy(), option.getStructuredValue());
+
+                                // Attach voter list (displayName enriched later by service layer)
+                                List<VoteDTO> voteDTOs = optionVotes.stream()
+                                        .map(VoteDTO::new)
+                                        .collect(Collectors.toList());
+                                optionDTO.setVotes(voteDTOs);
+
+                                return optionDTO;
                             })
                             .collect(Collectors.toList());
 

@@ -300,6 +300,18 @@ public class HangoutServiceImpl implements HangoutService {
         // Transform poll data with options and vote counts directly from the single query
         List<PollWithOptionsDTO> pollsWithOptions = transformPollData(hangoutDetail, requestingUserId);
         
+        // Enrich poll voter display names from username cache
+        for (PollWithOptionsDTO poll : pollsWithOptions) {
+            for (PollOptionDTO option : poll.getOptions()) {
+                if (option.getVotes() != null) {
+                    for (VoteDTO vote : option.getVotes()) {
+                        userService.getUserSummary(UUID.fromString(vote.getUserId()))
+                            .ifPresent(u -> vote.setDisplayName(u.getDisplayName()));
+                    }
+                }
+            }
+        }
+
         // Transform to DTO with formatted timeInfo
         TimeInfo timeInfo = formatTimeInfoForResponse(hangout.getTimeInput());
         hangout.setTimeInput(timeInfo);

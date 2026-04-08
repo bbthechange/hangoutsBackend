@@ -8,6 +8,7 @@ import com.bbthechange.inviter.model.Vote;
 public class VoteDTO {
     private String userId;
     private String voteType;
+    private String displayName;
     
     public VoteDTO() {}
     
@@ -30,5 +31,13 @@ public class VoteDTO {
     
     public void setVoteType(String voteType) {
         this.voteType = voteType;
+    }
+
+    public String getDisplayName() {
+        return displayName;
+    }
+
+    public void setDisplayName(String displayName) {
+        this.displayName = displayName;
     }
 }

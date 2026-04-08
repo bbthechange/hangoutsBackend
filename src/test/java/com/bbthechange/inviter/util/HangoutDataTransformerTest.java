@@ -67,6 +67,8 @@ class HangoutDataTransformerTest {
         assertThat(dto.getOptions().get(1).getVoteCount()).isEqualTo(0);
         assertThat(dto.getOptions().get(0).isUserVoted()).isFalse();
         assertThat(dto.getOptions().get(1).isUserVoted()).isFalse();
+        assertThat(dto.getOptions().get(0).getVotes()).isEmpty();
+        assertThat(dto.getOptions().get(1).getVotes()).isEmpty();
     }
 
     @Test
@@ -112,6 +114,11 @@ class HangoutDataTransformerTest {
                 .findFirst().orElseThrow();
         assertThat(option1DTO.getVoteCount()).isEqualTo(3);
         assertThat(option1DTO.isUserVoted()).isTrue(); // userId voted for option-1
+        // Voter list should be populated (without display names - enrichment happens in service layer)
+        assertThat(option1DTO.getVotes()).hasSize(3);
+        assertThat(option1DTO.getVotes()).extracting(VoteDTO::getUserId)
+                .containsExactlyInAnyOrder(userId, user2Id, user3Id);
+        assertThat(option1DTO.getVotes()).allSatisfy(v -> assertThat(v.getDisplayName()).isNull());
 
         // Option 2 should have 1 vote
         PollOptionDTO option2DTO = dto.getOptions().stream()
@@ -119,6 +126,8 @@ class HangoutDataTransformerTest {
                 .findFirst().orElseThrow();
         assertThat(option2DTO.getVoteCount()).isEqualTo(1);
         assertThat(option2DTO.isUserVoted()).isFalse(); // userId did not vote for option-2
+        assertThat(option2DTO.getVotes()).hasSize(1);
+        assertThat(option2DTO.getVotes().get(0).getUserId()).isEqualTo(user4Id);
     }
 
     @Test
