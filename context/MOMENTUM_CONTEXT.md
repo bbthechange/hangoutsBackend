@@ -53,7 +53,7 @@ The system uses two separate scores to prevent low-commitment "Interested" signa
 | Interested RSVP | +1 each | **not counted** |
 | Time added (startTimestamp != null) | +1 | +1 |
 | Location added (location != null) | +1 | +1 |
-| Concrete action (tickets + link, or carpool riders) | Instant CONFIRMED | Instant CONFIRMED |
+| Concrete action (TICKET_PURCHASED participation, or carpool riders) | Instant CONFIRMED | Instant CONFIRMED |
 
 ### Multipliers (compound — both can apply)
 
@@ -151,7 +151,7 @@ Group engagement data uses a Caffeine cache:
 
 1. **At creation** — "Lock it in" button sends `confirmed: true` in `POST /hangouts`
 2. **Post-creation by anyone** — "It's on!" sends `confirmed: true` in `PATCH /hangouts/{id}`
-3. **Concrete action** — tickets purchased (ticketsRequired + ticketLink) or carpool rider added → auto-confirms via `recomputeMomentum`
+3. **Concrete action** — ticket purchased (TICKET_PURCHASED participation exists) or carpool rider added → auto-confirms via `recomputeMomentum`. Note: ticket metadata (ticketsRequired + ticketLink) is informational only and does NOT trigger confirmation.
 4. **Score-based** — crossing upper threshold (score ≥ threshold × 2) auto-confirms (requires date)
 
 ## 10. Feed Filter

@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -442,14 +443,34 @@ class MomentumServiceImplTest {
     // ============================================================================
 
     @Test
-    void recomputeMomentum_ticketsRequiredWithLink_instantConfirmed() {
+    void recomputeMomentum_ticketMetadataOnly_notConcreteAction() {
         Hangout hangout = buildHangout("h-tickets", MomentumCategory.BUILDING);
         hangout.setTicketsRequired(true);
         hangout.setTicketLink("https://tickets.com/event");
         when(hangoutRepository.findHangoutById("h-tickets")).thenReturn(Optional.of(hangout));
         when(hangoutRepository.getHangoutDetailData("h-tickets")).thenReturn(detailData(List.of()));
+        mockFiveMembers();
 
         momentumService.recomputeMomentum("h-tickets");
+
+        // Ticket metadata alone is NOT a concrete action — no one actually purchased tickets
+        assertThat(hangout.getMomentumCategory()).isNotEqualTo(MomentumCategory.CONFIRMED);
+    }
+
+    @Test
+    void recomputeMomentum_ticketPurchasedParticipation_instantConfirmed() {
+        Hangout hangout = buildHangout("h-purchased", MomentumCategory.BUILDING);
+        when(hangoutRepository.findHangoutById("h-purchased")).thenReturn(Optional.of(hangout));
+
+        Participation purchase = new Participation();
+        purchase.setType(ParticipationType.TICKET_PURCHASED);
+        HangoutDetailData detail = HangoutDetailData.builder()
+                .withAttendance(List.of())
+                .withParticipations(List.of(purchase))
+                .build();
+        when(hangoutRepository.getHangoutDetailData("h-purchased")).thenReturn(detail);
+
+        momentumService.recomputeMomentum("h-purchased");
 
         assertThat(hangout.getMomentumCategory()).isEqualTo(MomentumCategory.CONFIRMED);
         assertThat(hangout.getConfirmedBy()).isEqualTo("SYSTEM");
@@ -457,33 +478,25 @@ class MomentumServiceImplTest {
     }
 
     @Test
-    void recomputeMomentum_ticketsRequiredButNoLink_notConcreteAction() {
-        Hangout hangout = buildHangout("h-nolink", MomentumCategory.BUILDING);
-        hangout.setTicketsRequired(true);
-        hangout.setTicketLink(null);
-        when(hangoutRepository.findHangoutById("h-nolink")).thenReturn(Optional.of(hangout));
-        when(hangoutRepository.getHangoutDetailData("h-nolink")).thenReturn(detailData(List.of()));
+    void recomputeMomentum_ticketNeededOnly_notConcreteAction() {
+        Hangout hangout = buildHangout("h-needed", MomentumCategory.BUILDING);
+        when(hangoutRepository.findHangoutById("h-needed")).thenReturn(Optional.of(hangout));
+
+        Participation needed = new Participation();
+        needed.setType(ParticipationType.TICKET_NEEDED);
+        HangoutDetailData detail = HangoutDetailData.builder()
+                .withAttendance(List.of())
+                .withParticipations(List.of(needed))
+                .build();
+        when(hangoutRepository.getHangoutDetailData("h-needed")).thenReturn(detail);
         mockFiveMembers();
 
-        momentumService.recomputeMomentum("h-nolink");
+        momentumService.recomputeMomentum("h-needed");
 
-        // Should NOT be auto-confirmed from concrete action alone
+        // TICKET_NEEDED is not a concrete action — no one has purchased yet
         assertThat(hangout.getMomentumCategory()).isNotEqualTo(MomentumCategory.CONFIRMED);
     }
 
-    @Test
-    void recomputeMomentum_ticketsRequiredWithBlankLink_notConcreteAction() {
-        Hangout hangout = buildHangout("h-blank", MomentumCategory.BUILDING);
-        hangout.setTicketsRequired(true);
-        hangout.setTicketLink("   ");
-        when(hangoutRepository.findHangoutById("h-blank")).thenReturn(Optional.of(hangout));
-        when(hangoutRepository.getHangoutDetailData("h-blank")).thenReturn(detailData(List.of()));
-        mockFiveMembers();
-
-        momentumService.recomputeMomentum("h-blank");
-
-        assertThat(hangout.getMomentumCategory()).isNotEqualTo(MomentumCategory.CONFIRMED);
-    }
 
     @Test
     void recomputeMomentum_carpoolWithRiders_instantConfirmed() {
@@ -795,11 +808,14 @@ class MomentumServiceImplTest {
     @Test
     void recomputeMomentum_concreteAction_usesConcreteActionSignal() {
         Hangout hangout = buildHangout("h-notif4", MomentumCategory.BUILDING);
-        hangout.setTicketsRequired(true);
-        hangout.setTicketLink("https://tickets.example.com");
         when(hangoutRepository.findHangoutById("h-notif4")).thenReturn(Optional.of(hangout));
 
-        HangoutDetailData detail = detailData(List.of());
+        Participation purchase = new Participation();
+        purchase.setType(ParticipationType.TICKET_PURCHASED);
+        HangoutDetailData detail = HangoutDetailData.builder()
+                .withAttendance(List.of())
+                .withParticipations(List.of(purchase))
+                .build();
         when(hangoutRepository.getHangoutDetailData("h-notif4")).thenReturn(detail);
 
         when(adaptiveNotificationService.shouldSendNotification(

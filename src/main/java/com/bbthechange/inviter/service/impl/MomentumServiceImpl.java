@@ -149,7 +149,7 @@ public class MomentumServiceImpl implements MomentumService {
         List<InterestLevel> interestLevels = detailData.getAttendance();
 
         // Step 4: Check for concrete action (instant CONFIRMED)
-        if (hasConcreteAction(hangout, detailData)) {
+        if (hasConcreteAction(detailData)) {
             applyConfirmation(hangout, SYSTEM_CONFIRMED_BY);
             saveAndUpdatePointers(hangout);
             maybeNotifyMomentumChange(hangout, previousCategory, MomentumCategory.CONFIRMED,
@@ -277,16 +277,17 @@ public class MomentumServiceImpl implements MomentumService {
     }
 
     /**
-     * A concrete action exists if: ticketsRequired=true with a ticketLink set,
+     * A concrete action exists if: at least one TICKET_PURCHASED participation exists,
      * OR carpool has at least one rider.
      * Either triggers instant CONFIRMED.
+     *
+     * Note: ticket metadata (ticketsRequired + ticketLink) is informational only —
+     * it indicates where tickets CAN be purchased, not that anyone has purchased them.
      */
-    private boolean hasConcreteAction(Hangout hangout,
-                                       com.bbthechange.inviter.dto.HangoutDetailData detailData) {
-        boolean hasTickets = Boolean.TRUE.equals(hangout.getTicketsRequired())
-                && hangout.getTicketLink() != null
-                && !hangout.getTicketLink().isBlank();
-        if (hasTickets) {
+    private boolean hasConcreteAction(com.bbthechange.inviter.dto.HangoutDetailData detailData) {
+        boolean hasTicketPurchase = detailData.getParticipations().stream()
+                .anyMatch(p -> ParticipationType.TICKET_PURCHASED == p.getType());
+        if (hasTicketPurchase) {
             return true;
         }
 
