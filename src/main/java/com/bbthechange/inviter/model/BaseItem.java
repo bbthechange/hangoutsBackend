@@ -30,7 +30,6 @@ public abstract class BaseItem {
         this.updatedAt = Instant.now();
     }
     
-    @JsonIgnore
     @DynamoDbPartitionKey
     public String getPk() {
         return pk;
@@ -40,7 +39,6 @@ public abstract class BaseItem {
         this.pk = pk;
     }
     
-    @JsonIgnore
     @DynamoDbSortKey
     public String getSk() {
         return sk;
@@ -108,7 +106,6 @@ public abstract class BaseItem {
         this.gsi3sk = gsi3sk;
     }
 
-    @JsonIgnore
     @DynamoDbAttribute("itemType")
     public String getItemType() {
         return itemType;
