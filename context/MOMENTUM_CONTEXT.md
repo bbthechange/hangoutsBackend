@@ -134,6 +134,9 @@ All fields are copied via `HangoutPointerFactory.applyHangoutFields()`.
 | RSVP set/changed | `HangoutServiceImpl.setUserInterest()` | After saving interest level |
 | Time/location added | `HangoutServiceImpl.updateHangout()` | After saving canonical if time or location changed |
 | Ticket fields changed | `HangoutServiceImpl.updateHangout()` | After saving canonical if ticket fields changed |
+| Ticket purchased | `ParticipationServiceImpl.createParticipation()` | After creating TICKET_PURCHASED participation |
+| Ticket status changed | `ParticipationServiceImpl.updateParticipation()` | After updating type to TICKET_PURCHASED |
+| Offer completed | `ReservationOfferServiceImpl.completeOffer()` | After batch converting TICKET_NEEDED → TICKET_PURCHASED |
 | Carpool rider added | Future integration point | After saving rider |
 
 `recomputeMomentum` is idempotent — safe to call multiple times.

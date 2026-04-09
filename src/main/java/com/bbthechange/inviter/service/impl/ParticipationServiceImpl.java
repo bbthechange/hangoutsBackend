@@ -17,6 +17,7 @@ import com.bbthechange.inviter.model.User;
 import com.bbthechange.inviter.repository.ParticipationRepository;
 import com.bbthechange.inviter.service.GroupTimestampService;
 import com.bbthechange.inviter.service.HangoutService;
+import com.bbthechange.inviter.service.MomentumService;
 import com.bbthechange.inviter.service.ParticipationService;
 import com.bbthechange.inviter.service.UserService;
 import org.slf4j.Logger;
@@ -38,6 +39,7 @@ public class ParticipationServiceImpl implements ParticipationService {
     private final ParticipationRepository participationRepository;
     private final HangoutService hangoutService;
     private final UserService userService;
+    private final MomentumService momentumService;
     private final PointerUpdateService pointerUpdateService;
     private final GroupTimestampService groupTimestampService;
 
@@ -46,11 +48,13 @@ public class ParticipationServiceImpl implements ParticipationService {
             ParticipationRepository participationRepository,
             HangoutService hangoutService,
             UserService userService,
+            MomentumService momentumService,
             PointerUpdateService pointerUpdateService,
             GroupTimestampService groupTimestampService) {
         this.participationRepository = participationRepository;
         this.hangoutService = hangoutService;
         this.userService = userService;
+        this.momentumService = momentumService;
         this.pointerUpdateService = pointerUpdateService;
         this.groupTimestampService = groupTimestampService;
     }
@@ -77,6 +81,15 @@ public class ParticipationServiceImpl implements ParticipationService {
 
         // CRITICAL: Sync pointers after canonical update
         updatePointersWithParticipationData(hangoutId, userId);
+
+        // Recompute momentum when a ticket is purchased (concrete action → auto-confirm)
+        if (request.getType() == ParticipationType.TICKET_PURCHASED) {
+            try {
+                momentumService.recomputeMomentum(hangoutId);
+            } catch (Exception e) {
+                logger.warn("Failed to recompute momentum for hangout {} after ticket purchase: {}", hangoutId, e.getMessage());
+            }
+        }
 
         logger.info("Successfully created participation {} for hangout {}", participationId, hangoutId);
 
@@ -175,6 +188,15 @@ public class ParticipationServiceImpl implements ParticipationService {
 
         // CRITICAL: Sync pointers after canonical update
         updatePointersWithParticipationData(hangoutId, userId);
+
+        // Recompute momentum when type changes to TICKET_PURCHASED (concrete action → auto-confirm)
+        if (request.getType() == ParticipationType.TICKET_PURCHASED) {
+            try {
+                momentumService.recomputeMomentum(hangoutId);
+            } catch (Exception e) {
+                logger.warn("Failed to recompute momentum for hangout {} after ticket purchase: {}", hangoutId, e.getMessage());
+            }
+        }
 
         // Get user info for denormalization
         User user = getUserForDenormalization(participation.getUserId());

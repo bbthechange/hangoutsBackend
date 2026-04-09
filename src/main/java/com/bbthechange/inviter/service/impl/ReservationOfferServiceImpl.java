@@ -24,6 +24,7 @@ import com.bbthechange.inviter.repository.ParticipationRepository;
 import com.bbthechange.inviter.repository.ReservationOfferRepository;
 import com.bbthechange.inviter.service.GroupTimestampService;
 import com.bbthechange.inviter.service.HangoutService;
+import com.bbthechange.inviter.service.MomentumService;
 import com.bbthechange.inviter.service.ReservationOfferService;
 import com.bbthechange.inviter.service.UserService;
 import com.bbthechange.inviter.util.InviterKeyFactory;
@@ -54,6 +55,7 @@ public class ReservationOfferServiceImpl implements ReservationOfferService {
     private final ParticipationRepository participationRepository;
     private final HangoutService hangoutService;
     private final UserService userService;
+    private final MomentumService momentumService;
     private final DynamoDbClient dynamoDbClient;
     private final PointerUpdateService pointerUpdateService;
     private final GroupTimestampService groupTimestampService;
@@ -64,6 +66,7 @@ public class ReservationOfferServiceImpl implements ReservationOfferService {
             ParticipationRepository participationRepository,
             HangoutService hangoutService,
             UserService userService,
+            MomentumService momentumService,
             DynamoDbClient dynamoDbClient,
             PointerUpdateService pointerUpdateService,
             GroupTimestampService groupTimestampService) {
@@ -71,6 +74,7 @@ public class ReservationOfferServiceImpl implements ReservationOfferService {
         this.participationRepository = participationRepository;
         this.hangoutService = hangoutService;
         this.userService = userService;
+        this.momentumService = momentumService;
         this.dynamoDbClient = dynamoDbClient;
         this.pointerUpdateService = pointerUpdateService;
         this.groupTimestampService = groupTimestampService;
@@ -319,6 +323,15 @@ public class ReservationOfferServiceImpl implements ReservationOfferService {
 
         // CRITICAL: Sync pointers after canonical update
         updatePointersWithParticipationData(hangoutId, userId);
+
+        // Recompute momentum after ticket purchases (concrete action → auto-confirm)
+        if (!participationsToConvert.isEmpty()) {
+            try {
+                momentumService.recomputeMomentum(hangoutId);
+            } catch (Exception e) {
+                logger.warn("Failed to recompute momentum for hangout {} after offer completion: {}", hangoutId, e.getMessage());
+            }
+        }
 
         // Get user info for denormalization
         User user = getUserForDenormalization(offer.getUserId());
