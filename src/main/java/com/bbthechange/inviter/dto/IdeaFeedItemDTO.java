@@ -29,6 +29,13 @@ public class IdeaFeedItemDTO implements FeedItem {
     private Double longitude;
     private String placeCategory;
 
+    /**
+     * Surfacing reason set by the forward-fill pipeline. One of:
+     * {@code SUPPORTED_IDEA, UNSUPPORTED_IDEA}. Clients may use this to differentiate
+     * strongly-wanted ideas from last-resort fallback suggestions.
+     */
+    private String surfaceReason;
+
     public IdeaFeedItemDTO() {}
 
     public IdeaFeedItemDTO(String ideaId, String listId, String groupId,
@@ -157,5 +164,13 @@ public class IdeaFeedItemDTO implements FeedItem {
 
     public void setPlaceCategory(String placeCategory) {
         this.placeCategory = placeCategory;
+    }
+
+    public String getSurfaceReason() {
+        return surfaceReason;
+    }
+
+    public void setSurfaceReason(String surfaceReason) {
+        this.surfaceReason = surfaceReason;
     }
 }

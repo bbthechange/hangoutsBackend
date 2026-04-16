@@ -8,7 +8,7 @@ import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.exception.*;
 import com.bbthechange.inviter.service.HangoutService;
-import com.bbthechange.inviter.service.IdeaFeedSurfacingService;
+import com.bbthechange.inviter.service.ForwardFillSuggestionService;
 import com.bbthechange.inviter.service.InviteService;
 import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.UserService;
@@ -70,7 +70,7 @@ class GroupServiceImplTest {
     private FeedSortingService feedSortingService;
 
     @Mock
-    private IdeaFeedSurfacingService ideaFeedSurfacingService;
+    private ForwardFillSuggestionService forwardFillSuggestionService;
 
     @Mock
     private com.bbthechange.inviter.service.AttributeSuggestionService attributeSuggestionService;
@@ -86,10 +86,11 @@ class GroupServiceImplTest {
         // FeedSortingService.sortFeed() returns a passthrough SortResult by default
         // so that tests not focused on feed sorting still work correctly.
         lenient().when(feedSortingService.sortFeed(any(), any(), anyLong()))
-                .thenAnswer(inv -> new FeedSortingService.SortResult(inv.getArgument(0), inv.getArgument(1)));
-        // IdeaFeedSurfacingService returns empty list by default
-        lenient().when(ideaFeedSurfacingService.getSurfacedIdeas(any(), anyLong(), any()))
-                .thenReturn(List.of());
+                .thenAnswer(inv -> new FeedSortingService.SortResult(
+                        inv.getArgument(0), inv.getArgument(1), new java.util.ArrayList<>()));
+        // ForwardFillSuggestionService returns empty result by default
+        lenient().when(forwardFillSuggestionService.getForwardFill(any(), anyLong(), any(), any()))
+                .thenReturn(ForwardFillSuggestionService.ForwardFillResult.empty());
         // Floating hangouts query returns empty by default
         lenient().when(hangoutRepository.getFloatingHangoutsPage(any(), any()))
                 .thenReturn(new PaginatedResult<>(List.of(), null));

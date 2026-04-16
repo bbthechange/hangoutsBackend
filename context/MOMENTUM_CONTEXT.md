@@ -32,7 +32,9 @@ Two creation modes:
 | **GAINING_MOMENTUM** | Auto-promoted when score crosses dynamic threshold | Active interest, people responding |
 | **CONFIRMED** | "Lock it in" at creation, manual "It's on!", concrete action, or auto-promotion at high score (requires date) | Definitely happening |
 
-**No FADING state stored** — fading is client-side presentation based on recency/engagement.
+**BUILDING has two sub-states, computed at read time** (not persisted): `fresh` (`now - createdAt ≤ momentum.tuning.fresh-float-age-days`, default 5) and `stale` (older). Only persisted category remains `BUILDING`. See Section 12.
+
+**No FADING state stored** — fading is the read-time behavior of stale BUILDING items (see Section 12). Clients may use the `surfaceReason` field on each hangout to render distinct treatments.
 
 **Never demote from CONFIRMED** — once confirmed, always confirmed.
 
@@ -165,9 +167,11 @@ The feed endpoint (`GET /groups/{groupId}/feed`) accepts a `filter` query parame
 |--------|----------|
 | `ALL` (default) | Returns all hangouts |
 | `CONFIRMED` | Returns hangouts where `momentumCategory == CONFIRMED` or `null` (legacy hangouts treated as confirmed) |
-| `EVERYTHING` | Same as ALL for now (fading is client-side) |
+| `EVERYTHING` | Same as ALL for now (fading is expressed via `surfaceReason` — clients render accordingly) |
 
 Filtering is post-query on both `withDay` and `needsDay` lists.
+
+Every hangout in the response carries a `surfaceReason` field: `CONFIRMED | GAINING | FRESH_FLOAT | SUPPORTED_FLOAT | STALE_FILLER`. Ideas surfaced via forward-fill carry `SUPPORTED_IDEA | UNSUPPORTED_IDEA`. Clients use this to render fresh/fade/confirmed distinctions without re-deriving categories.
 
 ## 11. Backward Compatibility
 
@@ -201,52 +205,78 @@ Filtering is post-query on both `withDay` and `needsDay` lists.
 
 `CONFIRMED → GAINING_MOMENTUM → BUILDING`, then chronological within each group. Series items are treated as CONFIRMED.
 
+### Fresh vs. Stale Classification (BUILDING only)
+
+Computed at read time from `HangoutPointer.createdAt`:
+
+- **Fresh**: `now - createdAt ≤ freshFloatAgeDays` (default 5d).
+- **Stale**: older than the threshold, or `createdAt == null` (conservative).
+
+The two sub-states drive different surfacing behavior — see below.
+
 ### Smart Surfacing Rules for BUILDING Items
 
-- **Busy week** (confirmed item in same horizon): BUILDING items are suppressed unless they have a recent support surge (2+ interest signals in last 24h). Imminent and Distant horizons are always exempt.
-- **Empty week** (no confirmed items): Single best BUILDING candidate is auto-surfaced (most recent support signal). Surging items (2+ signals in 24h) always surface independently.
-- **Null/legacy momentum**: Items with null momentum category are treated as CONFIRMED for sorting and filtering purposes.
-- **Zero-support cap**: Max 2 zero-support BUILDING items across the entire feed (shared between `withDay` and `needsDay`). A zero-support item has 0 or 1 interest levels (creator only = zero support).
+- **Fresh floats (`FRESH_FLOAT`)**: Always surface. Bypass busy-week suppression. No cap. Appear in the normal category slot (BUILDING after GAINING_MOMENTUM) within their horizon, chronologically within the BUILDING group. In `needsDay` they similarly always surface.
+- **Stale-supported floats** (stale + `interestLevels.size() > 1`, labeled `SUPPORTED_FLOAT`):
+  - **Busy week** (confirmed item in same horizon): Suppressed unless they have a recent support surge (≥ `recentSupportMinSignals` signals in last `recentSupportWindowHours`).
+  - **Empty week / needsDay**: Surface normally.
+  - **Imminent and Distant horizons**: Always exempt from busy-week suppression.
+- **Stale-unsupported floats** (stale + `interestLevels.size() ≤ 1`): Held back by `FeedSortingService` in `SortResult.heldStaleFloats`. Not surfaced unless the forward-fill service resurfaces them (see Section 13) with `surfaceReason = STALE_FILLER`.
+- **Null/legacy momentum**: Items with null momentum category are treated as CONFIRMED for sorting and filtering purposes (`surfaceReason = CONFIRMED`).
+- **No zero-support cap**: The old `MAX_ZERO_SUPPORT_BUILDING` cap was removed. Fresh floats always surface (by design); stale-unsupported are already held back. There are no remaining paths where a zero-support item would need a global cap.
 
-### Constants
+### Tuning Knobs
 
-```java
-IMMINENT_SECONDS  = 48 * 3600   // 48h
-NEAR_TERM_SECONDS = 7 * 86400   // 7 days
-MID_TERM_SECONDS  = 21 * 86400  // 21 days
-MAX_ZERO_SUPPORT_BUILDING = 2
-RECENT_SUPPORT_WINDOW_SECONDS = 24 * 3600
+All numeric thresholds live in `MomentumTuningProperties` (`momentum.tuning.*`). Defaults match the values above.
+
+```
+momentum.tuning.fresh-float-age-days = 5
+momentum.tuning.forward-weeks-to-fill = 8
+momentum.tuning.idea-min-interest-count = 3
+momentum.tuning.recent-support-window-hours = 24
+momentum.tuning.recent-support-min-signals = 2
+momentum.tuning.imminent-horizon-hours = 48
+momentum.tuning.near-term-horizon-days = 7
+momentum.tuning.mid-term-horizon-days = 21
+momentum.tuning.etag-time-bucket-seconds = 86400  # see GROUP_FEED_ETAG_CONTEXT.md
 ```
 
-## 13. Idea List Feed Surfacing (Feature 2)
+## 13. Forward-Fill Suggestions (Feature 2)
 
-**Status: Implemented.** When the group's feed is requested, `IdeaFeedSurfacingServiceImpl` injects idea suggestions into the feed.
+**Status: Implemented.** When the group's feed is requested, `ForwardFillSuggestionServiceImpl` fills the forward schedule with stale floats and ideas. Replaced the old all-or-nothing "idea suppression over 3 weeks" behavior.
 
 ### Key Files
 
 | File | Purpose |
 |------|---------|
-| `service/IdeaFeedSurfacingService.java` | Interface |
-| `service/impl/IdeaFeedSurfacingServiceImpl.java` | Suppression check + idea filtering |
+| `service/ForwardFillSuggestionService.java` | Interface |
+| `service/impl/ForwardFillSuggestionServiceImpl.java` | Budget + 3-tier priority fill |
+| `service/impl/WeekCoverageCalculator.java` | Shared helper: counts covered/empty ISO weeks |
 | `dto/IdeaFeedItemDTO.java` | Feed item DTO for an idea suggestion |
-| `service/impl/GroupServiceImpl.java` | Calls `getSurfacedIdeas()` and appends to feed |
+| `service/impl/GroupServiceImpl.java` | Calls `getForwardFill()` and integrates results |
 
 ### Logic
 
-1. **Suppression check** (`allUpcomingWeeksCovered`): Queries `getFutureEventsPage` for the next 3 ISO weeks. If every week has ≥1 CONFIRMED hangout, no ideas are surfaced.
-2. **Idea filtering**: Fetches all idea lists via `IdeaListService.getIdeaListsForGroup()`. Returns ideas with `interestCount >= 3`, sorted by `interestCount` descending.
-3. **Graceful degradation**: Repository or ideaListService failures return an empty list — feed still works.
-
-### Constants
-
-```java
-MIN_INTEREST_COUNT = 3
-WEEKS_TO_CHECK = 3
-```
+1. **Empty-week budget**: `WeekCoverageCalculator.countEmptyWeeks()` scans the next `forwardWeeksToFill` (default 8) ISO weeks. A week is **covered** if it contains any timestamped hangout (CONFIRMED, GAINING, or dated BUILDING — a dated float is already a proposal for that week). `budget = emptyWeeks`.
+2. **Priority ladder** (take items in order, stop when budget hits 0):
+   1. **Stale floats** (`heldStaleFloats` from `FeedSortingService`), sorted by `interestLevels.size()` desc, `createdAt` desc as tiebreaker. Marked `surfaceReason = STALE_FILLER`, appended to `needsDay`.
+   2. **Supported ideas** (`interestCount ≥ ideaMinInterestCount`), sorted by interest desc. Marked `SUPPORTED_IDEA`, appended to `withDay`.
+   3. **Unsupported ideas** (`0 < interestCount < threshold`), sorted by interest desc. Marked `UNSUPPORTED_IDEA`, appended to `withDay`. Ideas with `interestCount == 0` are never surfaced.
+3. **Graceful degradation**: Week coverage or idea list failures degrade to an empty result — feed still works.
 
 ### IdeaFeedItemDTO fields
 
-`type="idea_suggestion"`, `ideaId`, `listId`, `groupId`, `ideaName`, `listName`, `imageUrl`, `note`, `interestCount`, `googlePlaceId`, `address`, `latitude`, `longitude`, `placeCategory`
+`type="idea_suggestion"`, `ideaId`, `listId`, `groupId`, `ideaName`, `listName`, `imageUrl`, `note`, `interestCount`, `googlePlaceId`, `address`, `latitude`, `longitude`, `placeCategory`, `surfaceReason`
+
+### Placement in the response
+
+- **Stale filler floats** → appended to `needsDay` (they have no timestamp).
+- **Supported / unsupported ideas** → appended to `withDay`, after the sorted hangout entries. This matches prior behavior and lets clients that already render ideas continue working without change. Clients sorting `withDay` by timestamp must treat `IdeaFeedItemDTO` (type `"idea_suggestion"`) as a tail section.
+
+### Known limitations
+
+- **No per-week assignment.** Stale floats land in `needsDay` as a bulk, ideas land in `withDay` as an appended group. Per-week placement is a deferred enhancement (Section 18).
+- **No placeId-based de-dupe** between surfaced ideas and existing hangouts. `Address` DTO doesn't carry `googlePlaceId`, so overlap by place is not detected. Name-based de-dupe could be added later if noise becomes a problem.
 
 ## 14. Time Suggestions (Feature 3)
 
@@ -429,3 +459,8 @@ SK = NOTIFICATION_TRACKER
 
 - **Active member tracking** — `engagementMultiplier` currently uses total membership count; should track members with InterestLevel records in last 8 weeks.
 - **Group confirmation rate** — currently uses default 0.6 multiplier; should compute from rolling 8-week data.
+- **Migrate MomentumServiceImpl scoring weights to `MomentumTuningProperties`** — RSVP weights, multiplier factors, threshold coefficient. Currently hardcoded as `static final` in `MomentumServiceImpl`. Deferred from the forward-fill/fading change to keep blast radius small.
+- **Per-week stale-float assignment** — today the forward-fill service dumps all chosen stale floats into `needsDay`. A better UX places each filler into a specific empty week (same treatment as dated hangouts). Requires adding a synthetic week slot concept to the feed response.
+- **Name-based de-dupe between ideas and hangouts** — current forward-fill doesn't de-dupe. `Address` DTO lacks `googlePlaceId`, so placeId matching isn't possible; a name-similarity check could be added if users report duplicate noise.
+- **Migrate to integrated fresh-float creation logic in `FeedSortingService`** — currently classifies at read time from `HangoutPointer.createdAt`. If we ever want to freeze "fresh" at a point in time (e.g., make creation flag explicit), revisit.
+- **ETag time bucket uses `System.currentTimeMillis()` directly** in `GroupController.calculateETag`. Inject a `Clock` bean so the bucket boundary can be unit-tested without system-clock manipulation. Low priority — the logic is trivial and covered by the tunable `momentum.tuning.etag-time-bucket-seconds`.

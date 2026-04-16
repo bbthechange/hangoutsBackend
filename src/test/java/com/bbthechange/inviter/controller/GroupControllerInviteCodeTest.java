@@ -6,6 +6,7 @@ import com.bbthechange.inviter.dto.JoinGroupRequest;
 import com.bbthechange.inviter.exception.ResourceNotFoundException;
 import com.bbthechange.inviter.model.Group;
 import com.bbthechange.inviter.model.GroupRole;
+import com.bbthechange.inviter.config.MomentumTuningProperties;
 import com.bbthechange.inviter.service.GroupFeedService;
 import com.bbthechange.inviter.service.GroupService;
 import com.bbthechange.inviter.service.JwtService;
@@ -61,6 +62,9 @@ class GroupControllerInviteCodeTest {
 
     @MockitoBean
     private JwtService jwtService;
+
+    @MockitoBean
+    private MomentumTuningProperties momentumTuningProperties;
 
     @Nested
     class GetGroupPreviewByInviteCodeTests {

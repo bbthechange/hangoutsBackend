@@ -11,7 +11,7 @@ import com.bbthechange.inviter.repository.InviteCodeRepository;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.exception.*;
-import com.bbthechange.inviter.service.IdeaFeedSurfacingService;
+import com.bbthechange.inviter.service.ForwardFillSuggestionService;
 import com.bbthechange.inviter.service.InviteService;
 import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.UserService;
@@ -75,7 +75,7 @@ public class GroupServiceImpl implements GroupService {
     private final InviteCodeRepository inviteCodeRepository;
     private final String appBaseUrl;
     private final FeedSortingService feedSortingService;
-    private final IdeaFeedSurfacingService ideaFeedSurfacingService;
+    private final ForwardFillSuggestionService forwardFillSuggestionService;
     private final com.bbthechange.inviter.service.AttributeSuggestionService attributeSuggestionService;
     private final com.bbthechange.inviter.service.NudgeService nudgeService;
 
@@ -89,7 +89,7 @@ public class GroupServiceImpl implements GroupService {
                            S3Service s3Service, InviteCodeRepository inviteCodeRepository,
                            @Value("${app.base-url}") String appBaseUrl,
                            FeedSortingService feedSortingService,
-                           IdeaFeedSurfacingService ideaFeedSurfacingService,
+                           ForwardFillSuggestionService forwardFillSuggestionService,
                            com.bbthechange.inviter.service.AttributeSuggestionService attributeSuggestionService,
                            com.bbthechange.inviter.service.NudgeService nudgeService) {
         this.groupRepository = groupRepository;
@@ -103,7 +103,7 @@ public class GroupServiceImpl implements GroupService {
         this.inviteCodeRepository = inviteCodeRepository;
         this.appBaseUrl = appBaseUrl;
         this.feedSortingService = feedSortingService;
-        this.ideaFeedSurfacingService = ideaFeedSurfacingService;
+        this.forwardFillSuggestionService = forwardFillSuggestionService;
         this.attributeSuggestionService = attributeSuggestionService;
         this.nudgeService = nudgeService;
     }
@@ -523,14 +523,18 @@ public class GroupServiceImpl implements GroupService {
             FeedSortingService.SortResult sorted =
                     feedSortingService.sortFeed(feedItems, needsDay, nowTimestamp);
 
-            // Append high-interest idea suggestions (sorted by interest, after main feed items)
-            // Gated to 2.0.0+ — old clients can't deserialize idea_suggestion feed items
+            // Forward-fill: surface stale floats into needsDay and ideas into withDay
+            // to cover empty weeks in the forward horizon. Ideas are gated to 2.0.0+ clients
+            // (old clients can't deserialize idea_suggestion feed items).
             boolean supportsNewFeedFeatures = clientInfo == null || clientInfo.isVersionAtLeast(NEW_FEED_FEATURES_MIN_VERSION);
             List<FeedItem> finalWithDay = new ArrayList<>(sorted.withDay);
+            List<HangoutSummaryDTO> finalNeedsDay = new ArrayList<>(sorted.needsDay);
             if (supportsNewFeedFeatures) {
-                List<IdeaFeedItemDTO> surfacedIdeas =
-                        ideaFeedSurfacingService.getSurfacedIdeas(groupId, nowTimestamp, requestingUserId);
-                finalWithDay.addAll(surfacedIdeas);
+                ForwardFillSuggestionService.ForwardFillResult fill =
+                        forwardFillSuggestionService.getForwardFill(
+                                groupId, nowTimestamp, requestingUserId, sorted.heldStaleFloats);
+                finalNeedsDay.addAll(fill.getStaleFloats());
+                finalWithDay.addAll(fill.getIdeas());
             }
 
             // Repository is the source of truth for pagination tokens
@@ -543,7 +547,7 @@ public class GroupServiceImpl implements GroupService {
             // Always provide a token to access past events when viewing current/future events
             String previousPageToken = generatePreviousPageTokenFromBaseItems(allItems, nowTimestamp);
 
-            return new GroupFeedDTO(groupId, finalWithDay, sorted.needsDay, nextPageToken, previousPageToken);
+            return new GroupFeedDTO(groupId, finalWithDay, finalNeedsDay, nextPageToken, previousPageToken);
             
         } catch (Exception e) {
             logger.error("Failed to get current and future events for group {}", groupId, e);

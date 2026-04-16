@@ -1,5 +1,6 @@
 package com.bbthechange.inviter.service.impl;
 
+import com.bbthechange.inviter.config.MomentumTuningProperties;
 import com.bbthechange.inviter.dto.FeedItem;
 import com.bbthechange.inviter.dto.HangoutSummaryDTO;
 import com.bbthechange.inviter.dto.MomentumDTO;
@@ -10,375 +11,307 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 /**
- * Service responsible for slot-based feed interleaving.
+ * Service responsible for slot-based feed interleaving with fresh/stale float handling.
  *
- * <p>Buckets hangouts by time horizon (Imminent, Near-term, Mid-term, Distant, Dateless),
+ * <p>Buckets timestamped hangouts by time horizon (Imminent, Near-term, Mid-term, Distant),
  * then within each horizon orders: CONFIRMED → GAINING_MOMENTUM → BUILDING.
- * Applies smart surfacing rules to cap zero-support BUILDING items and ensure
- * at least one item appears per week.
+ *
+ * <p>BUILDING items are classified at read time as:
+ * <ul>
+ *   <li><b>FRESH_FLOAT</b> — created within {@code freshFloatAgeDays}. Always surfaces,
+ *       bypasses busy-week suppression and any cap.</li>
+ *   <li><b>SUPPORTED_FLOAT</b> — stale with {@code >1} interest level. Subject to
+ *       busy-week suppression (non-exempt horizons) and the recent-support surge exception.</li>
+ *   <li>Stale and {@code ≤1} interest — held back as a "fade candidate". Returned to the
+ *       caller via {@link SortResult#heldStaleFloats} so the forward-fill service can
+ *       surface them into empty weeks.</li>
+ * </ul>
  *
  * <p>Series items are treated as CONFIRMED for sorting purposes.
  */
 @Service
 public class FeedSortingService {
 
-    // Time horizon boundaries in seconds
-    static final long IMMINENT_SECONDS  = TimeUnit.HOURS.toSeconds(48);
-    static final long NEAR_TERM_SECONDS = TimeUnit.DAYS.toSeconds(7);
-    static final long MID_TERM_SECONDS  = TimeUnit.DAYS.toSeconds(21); // 3 weeks
-    // Distant = everything beyond MID_TERM
+    /** Surface reason labels set on {@link HangoutSummaryDTO#getSurfaceReason()}. */
+    public static final String REASON_CONFIRMED        = "CONFIRMED";
+    public static final String REASON_GAINING          = "GAINING";
+    public static final String REASON_FRESH_FLOAT      = "FRESH_FLOAT";
+    public static final String REASON_SUPPORTED_FLOAT  = "SUPPORTED_FLOAT";
+    public static final String REASON_STALE_FILLER     = "STALE_FILLER";
 
-    // Smart surfacing constants
-    static final int MAX_ZERO_SUPPORT_BUILDING = 2;
-    static final long RECENT_SUPPORT_WINDOW_SECONDS = TimeUnit.HOURS.toSeconds(24);
+    private final MomentumTuningProperties tuning;
 
-    /**
-     * Time horizon buckets, ordered for output.
-     */
-    enum TimeHorizon {
-        IMMINENT,    // <= 48h
-        NEAR_TERM,   // 3–7 days
-        MID_TERM,    // 1–3 weeks
-        DISTANT      // 3+ weeks
+    public FeedSortingService(MomentumTuningProperties tuning) {
+        this.tuning = tuning;
     }
 
-    /**
-     * Sort result containing the reordered lists.
-     */
+    /** Time horizon buckets, ordered for output. */
+    enum TimeHorizon { IMMINENT, NEAR_TERM, MID_TERM, DISTANT }
+
+    /** Sort result containing the reordered lists and held-back fade candidates. */
     public static class SortResult {
         public final List<FeedItem> withDay;
         public final List<HangoutSummaryDTO> needsDay;
+        /**
+         * Stale + unsupported BUILDING floats held back from the main feed.
+         * The forward-fill service decides which (if any) to resurface.
+         */
+        public final List<HangoutSummaryDTO> heldStaleFloats;
 
-        public SortResult(List<FeedItem> withDay, List<HangoutSummaryDTO> needsDay) {
-            this.withDay  = withDay;
+        public SortResult(List<FeedItem> withDay,
+                          List<HangoutSummaryDTO> needsDay,
+                          List<HangoutSummaryDTO> heldStaleFloats) {
+            this.withDay = withDay;
             this.needsDay = needsDay;
+            this.heldStaleFloats = heldStaleFloats;
         }
     }
 
     /**
      * Re-sort the feed using slot-based interleaving.
      *
-     * @param withDay     Items that have a timestamp (FeedItem — may include HangoutSummaryDTO or SeriesSummaryDTO)
-     * @param needsDay    Hangouts without a timestamp
-     * @param nowSeconds  Current time as Unix epoch seconds
-     * @return            Reordered SortResult
+     * @param withDay    Items that have a timestamp (may include HangoutSummaryDTO or SeriesSummaryDTO)
+     * @param needsDay   Hangouts without a timestamp
+     * @param nowSeconds Current time as Unix epoch seconds
      */
-    public SortResult sortFeed(List<FeedItem> withDay, List<HangoutSummaryDTO> needsDay, long nowSeconds) {
+    public SortResult sortFeed(List<FeedItem> withDay,
+                               List<HangoutSummaryDTO> needsDay,
+                               long nowSeconds) {
 
-        // -----------------------------------------------------------------------
-        // 1. Bucket withDay items by time horizon
-        // -----------------------------------------------------------------------
-        List<FeedItem> imminent  = new ArrayList<>();
-        List<FeedItem> nearTerm  = new ArrayList<>();
-        List<FeedItem> midTerm   = new ArrayList<>();
-        List<FeedItem> distant   = new ArrayList<>();
+        // Buckets for timestamped items
+        List<FeedItem> imminent = new ArrayList<>();
+        List<FeedItem> nearTerm = new ArrayList<>();
+        List<FeedItem> midTerm  = new ArrayList<>();
+        List<FeedItem> distant  = new ArrayList<>();
+
+        long imminentLimit = tuning.getImminentHorizonSeconds();
+        long nearLimit     = tuning.getNearTermHorizonSeconds();
+        long midLimit      = tuning.getMidTermHorizonSeconds();
 
         for (FeedItem item : withDay) {
             Long ts = getStartTimestamp(item);
             if (ts == null) {
-                // Should not happen in withDay but guard anyway
                 distant.add(item);
                 continue;
             }
-            long secondsFromNow = ts - nowSeconds;
-            if (secondsFromNow <= IMMINENT_SECONDS) {
-                imminent.add(item);
-            } else if (secondsFromNow <= NEAR_TERM_SECONDS) {
-                nearTerm.add(item);
-            } else if (secondsFromNow <= MID_TERM_SECONDS) {
-                midTerm.add(item);
-            } else {
-                distant.add(item);
-            }
+            long delta = ts - nowSeconds;
+            if (delta <= imminentLimit)      imminent.add(item);
+            else if (delta <= nearLimit)     nearTerm.add(item);
+            else if (delta <= midLimit)      midTerm.add(item);
+            else                             distant.add(item);
         }
 
-        // -----------------------------------------------------------------------
-        // 2. Apply per-horizon sorting and smart surfacing, track zero-support cap
-        // -----------------------------------------------------------------------
-        ZeroSupportCounter zeroSupportCounter = new ZeroSupportCounter();
+        List<HangoutSummaryDTO> heldStaleFloats = new ArrayList<>();
 
         List<FeedItem> sortedWithDay = new ArrayList<>();
-        sortedWithDay.addAll(sortHorizon(imminent,  nowSeconds, zeroSupportCounter, true));
-        sortedWithDay.addAll(sortHorizon(nearTerm,  nowSeconds, zeroSupportCounter, false));
-        sortedWithDay.addAll(sortHorizon(midTerm,   nowSeconds, zeroSupportCounter, false));
-        sortedWithDay.addAll(sortHorizon(distant,   nowSeconds, zeroSupportCounter, true));  // Distant: no suppression (like imminent)
+        // Imminent and Distant are suppression-exempt (stale-supported items always surface there).
+        sortedWithDay.addAll(sortHorizon(imminent, nowSeconds, true,  heldStaleFloats));
+        sortedWithDay.addAll(sortHorizon(nearTerm, nowSeconds, false, heldStaleFloats));
+        sortedWithDay.addAll(sortHorizon(midTerm,  nowSeconds, false, heldStaleFloats));
+        sortedWithDay.addAll(sortHorizon(distant,  nowSeconds, true,  heldStaleFloats));
 
-        // -----------------------------------------------------------------------
-        // 3. Sort needsDay (no timestamp): CONFIRMED > GAINING_MOMENTUM > BUILDING
-        //    Apply zero-support cap (shared counter continues from withDay).
-        // -----------------------------------------------------------------------
-        List<HangoutSummaryDTO> sortedNeedsDay = sortNeedsDay(needsDay, nowSeconds, zeroSupportCounter);
+        List<HangoutSummaryDTO> sortedNeedsDay = sortNeedsDay(needsDay, nowSeconds, heldStaleFloats);
 
-        return new SortResult(sortedWithDay, sortedNeedsDay);
+        return new SortResult(sortedWithDay, sortedNeedsDay, heldStaleFloats);
     }
 
     // -------------------------------------------------------------------------
-    // Private helpers
+    // Per-horizon sort
     // -------------------------------------------------------------------------
 
-    /**
-     * Sort a single time-horizon bucket.
-     * Within the bucket: CONFIRMED/Series first, then GAINING_MOMENTUM, then BUILDING.
-     * Each momentum group is ordered chronologically.
-     * Applies smart surfacing rules for BUILDING items.
-     *
-     * @param items              Items in this horizon bucket
-     * @param nowSeconds         Current time (epoch seconds)
-     * @param counter            Shared zero-support counter across the whole feed
-     * @param suppressionExempt  True if this is the Imminent bucket (affects 24h signal boost)
-     * @return Sorted list with smart surfacing applied
-     */
-    private List<FeedItem> sortHorizon(List<FeedItem> items, long nowSeconds,
-                                        ZeroSupportCounter counter, boolean suppressionExempt) {
-        if (items.isEmpty()) {
-            return List.of();
-        }
+    private List<FeedItem> sortHorizon(List<FeedItem> items,
+                                       long nowSeconds,
+                                       boolean suppressionExempt,
+                                       List<HangoutSummaryDTO> heldStaleFloats) {
+        if (items.isEmpty()) return List.of();
 
-        List<FeedItem> confirmed      = new ArrayList<>();
-        List<FeedItem> gainingMomentum = new ArrayList<>();
-        List<FeedItem> building        = new ArrayList<>();
+        List<FeedItem> confirmed = new ArrayList<>();
+        List<FeedItem> gaining   = new ArrayList<>();
+        List<FeedItem> building  = new ArrayList<>();
 
         for (FeedItem item : items) {
             String category = getMomentumCategory(item);
             if ("CONFIRMED".equals(category) || category == null || item instanceof SeriesSummaryDTO) {
-                // null/legacy hangouts are treated as CONFIRMED (backward compat)
+                markReason(item, REASON_CONFIRMED);
                 confirmed.add(item);
             } else if ("GAINING_MOMENTUM".equals(category)) {
-                gainingMomentum.add(item);
+                markReason(item, REASON_GAINING);
+                gaining.add(item);
             } else {
-                // BUILDING
-                building.add(item);
+                building.add(item); // surfaceReason set later during fresh/stale split
             }
         }
 
-        // Chronological within each group
-        Comparator<FeedItem> chronoOrder = Comparator.comparingLong(i -> {
+        Comparator<FeedItem> chrono = Comparator.comparingLong(i -> {
             Long ts = getStartTimestamp(i);
             return ts != null ? ts : Long.MAX_VALUE;
         });
+        confirmed.sort(chrono);
+        gaining.sort(chrono);
+        building.sort(chrono);
 
-        confirmed.sort(chronoOrder);
-        gainingMomentum.sort(chronoOrder);
-        building.sort(chronoOrder);
-
-        // Smart surfacing for BUILDING items
-        // Imminent items (< 48h away) always show — suppression only applies to longer horizons
-        boolean weekHasConfirmedItems = !suppressionExempt && !confirmed.isEmpty();
-        List<FeedItem> filteredBuilding = applySmartSurfacing(
-                building, weekHasConfirmedItems, nowSeconds, counter);
+        boolean weekHasConfirmed = !suppressionExempt && !confirmed.isEmpty();
+        List<FeedItem> surfacedBuilding = classifyAndFilterBuilding(
+                building, weekHasConfirmed, nowSeconds, heldStaleFloats);
 
         List<FeedItem> result = new ArrayList<>();
         result.addAll(confirmed);
-        result.addAll(gainingMomentum);
-        result.addAll(filteredBuilding);
+        result.addAll(gaining);
+        result.addAll(surfacedBuilding);
         return result;
     }
 
-    /**
-     * Sort needsDay items by momentum category, applying the shared zero-support cap.
-     */
     private List<HangoutSummaryDTO> sortNeedsDay(List<HangoutSummaryDTO> needsDay,
-                                                   long nowSeconds,
-                                                   ZeroSupportCounter counter) {
-        if (needsDay.isEmpty()) {
-            return List.of();
-        }
+                                                 long nowSeconds,
+                                                 List<HangoutSummaryDTO> heldStaleFloats) {
+        if (needsDay.isEmpty()) return List.of();
 
-        List<HangoutSummaryDTO> confirmed       = new ArrayList<>();
-        List<HangoutSummaryDTO> gainingMomentum = new ArrayList<>();
-        List<HangoutSummaryDTO> building         = new ArrayList<>();
+        List<HangoutSummaryDTO> confirmed = new ArrayList<>();
+        List<HangoutSummaryDTO> gaining   = new ArrayList<>();
+        List<HangoutSummaryDTO> building  = new ArrayList<>();
 
         for (HangoutSummaryDTO item : needsDay) {
             String category = getMomentumCategory(item);
             if ("CONFIRMED".equals(category) || category == null) {
-                // null/legacy hangouts are treated as CONFIRMED (backward compat)
+                item.setSurfaceReason(REASON_CONFIRMED);
                 confirmed.add(item);
             } else if ("GAINING_MOMENTUM".equals(category)) {
-                gainingMomentum.add(item);
+                item.setSurfaceReason(REASON_GAINING);
+                gaining.add(item);
             } else {
-                // BUILDING
                 building.add(item);
             }
         }
 
-        // needsDay items have no time horizon — "busy week" suppression doesn't apply
-        List<FeedItem> filteredBuildingFeed = applySmartSurfacing(
-                new ArrayList<>(building), false, nowSeconds, counter);
-        List<HangoutSummaryDTO> filteredBuilding = filteredBuildingFeed.stream()
-                .filter(i -> i instanceof HangoutSummaryDTO)
-                .map(i -> (HangoutSummaryDTO) i)
-                .toList();
+        // needsDay has no time horizon — busy-week suppression never applies.
+        List<FeedItem> surfacedBuilding = classifyAndFilterBuilding(
+                new ArrayList<>(building), /*weekHasConfirmed*/ false, nowSeconds, heldStaleFloats);
 
         List<HangoutSummaryDTO> result = new ArrayList<>();
         result.addAll(confirmed);
-        result.addAll(gainingMomentum);
-        result.addAll(filteredBuilding);
+        result.addAll(gaining);
+        for (FeedItem f : surfacedBuilding) {
+            if (f instanceof HangoutSummaryDTO h) result.add(h);
+        }
         return result;
     }
 
-    /**
-     * Apply smart surfacing rules to a list of BUILDING items within a horizon/week:
-     *
-     * <ul>
-     *   <li>If the week is busy (has confirmed events) → only show BUILDING items that have
-     *       recent support (2+ signals in last 24h)</li>
-     *   <li>If the week is empty → auto-surface the best candidate (most recent support)</li>
-     *   <li>Never show more than {@code MAX_ZERO_SUPPORT_BUILDING} zero-support items across the entire feed</li>
-     * </ul>
-     *
-     * @param building           BUILDING candidates (pre-sorted by desired order)
-     * @param weekHasConfirmed   Whether this week/horizon already has confirmed items
-     * @param nowSeconds         Current epoch seconds
-     * @param counter            Shared mutable counter for zero-support items
-     * @return Filtered list
-     */
-    List<FeedItem> applySmartSurfacing(List<FeedItem> building, boolean weekHasConfirmed,
-                                        long nowSeconds, ZeroSupportCounter counter) {
-        if (building.isEmpty()) {
-            return List.of();
-        }
+    // -------------------------------------------------------------------------
+    // Fresh / stale classification + filtering for BUILDING items
+    // -------------------------------------------------------------------------
 
-        // Items with 2+ signals in last 24h always surface, regardless of week busyness
-        List<FeedItem> recentlySurging = new ArrayList<>();
-        List<FeedItem> normal = new ArrayList<>();
+    /**
+     * Split BUILDING items into fresh (always surface), stale-supported (normal rules),
+     * and stale-unsupported (held back for forward-fill). Returns the items to surface
+     * in this horizon; held items are appended to {@code heldStaleFloats}.
+     *
+     * <p>Stale-supported items (by construction have {@code interestLevels.size() > 1})
+     * are subject to busy-week suppression with the recent-support surge exception.
+     * No zero-support cap applies — the fresh/stale split obsoleted that cap because
+     * stale-unsupported items are already held back, and fresh items always surface.
+     */
+    List<FeedItem> classifyAndFilterBuilding(List<FeedItem> building,
+                                             boolean weekHasConfirmed,
+                                             long nowSeconds,
+                                             List<HangoutSummaryDTO> heldStaleFloats) {
+        if (building.isEmpty()) return List.of();
+
+        List<FeedItem> fresh           = new ArrayList<>();
+        List<FeedItem> staleSupported  = new ArrayList<>();
 
         for (FeedItem item : building) {
-            if (hasRecentSupportSurge(item, nowSeconds)) {
-                recentlySurging.add(item);
+            if (!(item instanceof HangoutSummaryDTO h)) {
+                // Defensive: a non-hangout BUILDING is unexpected. Treat as fresh to avoid dropping.
+                fresh.add(item);
+                continue;
+            }
+            if (isFresh(h, nowSeconds)) {
+                h.setSurfaceReason(REASON_FRESH_FLOAT);
+                fresh.add(h);
+            } else if (isZeroSupport(h)) {
+                // stale-unsupported → held back as a fade candidate
+                heldStaleFloats.add(h);
             } else {
-                normal.add(item);
+                h.setSurfaceReason(REASON_SUPPORTED_FLOAT);
+                staleSupported.add(h);
             }
         }
 
-        List<FeedItem> result = new ArrayList<>(recentlySurging);
+        // Fresh floats always surface.
+        List<FeedItem> result = new ArrayList<>(fresh);
 
-        if (weekHasConfirmed) {
-            // Busy week: only recently-surging items pass through — no more BUILDING shown
-            // (recently-surging are already added above)
-        } else {
-            // Empty week: auto-surface best candidate if no surging items were found
-            if (result.isEmpty() && !normal.isEmpty()) {
-                // Sort normal by most recent support signal, then add the best one
-                List<FeedItem> sorted = new ArrayList<>(normal);
-                sorted.sort(Comparator.comparingLong(
-                        (FeedItem i) -> getLastSupportTimestamp(i)).reversed());
-                result.add(sorted.get(0));
-            }
-            // Remaining normal items are NOT added — spec says "auto-surface best candidate" only
-        }
-
-        // Apply global zero-support cap
-        List<FeedItem> capped = new ArrayList<>();
-        for (FeedItem item : result) {
-            if (isZeroSupport(item)) {
-                if (counter.count < MAX_ZERO_SUPPORT_BUILDING) {
-                    counter.count++;
-                    capped.add(item);
+        if (!staleSupported.isEmpty()) {
+            if (weekHasConfirmed) {
+                // Busy week: only surging items pass.
+                for (FeedItem item : staleSupported) {
+                    if (hasRecentSupportSurge(item, nowSeconds)) result.add(item);
                 }
-                // Else: skip — already at cap
             } else {
-                capped.add(item);
+                // Empty / suppression-exempt horizon: all stale-supported surface.
+                result.addAll(staleSupported);
             }
         }
 
-        return capped;
+        return result;
     }
 
     // -------------------------------------------------------------------------
     // Introspection helpers
     // -------------------------------------------------------------------------
 
-    /**
-     * Get the momentum category string from a FeedItem.
-     * Series items are treated as "CONFIRMED".
-     */
     String getMomentumCategory(FeedItem item) {
-        if (item instanceof SeriesSummaryDTO) {
-            return "CONFIRMED";
-        }
+        if (item instanceof SeriesSummaryDTO) return "CONFIRMED";
         if (item instanceof HangoutSummaryDTO h) {
-            MomentumDTO momentum = h.getMomentum();
-            return momentum != null ? momentum.getCategory() : null;
+            MomentumDTO m = h.getMomentum();
+            return m != null ? m.getCategory() : null;
         }
         return null;
     }
 
-    /**
-     * Get the startTimestamp from a FeedItem.
-     */
     Long getStartTimestamp(FeedItem item) {
-        if (item instanceof HangoutSummaryDTO h) {
-            return h.getStartTimestamp();
-        }
-        if (item instanceof SeriesSummaryDTO s) {
-            return s.getStartTimestamp();
-        }
+        if (item instanceof HangoutSummaryDTO h) return h.getStartTimestamp();
+        if (item instanceof SeriesSummaryDTO s)  return s.getStartTimestamp();
         return null;
     }
 
     /**
-     * A hangout has zero support if its interestLevels list is empty or contains
-     * only one entry (assumed to be the creator/suggester).
+     * A hangout is "fresh" if created within {@code freshFloatAgeDays}. Legacy hangouts
+     * with a null createdAt are treated as stale (conservative — they've been around a while).
      */
+    boolean isFresh(HangoutSummaryDTO h, long nowSeconds) {
+        Long createdAt = h.getCreatedAt();
+        if (createdAt == null) return false;
+        return (nowSeconds - createdAt) <= tuning.getFreshFloatAgeSeconds();
+    }
+
+    /** Zero support = interestLevels empty or contains only the creator. */
     boolean isZeroSupport(FeedItem item) {
         if (item instanceof HangoutSummaryDTO h) {
-            List<com.bbthechange.inviter.model.InterestLevel> levels = h.getInterestLevels();
+            List<InterestLevel> levels = h.getInterestLevels();
             return levels == null || levels.size() <= 1;
         }
-        // Series items and non-hangout items are never considered zero-support
         return false;
     }
 
-    /**
-     * Returns true if the item has 2+ interest-level signals updated within the last 24 hours.
-     */
+    /** ≥N interest-level updates within the recent-support window. */
     boolean hasRecentSupportSurge(FeedItem item, long nowSeconds) {
-        if (!(item instanceof HangoutSummaryDTO h)) {
-            return false;
-        }
+        if (!(item instanceof HangoutSummaryDTO h)) return false;
         List<InterestLevel> levels = h.getInterestLevels();
-        if (levels == null || levels.isEmpty()) {
-            return false;
-        }
-        long cutoffSeconds = nowSeconds - RECENT_SUPPORT_WINDOW_SECONDS;
-        long recentCount = levels.stream()
-                .filter(il -> il.getUpdatedAt() != null &&
-                              il.getUpdatedAt().toEpochMilli() / 1000 >= cutoffSeconds)
+        if (levels == null || levels.isEmpty()) return false;
+        long cutoff = nowSeconds - tuning.getRecentSupportWindowSeconds();
+        long recent = levels.stream()
+                .filter(il -> il.getUpdatedAt() != null
+                        && il.getUpdatedAt().toEpochMilli() / 1000 >= cutoff)
                 .count();
-        return recentCount >= 2;
+        return recent >= tuning.getRecentSupportMinSignals();
     }
 
-    /**
-     * Returns the most recent interest-level update timestamp (epoch seconds),
-     * or 0 if no signals exist.
-     */
-    long getLastSupportTimestamp(FeedItem item) {
-        if (!(item instanceof HangoutSummaryDTO h)) {
-            return 0L;
+    private void markReason(FeedItem item, String reason) {
+        if (item instanceof HangoutSummaryDTO h) {
+            h.setSurfaceReason(reason);
         }
-        List<InterestLevel> levels = h.getInterestLevels();
-        if (levels == null || levels.isEmpty()) {
-            return 0L;
-        }
-        return levels.stream()
-                .filter(il -> il.getUpdatedAt() != null)
-                .mapToLong(il -> il.getUpdatedAt().toEpochMilli() / 1000)
-                .max()
-                .orElse(0L);
-    }
-
-    // -------------------------------------------------------------------------
-    // Inner classes
-    // -------------------------------------------------------------------------
-
-    /**
-     * Mutable counter shared across the entire feed pass to track how many
-     * zero-support BUILDING items have been allowed through.
-     */
-    static class ZeroSupportCounter {
-        int count = 0;
+        // SeriesSummaryDTO has no surfaceReason field — intentionally skipped.
     }
 }

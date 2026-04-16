@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.controller;
 
 import com.bbthechange.inviter.config.ClientInfo;
+import com.bbthechange.inviter.config.MomentumTuningProperties;
 import com.bbthechange.inviter.service.GroupService;
 import com.bbthechange.inviter.service.GroupFeedService;
 import com.bbthechange.inviter.service.RateLimitingService;
@@ -39,12 +40,15 @@ public class GroupController extends BaseController {
     private final GroupService groupService;
     private final GroupFeedService groupFeedService;
     private final RateLimitingService rateLimitingService;
+    private final MomentumTuningProperties momentumTuning;
 
     @Autowired
-    public GroupController(GroupService groupService, GroupFeedService groupFeedService, RateLimitingService rateLimitingService) {
+    public GroupController(GroupService groupService, GroupFeedService groupFeedService,
+                           RateLimitingService rateLimitingService, MomentumTuningProperties momentumTuning) {
         this.groupService = groupService;
         this.groupFeedService = groupFeedService;
         this.rateLimitingService = rateLimitingService;
+        this.momentumTuning = momentumTuning;
     }
     
     @PostMapping
@@ -193,6 +197,7 @@ public class GroupController extends BaseController {
         Group group = groupService.getGroupForEtagCheck(groupId, userId);
         String etag = calculateETag(groupId, group.getLastHangoutModified());
 
+
         // Step 2: Return 304 if ETag matches (saves 2-4 expensive GSI queries!)
         if (etag.equals(ifNoneMatch)) {
             logger.debug("Feed unchanged for group {}, returning 304", groupId);
@@ -214,17 +219,25 @@ public class GroupController extends BaseController {
     }
 
     /**
-     * Calculate ETag for group feed based on groupId and last modification timestamp.
-     * ETag format: "{groupId}-{lastModifiedMillis}"
+     * Calculate ETag for group feed.
+     *
+     * <p>Format: {@code "{groupId}-{lastModifiedMillis}-{timeBucket}"}.
+     * The time bucket is {@code floor(nowSeconds / momentum.tuning.etag-time-bucket-seconds)},
+     * ensuring the ETag rolls at least once per bucket even without data writes. This
+     * keeps time-driven feed mutations (fresh→stale float transitions, sliding empty
+     * weeks in the forward-fill budget) visible to clients within one bucket window.
      *
      * @param groupId The group ID
      * @param lastModified The last hangout modification timestamp (can be null)
      * @return ETag string in quotes
      */
     private String calculateETag(String groupId, Instant lastModified) {
-        return String.format("\"%s-%d\"",
+        long bucketSize = momentumTuning.getEtagTimeBucketSeconds();
+        long bucket = bucketSize > 0 ? (System.currentTimeMillis() / 1000) / bucketSize : 0;
+        return String.format("\"%s-%d-%d\"",
             groupId,
-            lastModified != null ? lastModified.toEpochMilli() : 0);
+            lastModified != null ? lastModified.toEpochMilli() : 0,
+            bucket);
     }
     
     @GetMapping("/{groupId}/feed-items")

@@ -93,6 +93,20 @@ public class HangoutSummaryDTO implements FeedItem {
     // Momentum data
     private MomentumDTO momentum;
 
+    /**
+     * Hangout creation time (Unix epoch seconds). Used by the feed to determine
+     * fresh vs. stale floats. Populated from the pointer's createdAt.
+     */
+    private Long createdAt;
+
+    /**
+     * Surfacing reason set by the feed pipeline. Clients may use this to render
+     * fresh/stale/confirmed distinctions. One of:
+     * {@code CONFIRMED, GAINING, FRESH_FLOAT, SUPPORTED_FLOAT, STALE_FILLER}.
+     * Null outside feed responses (e.g., hangout detail).
+     */
+    private String surfaceReason;
+
     // Suggested attributes from active suggestion polls (computed at read time — never stored)
     @Builder.Default
     private Map<String, SuggestedAttributeDTO> suggestedAttributes = Map.of();
@@ -180,6 +194,10 @@ public class HangoutSummaryDTO implements FeedItem {
                     pointer.getConfirmedBy(),
                     pointer.getSuggestedBy()
             );
+        }
+
+        if (pointer.getCreatedAt() != null) {
+            this.createdAt = pointer.getCreatedAt().getEpochSecond();
         }
     }
     
@@ -477,5 +495,21 @@ public class HangoutSummaryDTO implements FeedItem {
 
     public void setNudges(List<NudgeDTO> nudges) {
         this.nudges = nudges;
+    }
+
+    public Long getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(Long createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public String getSurfaceReason() {
+        return surfaceReason;
+    }
+
+    public void setSurfaceReason(String surfaceReason) {
+        this.surfaceReason = surfaceReason;
     }
 }

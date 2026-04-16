@@ -12,16 +12,25 @@ The group feed endpoint (`GET /groups/{groupId}/feed`) supports HTTP ETag-based 
 
 ### ETag Calculation
 
-ETags are calculated from the `Group.lastHangoutModified` timestamp:
+ETags are calculated from the `Group.lastHangoutModified` timestamp **and** a daily time bucket:
 
 ```java
-String etag = String.format("\"%s-%d\"", groupId, lastModified.toEpochMilli());
-// Example: "a1b2c3d4-1234567890000"
+long bucket = (System.currentTimeMillis() / 1000) / momentumTuning.getEtagTimeBucketSeconds();
+String etag = String.format("\"%s-%d-%d\"", groupId, lastModified.toEpochMilli(), bucket);
+// Example: "a1b2c3d4-1234567890000-20456"
 ```
 
 **ETag Components**:
 - `groupId`: Ensures ETags are unique per group
 - `lastModified.toEpochMilli()`: Unix timestamp in milliseconds when any hangout data in the group changed
+- `bucket`: `floor(nowSeconds / momentum.tuning.etag-time-bucket-seconds)` (default 86400s = 24h).
+  Rolls once per bucket so time-driven feed mutations become visible to clients even without a data write.
+
+**Why the time bucket?** The feed is not purely a function of stored data — it mutates with the wall clock:
+- Fresh floats (created within `momentum.tuning.fresh-float-age-days`) transition to stale, changing their surfacing behavior.
+- The forward-fill budget slides: weeks fall out of the window, empty-week counts change, stale-filler floats may surface.
+
+Without a time component, clients holding a 304-validated feed would see drift. The daily bucket caps client cache staleness at ~24h without requiring a data write on every boundary.
 
 ### Request Flow
 
