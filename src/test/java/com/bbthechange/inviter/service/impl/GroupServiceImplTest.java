@@ -89,7 +89,7 @@ class GroupServiceImplTest {
                 .thenAnswer(inv -> new FeedSortingService.SortResult(
                         inv.getArgument(0), inv.getArgument(1), new java.util.ArrayList<>()));
         // ForwardFillSuggestionService returns empty result by default
-        lenient().when(forwardFillSuggestionService.getForwardFill(any(), anyLong(), any(), any()))
+        lenient().when(forwardFillSuggestionService.getForwardFill(any(), anyLong(), any(), any(), anyInt()))
                 .thenReturn(ForwardFillSuggestionService.ForwardFillResult.empty());
         // Floating hangouts query returns empty by default
         lenient().when(hangoutRepository.getFloatingHangoutsPage(any(), any()))

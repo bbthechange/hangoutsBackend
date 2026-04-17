@@ -46,7 +46,8 @@ public class ForwardFillSuggestionServiceImpl implements ForwardFillSuggestionSe
     public ForwardFillResult getForwardFill(String groupId,
                                             long nowTimestamp,
                                             String requestingUserId,
-                                            List<HangoutSummaryDTO> heldStaleFloats) {
+                                            List<HangoutSummaryDTO> heldStaleFloats,
+                                            int freshFloatCount) {
 
         int emptyWeeks;
         try {
@@ -56,11 +57,14 @@ public class ForwardFillSuggestionServiceImpl implements ForwardFillSuggestionSe
             return ForwardFillResult.empty();
         }
 
-        if (emptyWeeks <= 0) {
+        // Fresh floats don't cover specific weeks (they're timeless), but they DO take up
+        // suggestion slots in the user's attention. Deduct them from the budget so we don't
+        // stack ideas on top of already-visible fresh suggestions.
+        int budget = Math.max(0, emptyWeeks - Math.max(0, freshFloatCount));
+
+        if (budget <= 0) {
             return ForwardFillResult.empty();
         }
-
-        int budget = emptyWeeks;
 
         // Priority 1: stale floats, sorted by interestLevels.size() desc, createdAt desc.
         List<HangoutSummaryDTO> sortedStale = new ArrayList<>(

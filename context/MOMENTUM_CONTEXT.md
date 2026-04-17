@@ -257,12 +257,13 @@ momentum.tuning.etag-time-bucket-seconds = 86400  # see GROUP_FEED_ETAG_CONTEXT.
 
 ### Logic
 
-1. **Empty-week budget**: `WeekCoverageCalculator.countEmptyWeeks()` scans the next `forwardWeeksToFill` (default 8) ISO weeks. A week is **covered** if it contains any timestamped hangout (CONFIRMED, GAINING, or dated BUILDING — a dated float is already a proposal for that week). `budget = emptyWeeks`.
-2. **Priority ladder** (take items in order, stop when budget hits 0):
+1. **Empty-week budget**: `WeekCoverageCalculator.countEmptyWeeks()` scans the next `forwardWeeksToFill` (default 8) ISO weeks. A week is **covered** if it contains a visible timestamped hangout (CONFIRMED, GAINING, fresh BUILDING, or stale-supported BUILDING). Stale-unsupported BUILDING items are held back and do not count as covering.
+2. **Fresh-float deduction**: `GroupServiceImpl` counts FRESH_FLOAT hangouts in `sorted.needsDay` (dateless "Float it" suggestions only) and passes the count to the forward-fill service. `budget = max(0, emptyWeeks - freshFloatCount)`. Dated fresh BUILDING items are intentionally NOT counted here — they already reduce `emptyWeeks` via `WeekCoverageCalculator` (they cover their week), so counting them twice would over-deduct. Dateless fresh floats have no week to cover but still occupy a suggestion slot in the user's view; without this deduction, a group with several recent "Float it" hangouts would still get a full stack of idea suggestions on top.
+3. **Priority ladder** (take items in order, stop when budget hits 0):
    1. **Stale floats** (`heldStaleFloats` from `FeedSortingService`), sorted by `interestLevels.size()` desc, `createdAt` desc as tiebreaker. Marked `surfaceReason = STALE_FILLER`, appended to `needsDay`.
    2. **Supported ideas** (`interestCount ≥ ideaMinInterestCount`), sorted by interest desc. Marked `SUPPORTED_IDEA`, appended to `withDay`.
    3. **Unsupported ideas** (`0 < interestCount < threshold`), sorted by interest desc. Marked `UNSUPPORTED_IDEA`, appended to `withDay`. Ideas with `interestCount == 0` are never surfaced.
-3. **Graceful degradation**: Week coverage or idea list failures degrade to an empty result — feed still works.
+4. **Graceful degradation**: Week coverage or idea list failures degrade to an empty result — feed still works.
 
 ### IdeaFeedItemDTO fields
 

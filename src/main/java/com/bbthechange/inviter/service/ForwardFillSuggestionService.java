@@ -25,16 +25,24 @@ public interface ForwardFillSuggestionService {
     /**
      * Compute the forward-fill result for a group.
      *
-     * @param groupId           the group being rendered
-     * @param nowTimestamp      Unix seconds representing "now"
-     * @param requestingUserId  user ID of the requesting user (already verified as group member)
-     * @param heldStaleFloats   stale unsupported floats held back by {@code FeedSortingService}
+     * @param groupId               the group being rendered
+     * @param nowTimestamp          Unix seconds representing "now"
+     * @param requestingUserId      user ID of the requesting user (already verified as group member)
+     * @param heldStaleFloats       stale unsupported floats held back by {@code FeedSortingService}
+     * @param freshFloatCount       number of <em>dateless</em> FRESH_FLOAT hangouts already
+     *                              surfacing in the feed ({@code needsDay}). Deducted from the
+     *                              empty-week budget because they can't cover a specific week
+     *                              via {@code WeekCoverageCalculator} but still occupy a
+     *                              suggestion slot in the user's view. Dated fresh BUILDING
+     *                              items must NOT be counted here — their week is already
+     *                              covered and counting them again would double-deduct.
      * @return stale floats and ideas to append to the feed (possibly empty)
      */
     ForwardFillResult getForwardFill(String groupId,
                                      long nowTimestamp,
                                      String requestingUserId,
-                                     List<HangoutSummaryDTO> heldStaleFloats);
+                                     List<HangoutSummaryDTO> heldStaleFloats,
+                                     int freshFloatCount);
 
     /** Result bundle for {@link #getForwardFill}. */
     final class ForwardFillResult {

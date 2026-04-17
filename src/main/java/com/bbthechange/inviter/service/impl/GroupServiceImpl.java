@@ -530,9 +530,14 @@ public class GroupServiceImpl implements GroupService {
             List<FeedItem> finalWithDay = new ArrayList<>(sorted.withDay);
             List<HangoutSummaryDTO> finalNeedsDay = new ArrayList<>(sorted.needsDay);
             if (supportsNewFeedFeatures) {
+                // Only count *dateless* fresh floats: dated fresh BUILDING items already
+                // consume their week via WeekCoverageCalculator (reduces emptyWeeks).
+                // Counting them again here would double-deduct.
+                int freshFloatCount = countFreshFloats(sorted.needsDay);
                 ForwardFillSuggestionService.ForwardFillResult fill =
                         forwardFillSuggestionService.getForwardFill(
-                                groupId, nowTimestamp, requestingUserId, sorted.heldStaleFloats);
+                                groupId, nowTimestamp, requestingUserId,
+                                sorted.heldStaleFloats, freshFloatCount);
                 finalNeedsDay.addAll(fill.getStaleFloats());
                 finalWithDay.addAll(fill.getIdeas());
             }
@@ -555,6 +560,26 @@ public class GroupServiceImpl implements GroupService {
         }
     }
     
+    /**
+     * Count FRESH_FLOAT-tagged hangouts in a feed list. Used to deduct already-surfaced
+     * fresh floats from the forward-fill budget.
+     *
+     * <p>Caller passes only the dateless list ({@code needsDay}). Dated fresh BUILDING
+     * items already consume their week through {@code WeekCoverageCalculator}, so
+     * counting them here would reduce the budget twice.
+     */
+    private int countFreshFloats(List<? extends FeedItem> items) {
+        if (items == null) return 0;
+        int count = 0;
+        for (FeedItem item : items) {
+            if (item instanceof HangoutSummaryDTO h
+                    && FeedSortingService.REASON_FRESH_FLOAT.equals(h.getSurfaceReason())) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     /**
      * Get past events for backward pagination.
      * Now supports both standalone hangouts and multi-part series.
