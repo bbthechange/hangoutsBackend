@@ -2,6 +2,7 @@ package com.bbthechange.inviter.service;
 
 import com.bbthechange.inviter.dto.HangoutSummaryDTO;
 import com.bbthechange.inviter.dto.IdeaFeedItemDTO;
+import com.bbthechange.inviter.model.BaseItem;
 
 import java.util.List;
 
@@ -25,24 +26,29 @@ public interface ForwardFillSuggestionService {
     /**
      * Compute the forward-fill result for a group.
      *
-     * @param groupId               the group being rendered
-     * @param nowTimestamp          Unix seconds representing "now"
-     * @param requestingUserId      user ID of the requesting user (already verified as group member)
-     * @param heldStaleFloats       stale unsupported floats held back by {@code FeedSortingService}
-     * @param freshFloatCount       number of <em>dateless</em> FRESH_FLOAT hangouts already
-     *                              surfacing in the feed ({@code needsDay}). Deducted from the
-     *                              empty-week budget because they can't cover a specific week
-     *                              via {@code WeekCoverageCalculator} but still occupy a
-     *                              suggestion slot in the user's view. Dated fresh BUILDING
-     *                              items must NOT be counted here — their week is already
-     *                              covered and counting them again would double-deduct.
+     * @param groupId                  the group being rendered
+     * @param nowTimestamp             Unix seconds representing "now"
+     * @param requestingUserId         user ID of the requesting user (already verified as group member)
+     * @param heldStaleFloats          stale unsupported floats held back by {@code FeedSortingService}
+     * @param fetchedItems             all items already fetched by the caller
+     *                                 ({@code GroupServiceImpl.getCurrentAndFutureEvents}: future +
+     *                                 in-progress + floating). Used for in-memory week-coverage
+     *                                 computation — no additional database calls are made.
+     * @param needsDaySuggestionCount  count of dateless hangouts surfacing in {@code needsDay} (any
+     *                                 category — FRESH_FLOAT, GAINING, CONFIRMED, legacy-null,
+     *                                 stale-supported). Deducted from the empty-week budget because
+     *                                 dateless items take suggestion slots without covering a
+     *                                 specific week. Dated items must NOT be counted here — their
+     *                                 week is already covered via {@code WeekCoverageCalculator} and
+     *                                 counting them again would double-deduct.
      * @return stale floats and ideas to append to the feed (possibly empty)
      */
     ForwardFillResult getForwardFill(String groupId,
                                      long nowTimestamp,
                                      String requestingUserId,
                                      List<HangoutSummaryDTO> heldStaleFloats,
-                                     int freshFloatCount);
+                                     List<BaseItem> fetchedItems,
+                                     int needsDaySuggestionCount);
 
     /** Result bundle for {@link #getForwardFill}. */
     final class ForwardFillResult {

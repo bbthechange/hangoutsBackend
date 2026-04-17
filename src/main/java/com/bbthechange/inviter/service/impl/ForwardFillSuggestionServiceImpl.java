@@ -5,6 +5,7 @@ import com.bbthechange.inviter.dto.HangoutSummaryDTO;
 import com.bbthechange.inviter.dto.IdeaDTO;
 import com.bbthechange.inviter.dto.IdeaFeedItemDTO;
 import com.bbthechange.inviter.dto.IdeaListDTO;
+import com.bbthechange.inviter.model.BaseItem;
 import com.bbthechange.inviter.service.ForwardFillSuggestionService;
 import com.bbthechange.inviter.service.IdeaListService;
 import org.slf4j.Logger;
@@ -47,20 +48,21 @@ public class ForwardFillSuggestionServiceImpl implements ForwardFillSuggestionSe
                                             long nowTimestamp,
                                             String requestingUserId,
                                             List<HangoutSummaryDTO> heldStaleFloats,
-                                            int freshFloatCount) {
+                                            List<BaseItem> fetchedItems,
+                                            int needsDaySuggestionCount) {
 
         int emptyWeeks;
         try {
-            emptyWeeks = weekCoverageCalculator.countEmptyWeeks(groupId, nowTimestamp);
+            emptyWeeks = weekCoverageCalculator.countEmptyWeeks(fetchedItems, nowTimestamp);
         } catch (Exception e) {
             logger.warn("Failed to compute week coverage for group {}; skipping forward-fill", groupId, e);
             return ForwardFillResult.empty();
         }
 
-        // Fresh floats don't cover specific weeks (they're timeless), but they DO take up
+        // Dateless suggestions don't cover specific weeks (no timestamp), but they DO take up
         // suggestion slots in the user's attention. Deduct them from the budget so we don't
-        // stack ideas on top of already-visible fresh suggestions.
-        int budget = Math.max(0, emptyWeeks - Math.max(0, freshFloatCount));
+        // stack ideas on top of already-visible dateless hangouts.
+        int budget = Math.max(0, emptyWeeks - Math.max(0, needsDaySuggestionCount));
 
         if (budget <= 0) {
             return ForwardFillResult.empty();

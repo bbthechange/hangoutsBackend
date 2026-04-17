@@ -530,14 +530,14 @@ public class GroupServiceImpl implements GroupService {
             List<FeedItem> finalWithDay = new ArrayList<>(sorted.withDay);
             List<HangoutSummaryDTO> finalNeedsDay = new ArrayList<>(sorted.needsDay);
             if (supportsNewFeedFeatures) {
-                // Only count *dateless* fresh floats: dated fresh BUILDING items already
-                // consume their week via WeekCoverageCalculator (reduces emptyWeeks).
-                // Counting them again here would double-deduct.
-                int freshFloatCount = countFreshFloats(sorted.needsDay);
+                // Count every dateless hangout in needsDay (any category). Dateless items
+                // occupy a suggestion slot without covering a specific week via
+                // WeekCoverageCalculator, so deducting them prevents stacking ideas on top.
+                int needsDaySuggestionCount = countNeedsDaySuggestions(sorted.needsDay);
                 ForwardFillSuggestionService.ForwardFillResult fill =
                         forwardFillSuggestionService.getForwardFill(
                                 groupId, nowTimestamp, requestingUserId,
-                                sorted.heldStaleFloats, freshFloatCount);
+                                sorted.heldStaleFloats, allItems, needsDaySuggestionCount);
                 finalNeedsDay.addAll(fill.getStaleFloats());
                 finalWithDay.addAll(fill.getIdeas());
             }
@@ -561,23 +561,15 @@ public class GroupServiceImpl implements GroupService {
     }
     
     /**
-     * Count FRESH_FLOAT-tagged hangouts in a feed list. Used to deduct already-surfaced
-     * fresh floats from the forward-fill budget.
+     * Count dateless hangout suggestions in {@code needsDay}. Every item in that list
+     * occupies a suggestion slot in the user's view without covering a specific ISO
+     * week, so the forward-fill budget deducts the count to avoid stacking ideas on top.
      *
-     * <p>Caller passes only the dateless list ({@code needsDay}). Dated fresh BUILDING
-     * items already consume their week through {@code WeekCoverageCalculator}, so
-     * counting them here would reduce the budget twice.
+     * <p>Caller passes only the dateless list. Dated items already consume their week
+     * through {@code WeekCoverageCalculator}, so counting them here would double-deduct.
      */
-    private int countFreshFloats(List<? extends FeedItem> items) {
-        if (items == null) return 0;
-        int count = 0;
-        for (FeedItem item : items) {
-            if (item instanceof HangoutSummaryDTO h
-                    && FeedSortingService.REASON_FRESH_FLOAT.equals(h.getSurfaceReason())) {
-                count++;
-            }
-        }
-        return count;
+    private int countNeedsDaySuggestions(List<HangoutSummaryDTO> items) {
+        return items == null ? 0 : items.size();
     }
 
     /**

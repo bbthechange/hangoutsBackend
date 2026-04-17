@@ -5,46 +5,28 @@ import com.bbthechange.inviter.model.BaseItem;
 import com.bbthechange.inviter.model.HangoutPointer;
 import com.bbthechange.inviter.model.InterestLevel;
 import com.bbthechange.inviter.model.MomentumCategory;
-import com.bbthechange.inviter.repository.HangoutRepository;
-import com.bbthechange.inviter.util.PaginatedResult;
+import com.bbthechange.inviter.model.SeriesPointer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.when;
 
-@ExtendWith(MockitoExtension.class)
 class WeekCoverageCalculatorTest {
-
-    @Mock
-    private HangoutRepository hangoutRepository;
 
     private MomentumTuningProperties tuning;
     private WeekCoverageCalculator calc;
 
-    private static final String GROUP_ID = "group-abc";
     // 2026-01-07T12:00:00Z — Wednesday of ISO week 2 of 2026
     private static final long NOW = 1767787200L;
 
     @BeforeEach
     void setUp() {
         tuning = new MomentumTuningProperties(); // forwardWeeksToFill=8 default
-        calc = new WeekCoverageCalculator(hangoutRepository, tuning);
-    }
-
-    private PaginatedResult<BaseItem> page(List<BaseItem> items) {
-        return new PaginatedResult<>(items, null);
+        calc = new WeekCoverageCalculator(tuning);
     }
 
     private HangoutPointer pointerAt(long ts, MomentumCategory cat) {
@@ -73,39 +55,38 @@ class WeekCoverageCalculatorTest {
 
     @Test
     void noHangouts_allWeeksEmpty() {
-        when(hangoutRepository.getFutureEventsPage(eq(GROUP_ID), anyLong(), anyInt(), any()))
-                .thenReturn(page(List.of()));
+        assertThat(calc.countEmptyWeeks(List.of(), NOW)).isEqualTo(tuning.getForwardWeeksToFill());
+    }
 
-        assertThat(calc.countEmptyWeeks(GROUP_ID, NOW)).isEqualTo(tuning.getForwardWeeksToFill());
+    @Test
+    void nullItems_allWeeksEmpty() {
+        assertThat(calc.countEmptyWeeks(null, NOW)).isEqualTo(tuning.getForwardWeeksToFill());
     }
 
     @Test
     void oneConfirmedInCurrentWeek_sevenEmptyWeeks() {
         long currentWeek = NOW + 1000L;
-        when(hangoutRepository.getFutureEventsPage(eq(GROUP_ID), anyLong(), anyInt(), any()))
-                .thenReturn(page(List.of(pointerAt(currentWeek, MomentumCategory.CONFIRMED))));
+        List<BaseItem> items = List.of(pointerAt(currentWeek, MomentumCategory.CONFIRMED));
 
-        // 8 - 1 covered = 7 empty
-        assertThat(calc.countEmptyWeeks(GROUP_ID, NOW)).isEqualTo(7);
+        assertThat(calc.countEmptyWeeks(items, NOW)).isEqualTo(7);
     }
 
     @Test
     void datedBuildingCoversWeek_sameAsConfirmed() {
         long nextWeek = NOW + 7L * 86400;
-        when(hangoutRepository.getFutureEventsPage(eq(GROUP_ID), anyLong(), anyInt(), any()))
-                .thenReturn(page(List.of(pointerAt(nextWeek, MomentumCategory.BUILDING))));
+        // A dated BUILDING without interest levels is stale+unsupported → does NOT cover.
+        // Use the fresh variant here to exercise the "dated BUILDING covers" path.
+        HangoutPointer freshDated = buildingPointer(nextWeek, NOW - 86400, 1);
 
-        // A dated BUILDING float is a proposal for that week → counts as covered.
-        assertThat(calc.countEmptyWeeks(GROUP_ID, NOW)).isEqualTo(7);
+        assertThat(calc.countEmptyWeeks(List.of(freshDated), NOW)).isEqualTo(7);
     }
 
     @Test
     void legacyNullMomentumCoversWeek() {
         long currentWeek = NOW + 1000L;
-        when(hangoutRepository.getFutureEventsPage(eq(GROUP_ID), anyLong(), anyInt(), any()))
-                .thenReturn(page(List.of(pointerAt(currentWeek, null))));
+        List<BaseItem> items = List.of(pointerAt(currentWeek, null));
 
-        assertThat(calc.countEmptyWeeks(GROUP_ID, NOW)).isEqualTo(7);
+        assertThat(calc.countEmptyWeeks(items, NOW)).isEqualTo(7);
     }
 
     @Test
@@ -114,19 +95,16 @@ class WeekCoverageCalculatorTest {
         for (int i = 0; i < 8; i++) {
             items.add(pointerAt(NOW + i * 7L * 86400 + 1000, MomentumCategory.CONFIRMED));
         }
-        when(hangoutRepository.getFutureEventsPage(eq(GROUP_ID), anyLong(), anyInt(), any()))
-                .thenReturn(page(items));
 
-        assertThat(calc.countEmptyWeeks(GROUP_ID, NOW)).isEqualTo(0);
+        assertThat(calc.countEmptyWeeks(items, NOW)).isEqualTo(0);
     }
 
     @Test
     void hangoutsBeyondHorizon_ignored() {
         long beyond = NOW + 100L * 86400; // well outside 8-week window
-        when(hangoutRepository.getFutureEventsPage(eq(GROUP_ID), anyLong(), anyInt(), any()))
-                .thenReturn(page(List.of(pointerAt(beyond, MomentumCategory.CONFIRMED))));
+        List<BaseItem> items = List.of(pointerAt(beyond, MomentumCategory.CONFIRMED));
 
-        assertThat(calc.countEmptyWeeks(GROUP_ID, NOW)).isEqualTo(tuning.getForwardWeeksToFill());
+        assertThat(calc.countEmptyWeeks(items, NOW)).isEqualTo(tuning.getForwardWeeksToFill());
     }
 
     @Test
@@ -135,35 +113,17 @@ class WeekCoverageCalculatorTest {
         hp.setHangoutId("floating");
         hp.setStartTimestamp(null);
         hp.setMomentumCategory(MomentumCategory.CONFIRMED);
-        when(hangoutRepository.getFutureEventsPage(eq(GROUP_ID), anyLong(), anyInt(), any()))
-                .thenReturn(page(List.of(hp)));
 
-        assertThat(calc.countEmptyWeeks(GROUP_ID, NOW)).isEqualTo(tuning.getForwardWeeksToFill());
-    }
-
-    @Test
-    void repositoryThrows_returnsMaxEmptyWeeks() {
-        when(hangoutRepository.getFutureEventsPage(eq(GROUP_ID), anyLong(), anyInt(), any()))
-                .thenThrow(new RuntimeException("DynamoDB unavailable"));
-
-        // Degraded: unable to determine coverage → assume all empty so filler runs.
-        assertThat(calc.countEmptyWeeks(GROUP_ID, NOW)).isEqualTo(tuning.getForwardWeeksToFill());
+        assertThat(calc.countEmptyWeeks(List.of(hp), NOW)).isEqualTo(tuning.getForwardWeeksToFill());
     }
 
     @Test
     void staleUnsupportedBuilding_doesNotCoverWeek() {
-        // A stale, zero-support BUILDING is held back by FeedSortingService. It would be
-        // contradictory for it to satisfy its week and block forward-fill from placing
-        // anything there.
         long nextWeek = NOW + 7L * 86400;
         long staleCreatedAt = NOW - 10L * 86400; // 10 days ago
         HangoutPointer stale = buildingPointer(nextWeek, staleCreatedAt, 1); // creator only
 
-        when(hangoutRepository.getFutureEventsPage(eq(GROUP_ID), anyLong(), anyInt(), any()))
-                .thenReturn(page(List.of(stale)));
-
-        // Stale-unsupported does NOT cover → 8 empty weeks.
-        assertThat(calc.countEmptyWeeks(GROUP_ID, NOW)).isEqualTo(tuning.getForwardWeeksToFill());
+        assertThat(calc.countEmptyWeeks(List.of(stale), NOW)).isEqualTo(tuning.getForwardWeeksToFill());
     }
 
     @Test
@@ -172,11 +132,7 @@ class WeekCoverageCalculatorTest {
         long staleCreatedAt = NOW - 10L * 86400;
         HangoutPointer staleSupported = buildingPointer(nextWeek, staleCreatedAt, 3); // 3 interested
 
-        when(hangoutRepository.getFutureEventsPage(eq(GROUP_ID), anyLong(), anyInt(), any()))
-                .thenReturn(page(List.of(staleSupported)));
-
-        // Stale-supported surfaces in feed → covers → 7 empty weeks.
-        assertThat(calc.countEmptyWeeks(GROUP_ID, NOW)).isEqualTo(7);
+        assertThat(calc.countEmptyWeeks(List.of(staleSupported), NOW)).isEqualTo(7);
     }
 
     @Test
@@ -185,20 +141,55 @@ class WeekCoverageCalculatorTest {
         long freshCreatedAt = NOW - 2L * 86400; // within 5-day fresh window
         HangoutPointer fresh = buildingPointer(nextWeek, freshCreatedAt, 1);
 
-        when(hangoutRepository.getFutureEventsPage(eq(GROUP_ID), anyLong(), anyInt(), any()))
-                .thenReturn(page(List.of(fresh)));
-
-        // Fresh always surfaces → covers.
-        assertThat(calc.countEmptyWeeks(GROUP_ID, NOW)).isEqualTo(7);
+        assertThat(calc.countEmptyWeeks(List.of(fresh), NOW)).isEqualTo(7);
     }
 
     @Test
     void customHorizonRespected() {
         tuning.setForwardWeeksToFill(3);
-        WeekCoverageCalculator custom = new WeekCoverageCalculator(hangoutRepository, tuning);
-        when(hangoutRepository.getFutureEventsPage(eq(GROUP_ID), anyLong(), anyInt(), any()))
-                .thenReturn(page(List.of()));
+        WeekCoverageCalculator custom = new WeekCoverageCalculator(tuning);
 
-        assertThat(custom.countEmptyWeeks(GROUP_ID, NOW)).isEqualTo(3);
+        assertThat(custom.countEmptyWeeks(List.of(), NOW)).isEqualTo(3);
+    }
+
+    @Test
+    void inProgressEvent_coversCurrentWeek() {
+        // An event with startTimestamp 1 hour ago, CONFIRMED (in progress).
+        long oneHourAgo = NOW - 3600;
+        HangoutPointer inProgress = pointerAt(oneHourAgo, MomentumCategory.CONFIRMED);
+
+        // It's "this week" (started same ISO week as NOW), so covers the current week.
+        assertThat(calc.countEmptyWeeks(List.of(inProgress), NOW)).isEqualTo(7);
+    }
+
+    @Test
+    void seriesPointerSkipped_doesNotContributeToCoverage() {
+        // SeriesPointer is a display aggregate; episodes are stored as individual
+        // HangoutPointers that cover their own weeks. Including SeriesPointer here
+        // would double-count.
+        long currentWeek = NOW + 1000L;
+        SeriesPointer sp = new SeriesPointer();
+        sp.setSeriesId("series-1");
+        sp.setStartTimestamp(currentWeek);
+        List<BaseItem> items = List.of(sp);
+
+        assertThat(calc.countEmptyWeeks(items, NOW)).isEqualTo(tuning.getForwardWeeksToFill());
+    }
+
+    @Test
+    void unorderedItems_handledCorrectly() {
+        // The old implementation relied on sorted-by-startTimestamp ordering to early-return
+        // on items beyond the horizon. The new implementation iterates all items, so any
+        // order works. Mix in an out-of-horizon item between two covering items.
+        long beyond = NOW + 100L * 86400;
+        long wk1 = NOW + 1000L;
+        long wk2 = NOW + 7L * 86400;
+        List<BaseItem> items = List.of(
+                pointerAt(beyond, MomentumCategory.CONFIRMED),
+                pointerAt(wk1, MomentumCategory.CONFIRMED),
+                pointerAt(wk2, MomentumCategory.CONFIRMED)
+        );
+
+        assertThat(calc.countEmptyWeeks(items, NOW)).isEqualTo(6);
     }
 }

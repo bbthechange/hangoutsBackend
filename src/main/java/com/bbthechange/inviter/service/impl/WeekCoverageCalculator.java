@@ -5,10 +5,6 @@ import com.bbthechange.inviter.model.BaseItem;
 import com.bbthechange.inviter.model.HangoutPointer;
 import com.bbthechange.inviter.model.InterestLevel;
 import com.bbthechange.inviter.model.MomentumCategory;
-import com.bbthechange.inviter.repository.HangoutRepository;
-import com.bbthechange.inviter.util.PaginatedResult;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -22,6 +18,10 @@ import java.util.Set;
 /**
  * Shared helper for computing ISO-week coverage over the forward-fill horizon.
  *
+ * <p>Operates on an in-memory list of {@link BaseItem}s already fetched by the caller
+ * (GroupServiceImpl merges future + in-progress + floating page results). This avoids
+ * a duplicate DynamoDB query and naturally includes in-progress events in coverage.
+ *
  * <p>A week is "covered" if it contains at least one <em>visible</em> hangout — one that
  * actually surfaces in the feed. Concretely:
  * <ul>
@@ -33,78 +33,30 @@ import java.util.Set;
  *       {@code FeedSortingService}, so it must not block forward-fill for its week.</li>
  * </ul>
  *
+ * <p>Series pointers are intentionally ignored — their episodes appear as individual
+ * {@link HangoutPointer} rows that already cover their own weeks.
+ *
  * <p>Used by {@link com.bbthechange.inviter.service.impl.ForwardFillSuggestionServiceImpl}
  * to decide how many empty weeks the feed needs to fill.
  */
 @Component
 public class WeekCoverageCalculator {
 
-    private static final Logger logger = LoggerFactory.getLogger(WeekCoverageCalculator.class);
-
-    /** DynamoDB page size when scanning future hangouts for coverage. */
-    private static final int HANGOUT_PAGE_SIZE = 50;
-
-    private final HangoutRepository hangoutRepository;
     private final MomentumTuningProperties tuning;
 
-    public WeekCoverageCalculator(HangoutRepository hangoutRepository, MomentumTuningProperties tuning) {
-        this.hangoutRepository = hangoutRepository;
+    public WeekCoverageCalculator(MomentumTuningProperties tuning) {
         this.tuning = tuning;
-    }
-
-    /**
-     * Return the set of week keys covered by at least one hangout in the next
-     * {@code forwardWeeksToFill} ISO weeks. A week key is
-     * {@code weekBasedYear * 100 + isoWeek}.
-     */
-    public Set<Integer> findCoveredWeeks(String groupId, long nowTimestamp) {
-        int weeksToCheck = tuning.getForwardWeeksToFill();
-        long lookAheadEnd = nowTimestamp + (weeksToCheck * 7L * 24 * 3600);
-
-        Set<Integer> covered = new HashSet<>();
-        PaginatedResult<BaseItem> page;
-        String token = null;
-
-        do {
-            try {
-                page = hangoutRepository.getFutureEventsPage(groupId, nowTimestamp, HANGOUT_PAGE_SIZE, token);
-            } catch (Exception e) {
-                logger.warn("Error querying hangouts for week coverage on group {}", groupId, e);
-                break;
-            }
-
-            for (BaseItem item : page.getResults()) {
-                if (!(item instanceof HangoutPointer hp)) {
-                    continue;
-                }
-                if (hp.getStartTimestamp() == null) {
-                    continue;
-                }
-                if (hp.getStartTimestamp() > lookAheadEnd) {
-                    // Beyond our window — results are ordered by startTimestamp, so stop.
-                    return covered;
-                }
-                if (!coversItsWeek(hp, nowTimestamp)) {
-                    continue;
-                }
-                ZonedDateTime dt = Instant.ofEpochSecond(hp.getStartTimestamp()).atZone(ZoneOffset.UTC);
-                covered.add(weekKey(
-                        dt.get(IsoFields.WEEK_BASED_YEAR),
-                        dt.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR)));
-            }
-
-            token = page.getNextToken();
-        } while (page.hasMore() && token != null);
-
-        return covered;
     }
 
     /**
      * Count of empty weeks across the forward-fill horizon starting from "now".
      * Returns a number in [0, forwardWeeksToFill].
+     *
+     * @param items        items already fetched by the caller (future + in-progress + floating)
+     * @param nowTimestamp Unix epoch seconds
      */
-    public int countEmptyWeeks(String groupId, long nowTimestamp) {
-        Set<Integer> covered = findCoveredWeeks(groupId, nowTimestamp);
+    public int countEmptyWeeks(List<BaseItem> items, long nowTimestamp) {
+        Set<Integer> covered = findCoveredWeeks(items, nowTimestamp);
         int weeksToCheck = tuning.getForwardWeeksToFill();
         ZonedDateTime now = Instant.ofEpochSecond(nowTimestamp).atZone(ZoneOffset.UTC);
 
@@ -119,6 +71,37 @@ public class WeekCoverageCalculator {
             }
         }
         return empty;
+    }
+
+    private Set<Integer> findCoveredWeeks(List<BaseItem> items, long nowTimestamp) {
+        int weeksToCheck = tuning.getForwardWeeksToFill();
+        long lookAheadEnd = nowTimestamp + (weeksToCheck * 7L * 24 * 3600);
+
+        Set<Integer> covered = new HashSet<>();
+        if (items == null) {
+            return covered;
+        }
+
+        for (BaseItem item : items) {
+            if (!(item instanceof HangoutPointer hp)) {
+                continue;
+            }
+            if (hp.getStartTimestamp() == null) {
+                continue;
+            }
+            if (hp.getStartTimestamp() > lookAheadEnd) {
+                continue;
+            }
+            if (!coversItsWeek(hp, nowTimestamp)) {
+                continue;
+            }
+            ZonedDateTime dt = Instant.ofEpochSecond(hp.getStartTimestamp()).atZone(ZoneOffset.UTC);
+            covered.add(weekKey(
+                    dt.get(IsoFields.WEEK_BASED_YEAR),
+                    dt.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR)));
+        }
+
+        return covered;
     }
 
     /**

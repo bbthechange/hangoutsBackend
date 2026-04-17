@@ -18,9 +18,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -94,10 +94,10 @@ class ForwardFillSuggestionServiceImplTest {
 
     @Test
     void allWeeksCovered_returnsEmpty_noIdeaListCall() {
-        when(weekCoverageCalculator.countEmptyWeeks(eq(GROUP_ID), anyLong())).thenReturn(0);
+        when(weekCoverageCalculator.countEmptyWeeks(any(), anyLong())).thenReturn(0);
 
         ForwardFillSuggestionService.ForwardFillResult r =
-                service.getForwardFill(GROUP_ID, NOW, USER_ID, List.of(), 0);
+                service.getForwardFill(GROUP_ID, NOW, USER_ID, List.of(), List.of(), 0);
 
         assertThat(r.getStaleFloats()).isEmpty();
         assertThat(r.getIdeas()).isEmpty();
@@ -106,11 +106,11 @@ class ForwardFillSuggestionServiceImplTest {
 
     @Test
     void weekCoverageThrows_returnsEmpty() {
-        when(weekCoverageCalculator.countEmptyWeeks(eq(GROUP_ID), anyLong()))
+        when(weekCoverageCalculator.countEmptyWeeks(any(), anyLong()))
                 .thenThrow(new RuntimeException("boom"));
 
         ForwardFillSuggestionService.ForwardFillResult r =
-                service.getForwardFill(GROUP_ID, NOW, USER_ID, List.of(), 0);
+                service.getForwardFill(GROUP_ID, NOW, USER_ID, List.of(), List.of(), 0);
 
         assertThat(r.getStaleFloats()).isEmpty();
         assertThat(r.getIdeas()).isEmpty();
@@ -122,14 +122,14 @@ class ForwardFillSuggestionServiceImplTest {
 
     @Test
     void staleFloatsFirst_upToBudget() {
-        when(weekCoverageCalculator.countEmptyWeeks(eq(GROUP_ID), anyLong())).thenReturn(2);
+        when(weekCoverageCalculator.countEmptyWeeks(any(), anyLong())).thenReturn(2);
 
         HangoutSummaryDTO s1 = stale("s1", 1, NOW - 86400);
         HangoutSummaryDTO s2 = stale("s2", 1, NOW - 2 * 86400);
         HangoutSummaryDTO s3 = stale("s3", 1, NOW - 3 * 86400);
 
         ForwardFillSuggestionService.ForwardFillResult r =
-                service.getForwardFill(GROUP_ID, NOW, USER_ID, List.of(s1, s2, s3), 0);
+                service.getForwardFill(GROUP_ID, NOW, USER_ID, List.of(s1, s2, s3), List.of(), 0);
 
         assertThat(r.getStaleFloats()).hasSize(2);
         assertThat(r.getIdeas()).isEmpty();
@@ -138,14 +138,14 @@ class ForwardFillSuggestionServiceImplTest {
 
     @Test
     void staleFloatsSortedByInterestSizeDesc_thenCreatedAtDesc() {
-        when(weekCoverageCalculator.countEmptyWeeks(eq(GROUP_ID), anyLong())).thenReturn(3);
+        when(weekCoverageCalculator.countEmptyWeeks(any(), anyLong())).thenReturn(3);
 
         HangoutSummaryDTO s0older = stale("older-1", 1, NOW - 10 * 86400); // size=1, older
         HangoutSummaryDTO s0newer = stale("newer-1", 1, NOW - 2 * 86400);  // size=1, newer
         HangoutSummaryDTO s1 = stale("with-2", 2, NOW - 5 * 86400);        // size=2 → should sort first
 
         ForwardFillSuggestionService.ForwardFillResult r =
-                service.getForwardFill(GROUP_ID, NOW, USER_ID, List.of(s0older, s0newer, s1), 0);
+                service.getForwardFill(GROUP_ID, NOW, USER_ID, List.of(s0older, s0newer, s1), List.of(), 0);
 
         List<String> ids = r.getStaleFloats().stream().map(HangoutSummaryDTO::getHangoutId).toList();
         // size=2 first, then among size=1: newer before older
@@ -154,12 +154,12 @@ class ForwardFillSuggestionServiceImplTest {
 
     @Test
     void staleFloatsMarkedAsStaleFiller() {
-        when(weekCoverageCalculator.countEmptyWeeks(eq(GROUP_ID), anyLong())).thenReturn(1);
+        when(weekCoverageCalculator.countEmptyWeeks(any(), anyLong())).thenReturn(1);
 
         HangoutSummaryDTO s = stale("s", 1, NOW - 86400);
 
         ForwardFillSuggestionService.ForwardFillResult r =
-                service.getForwardFill(GROUP_ID, NOW, USER_ID, List.of(s), 0);
+                service.getForwardFill(GROUP_ID, NOW, USER_ID, List.of(s), List.of(), 0);
 
         assertThat(r.getStaleFloats().get(0).getSurfaceReason())
                 .isEqualTo(FeedSortingService.REASON_STALE_FILLER);
@@ -171,7 +171,7 @@ class ForwardFillSuggestionServiceImplTest {
 
     @Test
     void supportedIdeasFillAfterStaleFloats() {
-        when(weekCoverageCalculator.countEmptyWeeks(eq(GROUP_ID), anyLong())).thenReturn(3);
+        when(weekCoverageCalculator.countEmptyWeeks(any(), anyLong())).thenReturn(3);
 
         HangoutSummaryDTO s = stale("s", 1, NOW - 86400);
         IdeaDTO supported = idea("i-sup", "Ramen", 5);
@@ -180,7 +180,7 @@ class ForwardFillSuggestionServiceImplTest {
                 .thenReturn(List.of(list("list-1", "Food", List.of(supported, supported2))));
 
         ForwardFillSuggestionService.ForwardFillResult r =
-                service.getForwardFill(GROUP_ID, NOW, USER_ID, List.of(s), 0);
+                service.getForwardFill(GROUP_ID, NOW, USER_ID, List.of(s), List.of(), 0);
 
         assertThat(r.getStaleFloats()).hasSize(1);
         assertThat(r.getIdeas()).hasSize(2);
@@ -197,7 +197,7 @@ class ForwardFillSuggestionServiceImplTest {
 
     @Test
     void unsupportedIdeasUsedAsLastResort() {
-        when(weekCoverageCalculator.countEmptyWeeks(eq(GROUP_ID), anyLong())).thenReturn(3);
+        when(weekCoverageCalculator.countEmptyWeeks(any(), anyLong())).thenReturn(3);
 
         IdeaDTO supported = idea("i-sup", "Sushi", 4);   // meets threshold (default 3)
         IdeaDTO unsup1    = idea("i-un1", "Park", 1);    // below threshold
@@ -206,7 +206,7 @@ class ForwardFillSuggestionServiceImplTest {
                 .thenReturn(List.of(list("l1", "All", List.of(supported, unsup1, unsup2))));
 
         ForwardFillSuggestionService.ForwardFillResult r =
-                service.getForwardFill(GROUP_ID, NOW, USER_ID, List.of(), 0);
+                service.getForwardFill(GROUP_ID, NOW, USER_ID, List.of(), List.of(), 0);
 
         assertThat(r.getIdeas()).hasSize(3);
         assertThat(r.getIdeas().get(0).getIdeaId()).isEqualTo("i-sup");
@@ -221,14 +221,14 @@ class ForwardFillSuggestionServiceImplTest {
 
     @Test
     void zeroInterestIdeasExcluded() {
-        when(weekCoverageCalculator.countEmptyWeeks(eq(GROUP_ID), anyLong())).thenReturn(3);
+        when(weekCoverageCalculator.countEmptyWeeks(any(), anyLong())).thenReturn(3);
 
         IdeaDTO zero = idea("zero", "Unwanted", 0);
         when(ideaListService.getIdeaListsForGroup(GROUP_ID, USER_ID))
                 .thenReturn(List.of(list("l1", "x", List.of(zero))));
 
         ForwardFillSuggestionService.ForwardFillResult r =
-                service.getForwardFill(GROUP_ID, NOW, USER_ID, List.of(), 0);
+                service.getForwardFill(GROUP_ID, NOW, USER_ID, List.of(), List.of(), 0);
 
         assertThat(r.getIdeas()).isEmpty();
     }
@@ -239,7 +239,7 @@ class ForwardFillSuggestionServiceImplTest {
 
     @Test
     void budgetTotalCappedAcrossAllPriorities() {
-        when(weekCoverageCalculator.countEmptyWeeks(eq(GROUP_ID), anyLong())).thenReturn(2);
+        when(weekCoverageCalculator.countEmptyWeeks(any(), anyLong())).thenReturn(2);
 
         HangoutSummaryDTO s = stale("s", 1, NOW - 86400);
         IdeaDTO idea1 = idea("i1", "A", 5);
@@ -248,7 +248,7 @@ class ForwardFillSuggestionServiceImplTest {
                 .thenReturn(List.of(list("l", "x", List.of(idea1, idea2))));
 
         ForwardFillSuggestionService.ForwardFillResult r =
-                service.getForwardFill(GROUP_ID, NOW, USER_ID, List.of(s), 0);
+                service.getForwardFill(GROUP_ID, NOW, USER_ID, List.of(s), List.of(), 0);
 
         // budget=2: 1 stale + 1 supported idea
         assertThat(r.getStaleFloats()).hasSize(1);
@@ -262,23 +262,23 @@ class ForwardFillSuggestionServiceImplTest {
 
     @Test
     void ideaServiceThrows_staleFloatsStillSurface() {
-        when(weekCoverageCalculator.countEmptyWeeks(eq(GROUP_ID), anyLong())).thenReturn(3);
+        when(weekCoverageCalculator.countEmptyWeeks(any(), anyLong())).thenReturn(3);
 
         HangoutSummaryDTO s = stale("s", 1, NOW - 86400);
         when(ideaListService.getIdeaListsForGroup(GROUP_ID, USER_ID))
                 .thenThrow(new RuntimeException("db down"));
 
         ForwardFillSuggestionService.ForwardFillResult r =
-                service.getForwardFill(GROUP_ID, NOW, USER_ID, List.of(s), 0);
+                service.getForwardFill(GROUP_ID, NOW, USER_ID, List.of(s), List.of(), 0);
 
         assertThat(r.getStaleFloats()).hasSize(1);
         assertThat(r.getIdeas()).isEmpty();
     }
 
     @Test
-    void freshFloatCount_deductsFromBudget() {
-        // 7 empty weeks but 3 fresh floats already surfacing → budget should be 4.
-        when(weekCoverageCalculator.countEmptyWeeks(eq(GROUP_ID), anyLong())).thenReturn(7);
+    void needsDaySuggestionCount_deductsFromBudget() {
+        // 7 empty weeks but 3 dateless suggestions already surfacing → budget should be 4.
+        when(weekCoverageCalculator.countEmptyWeeks(any(), anyLong())).thenReturn(7);
 
         IdeaDTO i1 = idea("i1", "A", 10);
         IdeaDTO i2 = idea("i2", "B", 9);
@@ -291,19 +291,16 @@ class ForwardFillSuggestionServiceImplTest {
                 .thenReturn(List.of(list("l", "x", List.of(i1, i2, i3, i4, i5, i6, i7))));
 
         ForwardFillSuggestionService.ForwardFillResult r =
-                service.getForwardFill(GROUP_ID, NOW, USER_ID, List.of(), /*freshFloatCount*/ 3);
+                service.getForwardFill(GROUP_ID, NOW, USER_ID, List.of(), List.of(), /*needsDaySuggestionCount*/ 3);
 
         assertThat(r.getIdeas()).hasSize(4);
     }
 
     @Test
-    void datedFreshFloats_mustNotBeCountedByCaller() {
-        // Contract test: the caller (GroupServiceImpl) must only pass dateless fresh
-        // floats here. A dated fresh float has already reduced emptyWeeks via
-        // WeekCoverageCalculator; if the caller also passed it as a freshFloatCount,
-        // the budget would be double-deducted. This test locks in the math so the
-        // service behaves correctly GIVEN the caller obeys its contract.
-        when(weekCoverageCalculator.countEmptyWeeks(eq(GROUP_ID), anyLong())).thenReturn(6);
+    void datelessGainingMomentum_countsTowardDeduction() {
+        // 3 dateless GAINING_MOMENTUM items take up suggestion slots in needsDay. Caller
+        // counts them and passes the count so ideas don't stack on top. budget = 8 - 3 = 5.
+        when(weekCoverageCalculator.countEmptyWeeks(any(), anyLong())).thenReturn(8);
 
         IdeaDTO i1 = idea("i1", "A", 10);
         IdeaDTO i2 = idea("i2", "B", 9);
@@ -314,20 +311,62 @@ class ForwardFillSuggestionServiceImplTest {
         when(ideaListService.getIdeaListsForGroup(GROUP_ID, USER_ID))
                 .thenReturn(List.of(list("l", "x", List.of(i1, i2, i3, i4, i5, i6))));
 
-        // Scenario: 2 dated fresh floats (already cover their weeks, so emptyWeeks=6),
-        // 1 dateless fresh float (passed here). budget = 6 - 1 = 5.
         ForwardFillSuggestionService.ForwardFillResult r =
-                service.getForwardFill(GROUP_ID, NOW, USER_ID, List.of(), /*freshFloatCount*/ 1);
+                service.getForwardFill(GROUP_ID, NOW, USER_ID, List.of(), List.of(), /*needsDaySuggestionCount*/ 3);
 
         assertThat(r.getIdeas()).hasSize(5);
     }
 
     @Test
-    void freshFloatCount_exceedsEmptyWeeks_noIdeasSurfaced() {
-        when(weekCoverageCalculator.countEmptyWeeks(eq(GROUP_ID), anyLong())).thenReturn(3);
+    void datelessConfirmed_countsTowardDeduction() {
+        // Any dateless item (CONFIRMED, GAINING, legacy-null, stale-supported, fresh)
+        // occupies a slot; the service just takes the count.
+        when(weekCoverageCalculator.countEmptyWeeks(any(), anyLong())).thenReturn(5);
+
+        IdeaDTO i1 = idea("i1", "A", 10);
+        IdeaDTO i2 = idea("i2", "B", 9);
+        IdeaDTO i3 = idea("i3", "C", 8);
+        when(ideaListService.getIdeaListsForGroup(GROUP_ID, USER_ID))
+                .thenReturn(List.of(list("l", "x", List.of(i1, i2, i3))));
+
+        // 2 dateless CONFIRMED items → budget = 5 - 2 = 3.
+        ForwardFillSuggestionService.ForwardFillResult r =
+                service.getForwardFill(GROUP_ID, NOW, USER_ID, List.of(), List.of(), /*needsDaySuggestionCount*/ 2);
+
+        assertThat(r.getIdeas()).hasSize(3);
+    }
+
+    @Test
+    void datedItems_mustNotBeCountedByCaller() {
+        // Contract test: only dateless items in needsDay should be counted. A dated item
+        // has already reduced emptyWeeks via WeekCoverageCalculator; if the caller also
+        // counted it here, the budget would be double-deducted. This test locks in the
+        // math assuming the caller obeys its contract.
+        when(weekCoverageCalculator.countEmptyWeeks(any(), anyLong())).thenReturn(6);
+
+        IdeaDTO i1 = idea("i1", "A", 10);
+        IdeaDTO i2 = idea("i2", "B", 9);
+        IdeaDTO i3 = idea("i3", "C", 8);
+        IdeaDTO i4 = idea("i4", "D", 7);
+        IdeaDTO i5 = idea("i5", "E", 6);
+        IdeaDTO i6 = idea("i6", "F", 5);
+        when(ideaListService.getIdeaListsForGroup(GROUP_ID, USER_ID))
+                .thenReturn(List.of(list("l", "x", List.of(i1, i2, i3, i4, i5, i6))));
+
+        // Scenario: 2 dated items cover their weeks (emptyWeeks=6 already reflects that),
+        // 1 dateless item is passed here. budget = 6 - 1 = 5.
+        ForwardFillSuggestionService.ForwardFillResult r =
+                service.getForwardFill(GROUP_ID, NOW, USER_ID, List.of(), List.of(), /*needsDaySuggestionCount*/ 1);
+
+        assertThat(r.getIdeas()).hasSize(5);
+    }
+
+    @Test
+    void needsDaySuggestionCount_exceedsEmptyWeeks_noIdeasSurfaced() {
+        when(weekCoverageCalculator.countEmptyWeeks(any(), anyLong())).thenReturn(3);
 
         ForwardFillSuggestionService.ForwardFillResult r =
-                service.getForwardFill(GROUP_ID, NOW, USER_ID, List.of(), /*freshFloatCount*/ 5);
+                service.getForwardFill(GROUP_ID, NOW, USER_ID, List.of(), List.of(), /*needsDaySuggestionCount*/ 5);
 
         assertThat(r.getStaleFloats()).isEmpty();
         assertThat(r.getIdeas()).isEmpty();
@@ -336,11 +375,11 @@ class ForwardFillSuggestionServiceImplTest {
 
     @Test
     void nullHeldStaleFloats_handledGracefully() {
-        when(weekCoverageCalculator.countEmptyWeeks(eq(GROUP_ID), anyLong())).thenReturn(1);
+        when(weekCoverageCalculator.countEmptyWeeks(any(), anyLong())).thenReturn(1);
         lenient().when(ideaListService.getIdeaListsForGroup(GROUP_ID, USER_ID)).thenReturn(List.of());
 
         ForwardFillSuggestionService.ForwardFillResult r =
-                service.getForwardFill(GROUP_ID, NOW, USER_ID, null, 0);
+                service.getForwardFill(GROUP_ID, NOW, USER_ID, null, List.of(), 0);
 
         assertThat(r.getStaleFloats()).isEmpty();
         assertThat(r.getIdeas()).isEmpty();
