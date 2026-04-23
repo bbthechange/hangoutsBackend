@@ -18,6 +18,9 @@ class SecurityConfigTest {
         assertNotNull(configuration);
         assertTrue(configuration.getAllowedOrigins().contains("http://localhost:3000"));
         assertTrue(configuration.getAllowedOrigins().contains("https://d3lm7si4v7xvcj.cloudfront.net"));
+        assertTrue(configuration.getAllowedOrigins().contains("https://d1713f2ygzp5es.cloudfront.net"));
+        assertTrue(configuration.getAllowedOrigins().contains("https://hangoapp.net"));
+        assertTrue(configuration.getAllowedOrigins().contains("https://www.hangoapp.net"));
         assertTrue(configuration.getAllowedOrigins().contains("https://api.inviter.app"));
     }
 

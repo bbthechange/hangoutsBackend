@@ -70,6 +70,8 @@ public class SecurityConfig {
             "https://localhost",     // Capacitor Android WebView (HTTPS)
             "https://d3lm7si4v7xvcj.cloudfront.net", // Production CloudFront domain (legacy)
             "https://d1713f2ygzp5es.cloudfront.net", // Production CloudFront domain (current)
+            "https://hangoapp.net",                  // Production primary domain
+            "https://www.hangoapp.net",              // Production primary domain (www)
             "https://d3e93y6prxzuq0.cloudfront.net", // Staging CloudFront domain
             "https://api.inviter.app", // Production API Gateway domain
             "https://v7ihwy6uv9.execute-api.us-west-2.amazonaws.com", // Staging API Gateway domain
