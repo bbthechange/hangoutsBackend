@@ -1,5 +1,6 @@
 package com.bbthechange.inviter.model;
 
+import com.bbthechange.inviter.dto.TimeInfo;
 import com.bbthechange.inviter.util.InviterKeyFactory;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbAttribute;
@@ -28,8 +29,7 @@ public class TimeSuggestion extends BaseItem {
     private String hangoutId;
     private String groupId;
     private String suggestedBy;           // User ID of the person who created the suggestion
-    private FuzzyTime fuzzyTime;          // e.g. TONIGHT, THIS_WEEKEND, SATURDAY
-    private Long specificTime;            // Optional Unix epoch seconds (exact time)
+    private TimeInfo timeInput;           // Same shape as Hangout.timeInput
     private List<String> supporterIds;    // User IDs who +1'd this suggestion
     private TimeSuggestionStatus status;  // ACTIVE, ADOPTED, REJECTED
 
@@ -44,22 +44,19 @@ public class TimeSuggestion extends BaseItem {
     /**
      * Create a new time suggestion with a generated UUID.
      *
-     * @param hangoutId  The hangout this suggestion belongs to
-     * @param groupId    The group context (for authorization / momentum recompute)
+     * @param hangoutId   The hangout this suggestion belongs to
+     * @param groupId     The group context (for authorization / momentum recompute)
      * @param suggestedBy User ID of the suggester
-     * @param fuzzyTime  Fuzzy time value (e.g. TONIGHT)
-     * @param specificTime Optional exact Unix timestamp in seconds (null for fuzzy-only)
+     * @param timeInput   TimeInfo describing the suggested time (fuzzy or exact)
      */
-    public TimeSuggestion(String hangoutId, String groupId, String suggestedBy,
-                          FuzzyTime fuzzyTime, Long specificTime) {
+    public TimeSuggestion(String hangoutId, String groupId, String suggestedBy, TimeInfo timeInput) {
         super();
         setItemType(TIME_SUGGESTION_PREFIX);
         this.suggestionId = UUID.randomUUID().toString();
         this.hangoutId = hangoutId;
         this.groupId = groupId;
         this.suggestedBy = suggestedBy;
-        this.fuzzyTime = fuzzyTime;
-        this.specificTime = specificTime;
+        this.timeInput = timeInput;
         this.supporterIds = new ArrayList<>();
         this.status = TimeSuggestionStatus.ACTIVE;
 
@@ -119,22 +116,13 @@ public class TimeSuggestion extends BaseItem {
         this.suggestedBy = suggestedBy;
     }
 
-    @DynamoDbAttribute("fuzzyTime")
-    public FuzzyTime getFuzzyTime() {
-        return fuzzyTime;
+    @DynamoDbAttribute("timeInput")
+    public TimeInfo getTimeInput() {
+        return timeInput;
     }
 
-    public void setFuzzyTime(FuzzyTime fuzzyTime) {
-        this.fuzzyTime = fuzzyTime;
-    }
-
-    @DynamoDbAttribute("specificTime")
-    public Long getSpecificTime() {
-        return specificTime;
-    }
-
-    public void setSpecificTime(Long specificTime) {
-        this.specificTime = specificTime;
+    public void setTimeInput(TimeInfo timeInput) {
+        this.timeInput = timeInput;
     }
 
     @DynamoDbAttribute("supporterIds")

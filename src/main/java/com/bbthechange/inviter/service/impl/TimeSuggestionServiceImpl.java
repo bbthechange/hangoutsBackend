@@ -8,6 +8,7 @@ import com.bbthechange.inviter.exception.ValidationException;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.repository.HangoutRepository;
+import com.bbthechange.inviter.service.FuzzyTimeService;
 import com.bbthechange.inviter.service.MomentumService;
 import com.bbthechange.inviter.service.TimeSuggestionSchedulerService;
 import com.bbthechange.inviter.service.TimeSuggestionService;
@@ -43,18 +44,21 @@ public class TimeSuggestionServiceImpl implements TimeSuggestionService {
     private final MomentumService momentumService;
     private final PointerUpdateService pointerUpdateService;
     private final TimeSuggestionSchedulerService timeSuggestionSchedulerService;
+    private final FuzzyTimeService fuzzyTimeService;
 
     @Autowired
     public TimeSuggestionServiceImpl(HangoutRepository hangoutRepository,
                                      GroupRepository groupRepository,
                                      MomentumService momentumService,
                                      PointerUpdateService pointerUpdateService,
-                                     TimeSuggestionSchedulerService timeSuggestionSchedulerService) {
+                                     TimeSuggestionSchedulerService timeSuggestionSchedulerService,
+                                     FuzzyTimeService fuzzyTimeService) {
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
         this.momentumService = momentumService;
         this.pointerUpdateService = pointerUpdateService;
         this.timeSuggestionSchedulerService = timeSuggestionSchedulerService;
+        this.fuzzyTimeService = fuzzyTimeService;
     }
 
     // ============================================================================
@@ -73,14 +77,15 @@ public class TimeSuggestionServiceImpl implements TimeSuggestionService {
             throw new ValidationException("Hangout already has a time set; no time suggestion needed");
         }
 
-        if (request.getFuzzyTime() == null) {
-            throw new ValidationException("fuzzyTime is required");
+        if (request.getTimeInput() == null) {
+            throw new ValidationException("timeInput is required");
         }
 
+        // Validate the TimeInfo shape (throws ValidationException on bad input)
+        fuzzyTimeService.convert(request.getTimeInput());
+
         TimeSuggestion suggestion = new TimeSuggestion(
-                hangoutId, groupId, userId,
-                request.getFuzzyTime(),
-                request.getSpecificTime()
+                hangoutId, groupId, userId, request.getTimeInput()
         );
 
         hangoutRepository.saveTimeSuggestion(suggestion);
@@ -175,20 +180,28 @@ public class TimeSuggestionServiceImpl implements TimeSuggestionService {
      */
     private void adoptSuggestion(TimeSuggestion suggestion) {
         String hangoutId = suggestion.getHangoutId();
-        logger.info("Auto-adopting time suggestion {} for hangout {} (fuzzyTime={}, specificTime={})",
-                suggestion.getSuggestionId(), hangoutId, suggestion.getFuzzyTime(), suggestion.getSpecificTime());
+        logger.info("Auto-adopting time suggestion {} for hangout {}",
+                suggestion.getSuggestionId(), hangoutId);
 
         // 1. Mark suggestion as ADOPTED and cancel pending EventBridge schedules
         suggestion.setStatus(TimeSuggestionStatus.ADOPTED);
         hangoutRepository.saveTimeSuggestion(suggestion);
         timeSuggestionSchedulerService.cancelAdoptionChecks(suggestion.getSuggestionId());
 
-        // 2. If suggestion has a specific time, update the hangout's startTimestamp
-        if (suggestion.getSpecificTime() != null) {
+        // 2. Apply the suggestion's timeInput to the hangout (sets timeInput,
+        //    startTimestamp, and endTimestamp). Defensive null-check guards
+        //    against legacy rows lacking timeInput; such rows are skipped.
+        if (suggestion.getTimeInput() == null) {
+            logger.warn("Adopted suggestion {} has null timeInput — skipping hangout update (likely legacy row)",
+                    suggestion.getSuggestionId());
+        } else {
             Optional<Hangout> hangoutOpt = hangoutRepository.findHangoutById(hangoutId);
             if (hangoutOpt.isPresent()) {
                 Hangout hangout = hangoutOpt.get();
-                hangout.setStartTimestamp(suggestion.getSpecificTime());
+                FuzzyTimeService.TimeConversionResult t = fuzzyTimeService.convert(suggestion.getTimeInput());
+                hangout.setTimeInput(suggestion.getTimeInput());
+                hangout.setStartTimestamp(t.startTimestamp);
+                hangout.setEndTimestamp(t.endTimestamp);
                 hangoutRepository.save(hangout);
 
                 // Update all associated pointers

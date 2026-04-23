@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.service.impl;
 
 import com.bbthechange.inviter.dto.CreateTimeSuggestionRequest;
+import com.bbthechange.inviter.dto.TimeInfo;
 import com.bbthechange.inviter.dto.TimeSuggestionDTO;
 import com.bbthechange.inviter.exception.ResourceNotFoundException;
 import com.bbthechange.inviter.exception.UnauthorizedException;
@@ -8,6 +9,7 @@ import com.bbthechange.inviter.exception.ValidationException;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.repository.HangoutRepository;
+import com.bbthechange.inviter.service.FuzzyTimeService;
 import com.bbthechange.inviter.service.MomentumService;
 import com.bbthechange.inviter.service.TimeSuggestionSchedulerService;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,7 +22,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -36,7 +37,6 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class TimeSuggestionServiceImplTest {
 
-    // Fixed IDs for test data
     private static final String GROUP_ID    = "11111111-1111-1111-1111-111111111111";
     private static final String HANGOUT_ID  = "22222222-2222-2222-2222-222222222222";
     private static final String USER_ID     = "33333333-3333-3333-3333-333333333333";
@@ -48,6 +48,7 @@ class TimeSuggestionServiceImplTest {
     @Mock private MomentumService momentumService;
     @Mock private PointerUpdateService pointerUpdateService;
     @Mock private TimeSuggestionSchedulerService timeSuggestionSchedulerService;
+    @Mock private FuzzyTimeService fuzzyTimeService;
 
     @InjectMocks
     private TimeSuggestionServiceImpl service;
@@ -61,7 +62,6 @@ class TimeSuggestionServiceImplTest {
                 EventVisibility.INVITE_ONLY, null);
         h.setHangoutId(HANGOUT_ID);
         h.setAssociatedGroups(List.of(GROUP_ID));
-        // startTimestamp = null  ← key: no time set
         return h;
     }
 
@@ -71,16 +71,28 @@ class TimeSuggestionServiceImplTest {
         return h;
     }
 
+    private TimeInfo fuzzyWeekend() {
+        TimeInfo ti = new TimeInfo();
+        ti.setPeriodGranularity("weekend");
+        ti.setPeriodStart("2026-04-25T00:00:00-07:00");
+        return ti;
+    }
+
+    private TimeInfo exactTime() {
+        TimeInfo ti = new TimeInfo();
+        ti.setStartTime("2026-04-25T18:00:00-07:00");
+        return ti;
+    }
+
     private TimeSuggestion activeSuggestion() {
-        TimeSuggestion ts = new TimeSuggestion(HANGOUT_ID, GROUP_ID, USER_ID, FuzzyTime.THIS_WEEKEND, null);
+        TimeSuggestion ts = new TimeSuggestion(HANGOUT_ID, GROUP_ID, USER_ID, fuzzyWeekend());
         ts.setSuggestionId(SUGGESTION_ID);
         return ts;
     }
 
-    private CreateTimeSuggestionRequest createRequest(FuzzyTime fuzzy, Long specific) {
+    private CreateTimeSuggestionRequest createRequest(TimeInfo timeInput) {
         CreateTimeSuggestionRequest req = new CreateTimeSuggestionRequest();
-        req.setFuzzyTime(fuzzy);
-        req.setSpecificTime(specific);
+        req.setTimeInput(timeInput);
         return req;
     }
 
@@ -97,84 +109,96 @@ class TimeSuggestionServiceImplTest {
         }
 
         @Test
-        void validRequest_SavesSuggestionAndReturnDTO() {
-            // Given
+        void validFuzzyRequest_SavesSuggestionAndReturnsDTO() {
             when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(timelessHangout()));
             when(hangoutRepository.saveTimeSuggestion(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(fuzzyTimeService.convert(any(TimeInfo.class)))
+                    .thenReturn(new FuzzyTimeService.TimeConversionResult(1L, 2L));
 
-            // When
             TimeSuggestionDTO dto = service.createSuggestion(GROUP_ID, HANGOUT_ID,
-                    createRequest(FuzzyTime.THIS_WEEKEND, null), USER_ID);
+                    createRequest(fuzzyWeekend()), USER_ID);
 
-            // Then
-            assertThat(dto.getFuzzyTime()).isEqualTo(FuzzyTime.THIS_WEEKEND);
+            assertThat(dto.getTimeInput()).isNotNull();
+            assertThat(dto.getTimeInput().getPeriodGranularity()).isEqualTo("weekend");
             assertThat(dto.getSuggestedBy()).isEqualTo(USER_ID);
             assertThat(dto.getHangoutId()).isEqualTo(HANGOUT_ID);
             assertThat(dto.getStatus()).isEqualTo(TimeSuggestionStatus.ACTIVE);
             verify(hangoutRepository).saveTimeSuggestion(any(TimeSuggestion.class));
+            verify(fuzzyTimeService).convert(any(TimeInfo.class));
         }
 
         @Test
-        void withSpecificTime_SpecificTimePersisted() {
-            // Given
+        void validExactRequest_PersistsTimeInput() {
             when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(timelessHangout()));
             when(hangoutRepository.saveTimeSuggestion(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(fuzzyTimeService.convert(any(TimeInfo.class)))
+                    .thenReturn(new FuzzyTimeService.TimeConversionResult(1L, 2L));
 
-            // When
             TimeSuggestionDTO dto = service.createSuggestion(GROUP_ID, HANGOUT_ID,
-                    createRequest(FuzzyTime.SATURDAY, 1_800_000_000L), USER_ID);
+                    createRequest(exactTime()), USER_ID);
 
-            // Then
-            assertThat(dto.getSpecificTime()).isEqualTo(1_800_000_000L);
+            assertThat(dto.getTimeInput()).isNotNull();
+            assertThat(dto.getTimeInput().getStartTime()).isNotNull();
+        }
+
+        @Test
+        void invalidTimeInput_ConvertThrows_PropagatesValidationException() {
+            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(timelessHangout()));
+            TimeInfo bad = new TimeInfo();
+            bad.setPeriodGranularity("notARealGranularity");
+            bad.setPeriodStart("2026-04-25T00:00:00-07:00");
+            when(fuzzyTimeService.convert(any(TimeInfo.class)))
+                    .thenThrow(new ValidationException("Unsupported periodGranularity"));
+
+            assertThatThrownBy(() -> service.createSuggestion(GROUP_ID, HANGOUT_ID,
+                    createRequest(bad), USER_ID))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessageContaining("periodGranularity");
+
+            verify(hangoutRepository, never()).saveTimeSuggestion(any());
         }
 
         @Test
         void hangoutNotFound_ThrowsResourceNotFoundException() {
-            // Given
             when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.empty());
 
-            // When / Then
             assertThatThrownBy(() -> service.createSuggestion(GROUP_ID, HANGOUT_ID,
-                    createRequest(FuzzyTime.TONIGHT, null), USER_ID))
+                    createRequest(fuzzyWeekend()), USER_ID))
                     .isInstanceOf(ResourceNotFoundException.class);
         }
 
         @Test
         void hangoutAlreadyHasTime_ThrowsValidationException() {
-            // Given
             when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(hangoutWithTime()));
 
-            // When / Then
             assertThatThrownBy(() -> service.createSuggestion(GROUP_ID, HANGOUT_ID,
-                    createRequest(FuzzyTime.TONIGHT, null), USER_ID))
+                    createRequest(fuzzyWeekend()), USER_ID))
                     .isInstanceOf(ValidationException.class)
                     .hasMessageContaining("already has a time set");
         }
 
         @Test
         void notGroupMember_ThrowsUnauthorizedException() {
-            // Given
             when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(false);
 
-            // When / Then
             assertThatThrownBy(() -> service.createSuggestion(GROUP_ID, HANGOUT_ID,
-                    createRequest(FuzzyTime.TONIGHT, null), USER_ID))
+                    createRequest(fuzzyWeekend()), USER_ID))
                     .isInstanceOf(UnauthorizedException.class);
 
             verifyNoInteractions(hangoutRepository);
         }
 
         @Test
-        void fuzzyTimeNull_ThrowsValidationException() {
-            // Given
+        void timeInputNull_ThrowsValidationException() {
             when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(timelessHangout()));
 
-            // When / Then
             assertThatThrownBy(() -> service.createSuggestion(GROUP_ID, HANGOUT_ID,
-                    createRequest(null, null), USER_ID))
-                    .isInstanceOf(ValidationException.class);
+                    createRequest(null), USER_ID))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessageContaining("timeInput");
 
             verify(hangoutRepository, never()).saveTimeSuggestion(any());
+            verifyNoInteractions(fuzzyTimeService);
         }
     }
 
@@ -192,16 +216,13 @@ class TimeSuggestionServiceImplTest {
 
         @Test
         void validSupport_AddsSupporterAndSaves() {
-            // Given
             TimeSuggestion ts = activeSuggestion();
             when(hangoutRepository.findTimeSuggestionById(HANGOUT_ID, SUGGESTION_ID))
                     .thenReturn(Optional.of(ts));
             when(hangoutRepository.saveTimeSuggestion(any())).thenAnswer(inv -> inv.getArgument(0));
 
-            // When
             TimeSuggestionDTO dto = service.supportSuggestion(GROUP_ID, HANGOUT_ID, SUGGESTION_ID, OTHER_USER);
 
-            // Then
             assertThat(dto.getSupporterIds()).contains(OTHER_USER);
             assertThat(dto.getSupportCount()).isEqualTo(1);
             verify(hangoutRepository).saveTimeSuggestion(any());
@@ -209,29 +230,24 @@ class TimeSuggestionServiceImplTest {
 
         @Test
         void alreadySupporting_IdempotentNoSave() {
-            // Given
             TimeSuggestion ts = activeSuggestion();
-            ts.addSupporter(OTHER_USER); // already added
+            ts.addSupporter(OTHER_USER);
             when(hangoutRepository.findTimeSuggestionById(HANGOUT_ID, SUGGESTION_ID))
                     .thenReturn(Optional.of(ts));
 
-            // When
             TimeSuggestionDTO dto = service.supportSuggestion(GROUP_ID, HANGOUT_ID, SUGGESTION_ID, OTHER_USER);
 
-            // Then
             assertThat(dto.getSupportCount()).isEqualTo(1);
             verify(hangoutRepository, never()).saveTimeSuggestion(any());
         }
 
         @Test
         void suggestionNotActive_ThrowsValidationException() {
-            // Given
             TimeSuggestion ts = activeSuggestion();
             ts.setStatus(TimeSuggestionStatus.ADOPTED);
             when(hangoutRepository.findTimeSuggestionById(HANGOUT_ID, SUGGESTION_ID))
                     .thenReturn(Optional.of(ts));
 
-            // When / Then
             assertThatThrownBy(() -> service.supportSuggestion(GROUP_ID, HANGOUT_ID, SUGGESTION_ID, OTHER_USER))
                     .isInstanceOf(ValidationException.class)
                     .hasMessageContaining("no longer active");
@@ -239,21 +255,17 @@ class TimeSuggestionServiceImplTest {
 
         @Test
         void suggestionNotFound_ThrowsResourceNotFoundException() {
-            // Given
             when(hangoutRepository.findTimeSuggestionById(HANGOUT_ID, SUGGESTION_ID))
                     .thenReturn(Optional.empty());
 
-            // When / Then
             assertThatThrownBy(() -> service.supportSuggestion(GROUP_ID, HANGOUT_ID, SUGGESTION_ID, OTHER_USER))
                     .isInstanceOf(ResourceNotFoundException.class);
         }
 
         @Test
         void notGroupMember_ThrowsUnauthorizedException() {
-            // Given
             when(groupRepository.isUserMemberOfGroup(GROUP_ID, OTHER_USER)).thenReturn(false);
 
-            // When / Then
             assertThatThrownBy(() -> service.supportSuggestion(GROUP_ID, HANGOUT_ID, SUGGESTION_ID, OTHER_USER))
                     .isInstanceOf(UnauthorizedException.class);
         }
@@ -268,40 +280,32 @@ class TimeSuggestionServiceImplTest {
 
         @Test
         void returnsMappedDTOs() {
-            // Given
             when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
             when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(timelessHangout()));
             TimeSuggestion ts1 = activeSuggestion();
-            TimeSuggestion ts2 = new TimeSuggestion(HANGOUT_ID, GROUP_ID, OTHER_USER, FuzzyTime.TOMORROW, null);
+            TimeSuggestion ts2 = new TimeSuggestion(HANGOUT_ID, GROUP_ID, OTHER_USER, fuzzyWeekend());
             when(hangoutRepository.findActiveTimeSuggestions(HANGOUT_ID)).thenReturn(List.of(ts1, ts2));
 
-            // When
             List<TimeSuggestionDTO> results = service.listSuggestions(GROUP_ID, HANGOUT_ID, USER_ID);
 
-            // Then
             assertThat(results).hasSize(2);
         }
 
         @Test
         void emptyList_ReturnsEmpty() {
-            // Given
             when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
             when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(timelessHangout()));
             when(hangoutRepository.findActiveTimeSuggestions(HANGOUT_ID)).thenReturn(List.of());
 
-            // When
             List<TimeSuggestionDTO> results = service.listSuggestions(GROUP_ID, HANGOUT_ID, USER_ID);
 
-            // Then
             assertThat(results).isEmpty();
         }
 
         @Test
         void notGroupMember_ThrowsUnauthorizedException() {
-            // Given — unauthorized check happens before any hangout lookup
             when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(false);
 
-            // When / Then
             assertThatThrownBy(() -> service.listSuggestions(GROUP_ID, HANGOUT_ID, USER_ID))
                     .isInstanceOf(UnauthorizedException.class);
 
@@ -318,45 +322,40 @@ class TimeSuggestionServiceImplTest {
 
         @Test
         void noActiveSuggestions_DoesNothing() {
-            // Given
             when(hangoutRepository.findActiveTimeSuggestions(HANGOUT_ID)).thenReturn(List.of());
 
-            // When
             service.adoptForHangout(HANGOUT_ID, 24, 48);
 
-            // Then
             verify(hangoutRepository, never()).saveTimeSuggestion(any());
         }
 
         @Test
         void competingSuggestions_SkipsAdoption() {
-            // Given
             TimeSuggestion ts1 = activeSuggestion();
-            TimeSuggestion ts2 = new TimeSuggestion(HANGOUT_ID, GROUP_ID, OTHER_USER, FuzzyTime.SATURDAY, null);
+            TimeSuggestion ts2 = new TimeSuggestion(HANGOUT_ID, GROUP_ID, OTHER_USER, fuzzyWeekend());
             when(hangoutRepository.findActiveTimeSuggestions(HANGOUT_ID)).thenReturn(List.of(ts1, ts2));
 
-            // When
             service.adoptForHangout(HANGOUT_ID, 24, 48);
 
-            // Then
             verify(hangoutRepository, never()).saveTimeSuggestion(any());
         }
 
         @Test
         void singleSuggestionWithSupportPastWindow_Adopted() {
-            // Given — suggestion created 25h ago with 1 supporter, no specificTime
-            TimeSuggestion ts = activeSuggestion(); // specificTime = null
+            TimeSuggestion ts = activeSuggestion();
             ts.setCreatedAt(Instant.now().minusSeconds(25 * 3600));
             ts.addSupporter(OTHER_USER);
 
+            Hangout hangout = timelessHangout();
             when(hangoutRepository.findActiveTimeSuggestions(HANGOUT_ID)).thenReturn(List.of(ts));
             when(hangoutRepository.saveTimeSuggestion(any())).thenAnswer(inv -> inv.getArgument(0));
-            // findHangoutById not called because specificTime is null
+            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(hangout));
+            when(hangoutRepository.save(any(Hangout.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(fuzzyTimeService.convert(any(TimeInfo.class)))
+                    .thenReturn(new FuzzyTimeService.TimeConversionResult(1_800_000_000L, 1_800_172_800L));
 
-            // When
             service.adoptForHangout(HANGOUT_ID, 24, 48);
 
-            // Then — suggestion saved with ADOPTED status
             ArgumentCaptor<TimeSuggestion> captor = ArgumentCaptor.forClass(TimeSuggestion.class);
             verify(hangoutRepository).saveTimeSuggestion(captor.capture());
             assertThat(captor.getValue().getStatus()).isEqualTo(TimeSuggestionStatus.ADOPTED);
@@ -365,35 +364,32 @@ class TimeSuggestionServiceImplTest {
 
         @Test
         void singleSuggestionWithSupportBeforeWindow_NotAdopted() {
-            // Given — suggestion created only 10h ago with 1 supporter (shortWindow = 24h)
             TimeSuggestion ts = activeSuggestion();
             ts.setCreatedAt(Instant.now().minusSeconds(10 * 3600));
             ts.addSupporter(OTHER_USER);
 
             when(hangoutRepository.findActiveTimeSuggestions(HANGOUT_ID)).thenReturn(List.of(ts));
 
-            // When
             service.adoptForHangout(HANGOUT_ID, 24, 48);
 
-            // Then — not yet past window; should not save
             verify(hangoutRepository, never()).saveTimeSuggestion(any());
         }
 
         @Test
         void zeroVoteSuggestionPastLongWindow_Adopted() {
-            // Given — suggestion created 50h ago with 0 supporters (longWindow = 48h), no specificTime
-            TimeSuggestion ts = activeSuggestion(); // specificTime = null
+            TimeSuggestion ts = activeSuggestion();
             ts.setCreatedAt(Instant.now().minusSeconds(50 * 3600));
-            // no supporters added
 
+            Hangout hangout = timelessHangout();
             when(hangoutRepository.findActiveTimeSuggestions(HANGOUT_ID)).thenReturn(List.of(ts));
             when(hangoutRepository.saveTimeSuggestion(any())).thenAnswer(inv -> inv.getArgument(0));
-            // findHangoutById not called because specificTime is null
+            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(hangout));
+            when(hangoutRepository.save(any(Hangout.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(fuzzyTimeService.convert(any(TimeInfo.class)))
+                    .thenReturn(new FuzzyTimeService.TimeConversionResult(1L, 2L));
 
-            // When
             service.adoptForHangout(HANGOUT_ID, 24, 48);
 
-            // Then
             ArgumentCaptor<TimeSuggestion> captor = ArgumentCaptor.forClass(TimeSuggestion.class);
             verify(hangoutRepository).saveTimeSuggestion(captor.capture());
             assertThat(captor.getValue().getStatus()).isEqualTo(TimeSuggestionStatus.ADOPTED);
@@ -401,93 +397,88 @@ class TimeSuggestionServiceImplTest {
 
         @Test
         void zeroVoteSuggestionBeforeLongWindow_NotAdopted() {
-            // Given — suggestion created 30h ago with 0 supporters (longWindow = 48h)
             TimeSuggestion ts = activeSuggestion();
             ts.setCreatedAt(Instant.now().minusSeconds(30 * 3600));
 
             when(hangoutRepository.findActiveTimeSuggestions(HANGOUT_ID)).thenReturn(List.of(ts));
 
-            // When
             service.adoptForHangout(HANGOUT_ID, 24, 48);
 
-            // Then
             verify(hangoutRepository, never()).saveTimeSuggestion(any());
         }
 
         @Test
-        void adoptedSuggestionWithSpecificTime_UpdatesHangoutTimestamp() {
-            // Given
-            TimeSuggestion ts = new TimeSuggestion(HANGOUT_ID, GROUP_ID, USER_ID,
-                    FuzzyTime.SATURDAY, 1_800_000_000L); // has specific time
-            ts.setSuggestionId(SUGGESTION_ID);
+        void adoption_AppliesFullTimeBlockToHangout() {
+            // Adopted suggestion sets timeInput AND startTimestamp AND endTimestamp.
+            TimeSuggestion ts = activeSuggestion();
             ts.setCreatedAt(Instant.now().minusSeconds(25 * 3600));
             ts.addSupporter(OTHER_USER);
 
             Hangout hangout = timelessHangout();
-
             when(hangoutRepository.findActiveTimeSuggestions(HANGOUT_ID)).thenReturn(List.of(ts));
             when(hangoutRepository.saveTimeSuggestion(any())).thenAnswer(inv -> inv.getArgument(0));
             when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(hangout));
             when(hangoutRepository.save(any(Hangout.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(fuzzyTimeService.convert(any(TimeInfo.class)))
+                    .thenReturn(new FuzzyTimeService.TimeConversionResult(1_800_000_000L, 1_800_172_800L));
 
-            // When
             service.adoptForHangout(HANGOUT_ID, 24, 48);
 
-            // Then — hangout should have been saved with the new timestamp
             ArgumentCaptor<Hangout> hangoutCaptor = ArgumentCaptor.forClass(Hangout.class);
             verify(hangoutRepository).save(hangoutCaptor.capture());
-            assertThat(hangoutCaptor.getValue().getStartTimestamp()).isEqualTo(1_800_000_000L);
+            Hangout saved = hangoutCaptor.getValue();
+            assertThat(saved.getStartTimestamp()).isEqualTo(1_800_000_000L);
+            assertThat(saved.getEndTimestamp()).isEqualTo(1_800_172_800L);
+            assertThat(saved.getTimeInput()).isNotNull();
+            assertThat(saved.getTimeInput().getPeriodGranularity()).isEqualTo("weekend");
         }
 
         @Test
-        void adoptedSuggestionWithSpecificTime_CallsPointerUpdateForEachGroup() {
-            // Given — hangout has 1 associated group, suggestion has specificTime
-            TimeSuggestion ts = new TimeSuggestion(HANGOUT_ID, GROUP_ID, USER_ID,
-                    FuzzyTime.SATURDAY, 1_800_000_000L);
-            ts.setSuggestionId(SUGGESTION_ID);
+        void adoption_CallsPointerUpdateForEachGroup() {
+            TimeSuggestion ts = activeSuggestion();
             ts.setCreatedAt(Instant.now().minusSeconds(25 * 3600));
             ts.addSupporter(OTHER_USER);
 
-            Hangout hangout = timelessHangout(); // associatedGroups = [GROUP_ID]
-
+            Hangout hangout = timelessHangout();
             when(hangoutRepository.findActiveTimeSuggestions(HANGOUT_ID)).thenReturn(List.of(ts));
             when(hangoutRepository.saveTimeSuggestion(any())).thenAnswer(inv -> inv.getArgument(0));
             when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(hangout));
             when(hangoutRepository.save(any(Hangout.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(fuzzyTimeService.convert(any(TimeInfo.class)))
+                    .thenReturn(new FuzzyTimeService.TimeConversionResult(1L, 2L));
 
-            // When
             service.adoptForHangout(HANGOUT_ID, 24, 48);
 
-            // Then — pointer update called once (one group)
             verify(pointerUpdateService).updatePointerWithRetry(eq(GROUP_ID), eq(HANGOUT_ID), any(), any());
         }
 
         @Test
-        void adoptedSuggestionWithoutSpecificTime_DoesNotUpdateHangoutTimestamp() {
-            // Given — specificTime is null, so hangout.save should NOT be called
-            TimeSuggestion ts = activeSuggestion(); // specificTime = null
+        void adoption_NullTimeInput_SkipsHangoutUpdate() {
+            // Defensive guard for legacy rows without timeInput: suggestion is
+            // marked ADOPTED but the hangout is left untouched.
+            TimeSuggestion ts = activeSuggestion();
+            ts.setTimeInput(null);
             ts.setCreatedAt(Instant.now().minusSeconds(25 * 3600));
             ts.addSupporter(OTHER_USER);
 
             when(hangoutRepository.findActiveTimeSuggestions(HANGOUT_ID)).thenReturn(List.of(ts));
             when(hangoutRepository.saveTimeSuggestion(any())).thenAnswer(inv -> inv.getArgument(0));
 
-            // When
             service.adoptForHangout(HANGOUT_ID, 24, 48);
 
-            // Then — suggestion adopted, but hangout.save not called and no pointer update
             ArgumentCaptor<TimeSuggestion> captor = ArgumentCaptor.forClass(TimeSuggestion.class);
             verify(hangoutRepository).saveTimeSuggestion(captor.capture());
             assertThat(captor.getValue().getStatus()).isEqualTo(TimeSuggestionStatus.ADOPTED);
             verify(hangoutRepository, never()).save(any(Hangout.class));
             verifyNoInteractions(pointerUpdateService);
+            verifyNoInteractions(fuzzyTimeService);
             verify(momentumService).recomputeMomentum(HANGOUT_ID);
         }
 
         @Test
         void momentumRecomputeThrows_DoesNotPropagateException() {
-            // Given — momentum throws, but method should still complete normally
-            TimeSuggestion ts = activeSuggestion(); // specificTime = null
+            TimeSuggestion ts = activeSuggestion();
+            ts.setTimeInput(null); // skip hangout-update path so we isolate momentum
             ts.setCreatedAt(Instant.now().minusSeconds(25 * 3600));
             ts.addSupporter(OTHER_USER);
 
@@ -496,10 +487,8 @@ class TimeSuggestionServiceImplTest {
             doThrow(new RuntimeException("Momentum service unavailable"))
                     .when(momentumService).recomputeMomentum(HANGOUT_ID);
 
-            // When — should not throw
             service.adoptForHangout(HANGOUT_ID, 24, 48);
 
-            // Then — suggestion was still adopted despite momentum failure
             ArgumentCaptor<TimeSuggestion> captor = ArgumentCaptor.forClass(TimeSuggestion.class);
             verify(hangoutRepository).saveTimeSuggestion(captor.capture());
             assertThat(captor.getValue().getStatus()).isEqualTo(TimeSuggestionStatus.ADOPTED);
@@ -507,16 +496,13 @@ class TimeSuggestionServiceImplTest {
 
         @Test
         void nullCreatedAt_SkipsAdoption() {
-            // Given — suggestion has null createdAt (defensive guard)
             TimeSuggestion ts = activeSuggestion();
             ts.setCreatedAt(null);
 
             when(hangoutRepository.findActiveTimeSuggestions(HANGOUT_ID)).thenReturn(List.of(ts));
 
-            // When
             service.adoptForHangout(HANGOUT_ID, 24, 48);
 
-            // Then — no write should occur
             verify(hangoutRepository, never()).saveTimeSuggestion(any());
             verifyNoInteractions(momentumService);
         }

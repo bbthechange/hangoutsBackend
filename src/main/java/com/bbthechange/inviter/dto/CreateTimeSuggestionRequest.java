@@ -1,32 +1,23 @@
 package com.bbthechange.inviter.dto;
 
-import com.bbthechange.inviter.model.FuzzyTime;
 import jakarta.validation.constraints.NotNull;
 
 /**
  * Request body for POST /groups/{groupId}/hangouts/{hangoutId}/time-suggestions.
+ * Uses the same TimeInfo shape as hangout create/update endpoints.
+ * Shape validation (fuzzy XOR exact, ISO-8601 parse, granularity allowed list)
+ * is performed in the service via FuzzyTimeService.convert().
  */
 public class CreateTimeSuggestionRequest {
 
-    @NotNull(message = "fuzzyTime is required")
-    private FuzzyTime fuzzyTime;
+    @NotNull(message = "timeInput is required")
+    private TimeInfo timeInput;
 
-    /** Optional exact Unix timestamp in seconds (e.g. 1753200000). */
-    private Long specificTime;
-
-    public FuzzyTime getFuzzyTime() {
-        return fuzzyTime;
+    public TimeInfo getTimeInput() {
+        return timeInput;
     }
 
-    public void setFuzzyTime(FuzzyTime fuzzyTime) {
-        this.fuzzyTime = fuzzyTime;
-    }
-
-    public Long getSpecificTime() {
-        return specificTime;
-    }
-
-    public void setSpecificTime(Long specificTime) {
-        this.specificTime = specificTime;
+    public void setTimeInput(TimeInfo timeInput) {
+        this.timeInput = timeInput;
     }
 }

@@ -1023,57 +1023,7 @@ public class HangoutServiceImpl implements HangoutService {
     }
 
     private TimeInfo formatTimeInfoForResponse(TimeInfo timeInfo) {
-        if (timeInfo == null) return null;
-
-        TimeInfo formattedTimeInfo = new TimeInfo();
-
-        // For fuzzy time: only return periodGranularity and periodStart in UTC
-        if (timeInfo.getPeriodGranularity() != null) {
-            formattedTimeInfo.setPeriodGranularity(timeInfo.getPeriodGranularity());
-            if (timeInfo.getPeriodStart() != null) {
-                formattedTimeInfo.setPeriodStart(convertToUtcIsoString(timeInfo.getPeriodStart()));
-            }
-        }
-        // For exact time: only return startTime and endTime in UTC
-        else if (timeInfo.getStartTime() != null) {
-            formattedTimeInfo.setStartTime(convertToUtcIsoString(timeInfo.getStartTime()));
-            if (timeInfo.getEndTime() != null) {
-                formattedTimeInfo.setEndTime(convertToUtcIsoString(timeInfo.getEndTime()));
-            }
-        }
-        // Ensure other fields are null if not set, as per API contract
-        formattedTimeInfo.setPeriodGranularity(formattedTimeInfo.getPeriodGranularity()); // Re-set to ensure null if not set above
-        formattedTimeInfo.setPeriodStart(formattedTimeInfo.getPeriodStart());
-        formattedTimeInfo.setStartTime(formattedTimeInfo.getStartTime());
-        formattedTimeInfo.setEndTime(formattedTimeInfo.getEndTime());
-
-        return formattedTimeInfo;
-    }
-    
-    private String convertToUtcIsoString(String timeString) {
-        if (timeString == null) {
-            return null;
-        }
-
-        try {
-            // Check if it's already in ISO format (contains 'T' and timezone info)
-            if (timeString.contains("T")) {
-                // Parse and convert to UTC
-                java.time.ZonedDateTime zonedDateTime = java.time.ZonedDateTime.parse(timeString);
-                return zonedDateTime.toInstant().toString(); // Converts to UTC ISO format ending with 'Z'
-            } else if (timeString.matches("\\d+")) {
-                // It's a Unix timestamp, convert to UTC ISO
-                long timestamp = Long.parseLong(timeString);
-                java.time.Instant instant = java.time.Instant.ofEpochSecond(timestamp);
-                return instant.toString();
-            } else {
-                // Return as-is if format is unknown
-                return timeString;
-            }
-        } catch (Exception e) {
-            // Return as-is if parsing fails
-            return timeString;
-        }
+        return com.bbthechange.inviter.util.TimeInfoFormatter.forResponse(timeInfo);
     }
 
     /**
