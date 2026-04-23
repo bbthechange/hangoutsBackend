@@ -3,6 +3,8 @@ package com.bbthechange.inviter.util;
 import com.bbthechange.inviter.model.Hangout;
 import com.bbthechange.inviter.model.HangoutPointer;
 
+import java.util.ArrayList;
+
 /**
  * Centralized factory for creating and updating HangoutPointer records.
  *
@@ -71,6 +73,13 @@ public final class HangoutPointerFactory {
         pointer.setDiscountCode(hangout.getDiscountCode());
 
         pointer.setPlaceCategory(hangout.getPlaceCategory());
+
+        // Time suggestions only make sense while the hangout is timeless.
+        // Any pointer update for a dated hangout clears them — self-correcting for both
+        // explicit adoption and direct host edits.
+        if (hangout.getStartTimestamp() != null) {
+            pointer.setTimeSuggestions(new ArrayList<>());
+        }
 
         pointer.setMomentumCategory(hangout.getMomentumCategory());
         pointer.setMomentumScore(hangout.getMomentumScore());

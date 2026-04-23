@@ -335,6 +335,16 @@ TimeSuggestion items live in the hangout's item collection:
 
 They are retrieved with a `begins_with(sk, "TIME_SUGGESTION#")` query.
 
+### Denormalization onto HangoutPointer
+
+Active suggestions are denormalized onto each `HangoutPointer.timeSuggestions` so the group feed can render them without extra queries. Key rules:
+
+- Stored as the lean `TimeSuggestionPointerView` projection (not the full `TimeSuggestion` bean) — nested `BaseItem` keys would bloat the pointer.
+- Capped at 5 per pointer in `TimeSuggestionServiceImpl.propagateSuggestionsToPointers`, sorted by `(supportCount desc, createdAt desc)`.
+- Propagation fires from `createSuggestion`, `supportSuggestion`, and adoption.
+- `HangoutPointerFactory.applyHangoutFields` clears `timeSuggestions` whenever `hangout.startTimestamp != null` — so any pointer update for a dated hangout self-corrects. Adoption and direct host time edits both rely on this rule.
+- Direct time edit (PATCH with `timeInfo` that resolves to a concrete `startTimestamp`) calls `TimeSuggestionService.invalidateActiveSuggestions`, which marks canonical rows `REJECTED` and cancels their EventBridge adoption schedules. This prevents a scheduler fire from later overwriting the host's time.
+
 ## 15. Attribute Suggestions via Polls (Feature 4)
 
 **Status: Implemented.** Replaced the old "silence=consent" AttributeProposal system. Attribute suggestions are now regular polls tagged with `attributeType`. Non-creator edits apply directly (no more interception).

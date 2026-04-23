@@ -77,4 +77,12 @@ public interface TimeSuggestionService {
      * @param longWindowHours  Adoption window (hours) for zero-vote suggestions
      */
     void adoptForHangout(String hangoutId, int shortWindowHours, int longWindowHours);
+
+    /**
+     * Invalidate any ACTIVE time suggestions for a hangout whose time has just been set
+     * directly (e.g., a host PATCH). Marks canonical rows REJECTED and cancels their
+     * scheduled adoption checks so a scheduler fire can't later overwrite the host's time.
+     * Pointer-side clearing is handled by the standard pointer-update path.
+     */
+    void invalidateActiveSuggestions(String hangoutId);
 }

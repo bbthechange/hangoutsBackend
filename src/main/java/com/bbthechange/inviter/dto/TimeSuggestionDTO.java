@@ -23,6 +23,25 @@ public class TimeSuggestionDTO {
     private TimeSuggestionStatus status;
     private long createdAtMillis;
 
+    /**
+     * Build a DTO from the lean pointer view + context supplied by the pointer record.
+     * Used in feed responses where only the denormalized view is available.
+     */
+    public static TimeSuggestionDTO fromPointerView(TimeSuggestionPointerView view,
+                                                    String hangoutId, String groupId) {
+        TimeSuggestionDTO dto = new TimeSuggestionDTO();
+        dto.suggestionId = view.getSuggestionId();
+        dto.hangoutId = hangoutId;
+        dto.groupId = groupId;
+        dto.suggestedBy = view.getSuggestedBy();
+        dto.timeInput = TimeInfoFormatter.forResponse(view.getTimeInput());
+        dto.supporterIds = view.getSupporterIds();
+        dto.supportCount = view.supportCount();
+        dto.status = view.getStatus();
+        dto.createdAtMillis = view.getCreatedAtMillis() != null ? view.getCreatedAtMillis() : 0L;
+        return dto;
+    }
+
     /** Build a DTO from a TimeSuggestion entity. */
     public static TimeSuggestionDTO from(TimeSuggestion ts) {
         TimeSuggestionDTO dto = new TimeSuggestionDTO();

@@ -12,6 +12,7 @@ import com.bbthechange.inviter.service.EventSeriesService;
 import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.S3Service;
 import com.bbthechange.inviter.service.GroupTimestampService;
+import com.bbthechange.inviter.service.TimeSuggestionService;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.model.*;
@@ -56,6 +57,7 @@ public class HangoutServiceImpl implements HangoutService {
     private final MomentumService momentumService;
     private final NudgeService nudgeService;
     private final AttributeSuggestionService attributeSuggestionService;
+    private final TimeSuggestionService timeSuggestionService;
 
     @Value("${inviter.attendance.backward-compat-interested:true}")
     private boolean attendanceBackwardCompatEnabled;
@@ -71,7 +73,8 @@ public class HangoutServiceImpl implements HangoutService {
                               HangoutSchedulerService hangoutSchedulerService,
                               MomentumService momentumService,
                               NudgeService nudgeService,
-                              AttributeSuggestionService attributeSuggestionService) {
+                              AttributeSuggestionService attributeSuggestionService,
+                              @Lazy TimeSuggestionService timeSuggestionService) {
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
         this.fuzzyTimeService = fuzzyTimeService;
@@ -85,6 +88,7 @@ public class HangoutServiceImpl implements HangoutService {
         this.momentumService = momentumService;
         this.nudgeService = nudgeService;
         this.attributeSuggestionService = attributeSuggestionService;
+        this.timeSuggestionService = timeSuggestionService;
     }
     
     @Override
@@ -570,6 +574,19 @@ public class HangoutServiceImpl implements HangoutService {
 
         // Save canonical record
         hangoutRepository.createHangout(hangout); // Using createHangout as it's a putItem
+
+        // A direct time edit makes any active time suggestions moot. Mark them REJECTED and
+        // cancel their adoption schedules BEFORE the pointer update so the scheduler can't
+        // race in and adopt a stale suggestion. Pointer timeSuggestions will be cleared by
+        // HangoutPointerFactory.applyHangoutFields since startTimestamp is now non-null.
+        if (timeChanged && hangout.getStartTimestamp() != null) {
+            try {
+                timeSuggestionService.invalidateActiveSuggestions(hangoutId);
+            } catch (Exception e) {
+                logger.warn("Failed to invalidate time suggestions after direct time edit for {}: {}",
+                        hangoutId, e.getMessage());
+            }
+        }
 
         // Update pointer records using read-modify-write pattern with optimistic locking
         if (needsPointerUpdate && hangout.getAssociatedGroups() != null) {

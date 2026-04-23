@@ -2,16 +2,14 @@ package com.bbthechange.inviter.service.impl;
 
 import com.bbthechange.inviter.dto.CreateTimeSuggestionRequest;
 import com.bbthechange.inviter.dto.TimeSuggestionDTO;
+import com.bbthechange.inviter.dto.TimeSuggestionPointerView;
 import com.bbthechange.inviter.exception.ResourceNotFoundException;
 import com.bbthechange.inviter.exception.UnauthorizedException;
 import com.bbthechange.inviter.exception.ValidationException;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.repository.HangoutRepository;
-import com.bbthechange.inviter.service.FuzzyTimeService;
-import com.bbthechange.inviter.service.MomentumService;
-import com.bbthechange.inviter.service.TimeSuggestionSchedulerService;
-import com.bbthechange.inviter.service.TimeSuggestionService;
+import com.bbthechange.inviter.service.*;
 import com.bbthechange.inviter.util.HangoutPointerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,6 +17,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -45,6 +45,7 @@ public class TimeSuggestionServiceImpl implements TimeSuggestionService {
     private final PointerUpdateService pointerUpdateService;
     private final TimeSuggestionSchedulerService timeSuggestionSchedulerService;
     private final FuzzyTimeService fuzzyTimeService;
+    private final GroupTimestampService groupTimestampService;
 
     @Autowired
     public TimeSuggestionServiceImpl(HangoutRepository hangoutRepository,
@@ -52,13 +53,15 @@ public class TimeSuggestionServiceImpl implements TimeSuggestionService {
                                      MomentumService momentumService,
                                      PointerUpdateService pointerUpdateService,
                                      TimeSuggestionSchedulerService timeSuggestionSchedulerService,
-                                     FuzzyTimeService fuzzyTimeService) {
+                                     FuzzyTimeService fuzzyTimeService,
+                                     GroupTimestampService groupTimestampService) {
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
         this.momentumService = momentumService;
         this.pointerUpdateService = pointerUpdateService;
         this.timeSuggestionSchedulerService = timeSuggestionSchedulerService;
         this.fuzzyTimeService = fuzzyTimeService;
+        this.groupTimestampService = groupTimestampService;
     }
 
     // ============================================================================
@@ -91,6 +94,9 @@ public class TimeSuggestionServiceImpl implements TimeSuggestionService {
         hangoutRepository.saveTimeSuggestion(suggestion);
         logger.info("User {} created time suggestion {} for hangout {}", userId, suggestion.getSuggestionId(), hangoutId);
 
+        // Propagate to pointers so the suggestion appears in the group feed
+        propagateSuggestionsToPointers(hangout);
+
         // Schedule EventBridge adoption checks at short (24h) and long (48h) windows
         try {
             timeSuggestionSchedulerService.scheduleAdoptionChecks(
@@ -122,6 +128,9 @@ public class TimeSuggestionServiceImpl implements TimeSuggestionService {
 
         hangoutRepository.saveTimeSuggestion(suggestion);
         logger.info("User {} supported time suggestion {} for hangout {}", userId, suggestionId, hangoutId);
+
+        // Propagate updated support count to pointers
+        propagateSuggestionsToPointers(requireHangout(hangoutId));
 
         return TimeSuggestionDTO.from(suggestion);
     }
@@ -207,11 +216,14 @@ public class TimeSuggestionServiceImpl implements TimeSuggestionService {
                 // Update all associated pointers
                 List<String> groups = hangout.getAssociatedGroups();
                 if (groups != null) {
+                    // applyHangoutFields clears timeSuggestions whenever the hangout has a time,
+                    // so adoption inherits the clear for free.
                     for (String groupId : groups) {
                         pointerUpdateService.updatePointerWithRetry(groupId, hangoutId,
                                 pointer -> HangoutPointerFactory.applyHangoutFields(pointer, hangout),
                                 "time-suggestion-adoption");
                     }
+                    groupTimestampService.updateGroupTimestamps(groups);
                 }
             }
         }
@@ -228,8 +240,68 @@ public class TimeSuggestionServiceImpl implements TimeSuggestionService {
     }
 
     // ============================================================================
-    // AUTHORIZATION / LOOKUP HELPERS
+    // AUTHORIZATION / LOOKUP / PROPAGATION HELPERS
     // ============================================================================
+
+    /** Hard cap on how many suggestions are denormalized onto each pointer. */
+    static final int MAX_SUGGESTIONS_PER_POINTER = 5;
+
+    /**
+     * Propagate active time suggestions to all associated hangout pointers.
+     * Caps at {@link #MAX_SUGGESTIONS_PER_POINTER} by (supportCount desc, createdAt desc)
+     * so a pointer can't grow unbounded even if the hangout accumulates many suggestions.
+     */
+    private void propagateSuggestionsToPointers(Hangout hangout) {
+        String hangoutId = hangout.getHangoutId();
+        List<String> groups = hangout.getAssociatedGroups();
+        if (groups == null || groups.isEmpty()) {
+            return;
+        }
+
+        List<TimeSuggestionPointerView> capped = hangoutRepository.findActiveTimeSuggestions(hangoutId).stream()
+                .sorted(Comparator
+                        .comparingInt(TimeSuggestion::supportCount).reversed()
+                        .thenComparing(ts -> ts.getCreatedAt() != null ? ts.getCreatedAt() : Instant.EPOCH,
+                                Comparator.reverseOrder()))
+                .limit(MAX_SUGGESTIONS_PER_POINTER)
+                .map(TimeSuggestionPointerView::from)
+                .collect(Collectors.toList());
+
+        for (String groupId : groups) {
+            pointerUpdateService.updatePointerWithRetry(groupId, hangoutId,
+                    pointer -> pointer.setTimeSuggestions(new ArrayList<>(capped)),
+                    "propagate-time-suggestions");
+        }
+        // Invalidate group feed caches via ETag
+        groupTimestampService.updateGroupTimestamps(groups);
+    }
+
+    /**
+     * Called when the hangout's time is set directly (e.g., host PATCH) so that any
+     * ACTIVE suggestions become moot. Marks canonical rows REJECTED and cancels their
+     * scheduled adoption checks. Pointer-side clearing is handled by
+     * {@link HangoutPointerFactory#applyHangoutFields} (suggestions are cleared whenever
+     * the hangout has a startTimestamp), so callers don't need a separate pointer write.
+     */
+    @Override
+    public void invalidateActiveSuggestions(String hangoutId) {
+        List<TimeSuggestion> active = hangoutRepository.findActiveTimeSuggestions(hangoutId);
+        if (active.isEmpty()) {
+            return;
+        }
+        for (TimeSuggestion ts : active) {
+            ts.setStatus(TimeSuggestionStatus.REJECTED);
+            hangoutRepository.saveTimeSuggestion(ts);
+            try {
+                timeSuggestionSchedulerService.cancelAdoptionChecks(ts.getSuggestionId());
+            } catch (Exception e) {
+                logger.warn("Failed to cancel adoption checks for rejected suggestion {}: {}",
+                        ts.getSuggestionId(), e.getMessage());
+            }
+        }
+        logger.info("Invalidated {} active time suggestions for hangout {} due to direct time edit",
+                active.size(), hangoutId);
+    }
 
     private void requireGroupMember(String groupId, String userId) {
         Boolean isMember = groupRepository.isUserMemberOfGroup(groupId, userId);

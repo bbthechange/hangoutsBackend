@@ -12,6 +12,7 @@ import com.bbthechange.inviter.service.AttributeSuggestionService;
 import com.bbthechange.inviter.service.MomentumService;
 import com.bbthechange.inviter.service.NudgeService;
 import com.bbthechange.inviter.service.NotificationService;
+import com.bbthechange.inviter.service.TimeSuggestionService;
 import com.bbthechange.inviter.service.UserService;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -65,6 +66,9 @@ abstract class HangoutServiceTestBase {
 
     @Mock
     protected AttributeSuggestionService attributeSuggestionService;
+
+    @Mock
+    protected TimeSuggestionService timeSuggestionService;
 
     @InjectMocks
     protected HangoutServiceImpl hangoutService;

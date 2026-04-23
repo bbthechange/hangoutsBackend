@@ -105,6 +105,34 @@ class HangoutServiceUpdateTest extends HangoutServiceTestBase {
 
         // Verify pointer was updated with basic fields (including time fields)
         verify(pointerUpdateService).updatePointerWithRetry(eq("11111111-1111-1111-1111-111111111111"), eq(hangoutId), any(), eq("basic fields"));
+
+        // Verify any active time suggestions are invalidated so the scheduler can't
+        // later overwrite the host's direct time set.
+        verify(timeSuggestionService).invalidateActiveSuggestions(hangoutId);
+    }
+
+    @Test
+    void updateHangout_TimeUnchanged_DoesNotInvalidateSuggestions() {
+        // Given — PATCH without a timeInfo field: existing suggestions must be left alone.
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        String userId = "87654321-4321-4321-4321-210987654321";
+
+        UpdateHangoutRequest request = new UpdateHangoutRequest();
+        request.setDescription("new description");
+
+        Hangout existingHangout = createTestHangout(hangoutId);
+        existingHangout.setAssociatedGroups(new java.util.ArrayList<>(List.of("11111111-1111-1111-1111-111111111111")));
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(existingHangout));
+
+        GroupMembership membership = createTestMembership("11111111-1111-1111-1111-111111111111", userId, "Test Group");
+        when(groupRepository.findMembership("11111111-1111-1111-1111-111111111111", userId)).thenReturn(Optional.of(membership));
+        when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+
+        // When
+        hangoutService.updateHangout(hangoutId, request, userId);
+
+        // Then
+        verify(timeSuggestionService, never()).invalidateActiveSuggestions(anyString());
     }
 
     @Test
