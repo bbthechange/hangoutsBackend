@@ -129,9 +129,19 @@ public class NotificationTextGenerator {
      */
     public static String ticketPurchasedMessage(String actorName, String hangoutTitle) {
         if (actorName != null && !actorName.isBlank()) {
-            return String.format("%s bought tickets for '%s'", actorName, hangoutTitle);
+            return String.format("%s bought tickets for '%s' — it's on!", actorName, hangoutTitle);
         }
-        return String.format("Tickets were purchased for '%s'", hangoutTitle);
+        return String.format("Tickets were purchased for '%s' — it's on!", hangoutTitle);
+    }
+
+    /**
+     * Generate the message body for a manual "It's on!" confirmation.
+     */
+    public static String manualConfirmationMessage(String actorName, String hangoutTitle) {
+        if (actorName != null && !actorName.isBlank()) {
+            return String.format("%s confirmed '%s' — it's on!", actorName, hangoutTitle);
+        }
+        return String.format("'%s' is confirmed — it's on!", hangoutTitle);
     }
 
     /**

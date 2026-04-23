@@ -41,6 +41,17 @@ public interface MomentumService {
     void confirmHangout(String hangoutId, String confirmedByUserId);
 
     /**
+     * Send the manual "It's on!" notification for a hangout that was already confirmed
+     * by a caller writing state directly (e.g. {@code HangoutServiceImpl.updateHangout}
+     * sets the CONFIRMED fields on its local hangout copy). State is assumed to be
+     * persisted already — this method only fires the push notification.
+     *
+     * @param hangoutId           The hangout ID that was just confirmed
+     * @param confirmedByUserId   User ID who confirmed
+     */
+    void notifyManualConfirmation(String hangoutId, String confirmedByUserId);
+
+    /**
      * Build a MomentumDTO for API response from a Hangout's stored fields.
      * Handles score normalization using the group's dynamic threshold.
      *

@@ -563,13 +563,16 @@ public class HangoutServiceImpl implements HangoutService {
         // Handle manual "It's on!" confirmation via momentum
         // Set fields directly on the local hangout object (NOT via momentumService.confirmHangout)
         // because the hangout is saved below and would overwrite any changes made by confirmHangout
-        // on a separate copy loaded from DB.
+        // on a separate copy loaded from DB. We fire the "It's on!" notification after save via
+        // momentumService.notifyManualConfirmation(...).
+        boolean manuallyConfirmed = false;
         if (Boolean.TRUE.equals(request.getConfirmed())
                 && !MomentumCategory.CONFIRMED.equals(hangout.getMomentumCategory())) {
             hangout.setMomentumCategory(MomentumCategory.CONFIRMED);
             hangout.setConfirmedAt(System.currentTimeMillis());
             hangout.setConfirmedBy(requestingUserId);
             needsPointerUpdate = true;
+            manuallyConfirmed = true;
         }
 
         // Save canonical record
@@ -601,12 +604,26 @@ public class HangoutServiceImpl implements HangoutService {
             attributeSuggestionService.supersedeSuggestionPolls(hangoutId, "DESCRIPTION");
         }
 
-        // Recompute momentum if scoring-relevant fields changed (time, location, tickets)
-        if (timeChanged || locationChanged || ticketFieldChanged) {
+        // Recompute momentum if scoring-relevant fields changed (time, location, tickets).
+        // Skip when we just manually confirmed — CONFIRMED is terminal so a recompute would
+        // be a no-op (early-return on CONFIRMED in MomentumServiceImpl), and skipping also
+        // eliminates any theoretical double-push race with the manual confirmation notification.
+        if (!manuallyConfirmed && (timeChanged || locationChanged || ticketFieldChanged)) {
             try {
                 momentumService.recomputeMomentum(hangoutId);
             } catch (Exception e) {
                 logger.warn("Failed to recompute momentum for hangout {} after update: {}", hangoutId, e.getMessage());
+            }
+        }
+
+        // Fire the "It's on!" push notification for a manual confirmation. The hangout
+        // record is already persisted above — this call only sends the notification.
+        if (manuallyConfirmed) {
+            try {
+                momentumService.notifyManualConfirmation(hangoutId, requestingUserId);
+            } catch (Exception e) {
+                logger.warn("Failed to send manual confirmation notification for hangout {}: {}",
+                        hangoutId, e.getMessage());
             }
         }
 

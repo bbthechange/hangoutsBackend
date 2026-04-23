@@ -270,6 +270,96 @@ class HangoutServiceMomentumTest extends HangoutServiceTestBase {
         verify(momentumService, never()).recomputeMomentum(any());
     }
 
+    @Test
+    void updateHangout_manualConfirmFromBuilding_firesNotifyManualConfirmation() {
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        Hangout existingHangout = createTestHangout(hangoutId);
+        existingHangout.setMomentumCategory(MomentumCategory.BUILDING);
+        existingHangout.setAssociatedGroups(List.of(GROUP_ID));
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(existingHangout));
+
+        UpdateHangoutRequest request = new UpdateHangoutRequest();
+        request.setConfirmed(true);
+
+        hangoutService.updateHangout(hangoutId, request, USER_ID);
+
+        // Verify the hangout was saved with CONFIRMED state
+        ArgumentCaptor<Hangout> captor = ArgumentCaptor.forClass(Hangout.class);
+        verify(hangoutRepository).createHangout(captor.capture());
+        Hangout saved = captor.getValue();
+        assertThat(saved.getMomentumCategory()).isEqualTo(MomentumCategory.CONFIRMED);
+        assertThat(saved.getConfirmedBy()).isEqualTo(USER_ID);
+
+        // Verify notifyManualConfirmation was fired exactly once with correct args
+        verify(momentumService).notifyManualConfirmation(eq(hangoutId), eq(USER_ID));
+    }
+
+    @Test
+    void updateHangout_manualConfirmWhenAlreadyConfirmed_doesNotFireNotify() {
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        Hangout existingHangout = createTestHangout(hangoutId);
+        existingHangout.setMomentumCategory(MomentumCategory.CONFIRMED);
+        existingHangout.setConfirmedBy("original-user");
+        existingHangout.setAssociatedGroups(List.of(GROUP_ID));
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(existingHangout));
+
+        UpdateHangoutRequest request = new UpdateHangoutRequest();
+        request.setConfirmed(true);
+
+        hangoutService.updateHangout(hangoutId, request, USER_ID);
+
+        verify(momentumService, never()).notifyManualConfirmation(any(), any());
+    }
+
+    @Test
+    void updateHangout_manualConfirmWithTimeChange_skipsRecomputeMomentum() {
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        Hangout existingHangout = createTestHangout(hangoutId);
+        existingHangout.setMomentumCategory(MomentumCategory.BUILDING);
+        existingHangout.setAssociatedGroups(List.of(GROUP_ID));
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(existingHangout));
+
+        TimeInfo newTime = new TimeInfo();
+        newTime.setStartTime("2025-10-01T18:00:00Z");
+        UpdateHangoutRequest request = new UpdateHangoutRequest();
+        request.setConfirmed(true);
+        request.setTimeInfo(newTime);
+
+        FuzzyTimeService.TimeConversionResult timeResult =
+                new FuzzyTimeService.TimeConversionResult(1759000000L, 1759007200L);
+        when(fuzzyTimeService.convert(newTime)).thenReturn(timeResult);
+
+        hangoutService.updateHangout(hangoutId, request, USER_ID);
+
+        // Manual confirmation is terminal — recompute must be skipped even when time changed
+        verify(momentumService, never()).recomputeMomentum(any());
+        verify(momentumService).notifyManualConfirmation(eq(hangoutId), eq(USER_ID));
+    }
+
+    @Test
+    void updateHangout_notifyManualConfirmationThrows_doesNotBreakUpdate() {
+        String hangoutId = "12345678-1234-1234-1234-123456789012";
+        Hangout existingHangout = createTestHangout(hangoutId);
+        existingHangout.setMomentumCategory(MomentumCategory.BUILDING);
+        existingHangout.setAssociatedGroups(List.of(GROUP_ID));
+        when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(existingHangout));
+
+        UpdateHangoutRequest request = new UpdateHangoutRequest();
+        request.setConfirmed(true);
+
+        doThrow(new RuntimeException("push service down"))
+                .when(momentumService).notifyManualConfirmation(any(), any());
+
+        // Update must not throw — the exception is logged and swallowed
+        assertThatCode(() -> hangoutService.updateHangout(hangoutId, request, USER_ID))
+                .doesNotThrowAnyException();
+
+        // State was persisted before the attempted push
+        verify(hangoutRepository).createHangout(any(Hangout.class));
+        // Notification was attempted
+        verify(momentumService).notifyManualConfirmation(any(), any());
+    }
+
     // ============================================================================
     // 1.2.3 RSVP / setUserInterest Tests
     // ============================================================================

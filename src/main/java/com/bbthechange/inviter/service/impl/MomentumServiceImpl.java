@@ -8,6 +8,7 @@ import com.bbthechange.inviter.service.AdaptiveNotificationService;
 import com.bbthechange.inviter.service.NotificationTextGenerator;
 import com.bbthechange.inviter.service.MomentumService;
 import com.bbthechange.inviter.service.NotificationService;
+import com.bbthechange.inviter.service.UserService;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import org.slf4j.Logger;
@@ -17,37 +18,34 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * Implementation of MomentumService.
  *
- * Scoring algorithm:
+ * Scoring algorithm (drives BUILDING -> GAINING_MOMENTUM only):
  *   - GOING RSVP: +3 points each
  *   - INTERESTED RSVP: +1 point each
  *   - Has startTimestamp (time added): +1
  *   - Has location: +1
- *   - Concrete action (ticketsRequired + ticketLink, or carpool riders): instant CONFIRMED
  *   - Recency multiplier: x1.5 if any InterestLevel updated in last 48h
  *   - Time proximity multiplier (if startTimestamp set):
  *       within 48h  -> x1.5
  *       within 7d   -> x1.2
  *       beyond 7d   -> x1.0
  *
- * Dynamic threshold:
+ * Dynamic threshold (for GAINING):
  *   threshold = ceil(activeMembers * engagementMultiplier * 0.4)
  *   engagementMultiplier clamped [0.3, 1.0], default 0.6 for new groups
  *
- * Two-tier scoring:
- *   momentumScore (includes Interested) — drives BUILDING -> GAINING_MOMENTUM
- *   confirmScore  (excludes Interested) — drives GAINING_MOMENTUM -> CONFIRMED
- *
- * Promotion rules:
- *   momentumScore >= threshold           -> GAINING_MOMENTUM
- *   confirmScore  >= threshold*2 + date  -> CONFIRMED (auto)
- *   concrete action                      -> CONFIRMED (instant)
- *   Never demote from CONFIRMED
+ * Auto-confirm rules (intentionally conservative — see MOMENTUM_CONTEXT.md §4):
+ *   1. Ticket purchased: any TICKET_PURCHASED participation exists  -> CONFIRMED (notifies)
+ *   2. Two distinct GOING RSVPs AND startTimestamp != null AND location != null
+ *        -> CONFIRMED (no notification — emergent state; individual signals already notified)
+ *   Never demote from CONFIRMED.
  */
 @Service
 public class MomentumServiceImpl implements MomentumService {
@@ -73,6 +71,7 @@ public class MomentumServiceImpl implements MomentumService {
     private final PointerUpdateService pointerUpdateService;
     private final AdaptiveNotificationService adaptiveNotificationService;
     private final NotificationService notificationService;
+    private final UserService userService;
 
     /**
      * Caffeine cache for group engagement data.
@@ -89,12 +88,14 @@ public class MomentumServiceImpl implements MomentumService {
                                 GroupRepository groupRepository,
                                 PointerUpdateService pointerUpdateService,
                                 AdaptiveNotificationService adaptiveNotificationService,
-                                NotificationService notificationService) {
+                                NotificationService notificationService,
+                                UserService userService) {
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
         this.pointerUpdateService = pointerUpdateService;
         this.adaptiveNotificationService = adaptiveNotificationService;
         this.notificationService = notificationService;
+        this.userService = userService;
     }
 
     // ============================================================================
@@ -148,20 +149,21 @@ public class MomentumServiceImpl implements MomentumService {
         com.bbthechange.inviter.dto.HangoutDetailData detailData = loadDetailData(hangoutId);
         List<InterestLevel> interestLevels = detailData.getAttendance();
 
-        // Step 4: Check for concrete action (instant CONFIRMED)
-        if (hasConcreteAction(detailData)) {
+        // Step 4: Check for ticket-purchase concrete action (instant CONFIRMED, notifies)
+        if (hasTicketPurchase(detailData)) {
             applyConfirmation(hangout, SYSTEM_CONFIRMED_BY);
             saveAndUpdatePointers(hangout);
+            String actorName = lookupDisplayName(findTicketPurchaserUserId(detailData));
             maybeNotifyMomentumChange(hangout, previousCategory, MomentumCategory.CONFIRMED,
-                    AdaptiveNotificationService.SIGNAL_CONCRETE_ACTION, interestLevels);
+                    AdaptiveNotificationService.SIGNAL_CONCRETE_ACTION, interestLevels, actorName);
             return;
         }
 
-        // Step 5: Compute raw scores (two-tier: momentum includes Interested, confirm excludes it)
+        // Step 5: Compute raw momentum score (for BUILDING -> GAINING only — confirm uses a
+        // separate, non-score rule below)
         int rawScore = computeRawScore(hangout, interestLevels);
-        int rawConfirmScore = computeConfirmScore(hangout, interestLevels);
 
-        // Step 6: Apply multipliers (compound — same multipliers for both scores)
+        // Step 6: Apply multipliers (compound)
         long nowSeconds = System.currentTimeMillis() / 1000;
         boolean hasRecentActivity = hasRecentActivity(interestLevels, nowSeconds);
 
@@ -178,19 +180,19 @@ public class MomentumServiceImpl implements MomentumService {
             }
         }
         int finalScore = (int) Math.round(rawScore * multiplier);
-        int confirmFinalScore = (int) Math.round(rawConfirmScore * multiplier);
 
-        // Step 7: Compute dynamic threshold
+        // Step 7: Compute dynamic threshold (for GAINING only)
         String primaryGroupId = getPrimaryGroupId(hangout);
         int threshold = computeThreshold(primaryGroupId);
 
-        // Step 8: Determine new category (uses finalScore for gaining, confirmFinalScore for confirmed)
-        MomentumCategory newCategory = determineCategory(hangout, finalScore, confirmFinalScore, threshold);
+        // Step 8: Determine new category
+        MomentumCategory newCategory = determineCategory(hangout, finalScore, threshold, interestLevels);
 
         // Step 9: Apply changes
         hangout.setMomentumScore(finalScore);
-        if (newCategory == MomentumCategory.CONFIRMED
-                && !MomentumCategory.CONFIRMED.equals(hangout.getMomentumCategory())) {
+        boolean quietAutoConfirm = newCategory == MomentumCategory.CONFIRMED
+                && !MomentumCategory.CONFIRMED.equals(hangout.getMomentumCategory());
+        if (quietAutoConfirm) {
             applyConfirmation(hangout, SYSTEM_CONFIRMED_BY);
         } else {
             hangout.setMomentumCategory(newCategory);
@@ -199,12 +201,12 @@ public class MomentumServiceImpl implements MomentumService {
         // Step 10: Save and propagate to pointers
         saveAndUpdatePointers(hangout);
 
-        // Step 11: Fire adaptive notification if category changed
-        if (newCategory != previousCategory) {
-            String signal = newCategory == MomentumCategory.CONFIRMED
-                    ? AdaptiveNotificationService.SIGNAL_GAINING_TO_CONFIRMED
-                    : AdaptiveNotificationService.SIGNAL_BUILDING_TO_GAINING;
-            maybeNotifyMomentumChange(hangout, previousCategory, newCategory, signal, interestLevels);
+        // Step 11: Fire notification only for BUILDING -> GAINING transitions.
+        // Quiet auto-confirm (2 Going + time + location) is an emergent state whose
+        // individual signals already generated their own notifications — no extra push.
+        if (newCategory != previousCategory && newCategory == MomentumCategory.GAINING_MOMENTUM) {
+            maybeNotifyMomentumChange(hangout, previousCategory, newCategory,
+                    AdaptiveNotificationService.SIGNAL_BUILDING_TO_GAINING, interestLevels, null);
         }
 
         logger.debug("Recomputed momentum for hangout {}: score={}, category={}, threshold={}",
@@ -229,10 +231,35 @@ public class MomentumServiceImpl implements MomentumService {
         saveAndUpdatePointers(hangout);
 
         // Manual confirmation always notifies (explicit "It's on!" signal)
+        String actorName = lookupDisplayName(confirmedByUserId);
         maybeNotifyMomentumChange(hangout, previousCategory, MomentumCategory.CONFIRMED,
-                AdaptiveNotificationService.SIGNAL_CONFIRMED, List.of());
+                AdaptiveNotificationService.SIGNAL_CONFIRMED, List.of(), actorName);
 
         logger.info("Hangout {} manually confirmed by user {}", hangoutId, confirmedByUserId);
+    }
+
+    @Override
+    public void notifyManualConfirmation(String hangoutId, String confirmedByUserId) {
+        Hangout hangout = hangoutRepository.findHangoutById(hangoutId).orElse(null);
+        if (hangout == null) {
+            logger.warn("notifyManualConfirmation called for non-existent hangout: {}", hangoutId);
+            return;
+        }
+        // Defend against misuse: only send the "It's on!" push if the persisted state
+        // actually reflects a confirmation. Protects against callers who haven't written
+        // CONFIRMED yet (stale read) or whose writes were rolled back.
+        if (!MomentumCategory.CONFIRMED.equals(hangout.getMomentumCategory())) {
+            logger.warn("notifyManualConfirmation called but hangout {} is not CONFIRMED (category={})",
+                    hangoutId, hangout.getMomentumCategory());
+            return;
+        }
+        String actorName = lookupDisplayName(confirmedByUserId);
+        // previousCategory is unknown (caller wrote CONFIRMED directly). Pass null because
+        // AdaptiveNotificationService.shouldSendNotification short-circuits on SIGNAL_CONFIRMED
+        // (always notifies) without consulting previousCategory. If that contract changes,
+        // reassess — a null prev here would otherwise become a latent bug.
+        maybeNotifyMomentumChange(hangout, null, MomentumCategory.CONFIRMED,
+                AdaptiveNotificationService.SIGNAL_CONFIRMED, List.of(), actorName);
     }
 
     @Override
@@ -277,22 +304,35 @@ public class MomentumServiceImpl implements MomentumService {
     }
 
     /**
-     * A concrete action exists if: at least one TICKET_PURCHASED participation exists,
-     * OR carpool has at least one rider.
-     * Either triggers instant CONFIRMED.
+     * True if at least one TICKET_PURCHASED participation exists.
+     */
+    private boolean hasTicketPurchase(com.bbthechange.inviter.dto.HangoutDetailData detailData) {
+        if (detailData.getParticipations() == null) {
+            return false;
+        }
+        return detailData.getParticipations().stream()
+                .anyMatch(p -> ParticipationType.TICKET_PURCHASED == p.getType());
+    }
+
+    /**
+     * Return the userId of any TICKET_PURCHASED participation, or null if none.
+     * Ticket purchase is the only "concrete action" that auto-confirms a hangout —
+     * carpool riders no longer trigger confirmation on their own (they contribute
+     * through the member's GOING RSVP, counted under rule 2).
      *
      * Note: ticket metadata (ticketsRequired + ticketLink) is informational only —
      * it indicates where tickets CAN be purchased, not that anyone has purchased them.
      */
-    private boolean hasConcreteAction(com.bbthechange.inviter.dto.HangoutDetailData detailData) {
-        boolean hasTicketPurchase = detailData.getParticipations().stream()
-                .anyMatch(p -> ParticipationType.TICKET_PURCHASED == p.getType());
-        if (hasTicketPurchase) {
-            return true;
+    private String findTicketPurchaserUserId(com.bbthechange.inviter.dto.HangoutDetailData detailData) {
+        if (detailData.getParticipations() == null) {
+            return null;
         }
-
-        // Carpool with at least one rider is a concrete action
-        return detailData.getCarRiders() != null && !detailData.getCarRiders().isEmpty();
+        return detailData.getParticipations().stream()
+                .filter(p -> ParticipationType.TICKET_PURCHASED == p.getType())
+                .map(p -> p.getUserId())
+                .filter(id -> id != null && !id.isBlank())
+                .findFirst()
+                .orElse(null);
     }
 
     /**
@@ -322,31 +362,6 @@ public class MomentumServiceImpl implements MomentumService {
     }
 
     /**
-     * Compute confirmation-eligible score: only GOING RSVPs (+3) plus attribute bonuses.
-     * Excludes INTERESTED signals — "Interested" is a low-commitment signal that should
-     * drive visibility (GAINING_MOMENTUM) but not auto-confirm a hangout.
-     * Used for GAINING_MOMENTUM -> CONFIRMED auto-promotion threshold.
-     */
-    private int computeConfirmScore(Hangout hangout, List<InterestLevel> interestLevels) {
-        int score = 0;
-
-        for (InterestLevel il : interestLevels) {
-            if ("GOING".equalsIgnoreCase(il.getStatus())) {
-                score += 3;
-            }
-        }
-
-        if (hangout.getStartTimestamp() != null) {
-            score += 1;
-        }
-        if (hangout.getLocation() != null) {
-            score += 1;
-        }
-
-        return score;
-    }
-
-    /**
      * Returns true if any InterestLevel record was updated within the last 48 hours.
      */
     private boolean hasRecentActivity(List<InterestLevel> interestLevels, long nowSeconds) {
@@ -356,20 +371,25 @@ public class MomentumServiceImpl implements MomentumService {
     }
 
     /**
-     * Determine the new momentum category based on score vs threshold.
-     * Uses two-tier scoring: {@code score} (includes Interested) for gaining momentum,
-     * {@code confirmScore} (excludes Interested) for auto-confirmation.
+     * Determine the new momentum category.
      * Never demotes from CONFIRMED.
+     *
+     * Auto-confirm rule (quiet): ≥2 distinct GOING RSVPs AND startTimestamp != null
+     * AND location != null. No score/threshold involved — pure commitment signal.
+     *
+     * Otherwise, score-vs-threshold drives BUILDING <-> GAINING_MOMENTUM.
      */
-    private MomentumCategory determineCategory(Hangout hangout, int score, int confirmScore, int threshold) {
+    private MomentumCategory determineCategory(Hangout hangout, int score, int threshold,
+                                                List<InterestLevel> interestLevels) {
         // Already confirmed — never demote
         if (MomentumCategory.CONFIRMED.equals(hangout.getMomentumCategory())) {
             return MomentumCategory.CONFIRMED;
         }
 
-        // Auto-confirm: confirmScore >= threshold*2 AND has a date
-        // Uses confirmScore (excludes Interested) — only strong signals like Going can auto-confirm
-        if (confirmScore >= threshold * 2 && hangout.getStartTimestamp() != null) {
+        // Auto-confirm (quiet): two humans committed + concrete when/where
+        if (hangout.getStartTimestamp() != null
+                && hangout.getLocation() != null
+                && countDistinctGoing(interestLevels) >= 2) {
             return MomentumCategory.CONFIRMED;
         }
 
@@ -380,6 +400,24 @@ public class MomentumServiceImpl implements MomentumService {
 
         // Still building
         return MomentumCategory.BUILDING;
+    }
+
+    /**
+     * Count distinct userIds with status GOING. Defensive against duplicate/malformed
+     * entries — the same user's Going only counts once.
+     */
+    private int countDistinctGoing(List<InterestLevel> interestLevels) {
+        if (interestLevels == null || interestLevels.isEmpty()) {
+            return 0;
+        }
+        Set<String> goingUserIds = new HashSet<>();
+        for (InterestLevel il : interestLevels) {
+            if (il != null && "GOING".equalsIgnoreCase(il.getStatus())
+                    && il.getUserId() != null && !il.getUserId().isBlank()) {
+                goingUserIds.add(il.getUserId());
+            }
+        }
+        return goingUserIds.size();
     }
 
     /**
@@ -435,7 +473,8 @@ public class MomentumServiceImpl implements MomentumService {
                                             MomentumCategory previousCategory,
                                             MomentumCategory newCategory,
                                             String signalType,
-                                            List<InterestLevel> interestLevels) {
+                                            List<InterestLevel> interestLevels,
+                                            String actorName) {
         try {
             String primaryGroupId = getPrimaryGroupId(hangout);
             if (primaryGroupId == null) {
@@ -452,7 +491,8 @@ public class MomentumServiceImpl implements MomentumService {
             }
 
             // Build message and notify group members
-            String message = buildMomentumNotificationMessage(hangout, newCategory, signalType, interestLevels);
+            String message = buildMomentumNotificationMessage(hangout, newCategory, signalType,
+                    interestLevels, actorName);
             Set<String> groupIds = new java.util.HashSet<>(
                     hangout.getAssociatedGroups() != null ? hangout.getAssociatedGroups() : List.of());
 
@@ -475,16 +515,17 @@ public class MomentumServiceImpl implements MomentumService {
     private String buildMomentumNotificationMessage(Hangout hangout,
                                                      MomentumCategory newCategory,
                                                      String signalType,
-                                                     List<InterestLevel> interestLevels) {
+                                                     List<InterestLevel> interestLevels,
+                                                     String actorName) {
         String title = hangout.getTitle() != null ? hangout.getTitle() : "A hangout";
 
         if (AdaptiveNotificationService.SIGNAL_CONCRETE_ACTION.equals(signalType)) {
-            return NotificationTextGenerator.ticketPurchasedMessage(null, title);
+            return NotificationTextGenerator.ticketPurchasedMessage(actorName, title);
         }
 
         if (AdaptiveNotificationService.SIGNAL_CONFIRMED.equals(signalType)
                 || newCategory == MomentumCategory.CONFIRMED) {
-            return "'" + title + "' is confirmed — it's happening!";
+            return NotificationTextGenerator.manualConfirmationMessage(actorName, title);
         }
 
         // GAINING_MOMENTUM: count interested people
@@ -493,6 +534,26 @@ public class MomentumServiceImpl implements MomentumService {
                         || "INTERESTED".equalsIgnoreCase(il.getStatus()))
                 .count();
         return NotificationTextGenerator.gainingTractionMessage(title, interestedCount);
+    }
+
+    /**
+     * Resolve a userId to a display name for notification wording. Returns null on any
+     * failure — callers must tolerate a null actorName (NotificationTextGenerator
+     * falls back to anonymous wording).
+     */
+    private String lookupDisplayName(String userId) {
+        if (userId == null || userId.isBlank()) {
+            return null;
+        }
+        try {
+            return userService.getUserSummary(UUID.fromString(userId))
+                    .map(u -> u.getDisplayName())
+                    .filter(n -> n != null && !n.isBlank())
+                    .orElse(null);
+        } catch (Exception e) {
+            logger.debug("Could not resolve display name for user {}: {}", userId, e.getMessage());
+            return null;
+        }
     }
 
     // ============================================================================

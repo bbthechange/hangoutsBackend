@@ -6,8 +6,10 @@ import com.bbthechange.inviter.dto.MomentumDTO;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.repository.HangoutRepository;
+import com.bbthechange.inviter.dto.UserSummaryDTO;
 import com.bbthechange.inviter.service.AdaptiveNotificationService;
 import com.bbthechange.inviter.service.NotificationService;
+import com.bbthechange.inviter.service.UserService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -18,6 +20,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 
 import static org.assertj.core.api.Assertions.*;
@@ -53,6 +56,9 @@ class MomentumServiceImplTest {
     @Mock
     private NotificationService notificationService;
 
+    @Mock
+    private UserService userService;
+
     @InjectMocks
     private MomentumServiceImpl momentumService;
 
@@ -70,8 +76,15 @@ class MomentumServiceImplTest {
     }
 
     private InterestLevel interestLevel(String status, Instant updatedAt) {
+        // Each helper call generates a unique synthetic userId so duplicate RSVPs
+        // count as distinct users under the "2 distinct GOING" auto-confirm rule.
+        return interestLevel(status, "user-" + java.util.UUID.randomUUID(), updatedAt);
+    }
+
+    private InterestLevel interestLevel(String status, String userId, Instant updatedAt) {
         InterestLevel il = new InterestLevel();
         il.setStatus(status);
+        il.setUserId(userId);
         il.setUpdatedAt(updatedAt);
         return il;
     }
@@ -211,47 +224,149 @@ class MomentumServiceImplTest {
     }
 
     @Test
-    void recomputeMomentum_crossesDoubleThresholdWithDate_autoConfirms() {
+    void recomputeMomentum_twoDistinctGoingPlusTimeAndLocation_autoConfirms() {
         Hangout hangout = buildHangout("h-4", MomentumCategory.BUILDING);
-        // Far future > 7 days — no proximity multiplier
         hangout.setStartTimestamp(System.currentTimeMillis() / 1000 + 10 * 86400L);
+        hangout.setLocation(new Address());
         when(hangoutRepository.findHangoutById("h-4")).thenReturn(Optional.of(hangout));
 
-        // 2 GOING RSVPs (score=6), old activity (no recency multiplier)
         List<InterestLevel> attendance = List.of(
                 interestLevel("GOING", Instant.now().minusSeconds(5 * 86400)),
                 interestLevel("GOING", Instant.now().minusSeconds(5 * 86400))
         );
         when(hangoutRepository.getHangoutDetailData("h-4")).thenReturn(detailData(attendance));
-        mockFiveMembers(); // threshold = 2, threshold*2 = 4
+        mockFiveMembers();
 
         momentumService.recomputeMomentum("h-4");
 
-        // score = 6 + 1 (time) = 7, 7 >= 4 AND has date → CONFIRMED
         assertThat(hangout.getMomentumCategory()).isEqualTo(MomentumCategory.CONFIRMED);
         assertThat(hangout.getConfirmedBy()).isEqualTo("SYSTEM");
         assertThat(hangout.getConfirmedAt()).isNotNull();
     }
 
     @Test
-    void recomputeMomentum_crossesDoubleThresholdWithoutDate_capsAtGainingMomentum() {
+    void recomputeMomentum_twoGoingMissingLocation_staysGainingMomentum() {
         Hangout hangout = buildHangout("h-5", MomentumCategory.BUILDING);
-        // No startTimestamp
+        hangout.setStartTimestamp(System.currentTimeMillis() / 1000 + 10 * 86400L);
+        // No location
         when(hangoutRepository.findHangoutById("h-5")).thenReturn(Optional.of(hangout));
 
-        // 2 GOING RSVPs (score=6), old activity
         List<InterestLevel> attendance = List.of(
                 interestLevel("GOING", Instant.now().minusSeconds(5 * 86400)),
                 interestLevel("GOING", Instant.now().minusSeconds(5 * 86400))
         );
         when(hangoutRepository.getHangoutDetailData("h-5")).thenReturn(detailData(attendance));
-        mockFiveMembers(); // threshold = 2, threshold*2 = 4
+        mockFiveMembers();
 
         momentumService.recomputeMomentum("h-5");
 
-        // score = 6, >= 4 BUT no date → GAINING_MOMENTUM (cap)
         assertThat(hangout.getMomentumCategory()).isEqualTo(MomentumCategory.GAINING_MOMENTUM);
-        assertThat(hangout.getMomentumScore()).isEqualTo(6);
+        assertThat(hangout.getConfirmedBy()).isNull();
+    }
+
+    @Test
+    void recomputeMomentum_twoGoingMissingTime_staysGainingMomentum() {
+        Hangout hangout = buildHangout("h-5b", MomentumCategory.BUILDING);
+        // No startTimestamp
+        hangout.setLocation(new Address());
+        when(hangoutRepository.findHangoutById("h-5b")).thenReturn(Optional.of(hangout));
+
+        List<InterestLevel> attendance = List.of(
+                interestLevel("GOING", Instant.now().minusSeconds(5 * 86400)),
+                interestLevel("GOING", Instant.now().minusSeconds(5 * 86400))
+        );
+        when(hangoutRepository.getHangoutDetailData("h-5b")).thenReturn(detailData(attendance));
+        mockFiveMembers();
+
+        momentumService.recomputeMomentum("h-5b");
+
+        assertThat(hangout.getMomentumCategory()).isEqualTo(MomentumCategory.GAINING_MOMENTUM);
+        assertThat(hangout.getConfirmedBy()).isNull();
+    }
+
+    @Test
+    void recomputeMomentum_oneGoingWithTimeAndLocation_staysGainingMomentum() {
+        Hangout hangout = buildHangout("h-5c", MomentumCategory.BUILDING);
+        hangout.setStartTimestamp(System.currentTimeMillis() / 1000 + 10 * 86400L);
+        hangout.setLocation(new Address());
+        when(hangoutRepository.findHangoutById("h-5c")).thenReturn(Optional.of(hangout));
+
+        List<InterestLevel> attendance = List.of(
+                interestLevel("GOING", Instant.now().minusSeconds(5 * 86400))
+        );
+        when(hangoutRepository.getHangoutDetailData("h-5c")).thenReturn(detailData(attendance));
+        mockFiveMembers();
+
+        momentumService.recomputeMomentum("h-5c");
+
+        assertThat(hangout.getMomentumCategory()).isEqualTo(MomentumCategory.GAINING_MOMENTUM);
+        assertThat(hangout.getConfirmedBy()).isNull();
+    }
+
+    @Test
+    void recomputeMomentum_sameUserGoingTwice_countsAsOneAndDoesNotConfirm() {
+        Hangout hangout = buildHangout("h-5d", MomentumCategory.BUILDING);
+        hangout.setStartTimestamp(System.currentTimeMillis() / 1000 + 10 * 86400L);
+        hangout.setLocation(new Address());
+        when(hangoutRepository.findHangoutById("h-5d")).thenReturn(Optional.of(hangout));
+
+        // Same userId twice — duplicate/defensive case, should count as 1 distinct GOING
+        List<InterestLevel> attendance = List.of(
+                interestLevel("GOING", "user-dup", Instant.now().minusSeconds(5 * 86400)),
+                interestLevel("GOING", "user-dup", Instant.now().minusSeconds(5 * 86400))
+        );
+        when(hangoutRepository.getHangoutDetailData("h-5d")).thenReturn(detailData(attendance));
+        mockFiveMembers();
+
+        momentumService.recomputeMomentum("h-5d");
+
+        assertThat(hangout.getMomentumCategory()).isNotEqualTo(MomentumCategory.CONFIRMED);
+    }
+
+    @Test
+    void recomputeMomentum_goingWithNullUserIdNotCounted_staysGainingMomentum() {
+        // Malformed GOING records (null/blank userId) must be excluded from the distinct-GOING
+        // count used for auto-confirmation. One valid GOING + one null-userId GOING + time +
+        // location should stay GAINING_MOMENTUM — not auto-confirm.
+        Hangout hangout = buildHangout("h-null-uid", MomentumCategory.BUILDING);
+        hangout.setStartTimestamp(System.currentTimeMillis() / 1000 + 10 * 86400L);
+        hangout.setLocation(new Address());
+        when(hangoutRepository.findHangoutById("h-null-uid")).thenReturn(Optional.of(hangout));
+
+        List<InterestLevel> attendance = List.of(
+                interestLevel("GOING", "user-valid", Instant.now().minusSeconds(5 * 86400)),
+                interestLevel("GOING", null, Instant.now().minusSeconds(5 * 86400))
+        );
+        when(hangoutRepository.getHangoutDetailData("h-null-uid")).thenReturn(detailData(attendance));
+        mockFiveMembers();
+
+        momentumService.recomputeMomentum("h-null-uid");
+
+        assertThat(hangout.getMomentumCategory()).isEqualTo(MomentumCategory.GAINING_MOMENTUM);
+        assertThat(hangout.getConfirmedBy()).isNull();
+    }
+
+    @Test
+    void recomputeMomentum_autoConfirmViaTwoGoingPlan_doesNotFireNotification() {
+        Hangout hangout = buildHangout("h-5e", MomentumCategory.BUILDING);
+        hangout.setStartTimestamp(System.currentTimeMillis() / 1000 + 10 * 86400L);
+        hangout.setLocation(new Address());
+        when(hangoutRepository.findHangoutById("h-5e")).thenReturn(Optional.of(hangout));
+
+        List<InterestLevel> attendance = List.of(
+                interestLevel("GOING", Instant.now().minusSeconds(5 * 86400)),
+                interestLevel("GOING", Instant.now().minusSeconds(5 * 86400))
+        );
+        when(hangoutRepository.getHangoutDetailData("h-5e")).thenReturn(detailData(attendance));
+        mockFiveMembers();
+
+        momentumService.recomputeMomentum("h-5e");
+
+        assertThat(hangout.getMomentumCategory()).isEqualTo(MomentumCategory.CONFIRMED);
+        // Quiet auto-confirm: no push. (Intentionally not asserting zero adaptive-service
+        // interactions here — the contract we care about is "no push sent.")
+        verify(notificationService, never()).notifyMomentumChange(
+                any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -464,6 +579,7 @@ class MomentumServiceImplTest {
 
         Participation purchase = new Participation();
         purchase.setType(ParticipationType.TICKET_PURCHASED);
+        purchase.setUserId(UUID.randomUUID().toString());
         HangoutDetailData detail = HangoutDetailData.builder()
                 .withAttendance(List.of())
                 .withParticipations(List.of(purchase))
@@ -499,7 +615,9 @@ class MomentumServiceImplTest {
 
 
     @Test
-    void recomputeMomentum_carpoolWithRiders_instantConfirmed() {
+    void recomputeMomentum_carpoolWithRiders_doesNotAutoConfirm() {
+        // Carpool-rider-alone no longer auto-confirms. A rider's commitment to go
+        // is captured through their GOING RSVP, which feeds the 2-GOING+time+location rule.
         Hangout hangout = buildHangout("h-carpool", MomentumCategory.BUILDING);
         when(hangoutRepository.findHangoutById("h-carpool")).thenReturn(Optional.of(hangout));
 
@@ -509,11 +627,12 @@ class MomentumServiceImplTest {
                 .withCarRiders(List.of(rider))
                 .build();
         when(hangoutRepository.getHangoutDetailData("h-carpool")).thenReturn(detail);
+        mockFiveMembers();
 
         momentumService.recomputeMomentum("h-carpool");
 
-        assertThat(hangout.getMomentumCategory()).isEqualTo(MomentumCategory.CONFIRMED);
-        assertThat(hangout.getConfirmedBy()).isEqualTo("SYSTEM");
+        assertThat(hangout.getMomentumCategory()).isNotEqualTo(MomentumCategory.CONFIRMED);
+        assertThat(hangout.getConfirmedBy()).isNull();
     }
 
     @Test
@@ -812,6 +931,7 @@ class MomentumServiceImplTest {
 
         Participation purchase = new Participation();
         purchase.setType(ParticipationType.TICKET_PURCHASED);
+        purchase.setUserId(UUID.randomUUID().toString());
         HangoutDetailData detail = HangoutDetailData.builder()
                 .withAttendance(List.of())
                 .withParticipations(List.of(purchase))
@@ -905,32 +1025,30 @@ class MomentumServiceImplTest {
 
         momentumService.recomputeMomentum("h-int-noconf");
 
-        // momentumScore = 7 >= threshold(2) → GAINING_MOMENTUM, but NOT CONFIRMED
-        // because confirmScore = 1 (time bonus only) < threshold*2(4)
+        // momentumScore = 7 >= threshold(2) → GAINING_MOMENTUM. Confirmation requires
+        // ≥2 distinct GOING + time + location; all signals here are INTERESTED → not CONFIRMED.
         assertThat(hangout.getMomentumCategory()).isEqualTo(MomentumCategory.GAINING_MOMENTUM);
         assertThat(hangout.getConfirmedBy()).isNull();
     }
 
     @Test
-    void recomputeMomentum_goingRsvpsWithDate_stillAutoConfirms() {
-        // Going RSVPs should still auto-confirm (unchanged behavior)
+    void recomputeMomentum_goingRsvpsWithDateButNoLocation_staysGainingMomentum() {
+        // Under the new conservative rule, GOING + date but no location does not auto-confirm.
         Hangout hangout = buildHangout("h-going-conf", MomentumCategory.BUILDING);
         hangout.setStartTimestamp(System.currentTimeMillis() / 1000 + 10 * 86400L);
         when(hangoutRepository.findHangoutById("h-going-conf")).thenReturn(Optional.of(hangout));
 
-        // 2 GOING RSVPs (confirmScore = 6+1(time) = 7), old activity
         List<InterestLevel> attendance = List.of(
                 interestLevel("GOING", Instant.now().minusSeconds(5 * 86400)),
                 interestLevel("GOING", Instant.now().minusSeconds(5 * 86400))
         );
         when(hangoutRepository.getHangoutDetailData("h-going-conf")).thenReturn(detailData(attendance));
-        mockFiveMembers(); // threshold = 2, threshold*2 = 4
+        mockFiveMembers();
 
         momentumService.recomputeMomentum("h-going-conf");
 
-        // confirmScore = 7 >= 4 AND has date → CONFIRMED
-        assertThat(hangout.getMomentumCategory()).isEqualTo(MomentumCategory.CONFIRMED);
-        assertThat(hangout.getConfirmedBy()).isEqualTo("SYSTEM");
+        assertThat(hangout.getMomentumCategory()).isEqualTo(MomentumCategory.GAINING_MOMENTUM);
+        assertThat(hangout.getConfirmedBy()).isNull();
     }
 
     @Test
@@ -956,14 +1074,14 @@ class MomentumServiceImplTest {
     }
 
     @Test
-    void recomputeMomentum_mixedRsvps_onlyGoingCountsForConfirm() {
-        // Mixed Interested + Going: only Going counts toward confirmation threshold
+    void recomputeMomentum_oneGoingPlusManyInterested_doesNotAutoConfirm() {
+        // Under the new rule, one GOING is not enough — even with plenty of Interested
+        // to drive GAINING_MOMENTUM and with time + location present.
         Hangout hangout = buildHangout("h-mixed", MomentumCategory.BUILDING);
         hangout.setStartTimestamp(System.currentTimeMillis() / 1000 + 10 * 86400L);
+        hangout.setLocation(new Address());
         when(hangoutRepository.findHangoutById("h-mixed")).thenReturn(Optional.of(hangout));
 
-        // 1 GOING (3) + 3 INTERESTED (3) = momentumScore 6+1(time) = 7
-        // confirmScore = 3+1(time) = 4, threshold*2 = 4 → CONFIRMED
         List<InterestLevel> attendance = List.of(
                 interestLevel("GOING", Instant.now().minusSeconds(5 * 86400)),
                 interestLevel("INTERESTED", Instant.now().minusSeconds(5 * 86400)),
@@ -971,11 +1089,137 @@ class MomentumServiceImplTest {
                 interestLevel("INTERESTED", Instant.now().minusSeconds(5 * 86400))
         );
         when(hangoutRepository.getHangoutDetailData("h-mixed")).thenReturn(detailData(attendance));
-        mockFiveMembers(); // threshold = 2, threshold*2 = 4
+        mockFiveMembers();
 
         momentumService.recomputeMomentum("h-mixed");
 
-        // confirmScore = 4 >= 4 AND has date → CONFIRMED (Going drove it over the line)
+        assertThat(hangout.getMomentumCategory()).isEqualTo(MomentumCategory.GAINING_MOMENTUM);
+        assertThat(hangout.getConfirmedBy()).isNull();
+    }
+
+    @Test
+    void recomputeMomentum_ticketPurchasedWithKnownActor_personalizesNotification() {
+        Hangout hangout = buildHangout("h-tp-actor", MomentumCategory.BUILDING);
+        hangout.setTitle("Taylor Swift");
+        when(hangoutRepository.findHangoutById("h-tp-actor")).thenReturn(Optional.of(hangout));
+
+        UUID purchaserId = UUID.randomUUID();
+        Participation purchase = new Participation();
+        purchase.setType(ParticipationType.TICKET_PURCHASED);
+        purchase.setUserId(purchaserId.toString());
+        HangoutDetailData detail = HangoutDetailData.builder()
+                .withAttendance(List.of())
+                .withParticipations(List.of(purchase))
+                .build();
+        when(hangoutRepository.getHangoutDetailData("h-tp-actor")).thenReturn(detail);
+
+        when(userService.getUserSummary(purchaserId))
+                .thenReturn(Optional.of(new UserSummaryDTO(purchaserId, "Brian", null)));
+
+        when(adaptiveNotificationService.shouldSendNotification(
+                any(), eq(AdaptiveNotificationService.SIGNAL_CONCRETE_ACTION), any(), any()))
+                .thenReturn(true);
+
+        momentumService.recomputeMomentum("h-tp-actor");
+
         assertThat(hangout.getMomentumCategory()).isEqualTo(MomentumCategory.CONFIRMED);
+        verify(notificationService).notifyMomentumChange(
+                eq("h-tp-actor"), any(), any(), any(Set.class),
+                eq("Brian bought tickets for 'Taylor Swift' — it's on!"),
+                eq(AdaptiveNotificationService.SIGNAL_CONCRETE_ACTION));
+    }
+
+    @Test
+    void recomputeMomentum_ticketPurchasedMissingActor_fallsBackToAnonymous() {
+        Hangout hangout = buildHangout("h-tp-anon", MomentumCategory.BUILDING);
+        hangout.setTitle("Taylor Swift");
+        when(hangoutRepository.findHangoutById("h-tp-anon")).thenReturn(Optional.of(hangout));
+
+        Participation purchase = new Participation();
+        purchase.setType(ParticipationType.TICKET_PURCHASED);
+        // userId left null — look-up cannot find a name
+        HangoutDetailData detail = HangoutDetailData.builder()
+                .withAttendance(List.of())
+                .withParticipations(List.of(purchase))
+                .build();
+        when(hangoutRepository.getHangoutDetailData("h-tp-anon")).thenReturn(detail);
+
+        // No userService stub — returns Optional.empty() by default for Optional returns.
+        when(adaptiveNotificationService.shouldSendNotification(
+                any(), eq(AdaptiveNotificationService.SIGNAL_CONCRETE_ACTION), any(), any()))
+                .thenReturn(true);
+
+        momentumService.recomputeMomentum("h-tp-anon");
+
+        verify(notificationService).notifyMomentumChange(
+                eq("h-tp-anon"), any(), any(), any(Set.class),
+                eq("Tickets were purchased for 'Taylor Swift' — it's on!"),
+                eq(AdaptiveNotificationService.SIGNAL_CONCRETE_ACTION));
+    }
+
+    @Test
+    void confirmHangout_withKnownActor_personalizesNotification() {
+        Hangout hangout = buildHangout("h-mconf", MomentumCategory.BUILDING);
+        hangout.setTitle("Taylor Swift");
+        when(hangoutRepository.findHangoutById("h-mconf")).thenReturn(Optional.of(hangout));
+
+        UUID actor = UUID.randomUUID();
+        when(userService.getUserSummary(actor))
+                .thenReturn(Optional.of(new UserSummaryDTO(actor, "Brian", null)));
+        when(adaptiveNotificationService.shouldSendNotification(
+                any(), eq(AdaptiveNotificationService.SIGNAL_CONFIRMED), any(), any()))
+                .thenReturn(true);
+
+        momentumService.confirmHangout("h-mconf", actor.toString());
+
+        verify(notificationService).notifyMomentumChange(
+                eq("h-mconf"), any(), any(), any(Set.class),
+                eq("Brian confirmed 'Taylor Swift' — it's on!"),
+                eq(AdaptiveNotificationService.SIGNAL_CONFIRMED));
+    }
+
+    @Test
+    void notifyManualConfirmation_sendsPersonalizedPush() {
+        Hangout hangout = buildHangout("h-mcnotify", MomentumCategory.CONFIRMED);
+        hangout.setTitle("Taylor Swift");
+        // Caller already persisted CONFIRMED — this method only fires the push.
+        when(hangoutRepository.findHangoutById("h-mcnotify")).thenReturn(Optional.of(hangout));
+
+        UUID actor = UUID.randomUUID();
+        when(userService.getUserSummary(actor))
+                .thenReturn(Optional.of(new UserSummaryDTO(actor, "Brian", null)));
+        when(adaptiveNotificationService.shouldSendNotification(
+                any(), eq(AdaptiveNotificationService.SIGNAL_CONFIRMED), any(), any()))
+                .thenReturn(true);
+
+        momentumService.notifyManualConfirmation("h-mcnotify", actor.toString());
+
+        verify(notificationService).notifyMomentumChange(
+                eq("h-mcnotify"), any(), any(), any(Set.class),
+                eq("Brian confirmed 'Taylor Swift' — it's on!"),
+                eq(AdaptiveNotificationService.SIGNAL_CONFIRMED));
+        // Should not modify state (no save)
+        verify(hangoutRepository, never()).save(any(Hangout.class));
+    }
+
+    @Test
+    void notifyManualConfirmation_missingHangout_isNoOp() {
+        when(hangoutRepository.findHangoutById("missing")).thenReturn(Optional.empty());
+
+        momentumService.notifyManualConfirmation("missing", "user-1");
+
+        verifyNoInteractions(notificationService);
+    }
+
+    @Test
+    void notifyManualConfirmation_hangoutNotYetConfirmed_doesNotSendPush() {
+        // Hardening guard: caller is expected to have persisted CONFIRMED before calling.
+        // If the persisted state disagrees (stale read, rolled-back write), skip the push.
+        Hangout hangout = buildHangout("h-notconf", MomentumCategory.BUILDING);
+        when(hangoutRepository.findHangoutById("h-notconf")).thenReturn(Optional.of(hangout));
+
+        momentumService.notifyManualConfirmation("h-notconf", "user-1");
+
+        verifyNoInteractions(notificationService);
     }
 }

@@ -473,20 +473,33 @@ class AdaptiveNotificationServiceTest {
         @Test
         void ticketPurchasedMessage_withName_includesName() {
             String msg = NotificationTextGenerator.ticketPurchasedMessage("Alex", "Concert");
-            assertThat(msg).isEqualTo("Alex bought tickets for 'Concert'");
+            assertThat(msg).isEqualTo("Alex bought tickets for 'Concert' — it's on!");
         }
 
         @Test
         void ticketPurchasedMessage_nullName_genericMessage() {
             String msg = NotificationTextGenerator.ticketPurchasedMessage(null, "Concert");
             assertThat(msg).contains("Concert");
+            assertThat(msg).contains("— it's on!");
             assertThat(msg).doesNotContain("null");
         }
 
         @Test
         void ticketPurchasedMessage_blankActorName_usesFallback() {
             String msg = NotificationTextGenerator.ticketPurchasedMessage("  ", "Concert Night");
-            assertThat(msg).isEqualTo("Tickets were purchased for 'Concert Night'");
+            assertThat(msg).isEqualTo("Tickets were purchased for 'Concert Night' — it's on!");
+        }
+
+        @Test
+        void manualConfirmationMessage_withName_includesName() {
+            String msg = NotificationTextGenerator.manualConfirmationMessage("Brian", "Taylor Swift");
+            assertThat(msg).isEqualTo("Brian confirmed 'Taylor Swift' — it's on!");
+        }
+
+        @Test
+        void manualConfirmationMessage_nullName_anonymousFallback() {
+            String msg = NotificationTextGenerator.manualConfirmationMessage(null, "Taylor Swift");
+            assertThat(msg).isEqualTo("'Taylor Swift' is confirmed — it's on!");
         }
 
         @Test

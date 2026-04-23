@@ -40,22 +40,16 @@ Two creation modes:
 
 ## 4. Scoring Algorithm
 
-### Two-Tier Scoring
+Scoring drives **BUILDING → GAINING_MOMENTUM only**. Auto-confirm is a separate, non-score rule (see "Auto-confirm rules" below) — intentionally conservative because false-positive confirmations are socially awkward ("why does the app say this is happening? nobody said they'd go").
 
-The system uses two separate scores to prevent low-commitment "Interested" signals from auto-confirming hangouts:
+### Momentum Score (for BUILDING → GAINING)
 
-- **momentumScore** (includes Interested) — drives BUILDING → GAINING_MOMENTUM. Appropriate because Interested signals indicate visibility/traction.
-- **confirmScore** (excludes Interested) — drives GAINING_MOMENTUM → CONFIRMED. Only strong commitment signals (Going RSVPs, planning actions) can auto-confirm.
-
-### Signal Weights
-
-| Signal | momentumScore | confirmScore |
-|--------|--------------|-------------|
-| Going RSVP | +3 each | +3 each |
-| Interested RSVP | +1 each | **not counted** |
-| Time added (startTimestamp != null) | +1 | +1 |
-| Location added (location != null) | +1 | +1 |
-| Concrete action (TICKET_PURCHASED participation, or carpool riders) | Instant CONFIRMED | Instant CONFIRMED |
+| Signal | Points |
+|--------|--------|
+| Going RSVP | +3 each |
+| Interested RSVP | +1 each |
+| Time added (startTimestamp != null) | +1 |
+| Location added (location != null) | +1 |
 
 ### Multipliers (compound — both can apply)
 
@@ -65,9 +59,9 @@ The system uses two separate scores to prevent low-commitment "Interested" signa
 | Time proximity (within 48h) | startTimestamp within 48 hours | ×1.5 |
 | Time proximity (within 7d) | startTimestamp within 7 days | ×1.2 |
 
-Multipliers stack: a hangout 2 days away with recent engagement gets ×1.5 × ×1.2 = ×1.8. Both scores receive the same multipliers.
+Multipliers stack: a hangout 2 days away with recent engagement gets ×1.5 × ×1.2 = ×1.8.
 
-### Dynamic Threshold
+### Dynamic Threshold (GAINING only)
 
 ```
 threshold = ceil(activeMembers × engagementMultiplier × 0.4)
@@ -79,12 +73,23 @@ threshold = ceil(activeMembers × engagementMultiplier × 0.4)
 
 Example: 8 members × 0.6 × 0.4 = threshold of 2.
 
-### Promotion Rules
+### Auto-confirm Rules (non-score)
 
-- **BUILDING → GAINING_MOMENTUM**: momentumScore ≥ threshold (Interested counts here)
-- **GAINING_MOMENTUM → CONFIRMED**: confirmScore ≥ threshold × 2 AND hangout has a date (Interested excluded)
-- **Concrete action**: instant CONFIRMED regardless of score
-- **Date required for auto-confirm**: dateless hangouts cap at GAINING_MOMENTUM (can still be manually confirmed)
+Two rules, and only two. Both are deliberately high-bar.
+
+1. **Ticket purchased** — any `TICKET_PURCHASED` participation exists → instant CONFIRMED. Notifies (`"Brian bought tickets for 'X' — it's on!"`, falls back to anonymous wording if the purchaser's name can't be resolved).
+2. **Two humans + concrete plan** — `countDistinct(GOING userIds) ≥ 2` AND `startTimestamp != null` AND `location != null` → instant CONFIRMED. **No notification** — the individual RSVP / time / location changes already notified the group; re-announcing the emergent state would be duplicate noise.
+
+Notes:
+- Carpool-rider-alone does **not** auto-confirm. A rider's commitment is captured through their GOING RSVP, which feeds rule 2.
+- Score / threshold is **not** used for confirmation. Multipliers (recency, proximity) affect GAINING only.
+- Dateless hangouts cannot auto-confirm (rule 2 requires `startTimestamp != null`). They can still be manually confirmed.
+
+### Promotion Rules (summary)
+
+- **BUILDING → GAINING_MOMENTUM**: momentumScore ≥ threshold
+- **→ CONFIRMED**: rule 1 or rule 2 above, or a manual path (§9)
+- **Never demote from CONFIRMED**
 
 ## 5. Data Model
 
@@ -123,11 +128,12 @@ All fields are copied via `HangoutPointerFactory.applyHangoutFields()`.
 |--------|---------|------------|
 | `initializeMomentum(hangout, confirmed, userId)` | Set initial state on new hangout | `HangoutServiceImpl.createHangout()` |
 | `recomputeMomentum(hangoutId)` | Full score recompute from current signals | After RSVP, time/location/ticket changes |
-| `confirmHangout(hangoutId, userId)` | Manual "It's on!" confirmation | Standalone use only (NOT from updateHangout — see note) |
+| `confirmHangout(hangoutId, userId)` | Manual "It's on!" confirmation (load-modify-save + notify) | Standalone use; NOT called from updateHangout — see note |
+| `notifyManualConfirmation(hangoutId, userId)` | Send the "It's on!" push for a hangout that's already been persisted as CONFIRMED | `HangoutServiceImpl.updateHangout()` after manual-confirm save |
 | `buildMomentumDTO(hangout, groupId)` | Build normalized DTO for detail view | `HangoutServiceImpl.getHangoutDetail()` |
 | `buildMomentumDTOFromPointer(pointer)` | Build DTO from pointer for feed | `HangoutSummaryDTO` constructor |
 
-**Important:** `confirmHangout()` loads a separate Hangout copy from DB. Do NOT call it within `updateHangout()` — the local hangout save would overwrite the confirmation. Instead, set momentum fields directly on the local hangout object within `updateHangout()`.
+**Important:** `confirmHangout()` loads a separate Hangout copy from DB. Do NOT call it within `updateHangout()` — the local hangout save would overwrite the confirmation. Instead, `updateHangout()` sets momentum fields directly on the local hangout object, then calls `notifyManualConfirmation()` after save to fire the push notification.
 
 ## 7. Integration Points (Where recomputeMomentum Is Called)
 
@@ -154,10 +160,10 @@ Group engagement data uses a Caffeine cache:
 
 ## 9. Confirmation Paths
 
-1. **At creation** — "Lock it in" button sends `confirmed: true` in `POST /hangouts`
-2. **Post-creation by anyone** — "It's on!" sends `confirmed: true` in `PATCH /hangouts/{id}`
-3. **Concrete action** — ticket purchased (TICKET_PURCHASED participation exists) or carpool rider added → auto-confirms via `recomputeMomentum`. Note: ticket metadata (ticketsRequired + ticketLink) is informational only and does NOT trigger confirmation.
-4. **Score-based** — crossing upper threshold (score ≥ threshold × 2) auto-confirms (requires date)
+1. **At creation** — "Lock it in" button sends `confirmed: true` in `POST /hangouts`. No push.
+2. **Post-creation manual** — "It's on!" sends `confirmed: true` in `PATCH /hangouts/{id}`. Fires `"[actor] confirmed 'X' — it's on!"` push via `notifyManualConfirmation()` after the save.
+3. **Ticket purchased (auto)** — any `TICKET_PURCHASED` participation exists → instant CONFIRMED via `recomputeMomentum`. Fires `"[actor] bought tickets for 'X' — it's on!"` push. Ticket metadata (`ticketsRequired` + `ticketLink`) is informational only and does NOT trigger confirmation; carpool-rider-alone no longer confirms either.
+4. **Two humans + concrete plan (auto, quiet)** — `countDistinct(GOING) ≥ 2` AND `startTimestamp != null` AND `location != null` → instant CONFIRMED via `recomputeMomentum`. **No push** — the underlying signals already notified the group individually.
 
 ## 10. Feed Filter
 
@@ -437,9 +443,10 @@ Multiple nudges can be active simultaneously. Nudges are in both `HangoutDetailD
 
 | Signal Type | Always Notify? |
 |-------------|---------------|
-| `CONCRETE_ACTION` (tickets, reservation) | Yes |
+| `CONCRETE_ACTION` (ticket purchased) | Yes |
 | `CONFIRMED` (explicit "It's on!") | Yes |
-| `BUILDING_TO_GAINING`, `GAINING_TO_CONFIRMED`, `GENERAL` | Subject to weekly budget |
+| `BUILDING_TO_GAINING`, `GENERAL` | Subject to weekly budget |
+| `GAINING_TO_CONFIRMED` | **Never emitted.** Auto-confirm via the quiet rule (§4) intentionally sends no push — the constant remains in `AdaptiveNotificationService` for historical reasons but has no callers. |
 
 ### Weekly Budget
 
@@ -462,9 +469,12 @@ SK = NOTIFICATION_TRACKER
 | Type | Template |
 |------|----------|
 | Gaining traction | `'[title]' is gaining traction — N people are interested` |
-| Ticket purchased | `[name] bought tickets for '[title]'` |
+| Ticket purchased (auto-confirm) | `[name] bought tickets for '[title]' — it's on!` (anonymous fallback: `Tickets were purchased for '[title]' — it's on!`) |
+| Manual confirmation | `[name] confirmed '[title]' — it's on!` (anonymous fallback: `'[title]' is confirmed — it's on!`) |
 | Action nudge | `'[title]' is [dayLabel] — consider buying tickets` |
 | Empty week | `Nothing planned next week — check out your group's ideas` |
+
+Quiet auto-confirm (two GOING + time + location) emits **no** template — see §4.
 
 ## 18. Deferred / Known Gaps
 
