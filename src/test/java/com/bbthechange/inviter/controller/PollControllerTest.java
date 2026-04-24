@@ -70,7 +70,7 @@ class PollControllerTest {
         request.setTitle("Test Poll");
         request.setDescription("Test Description");
         request.setMultipleChoice(false);
-        request.setOptions(Arrays.asList("Option 1", "Option 2"));
+        request.setOptionsFromStrings(Arrays.asList("Option 1", "Option 2"));
 
         Poll mockPoll = new Poll(hangoutId, "Test Poll", "Test Description", false);
         when(pollService.createPoll(eq(hangoutId), any(CreatePollRequest.class), eq(userId)))

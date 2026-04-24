@@ -51,6 +51,12 @@ class PollServiceImplTest {
     @Mock
     private UserService userService;
 
+    @Mock
+    private com.bbthechange.inviter.service.FuzzyTimeService fuzzyTimeService;
+
+    @Mock
+    private com.bbthechange.inviter.config.TimePollConfig timePollConfig;
+
     @InjectMocks
     private PollServiceImpl pollService;
 
@@ -74,7 +80,7 @@ class PollServiceImplTest {
         request.setTitle("Test Poll");
         request.setDescription("Description");
         request.setMultipleChoice(false);
-        request.setOptions(Arrays.asList("Option A", "Option B", "Option C"));
+        request.setOptionsFromStrings(Arrays.asList("Option A", "Option B", "Option C"));
 
         Hangout hangout = new Hangout();
         hangout.setHangoutId(eventId);
@@ -237,7 +243,11 @@ class PollServiceImplTest {
         hangout.setHangoutId(eventId);
         HangoutDetailData hangoutData = HangoutDetailData.builder().withHangout(hangout).build();
 
+        Poll parentPoll = new Poll(eventId, "Existing", null, false);
+        parentPoll.setPollId(pollId);
+
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+        when(hangoutRepository.getSpecificPollData(eventId, pollId)).thenReturn(java.util.List.of(parentPoll));
         when(authorizationService.canUserEditHangout(userId, hangout)).thenReturn(true);
         when(hangoutRepository.savePollOption(any(PollOption.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -416,7 +426,7 @@ class PollServiceImplTest {
         request.setTitle("Test Poll");
         request.setDescription("Description");
         request.setMultipleChoice(false);
-        request.setOptions(Arrays.asList("Option A", "Option B", "Option C"));
+        request.setOptionsFromStrings(Arrays.asList("Option A", "Option B", "Option C"));
 
         Hangout hangout = new Hangout();
         hangout.setHangoutId(eventId);
@@ -463,7 +473,7 @@ class PollServiceImplTest {
         request.setTitle("Test Poll");
         request.setDescription("Description");
         request.setMultipleChoice(false);
-        request.setOptions(Arrays.asList("Option A", "Option B"));
+        request.setOptionsFromStrings(Arrays.asList("Option A", "Option B"));
 
         Hangout hangout = new Hangout();
         hangout.setHangoutId(eventId);
@@ -693,6 +703,7 @@ class PollServiceImplTest {
             .build();
 
         when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+        when(hangoutRepository.getSpecificPollData(eventId, pollId)).thenReturn(java.util.List.of(poll));
         when(authorizationService.canUserEditHangout(userId, hangout)).thenReturn(true);
         when(hangoutRepository.savePollOption(any(PollOption.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(hangoutRepository.findHangoutById(eventId)).thenReturn(Optional.of(hangout));
@@ -768,7 +779,7 @@ class PollServiceImplTest {
             request.setTitle("Test Poll");
             request.setDescription("Description");
             request.setMultipleChoice(false);
-            request.setOptions(Arrays.asList("Option A", "Option B"));
+            request.setOptionsFromStrings(Arrays.asList("Option A", "Option B"));
 
             Hangout hangout = new Hangout();
             hangout.setHangoutId(eventId);
@@ -816,7 +827,7 @@ class PollServiceImplTest {
             request.setTitle("Test Poll");
             request.setDescription("Description");
             request.setMultipleChoice(false);
-            request.setOptions(Arrays.asList("Option A", "Option B"));
+            request.setOptionsFromStrings(Arrays.asList("Option A", "Option B"));
 
             Hangout hangout = new Hangout();
             hangout.setHangoutId(eventId);
@@ -863,7 +874,7 @@ class PollServiceImplTest {
             request.setTitle("Test Poll");
             request.setDescription("Description");
             request.setMultipleChoice(false);
-            request.setOptions(Arrays.asList("Option A", "Option B"));
+            request.setOptionsFromStrings(Arrays.asList("Option A", "Option B"));
 
             Hangout hangout = new Hangout();
             hangout.setHangoutId(eventId);
@@ -894,6 +905,184 @@ class PollServiceImplTest {
             verify(pointerUpdateService).updatePointerWithRetry(eq(groupId), eq(eventId), any(), eq("poll data"));
 
             // Note: Max retry behavior is now tested in PointerUpdateServiceTest.
+        }
+    }
+
+    // ========================================================================
+    // TIME poll substrate tests (Slice 1)
+    // ========================================================================
+
+    @org.junit.jupiter.api.Nested
+    class TimePollTests {
+        private Hangout hangout;
+        private HangoutDetailData hangoutData;
+
+        @BeforeEach
+        void setupTimePollHangout() {
+            hangout = new Hangout();
+            hangout.setHangoutId(eventId);
+            hangoutData = HangoutDetailData.builder().withHangout(hangout).build();
+            org.mockito.Mockito.lenient()
+                .when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+            org.mockito.Mockito.lenient()
+                .when(authorizationService.canUserEditHangout(userId, hangout)).thenReturn(true);
+        }
+
+        private CreatePollRequest timePollRequest(TimeInfo... timeInputs) {
+            CreatePollRequest req = new CreatePollRequest();
+            req.setTitle("Vote on a time");
+            req.setAttributeType("TIME");
+            req.setMultipleChoice(true);
+            java.util.List<PollOptionInput> inputs = new java.util.ArrayList<>();
+            for (TimeInfo ti : timeInputs) {
+                inputs.add(new PollOptionInput(null, ti));
+            }
+            req.setOptions(inputs);
+            return req;
+        }
+
+        private TimeInfo exactTime(String start, String end) {
+            return new TimeInfo(null, null, start, end);
+        }
+
+        private TimeInfo fuzzyTime(String granularity, String periodStart) {
+            return new TimeInfo(granularity, periodStart, null, null);
+        }
+
+        @Test
+        void createPoll_TimeAttribute_ValidatesAndGeneratesText() {
+            // Given: fresh hangout (no active TIME poll)
+            when(hangoutRepository.getAllPollData(eventId)).thenReturn(java.util.List.of());
+            when(hangoutRepository.findHangoutById(eventId)).thenReturn(Optional.of(hangout));
+            when(hangoutRepository.savePoll(any(Poll.class))).thenAnswer(i -> i.getArgument(0));
+            when(hangoutRepository.savePollOption(any(PollOption.class))).thenAnswer(i -> i.getArgument(0));
+
+            CreatePollRequest req = timePollRequest(
+                fuzzyTime("evening", "2026-05-02T00:00:00-07:00"));
+
+            // When
+            Poll result = pollService.createPoll(eventId, req, userId);
+
+            // Then
+            assertThat(result).isNotNull();
+            assertThat(result.getAttributeType()).isEqualTo("TIME");
+            org.mockito.ArgumentCaptor<PollOption> captor = org.mockito.ArgumentCaptor.forClass(PollOption.class);
+            verify(hangoutRepository).savePollOption(captor.capture());
+            PollOption saved = captor.getValue();
+            assertThat(saved.getTimeInput()).isNotNull();
+            assertThat(saved.getText()).isNotBlank();
+            assertThat(saved.getText()).doesNotContain("null");
+        }
+
+        @Test
+        void createPoll_TimeAttribute_WithLegacyStringOptions_Rejects() {
+            CreatePollRequest req = new CreatePollRequest();
+            req.setTitle("Vote on a time");
+            req.setAttributeType("TIME");
+            req.setOptionsFromStrings(java.util.List.of("anything"));
+
+            assertThatThrownBy(() -> pollService.createPoll(eventId, req, userId))
+                .isInstanceOf(com.bbthechange.inviter.exception.ValidationException.class)
+                .hasMessageContaining("updated app version");
+        }
+
+        @Test
+        void createPoll_TimeAttribute_WhenActiveTimePollExists_Rejects() {
+            Poll existingActive = new Poll(eventId, "other", null, false);
+            existingActive.setAttributeType("TIME");
+            existingActive.setActive(true);
+            when(hangoutRepository.getAllPollData(eventId))
+                .thenReturn(java.util.List.of(existingActive));
+
+            CreatePollRequest req = timePollRequest(
+                fuzzyTime("evening", "2026-05-02T00:00:00-07:00"));
+
+            assertThatThrownBy(() -> pollService.createPoll(eventId, req, userId))
+                .isInstanceOf(com.bbthechange.inviter.exception.ValidationException.class)
+                .hasMessageContaining("active time poll");
+        }
+
+        @Test
+        void addPollOption_OnTimePoll_WithoutTimeInput_Rejects() {
+            Poll parent = new Poll(eventId, "t", null, true);
+            parent.setAttributeType("TIME");
+            parent.setPollId(pollId);
+            when(hangoutRepository.getSpecificPollData(eventId, pollId))
+                .thenReturn(java.util.List.of(parent));
+
+            AddPollOptionRequest req = new AddPollOptionRequest("just text");
+            assertThatThrownBy(() -> pollService.addPollOption(eventId, pollId, req, userId))
+                .isInstanceOf(com.bbthechange.inviter.exception.ValidationException.class)
+                .hasMessageContaining("updated app version");
+        }
+
+        @Test
+        void addPollOption_OnTimePoll_DedupesEquivalentTimeInput() {
+            Poll parent = new Poll(eventId, "t", null, true);
+            parent.setAttributeType("TIME");
+            parent.setPollId(pollId);
+
+            PollOption existing = new PollOption(eventId, pollId, "Sat evening");
+            TimeInfo existingTime = fuzzyTime("evening", "2026-05-02T00:00:00-07:00");
+            existing.setTimeInput(existingTime);
+
+            when(hangoutRepository.getSpecificPollData(eventId, pollId))
+                .thenReturn(java.util.List.of(parent, existing));
+
+            AddPollOptionRequest req = new AddPollOptionRequest();
+            req.setTimeInput(fuzzyTime("evening", "2026-05-02T00:00:00-07:00"));
+
+            assertThatThrownBy(() -> pollService.addPollOption(eventId, pollId, req, userId))
+                .isInstanceOf(com.bbthechange.inviter.exception.ValidationException.class)
+                .hasMessageContaining("Duplicate");
+        }
+
+        @Test
+        void addPollOption_OnTimePoll_AcceptsNewEquivalent_WhenDifferent() {
+            Poll parent = new Poll(eventId, "t", null, true);
+            parent.setAttributeType("TIME");
+            parent.setPollId(pollId);
+
+            PollOption existing = new PollOption(eventId, pollId, "Sat evening");
+            existing.setTimeInput(fuzzyTime("evening", "2026-05-02T00:00:00-07:00"));
+
+            when(hangoutRepository.getSpecificPollData(eventId, pollId))
+                .thenReturn(java.util.List.of(parent, existing));
+            when(hangoutRepository.savePollOption(any(PollOption.class))).thenAnswer(i -> i.getArgument(0));
+            when(hangoutRepository.findHangoutById(eventId)).thenReturn(Optional.of(hangout));
+
+            AddPollOptionRequest req = new AddPollOptionRequest();
+            // Different day — not a duplicate
+            req.setTimeInput(fuzzyTime("evening", "2026-05-03T00:00:00-07:00"));
+
+            PollOption result = pollService.addPollOption(eventId, pollId, req, userId);
+            assertThat(result).isNotNull();
+            assertThat(result.getTimeInput()).isNotNull();
+        }
+
+        @Test
+        void voteOnPoll_SameOptionTwice_IsIdempotent() {
+            VoteRequest request = new VoteRequest();
+            request.setOptionId(optionId);
+            request.setVoteType("YES");
+
+            Hangout h = new Hangout();
+            HangoutDetailData hd = HangoutDetailData.builder().withHangout(h).build();
+
+            Poll poll = new Poll(eventId, "t", null, true);
+            poll.setPollId(pollId);
+            Vote existing = new Vote(eventId, pollId, optionId, userId, "YES");
+
+            when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hd);
+            when(authorizationService.canUserViewHangout(userId, h)).thenReturn(true);
+            when(hangoutRepository.getSpecificPollData(eventId, pollId))
+                .thenReturn(java.util.List.of(poll, existing));
+
+            Vote result = pollService.voteOnPoll(eventId, pollId, request, userId);
+
+            assertThat(result).isSameAs(existing);
+            verify(hangoutRepository, never()).saveVote(any());
+            verify(hangoutRepository, never()).deleteVote(any(), any(), any(), any());
         }
     }
 }

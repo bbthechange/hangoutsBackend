@@ -17,6 +17,9 @@ public class PollWithOptionsDTO {
     private String attributeType;
     private Long promotedAt;
     private Long createdAtMillis;
+    private boolean isActive;
+    private boolean viewable;
+    private boolean canAddOptions;
 
     public PollWithOptionsDTO() {}
 
@@ -30,6 +33,9 @@ public class PollWithOptionsDTO {
         this.attributeType = poll.getAttributeType();
         this.promotedAt = poll.getPromotedAt();
         this.createdAtMillis = poll.getCreatedAt() != null ? poll.getCreatedAt().toEpochMilli() : null;
+        this.isActive = poll.isActive();
+        this.viewable = true;
+        this.canAddOptions = true;
     }
     
     public String getPollId() {
@@ -102,5 +108,30 @@ public class PollWithOptionsDTO {
 
     public void setCreatedAtMillis(Long createdAtMillis) {
         this.createdAtMillis = createdAtMillis;
+    }
+
+    @com.fasterxml.jackson.annotation.JsonProperty("isActive")
+    public boolean isActive() {
+        return isActive;
+    }
+
+    public void setActive(boolean active) {
+        this.isActive = active;
+    }
+
+    public boolean isViewable() {
+        return viewable;
+    }
+
+    public void setViewable(boolean viewable) {
+        this.viewable = viewable;
+    }
+
+    public boolean isCanAddOptions() {
+        return canAddOptions;
+    }
+
+    public void setCanAddOptions(boolean canAddOptions) {
+        this.canAddOptions = canAddOptions;
     }
 }

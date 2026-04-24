@@ -156,9 +156,13 @@ public class HangoutServiceImpl implements HangoutService {
                 );
                 polls.add(poll);
 
-                // Create poll option entities
+                // Create poll option entities. Hangout-creation polls are always plain text
+                // (LOCATION/DESCRIPTION or untyped); TIME polls go through PollService.createPoll
+                // so the TIME-specific validation path applies.
                 if (pollRequest.getOptions() != null) {
-                    for (String optionText : pollRequest.getOptions()) {
+                    for (com.bbthechange.inviter.dto.PollOptionInput input : pollRequest.getOptions()) {
+                        if (input == null) continue;
+                        String optionText = input.getText();
                         if (optionText != null && !optionText.trim().isEmpty()) {
                             pollOptions.add(new PollOption(hangout.getHangoutId(), poll.getPollId(), optionText.trim()));
                         }
