@@ -2,7 +2,6 @@ package com.bbthechange.inviter.model;
 
 import com.bbthechange.inviter.dto.ParticipationSummaryDTO;
 import com.bbthechange.inviter.dto.TimeInfo;
-import com.bbthechange.inviter.dto.TimeSuggestionPointerView;
 import com.bbthechange.inviter.dto.Address;
 import com.bbthechange.inviter.util.InviterKeyFactory;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
@@ -61,11 +60,6 @@ public class HangoutPointer extends BaseItem {
 
     // Complete interest level data (denormalized for single-query feed loading)
     private List<InterestLevel> interestLevels;
-
-    // Time suggestions (denormalized for group feed display).
-    // Uses a lean projection — nested BaseItem keys on TimeSuggestion would bloat the pointer.
-    // Capped to 5 at write time in TimeSuggestionServiceImpl.propagateSuggestionsToPointers.
-    private List<TimeSuggestionPointerView> timeSuggestions;
 
     // Participation & Reservation Fields (denormalized for group feed efficiency)
     private ParticipationSummaryDTO participationSummary;  // Grouped users + all offers
@@ -129,7 +123,6 @@ public class HangoutPointer extends BaseItem {
         this.needsRide = new ArrayList<>();
         this.attributes = new ArrayList<>();
         this.interestLevels = new ArrayList<>();
-        this.timeSuggestions = new ArrayList<>();
     }
     
     public String getGroupId() {
@@ -378,20 +371,6 @@ public class HangoutPointer extends BaseItem {
 
     public void setInterestLevels(List<InterestLevel> interestLevels) {
         this.interestLevels = interestLevels != null ? interestLevels : new ArrayList<>();
-        touch();
-    }
-
-    // ============================================================================
-    // TIME SUGGESTION DATA (Denormalized from TimeSuggestion canonical records)
-    // ============================================================================
-
-    @DynamoDbAttribute("timeSuggestions")
-    public List<TimeSuggestionPointerView> getTimeSuggestions() {
-        return timeSuggestions != null ? timeSuggestions : new ArrayList<>();
-    }
-
-    public void setTimeSuggestions(List<TimeSuggestionPointerView> timeSuggestions) {
-        this.timeSuggestions = timeSuggestions != null ? timeSuggestions : new ArrayList<>();
         touch();
     }
 

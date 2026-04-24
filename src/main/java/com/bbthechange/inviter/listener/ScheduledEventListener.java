@@ -4,7 +4,6 @@ import com.bbthechange.inviter.model.Hangout;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.TimePollService;
-import com.bbthechange.inviter.service.TimeSuggestionService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.awspring.cloud.sqs.annotation.SqsListener;
@@ -35,7 +34,6 @@ public class ScheduledEventListener {
 
     private static final Logger logger = LoggerFactory.getLogger(ScheduledEventListener.class);
 
-    private static final String TYPE_TIME_SUGGESTION_ADOPTION = "TIME_SUGGESTION_ADOPTION";
     private static final String TYPE_POLL_ADOPTION = "POLL_ADOPTION";
     private static final String TYPE_IDEA_ADD_BATCH = "IDEA_ADD_BATCH";
 
@@ -45,32 +43,23 @@ public class ScheduledEventListener {
 
     private final HangoutRepository hangoutRepository;
     private final NotificationService notificationService;
-    private final TimeSuggestionService timeSuggestionService;
     private final TimePollService timePollService;
     private final MeterRegistry meterRegistry;
     private final ObjectMapper objectMapper;
-    private final int shortWindowHours;
-    private final int longWindowHours;
 
     // Injected via setter to avoid circular dependency — batch handling is optional
     private IdeaAddBatchHandler ideaAddBatchHandler;
 
     public ScheduledEventListener(HangoutRepository hangoutRepository,
                                    NotificationService notificationService,
-                                   TimeSuggestionService timeSuggestionService,
                                    TimePollService timePollService,
                                    MeterRegistry meterRegistry,
-                                   ObjectMapper objectMapper,
-                                   @Value("${time-suggestion.auto-adoption.short-window-hours:24}") int shortWindowHours,
-                                   @Value("${time-suggestion.auto-adoption.long-window-hours:48}") int longWindowHours) {
+                                   ObjectMapper objectMapper) {
         this.hangoutRepository = hangoutRepository;
         this.notificationService = notificationService;
-        this.timeSuggestionService = timeSuggestionService;
         this.timePollService = timePollService;
         this.meterRegistry = meterRegistry;
         this.objectMapper = objectMapper;
-        this.shortWindowHours = shortWindowHours;
-        this.longWindowHours = longWindowHours;
     }
 
     /**
@@ -87,9 +76,7 @@ public class ScheduledEventListener {
             JsonNode node = objectMapper.readTree(messageBody);
             String type = node.has("type") ? node.get("type").asText() : null;
 
-            if (TYPE_TIME_SUGGESTION_ADOPTION.equals(type)) {
-                handleTimeSuggestionAdoption(node, messageBody);
-            } else if (TYPE_POLL_ADOPTION.equals(type)) {
+            if (TYPE_POLL_ADOPTION.equals(type)) {
                 handlePollAdoption(node, messageBody);
             } else if (TYPE_IDEA_ADD_BATCH.equals(type)) {
                 handleIdeaAddBatch(node, messageBody);
@@ -99,26 +86,6 @@ public class ScheduledEventListener {
         } catch (Exception e) {
             logger.error("Error processing scheduled event message: {}", messageBody, e);
             // Don't rethrow — acknowledge and delete the message
-        }
-    }
-
-    private void handleTimeSuggestionAdoption(JsonNode node, String messageBody) {
-        JsonNode hangoutIdNode = node.get("hangoutId");
-        if (hangoutIdNode == null || hangoutIdNode.isNull() || hangoutIdNode.asText().isBlank()) {
-            logger.warn("Received adoption message with missing hangoutId: {}", messageBody);
-            meterRegistry.counter("time_suggestion_adoption_total", "status", "missing_id").increment();
-            return;
-        }
-
-        String hangoutId = hangoutIdNode.asText();
-        logger.info("Processing time suggestion adoption for hangout: {}", hangoutId);
-
-        try {
-            timeSuggestionService.adoptForHangout(hangoutId, shortWindowHours, longWindowHours);
-            meterRegistry.counter("time_suggestion_adoption_total", "status", "processed").increment();
-        } catch (Exception e) {
-            logger.error("Error during time suggestion adoption for hangout {}: {}", hangoutId, e.getMessage(), e);
-            meterRegistry.counter("time_suggestion_adoption_total", "status", "error").increment();
         }
     }
 

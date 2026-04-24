@@ -3,7 +3,6 @@ package com.bbthechange.inviter.listener;
 import com.bbthechange.inviter.model.Hangout;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.service.NotificationService;
-import com.bbthechange.inviter.service.TimeSuggestionService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -33,9 +32,6 @@ class ScheduledEventListenerTest {
     private NotificationService notificationService;
 
     @Mock
-    private TimeSuggestionService timeSuggestionService;
-
-    @Mock
     private com.bbthechange.inviter.service.TimePollService timePollService;
 
     @Mock
@@ -55,8 +51,8 @@ class ScheduledEventListenerTest {
         objectMapper = new ObjectMapper();
         lenient().when(meterRegistry.counter(anyString(), any(String[].class))).thenReturn(counter);
         listener = new ScheduledEventListener(
-                hangoutRepository, notificationService, timeSuggestionService,
-                timePollService, meterRegistry, objectMapper, 24, 48);
+                hangoutRepository, notificationService,
+                timePollService, meterRegistry, objectMapper);
         listener.setIdeaAddBatchHandler(ideaAddBatchHandler);
     }
 
@@ -255,58 +251,6 @@ class ScheduledEventListenerTest {
 
         verify(notificationService).sendHangoutReminder(hangout);
         verify(meterRegistry).counter("hangout_reminder_total", "status", "sent");
-    }
-
-    // ============================================================================
-    // Time suggestion adoption message tests
-    // ============================================================================
-
-    @Nested
-    class TimeSuggestionAdoption {
-
-        @Test
-        void handleMessage_WithAdoptionType_CallsAdoptForHangout() {
-            String hangoutId = "test-hangout-456";
-            String messageBody = "{\"type\":\"TIME_SUGGESTION_ADOPTION\",\"hangoutId\":\"" + hangoutId + "\",\"suggestionId\":\"sug-123\"}";
-
-            listener.handleMessage(messageBody);
-
-            verify(timeSuggestionService).adoptForHangout(hangoutId, 24, 48);
-            verify(notificationService, never()).sendHangoutReminder(any());
-        }
-
-        @Test
-        void handleMessage_WithAdoptionType_MissingHangoutId_LogsWarning() {
-            String messageBody = "{\"type\":\"TIME_SUGGESTION_ADOPTION\"}";
-
-            listener.handleMessage(messageBody);
-
-            verify(timeSuggestionService, never()).adoptForHangout(anyString(), anyInt(), anyInt());
-            verify(meterRegistry).counter("time_suggestion_adoption_total", "status", "missing_id");
-        }
-
-        @Test
-        void handleMessage_WithAdoptionType_BlankHangoutId_LogsWarning() {
-            String messageBody = "{\"type\":\"TIME_SUGGESTION_ADOPTION\",\"hangoutId\":\"\"}";
-
-            listener.handleMessage(messageBody);
-
-            verify(timeSuggestionService, never()).adoptForHangout(anyString(), anyInt(), anyInt());
-            verify(meterRegistry).counter("time_suggestion_adoption_total", "status", "missing_id");
-        }
-
-        @Test
-        void handleMessage_WithAdoptionType_WhenServiceThrows_CountsError() {
-            String hangoutId = "test-hangout-456";
-            String messageBody = "{\"type\":\"TIME_SUGGESTION_ADOPTION\",\"hangoutId\":\"" + hangoutId + "\"}";
-
-            doThrow(new RuntimeException("DB error")).when(timeSuggestionService)
-                    .adoptForHangout(anyString(), anyInt(), anyInt());
-
-            listener.handleMessage(messageBody);
-
-            verify(meterRegistry).counter("time_suggestion_adoption_total", "status", "error");
-        }
     }
 
     // ============================================================================

@@ -42,9 +42,6 @@ public final class InviterKeyFactory {
     public static final String PARTICIPATION_PREFIX = "PARTICIPATION";
     public static final String RESERVEOFFER_PREFIX = "RESERVEOFFER";
 
-    // Time Suggestion prefix
-    public static final String TIME_SUGGESTION_PREFIX = "TIME_SUGGESTION";
-
     // TVMaze Season prefixes
     public static final String TVMAZE_PREFIX = "TVMAZE";
     public static final String SHOW_PREFIX = "SHOW";
@@ -396,14 +393,4 @@ public final class InviterKeyFactory {
         return sortKey != null && sortKey.startsWith(SEASON_PREFIX + DELIMITER);
     }
 
-    // Time Suggestion Keys
-
-    public static String getTimeSuggestionSk(String suggestionId) {
-        validateId(suggestionId, "TimeSuggestion");
-        return TIME_SUGGESTION_PREFIX + DELIMITER + suggestionId;
-    }
-
-    public static boolean isTimeSuggestion(String sortKey) {
-        return sortKey != null && sortKey.startsWith(TIME_SUGGESTION_PREFIX + DELIMITER);
-    }
 }

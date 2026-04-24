@@ -73,10 +73,6 @@ public class HangoutSummaryDTO implements FeedItem {
     @Builder.Default
     private List<InterestLevel> interestLevels = List.of();
 
-    // Time suggestions (denormalized from pointer)
-    @Builder.Default
-    private List<TimeSuggestionDTO> timeSuggestions = List.of();
-
     // Ticket/participation coordination fields
     private ParticipationSummaryDTO participationSummary;
     private String ticketLink;
@@ -174,17 +170,6 @@ public class HangoutSummaryDTO implements FeedItem {
 
         // Interest levels
         this.interestLevels = pointer.getInterestLevels();
-
-        // Time suggestions (already capped at write time; defensively filter for ACTIVE)
-        List<TimeSuggestionPointerView> pointerSuggestions = pointer.getTimeSuggestions();
-        if (pointerSuggestions != null) {
-            String pointerHangoutId = pointer.getHangoutId();
-            String pointerGroupId = pointer.getGroupId();
-            this.timeSuggestions = pointerSuggestions.stream()
-                    .filter(ts -> ts.getStatus() == TimeSuggestionStatus.ACTIVE)
-                    .map(ts -> TimeSuggestionDTO.fromPointerView(ts, pointerHangoutId, pointerGroupId))
-                    .collect(Collectors.toList());
-        }
 
         // Ticket/participation coordination fields (denormalized from pointer)
         this.participationSummary = pointer.getParticipationSummary();
@@ -400,14 +385,6 @@ public class HangoutSummaryDTO implements FeedItem {
 
     public void setInterestLevels(List<InterestLevel> interestLevels) {
         this.interestLevels = interestLevels;
-    }
-
-    public List<TimeSuggestionDTO> getTimeSuggestions() {
-        return timeSuggestions != null ? timeSuggestions : new ArrayList<>();
-    }
-
-    public void setTimeSuggestions(List<TimeSuggestionDTO> timeSuggestions) {
-        this.timeSuggestions = timeSuggestions;
     }
 
     // Ticket/participation coordination getters/setters

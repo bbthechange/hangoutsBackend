@@ -13,7 +13,6 @@ import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.S3Service;
 import com.bbthechange.inviter.service.GroupTimestampService;
 import com.bbthechange.inviter.service.TimePollService;
-import com.bbthechange.inviter.service.TimeSuggestionService;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.model.*;
@@ -58,7 +57,6 @@ public class HangoutServiceImpl implements HangoutService {
     private final MomentumService momentumService;
     private final NudgeService nudgeService;
     private final AttributeSuggestionService attributeSuggestionService;
-    private final TimeSuggestionService timeSuggestionService;
     private final TimePollService timePollService;
 
     @Value("${inviter.attendance.backward-compat-interested:true}")
@@ -76,7 +74,6 @@ public class HangoutServiceImpl implements HangoutService {
                               MomentumService momentumService,
                               NudgeService nudgeService,
                               AttributeSuggestionService attributeSuggestionService,
-                              @Lazy TimeSuggestionService timeSuggestionService,
                               @Lazy TimePollService timePollService) {
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
@@ -91,7 +88,6 @@ public class HangoutServiceImpl implements HangoutService {
         this.momentumService = momentumService;
         this.nudgeService = nudgeService;
         this.attributeSuggestionService = attributeSuggestionService;
-        this.timeSuggestionService = timeSuggestionService;
         this.timePollService = timePollService;
     }
     
@@ -406,14 +402,6 @@ public class HangoutServiceImpl implements HangoutService {
                 ? attributeSuggestionService.computeSuggestedAttributes(hangout, pollsWithOptions)
                 : Map.of();
 
-        // Map time suggestions to DTOs (active suggestions for timeless hangouts)
-        List<TimeSuggestionDTO> timeSuggestionDTOs = supportsNewFeatures
-                ? hangoutDetail.getTimeSuggestions().stream()
-                    .filter(ts -> TimeSuggestionStatus.ACTIVE.equals(ts.getStatus()))
-                    .map(TimeSuggestionDTO::from)
-                    .collect(Collectors.toList())
-                : List.of();
-
         // Build the DTO
         HangoutDetailDTO.HangoutDetailDTOBuilder dtoBuilder = HangoutDetailDTO.builder()
                 .withHangout(hangout)
@@ -427,7 +415,6 @@ public class HangoutServiceImpl implements HangoutService {
                 .withParticipations(participationDTOs)
                 .withReservationOffers(offerDTOs)
                 .withMomentum(momentumDTO)
-                .withTimeSuggestions(timeSuggestionDTOs)
                 .withNudges(nudges)
                 .withSuggestedAttributes(suggestedAttributes);
 
@@ -586,10 +573,9 @@ public class HangoutServiceImpl implements HangoutService {
         // Save canonical record
         hangoutRepository.createHangout(hangout); // Using createHangout as it's a putItem
 
-        // A direct time edit makes any active time suggestions moot. Mark them REJECTED and
+        // A direct time edit supersedes any active TIME polls: flip them inactive and
         // cancel their adoption schedules BEFORE the pointer update so the scheduler can't
-        // race in and adopt a stale suggestion. Pointer timeSuggestions will be cleared by
-        // HangoutPointerFactory.applyHangoutFields since startTimestamp is now non-null.
+        // race in and adopt a stale poll.
         if (timeChanged && hangout.getStartTimestamp() != null) {
             try {
                 timePollService.onSupersede(hangoutId);

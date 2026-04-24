@@ -31,7 +31,7 @@ public interface HangoutService {
 
     /**
      * Get hangout details with version-aware field gating.
-     * When clientInfo indicates an old app version, new fields (nudges, timeSuggestions) are omitted.
+     * When clientInfo indicates an old app version, new fields (nudges) are omitted.
      */
     HangoutDetailDTO getHangoutDetail(String hangoutId, String requestingUserId, ClientInfo clientInfo);
     

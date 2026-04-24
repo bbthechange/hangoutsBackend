@@ -52,10 +52,6 @@ public class HangoutDetailDTO {
     // Momentum data (populated by MomentumService at read time)
     private MomentumDTO momentum;
 
-    // Time suggestions (active suggestions for timeless hangouts)
-    @Builder.Default
-    private List<TimeSuggestionDTO> timeSuggestions = List.of();
-
     // Suggested attributes from active suggestion polls (computed at read time — never stored)
     @Builder.Default
     private Map<String, SuggestedAttributeDTO> suggestedAttributes = Map.of();
