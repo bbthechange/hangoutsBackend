@@ -32,6 +32,9 @@ This hierarchical key structure is powerful because it allows fetching all data 
 | `PollOptionInput.java` / `PollOptionInputDeserializer.java` | Wire shape for `CreatePollRequest.options` — polymorphic: accepts legacy `List<String>` OR `List<{text?, timeInput?}>`. |
 | `TimePollOptionTextGenerator.java` | Server-generates `PollOption.text` for TIME options so clients without TIME awareness render a generic poll. Uses timezone embedded in the TimeInfo ISO string (creator's TZ). Never UTC. |
 | `TimePollConfig.java` | Holds `MIN_TIME_SUGGESTION_VERSION`. Defaults to `"UNKNOWN"`; `canAddOptions` stays `true` until the config is pinned to a real client version. |
+| `TimePollService.java` | Lifecycle hooks for TIME polls: `onPollCreated`/`onOptionAdded` (EventBridge scheduling), `evaluateAndAdopt` (5-way matrix handler entry), `onSupersede`/`onPollDeleted`/`onHangoutDeleted` (cancellation paths — all route through `cancelSchedulesFor`). |
+| `TimePollScheduler.java` | EventBridge wrapper for TIME polls. Creates `poll-adopt-{pollId}-24h` (fixed) and `poll-adopt-{pollId}-48h` (sliding). Payload: `{type: "POLL_ADOPTION", hangoutId, pollId}`. |
+| `ScheduledEventListener.java` | Routes `POLL_ADOPTION` messages from SQS to `TimePollService.evaluateAndAdopt(hangoutId, pollId)`. |
 | `VoteDTO.java` | Individual vote with `userId`, `voteType`, and `displayName` (enriched from username cache). |
 
 ## 4. Core Flows

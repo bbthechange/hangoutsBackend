@@ -36,6 +36,9 @@ class ScheduledEventListenerTest {
     private TimeSuggestionService timeSuggestionService;
 
     @Mock
+    private com.bbthechange.inviter.service.TimePollService timePollService;
+
+    @Mock
     private MeterRegistry meterRegistry;
 
     @Mock
@@ -53,7 +56,7 @@ class ScheduledEventListenerTest {
         lenient().when(meterRegistry.counter(anyString(), any(String[].class))).thenReturn(counter);
         listener = new ScheduledEventListener(
                 hangoutRepository, notificationService, timeSuggestionService,
-                meterRegistry, objectMapper, 24, 48);
+                timePollService, meterRegistry, objectMapper, 24, 48);
         listener.setIdeaAddBatchHandler(ideaAddBatchHandler);
     }
 

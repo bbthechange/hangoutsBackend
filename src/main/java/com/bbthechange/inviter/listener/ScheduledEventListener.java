@@ -3,6 +3,7 @@ package com.bbthechange.inviter.listener;
 import com.bbthechange.inviter.model.Hangout;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.service.NotificationService;
+import com.bbthechange.inviter.service.TimePollService;
 import com.bbthechange.inviter.service.TimeSuggestionService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -35,6 +36,7 @@ public class ScheduledEventListener {
     private static final Logger logger = LoggerFactory.getLogger(ScheduledEventListener.class);
 
     private static final String TYPE_TIME_SUGGESTION_ADOPTION = "TIME_SUGGESTION_ADOPTION";
+    private static final String TYPE_POLL_ADOPTION = "POLL_ADOPTION";
     private static final String TYPE_IDEA_ADD_BATCH = "IDEA_ADD_BATCH";
 
     // Reminder window: 90-150 minutes before start (2 hours +/- 30 min tolerance)
@@ -44,6 +46,7 @@ public class ScheduledEventListener {
     private final HangoutRepository hangoutRepository;
     private final NotificationService notificationService;
     private final TimeSuggestionService timeSuggestionService;
+    private final TimePollService timePollService;
     private final MeterRegistry meterRegistry;
     private final ObjectMapper objectMapper;
     private final int shortWindowHours;
@@ -55,6 +58,7 @@ public class ScheduledEventListener {
     public ScheduledEventListener(HangoutRepository hangoutRepository,
                                    NotificationService notificationService,
                                    TimeSuggestionService timeSuggestionService,
+                                   TimePollService timePollService,
                                    MeterRegistry meterRegistry,
                                    ObjectMapper objectMapper,
                                    @Value("${time-suggestion.auto-adoption.short-window-hours:24}") int shortWindowHours,
@@ -62,6 +66,7 @@ public class ScheduledEventListener {
         this.hangoutRepository = hangoutRepository;
         this.notificationService = notificationService;
         this.timeSuggestionService = timeSuggestionService;
+        this.timePollService = timePollService;
         this.meterRegistry = meterRegistry;
         this.objectMapper = objectMapper;
         this.shortWindowHours = shortWindowHours;
@@ -84,6 +89,8 @@ public class ScheduledEventListener {
 
             if (TYPE_TIME_SUGGESTION_ADOPTION.equals(type)) {
                 handleTimeSuggestionAdoption(node, messageBody);
+            } else if (TYPE_POLL_ADOPTION.equals(type)) {
+                handlePollAdoption(node, messageBody);
             } else if (TYPE_IDEA_ADD_BATCH.equals(type)) {
                 handleIdeaAddBatch(node, messageBody);
             } else {
@@ -112,6 +119,30 @@ public class ScheduledEventListener {
         } catch (Exception e) {
             logger.error("Error during time suggestion adoption for hangout {}: {}", hangoutId, e.getMessage(), e);
             meterRegistry.counter("time_suggestion_adoption_total", "status", "error").increment();
+        }
+    }
+
+    private void handlePollAdoption(JsonNode node, String messageBody) {
+        JsonNode hangoutIdNode = node.get("hangoutId");
+        JsonNode pollIdNode = node.get("pollId");
+        if (hangoutIdNode == null || hangoutIdNode.isNull() || hangoutIdNode.asText().isBlank()
+                || pollIdNode == null || pollIdNode.isNull() || pollIdNode.asText().isBlank()) {
+            logger.warn("Received POLL_ADOPTION with missing id(s): {}", messageBody);
+            meterRegistry.counter("time_poll_adoption_total", "status", "missing_id").increment();
+            return;
+        }
+
+        String hangoutId = hangoutIdNode.asText();
+        String pollId = pollIdNode.asText();
+        logger.info("Processing POLL_ADOPTION for hangout={} poll={}", hangoutId, pollId);
+
+        try {
+            timePollService.evaluateAndAdopt(hangoutId, pollId);
+            meterRegistry.counter("time_poll_adoption_total", "status", "processed").increment();
+        } catch (Exception e) {
+            logger.error("Error during POLL_ADOPTION for hangout {} poll {}: {}",
+                    hangoutId, pollId, e.getMessage(), e);
+            meterRegistry.counter("time_poll_adoption_total", "status", "error").increment();
         }
     }
 

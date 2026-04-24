@@ -7,6 +7,7 @@ import com.bbthechange.inviter.service.FuzzyTimeService;
 import com.bbthechange.inviter.service.PollService;
 import com.bbthechange.inviter.service.AuthorizationService;
 import com.bbthechange.inviter.service.GroupTimestampService;
+import com.bbthechange.inviter.service.TimePollService;
 import com.bbthechange.inviter.service.UserService;
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.model.*;
@@ -51,6 +52,7 @@ public class PollServiceImpl implements PollService {
     private final UserService userService;
     private final FuzzyTimeService fuzzyTimeService;
     private final TimePollConfig timePollConfig;
+    private final TimePollService timePollService;
 
     @Autowired
     public PollServiceImpl(HangoutRepository hangoutRepository, GroupRepository groupRepository,
@@ -61,7 +63,8 @@ public class PollServiceImpl implements PollService {
                           com.bbthechange.inviter.service.AttributeSuggestionService attributeSuggestionService,
                           UserService userService,
                           FuzzyTimeService fuzzyTimeService,
-                          TimePollConfig timePollConfig) {
+                          TimePollConfig timePollConfig,
+                          TimePollService timePollService) {
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
         this.authorizationService = authorizationService;
@@ -71,6 +74,7 @@ public class PollServiceImpl implements PollService {
         this.userService = userService;
         this.fuzzyTimeService = fuzzyTimeService;
         this.timePollConfig = timePollConfig;
+        this.timePollService = timePollService;
     }
 
     @Override
@@ -156,6 +160,11 @@ public class PollServiceImpl implements PollService {
 
         // Update pointer records with new poll data
         updatePointersWithPolls(eventId);
+
+        // Kick off the TIME-poll EventBridge schedules (24h + 48h).
+        if (isTimePoll) {
+            timePollService.onPollCreated(savedPoll);
+        }
 
         int optionCount = (inputs != null) ? inputs.size() : 0;
         logger.info("Successfully created poll {} for event {} with {} options", savedPoll.getPollId(), eventId, optionCount);
@@ -351,6 +360,9 @@ public class PollServiceImpl implements PollService {
             throw new UnauthorizedException("Only event hosts can delete polls");
         }
 
+        // Cancel any outstanding TIME-poll adoption schedules before the row is gone.
+        timePollService.onPollDeleted(pollId);
+
         hangoutRepository.deletePoll(eventId, pollId);
 
         // Update pointer records with updated poll data (poll now removed)
@@ -418,6 +430,11 @@ public class PollServiceImpl implements PollService {
 
         // Update pointer records with new option data
         updatePointersWithPolls(eventId);
+
+        // Slide the 48h adoption schedule forward if <24h runway remains on the poll.
+        if (isTimePoll) {
+            timePollService.onOptionAdded(parentPoll);
+        }
 
         logger.info("Successfully added option {} to poll {}", option.getOptionId(), pollId);
         return savedOption;

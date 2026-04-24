@@ -12,6 +12,7 @@ import com.bbthechange.inviter.service.EventSeriesService;
 import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.S3Service;
 import com.bbthechange.inviter.service.GroupTimestampService;
+import com.bbthechange.inviter.service.TimePollService;
 import com.bbthechange.inviter.service.TimeSuggestionService;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.GroupRepository;
@@ -58,6 +59,7 @@ public class HangoutServiceImpl implements HangoutService {
     private final NudgeService nudgeService;
     private final AttributeSuggestionService attributeSuggestionService;
     private final TimeSuggestionService timeSuggestionService;
+    private final TimePollService timePollService;
 
     @Value("${inviter.attendance.backward-compat-interested:true}")
     private boolean attendanceBackwardCompatEnabled;
@@ -74,7 +76,8 @@ public class HangoutServiceImpl implements HangoutService {
                               MomentumService momentumService,
                               NudgeService nudgeService,
                               AttributeSuggestionService attributeSuggestionService,
-                              @Lazy TimeSuggestionService timeSuggestionService) {
+                              @Lazy TimeSuggestionService timeSuggestionService,
+                              @Lazy TimePollService timePollService) {
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
         this.fuzzyTimeService = fuzzyTimeService;
@@ -89,6 +92,7 @@ public class HangoutServiceImpl implements HangoutService {
         this.nudgeService = nudgeService;
         this.attributeSuggestionService = attributeSuggestionService;
         this.timeSuggestionService = timeSuggestionService;
+        this.timePollService = timePollService;
     }
     
     @Override
@@ -593,6 +597,12 @@ public class HangoutServiceImpl implements HangoutService {
                 logger.warn("Failed to invalidate time suggestions after direct time edit for {}: {}",
                         hangoutId, e.getMessage());
             }
+            try {
+                timePollService.onSupersede(hangoutId);
+            } catch (Exception e) {
+                logger.warn("Failed to supersede active TIME polls after direct time edit for {}: {}",
+                        hangoutId, e.getMessage());
+            }
         }
 
         // Update pointer records using read-modify-write pattern with optimistic locking
@@ -703,6 +713,14 @@ public class HangoutServiceImpl implements HangoutService {
 
         // Cancel any scheduled reminder
         hangoutSchedulerService.cancelReminder(hangout);
+
+        // Cancel any outstanding TIME-poll adoption schedules before rows go away.
+        try {
+            timePollService.onHangoutDeleted(hangoutId);
+        } catch (Exception e) {
+            logger.warn("Failed to cancel TIME poll schedules for deleted hangout {}: {}",
+                    hangoutId, e.getMessage());
+        }
 
         // If this hangout is part of a series, handle series cleanup first
         if (hangout.getSeriesId() != null) {

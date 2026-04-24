@@ -57,6 +57,9 @@ class PollServiceImplTest {
     @Mock
     private com.bbthechange.inviter.config.TimePollConfig timePollConfig;
 
+    @Mock
+    private com.bbthechange.inviter.service.TimePollService timePollService;
+
     @InjectMocks
     private PollServiceImpl pollService;
 
