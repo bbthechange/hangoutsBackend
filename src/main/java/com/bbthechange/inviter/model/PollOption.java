@@ -1,6 +1,8 @@
 package com.bbthechange.inviter.model;
 
+import com.bbthechange.inviter.dto.TimeInfo;
 import com.bbthechange.inviter.util.InviterKeyFactory;
+import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbAttribute;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
 
 import java.util.UUID;
@@ -20,6 +22,7 @@ public class PollOption extends BaseItem {
     private String text;
     private String createdBy;        // nullable: userId who suggested this option
     private String structuredValue;  // nullable: JSON string for location data
+    private TimeInfo timeInput;      // nullable: structured time data for TIME-type polls
 
     // Default constructor for DynamoDB
     public PollOption() {
@@ -90,5 +93,14 @@ public class PollOption extends BaseItem {
 
     public void setStructuredValue(String structuredValue) {
         this.structuredValue = structuredValue;
+    }
+
+    @DynamoDbAttribute("timeInput")
+    public TimeInfo getTimeInput() {
+        return timeInput;
+    }
+
+    public void setTimeInput(TimeInfo timeInput) {
+        this.timeInput = timeInput;
     }
 }

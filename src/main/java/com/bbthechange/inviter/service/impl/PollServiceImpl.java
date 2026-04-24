@@ -78,9 +78,9 @@ public class PollServiceImpl implements PollService {
         // If this is a suggestion poll, validate, set attributeType, and force single-choice
         if (request.getAttributeType() != null) {
             String attrType = request.getAttributeType();
-            if (!"LOCATION".equals(attrType) && !"DESCRIPTION".equals(attrType)) {
+            if (!"LOCATION".equals(attrType) && !"DESCRIPTION".equals(attrType) && !"TIME".equals(attrType)) {
                 throw new com.bbthechange.inviter.exception.ValidationException(
-                    "Invalid attributeType: " + attrType + ". Must be LOCATION or DESCRIPTION.");
+                    "Invalid attributeType: " + attrType + ". Must be LOCATION, DESCRIPTION, or TIME.");
             }
             poll.setAttributeType(attrType);
             poll.setMultipleChoice(false);

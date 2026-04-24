@@ -12,6 +12,7 @@ public class PollOptionDTO {
     private boolean userVoted;
     private String createdBy;
     private String structuredValue;
+    private TimeInfo timeInput;
     private List<VoteDTO> votes = List.of();
 
     public PollOptionDTO() {}
@@ -79,6 +80,14 @@ public class PollOptionDTO {
 
     public void setStructuredValue(String structuredValue) {
         this.structuredValue = structuredValue;
+    }
+
+    public TimeInfo getTimeInput() {
+        return timeInput;
+    }
+
+    public void setTimeInput(TimeInfo timeInput) {
+        this.timeInput = timeInput;
     }
 
     public List<VoteDTO> getVotes() {

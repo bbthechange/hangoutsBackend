@@ -20,8 +20,9 @@ public class Poll extends BaseItem {
     private String description;
     private boolean multipleChoice; // Allow multiple selections
     private boolean isActive;
-    private String attributeType;   // nullable: "LOCATION", "DESCRIPTION", or null for regular polls
+    private String attributeType;   // nullable: "LOCATION", "DESCRIPTION", "TIME", or null for regular polls
     private Long promotedAt;        // nullable: epoch millis when suggestion was auto-promoted
+    private Long scheduledFinalAdoptionAt; // nullable: epoch millis target for the 48h sliding TIME-poll adoption schedule
 
     // Default constructor for DynamoDB
     public Poll() {
@@ -113,5 +114,14 @@ public class Poll extends BaseItem {
 
     public void setPromotedAt(Long promotedAt) {
         this.promotedAt = promotedAt;
+    }
+
+    @software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbAttribute("scheduledFinalAdoptionAt")
+    public Long getScheduledFinalAdoptionAt() {
+        return scheduledFinalAdoptionAt;
+    }
+
+    public void setScheduledFinalAdoptionAt(Long scheduledFinalAdoptionAt) {
+        this.scheduledFinalAdoptionAt = scheduledFinalAdoptionAt;
     }
 }
