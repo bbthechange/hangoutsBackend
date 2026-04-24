@@ -592,12 +592,6 @@ public class HangoutServiceImpl implements HangoutService {
         // HangoutPointerFactory.applyHangoutFields since startTimestamp is now non-null.
         if (timeChanged && hangout.getStartTimestamp() != null) {
             try {
-                timeSuggestionService.invalidateActiveSuggestions(hangoutId);
-            } catch (Exception e) {
-                logger.warn("Failed to invalidate time suggestions after direct time edit for {}: {}",
-                        hangoutId, e.getMessage());
-            }
-            try {
                 timePollService.onSupersede(hangoutId);
             } catch (Exception e) {
                 logger.warn("Failed to supersede active TIME polls after direct time edit for {}: {}",

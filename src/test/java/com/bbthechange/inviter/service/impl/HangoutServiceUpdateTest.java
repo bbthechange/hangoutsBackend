@@ -106,9 +106,9 @@ class HangoutServiceUpdateTest extends HangoutServiceTestBase {
         // Verify pointer was updated with basic fields (including time fields)
         verify(pointerUpdateService).updatePointerWithRetry(eq("11111111-1111-1111-1111-111111111111"), eq(hangoutId), any(), eq("basic fields"));
 
-        // Verify any active time suggestions are invalidated so the scheduler can't
+        // Verify any active TIME polls are superseded so the scheduler can't
         // later overwrite the host's direct time set.
-        verify(timeSuggestionService).invalidateActiveSuggestions(hangoutId);
+        verify(timePollService).onSupersede(hangoutId);
     }
 
     @Test
@@ -132,7 +132,7 @@ class HangoutServiceUpdateTest extends HangoutServiceTestBase {
         hangoutService.updateHangout(hangoutId, request, userId);
 
         // Then
-        verify(timeSuggestionService, never()).invalidateActiveSuggestions(anyString());
+        verify(timePollService, never()).onSupersede(anyString());
     }
 
     @Test

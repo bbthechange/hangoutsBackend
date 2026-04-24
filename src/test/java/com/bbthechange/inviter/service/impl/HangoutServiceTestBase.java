@@ -12,6 +12,7 @@ import com.bbthechange.inviter.service.AttributeSuggestionService;
 import com.bbthechange.inviter.service.MomentumService;
 import com.bbthechange.inviter.service.NudgeService;
 import com.bbthechange.inviter.service.NotificationService;
+import com.bbthechange.inviter.service.TimePollService;
 import com.bbthechange.inviter.service.TimeSuggestionService;
 import com.bbthechange.inviter.service.UserService;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -69,6 +70,9 @@ abstract class HangoutServiceTestBase {
 
     @Mock
     protected TimeSuggestionService timeSuggestionService;
+
+    @Mock
+    protected TimePollService timePollService;
 
     @InjectMocks
     protected HangoutServiceImpl hangoutService;
