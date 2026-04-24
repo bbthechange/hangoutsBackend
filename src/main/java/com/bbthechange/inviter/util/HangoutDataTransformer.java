@@ -70,6 +70,7 @@ public class HangoutDataTransformer {
                                         .map(VoteDTO::new)
                                         .collect(Collectors.toList());
                                 optionDTO.setVotes(voteDTOs);
+                                optionDTO.setTimeInput(option.getTimeInput());
 
                                 return optionDTO;
                             })
