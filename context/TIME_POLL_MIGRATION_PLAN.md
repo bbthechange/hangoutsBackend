@@ -24,6 +24,10 @@ Unify time suggestions with LOCATION/DESCRIPTION attribute suggestions onto the 
 | 5 | Backend server-generates `PollOption.text` from `TimeInfo` so clients that don't recognize `attributeType="TIME"` can still render as a generic poll. |
 | 6 | `PollOption.structuredValue` stays (LOCATION uses it). TIME uses the new typed `timeInput` field. |
 | 7 | No strategy registry. Inline TIME logic in `TimePollService`. |
+| 8 | `TimePollConfig.minTimeSuggestionVersion` uses sentinel `"UNKNOWN"` until iOS/Android pin a real version. `computeCanAddOptions` fails open (returns `true`) when the sentinel is set so shipping backend before clients doesn't hide the Add button. |
+| 9 | `evaluateAndAdopt(hangoutId, pollId)` — hangoutId threaded through the EventBridge payload instead of a GSI lookup. Matches plan semantics; signature differs from plan's one-arg form. |
+| 10 | Scheduler config reuses `time-suggestion.auto-adoption.short-window-hours` / `long-window-hours` for env-parity with the legacy stack. Rename to `time-polls.*` is a follow-up. |
+| 11 | Authorization for TIME create/add-option/vote uses `canUserEditHangout` / `canUserViewHangout` (both currently collapse to "member of any associated group"). No explicit group-member re-check at TIME call sites — safe only while `canUserEditHangout == canUserViewHangout`. Revisit if host-only edits diverge. |
 
 ## TIME evaluation rule (the 5-way matrix)
 

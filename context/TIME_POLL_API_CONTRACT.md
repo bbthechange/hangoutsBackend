@@ -33,6 +33,8 @@ One active TIME poll per hangout. After adoption or direct time edit, the poll g
 - `X-Client-Type: mobile`
 - `X-App-Version: <semver>` — backend uses this to compute `viewable` and `canAddOptions` per request
 
+> **As-shipped note:** the backend config `time-polls.min-suggestion-version` defaults to the sentinel `"UNKNOWN"`. Until operators pin a real minimum version, `canAddOptions` returns `true` for all requests (fail-open). Clients should still honor `canAddOptions` as documented; they will just always receive `true` until the gate is turned on.
+
 ## Primary read paths
 
 ### `GET /groups/{groupId}/feed`
