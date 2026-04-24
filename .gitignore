@@ -111,3 +111,7 @@ docs/TDD_FAILURE_ANALYSIS_AND_PROMPT_REQUIREMENTS.md
 
 .claude/
 .platform
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+.beads-credential-key
