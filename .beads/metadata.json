@@ -1,7 +1,7 @@
 {
   "database": "dolt",
   "backend": "dolt",
-  "dolt_mode": "embedded",
+  "dolt_mode": "server",
   "dolt_database": "hangoutsBackend",
   "project_id": "e6eb6252-17c6-4bfc-bc98-3abbe229f7d3"
 }
