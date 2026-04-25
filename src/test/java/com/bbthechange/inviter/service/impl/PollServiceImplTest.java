@@ -1092,6 +1092,13 @@ class PollServiceImplTest {
     @Nested
     class GetPollDetailEmbeddedVotesGate {
 
+        @org.junit.jupiter.api.BeforeEach
+        void clearLeakedRequestContext() {
+            // ThreadLocal hygiene: JUnit 5 reuses worker threads across classes, so reset on
+            // entry too in case some other test class set request attributes and didn't clear.
+            org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+        }
+
         @org.junit.jupiter.api.AfterEach
         void clearRequestContext() {
             org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();

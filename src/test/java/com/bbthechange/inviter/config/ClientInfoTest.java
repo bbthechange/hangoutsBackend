@@ -273,6 +273,22 @@ class ClientInfoTest {
             ClientInfo info = new ClientInfo("2.20.0", null, "ios", null, null, "ios");
             assertThat(info.isIosVersionInRange("2.2.0", "2.3.0")).isFalse();
         }
+
+        @Test
+        void mobileClientTypeWithIphoneUserAgent_StillGatesAsIos() {
+            // X-Client-Type: mobile + iPhone User-Agent should be treated as iOS via
+            // derivePlatform → isIos(). Built through fromRequest so derivePlatform runs.
+            org.springframework.mock.web.MockHttpServletRequest request =
+                new org.springframework.mock.web.MockHttpServletRequest();
+            request.addHeader("X-Client-Type", "mobile");
+            request.addHeader("X-App-Version", "2.2.0");
+            request.addHeader("User-Agent", "HangoutApp/2.2.0 (iPhone; iOS 18.1)");
+
+            ClientInfo info = ClientInfo.fromRequest(request);
+
+            assertThat(info.isIos()).isTrue();
+            assertThat(info.isIosVersionInRange("2.2.0", "2.3.0")).isTrue();
+        }
     }
 
     @Nested
