@@ -117,11 +117,24 @@ public class HangoutSummaryDTO implements FeedItem {
 
     /**
      * Create HangoutSummaryDTO from HangoutPointer with transformed nested data.
+     * Defaults to including embedded per-option vote arrays.
      *
      * @param pointer The hangout pointer with denormalized data
      * @param requestingUserId User ID for calculating poll voting status
      */
     public HangoutSummaryDTO(HangoutPointer pointer, String requestingUserId) {
+        this(pointer, requestingUserId, true);
+    }
+
+    /**
+     * Create HangoutSummaryDTO from HangoutPointer with transformed nested data.
+     *
+     * @param includeEmbeddedVotes when {@code false}, leaves the per-option votes array empty.
+     *     Used to gate-strip the votes payload for iOS 2.2.x clients whose strict {@code Vote}
+     *     decoder rejects the abbreviated server-side {@code VoteDTO}.
+     */
+    public HangoutSummaryDTO(HangoutPointer pointer, String requestingUserId,
+                             boolean includeEmbeddedVotes) {
         // Type discriminator (must be set explicitly since @Builder.Default only applies to builder)
         this.type = "hangout";
 
@@ -147,7 +160,8 @@ public class HangoutSummaryDTO implements FeedItem {
                 pointer.getPolls(),
                 pointer.getPollOptions(),
                 pointer.getVotes(),
-                requestingUserId
+                requestingUserId,
+                includeEmbeddedVotes
         );
 
         // Transform carpool data into nested structure

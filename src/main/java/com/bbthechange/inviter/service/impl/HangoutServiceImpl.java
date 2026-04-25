@@ -305,8 +305,12 @@ public class HangoutServiceImpl implements HangoutService {
             .map(HangoutAttributeDTO::fromEntity)
             .collect(Collectors.toList());
         
-        // Transform poll data with options and vote counts directly from the single query
-        List<PollWithOptionsDTO> pollsWithOptions = transformPollData(hangoutDetail, requestingUserId);
+        // Transform poll data with options and vote counts directly from the single query.
+        // Strip embedded option-vote arrays for iOS 2.2.x (strict Vote decoder); voteCount/userVoted
+        // are unaffected and remain authoritative for rendering on those clients.
+        boolean includeEmbeddedVotes =
+            !(clientInfo != null && clientInfo.isIosVersionInRange("2.2.0", "2.3.0"));
+        List<PollWithOptionsDTO> pollsWithOptions = transformPollData(hangoutDetail, requestingUserId, includeEmbeddedVotes);
         
         // Enrich poll voter display names from username cache
         for (PollWithOptionsDTO poll : pollsWithOptions) {
@@ -1325,12 +1329,14 @@ public class HangoutServiceImpl implements HangoutService {
      * This method performs the same runtime vote counting as PollService but uses data
      * already retrieved from the single table query.
      */
-    private List<PollWithOptionsDTO> transformPollData(HangoutDetailData hangoutDetail, String requestingUserId) {
+    private List<PollWithOptionsDTO> transformPollData(HangoutDetailData hangoutDetail, String requestingUserId,
+                                                       boolean includeEmbeddedVotes) {
         return com.bbthechange.inviter.util.HangoutDataTransformer.transformPollData(
                 hangoutDetail.getPolls(),
                 hangoutDetail.getPollOptions(),
                 hangoutDetail.getVotes(),
-                requestingUserId
+                requestingUserId,
+                includeEmbeddedVotes
         );
     }
 

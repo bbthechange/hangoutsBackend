@@ -131,6 +131,47 @@ class HangoutDataTransformerTest {
     }
 
     @Test
+    void transformPollData_WithIncludeEmbeddedVotesFalse_LeavesVotesEmptyButKeepsCounts() {
+        // Same data as transformPollData_WithVotes_CalculatesVoteCountsCorrectly, but gated.
+        String hangoutId = UUID.randomUUID().toString();
+        String userId = UUID.randomUUID().toString();
+
+        Poll poll = new Poll(hangoutId, "What time?", "Select a start time", false);
+        String pollId = poll.getPollId();
+
+        PollOption option1 = new PollOption(hangoutId, pollId, "8:00 AM");
+        PollOption option2 = new PollOption(hangoutId, pollId, "9:00 AM");
+        String option1Id = option1.getOptionId();
+        String option2Id = option2.getOptionId();
+
+        Vote vote1 = new Vote(hangoutId, pollId, option1Id, userId, "YES");
+        Vote vote2 = new Vote(hangoutId, pollId, option1Id, UUID.randomUUID().toString(), "YES");
+        Vote vote3 = new Vote(hangoutId, pollId, option2Id, UUID.randomUUID().toString(), "YES");
+
+        List<PollWithOptionsDTO> result = HangoutDataTransformer.transformPollData(
+                List.of(poll), List.of(option1, option2), List.of(vote1, vote2, vote3),
+                userId, /* includeEmbeddedVotes */ false);
+
+        assertThat(result).hasSize(1);
+        PollWithOptionsDTO dto = result.get(0);
+
+        // Counts and userVoted are still computed correctly — those drive iOS rendering.
+        assertThat(dto.getTotalVotes()).isEqualTo(3);
+        PollOptionDTO option1DTO = dto.getOptions().stream()
+                .filter(o -> o.getOptionId().equals(option1Id))
+                .findFirst().orElseThrow();
+        assertThat(option1DTO.getVoteCount()).isEqualTo(2);
+        assertThat(option1DTO.isUserVoted()).isTrue();
+
+        // But the embedded votes array stays empty (default field value), unblocking iOS 2.2.x.
+        assertThat(option1DTO.getVotes()).isEmpty();
+        PollOptionDTO option2DTO = dto.getOptions().stream()
+                .filter(o -> o.getOptionId().equals(option2Id))
+                .findFirst().orElseThrow();
+        assertThat(option2DTO.getVotes()).isEmpty();
+    }
+
+    @Test
     void transformPollData_WithMultiplePolls_TransformsEachPollCorrectly() {
         // Given
         String hangoutId = UUID.randomUUID().toString();

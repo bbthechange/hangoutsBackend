@@ -84,6 +84,22 @@ public record ClientInfo(
     }
 
     /**
+     * True if this is an iOS client whose appVersion falls in [minInclusive, maxExclusive).
+     * Returns false if appVersion is null (cannot determine) or clientType isn't iOS.
+     * Used to gate payload-shape workarounds for specific shipped iOS builds.
+     */
+    public boolean isIosVersionInRange(String minInclusive, String maxExclusive) {
+        if (!isIos()) {
+            return false;
+        }
+        if (appVersion == null) {
+            return false;
+        }
+        return compareVersions(appVersion, minInclusive) >= 0
+            && compareVersions(appVersion, maxExclusive) < 0;
+    }
+
+    /**
      * Get a short description for logging.
      */
     public String toLogString() {

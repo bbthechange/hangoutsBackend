@@ -706,6 +706,11 @@ public class GroupServiceImpl implements GroupService {
         // Determine if client supports watch parties (version >= 2.0.0 or null/unknown version)
         boolean supportsWatchParty = clientInfo == null || clientInfo.isVersionAtLeast(WATCH_PARTY_MIN_VERSION);
         boolean supportsNewFeedFeatures = clientInfo == null || clientInfo.isVersionAtLeast(NEW_FEED_FEATURES_MIN_VERSION);
+        // iOS 2.2.x has a strict Vote decoder that rejects the abbreviated VoteDTO shape.
+        // Strip embedded option-vote arrays for that version range only; voteCount/userVoted
+        // are unaffected and remain authoritative for rendering.
+        boolean includeEmbeddedVotes =
+            !(clientInfo != null && clientInfo.isIosVersionInRange("2.2.0", "2.3.0"));
 
         // First Pass: Identify all hangouts that are part of series that will be shown
         // For watch parties with old clients, we DON'T add their hangouts here so they
@@ -751,14 +756,16 @@ public class GroupServiceImpl implements GroupService {
                 }
 
                 // Convert SeriesPointer to SeriesSummaryDTO
-                SeriesSummaryDTO seriesDTO = createSeriesSummaryDTO(seriesPointer, requestingUserId, seriesPointerMap);
+                SeriesSummaryDTO seriesDTO = createSeriesSummaryDTO(
+                    seriesPointer, requestingUserId, includeEmbeddedVotes, seriesPointerMap);
                 feedItems.add(seriesDTO);
 
             } else if (item instanceof HangoutPointer hangoutPointer) {
                 // Only include standalone hangouts (not already part of a series)
                 if (!hangoutIdsInSeries.contains(hangoutPointer.getHangoutId())) {
                     HangoutSummaryDTO hangoutDTO = buildEnrichedHangoutDTO(
-                        hangoutPointer, requestingUserId, supportsNewFeedFeatures, seriesPointerMap);
+                        hangoutPointer, requestingUserId, supportsNewFeedFeatures,
+                        includeEmbeddedVotes, seriesPointerMap);
                     feedItems.add(hangoutDTO);
                 }
                 // If it's part of a series, ignore it (already included in SeriesSummaryDTO)
@@ -775,8 +782,9 @@ public class GroupServiceImpl implements GroupService {
      */
     private HangoutSummaryDTO buildEnrichedHangoutDTO(HangoutPointer pointer, String requestingUserId,
                                                        boolean applyNudges,
+                                                       boolean includeEmbeddedVotes,
                                                        Map<String, SeriesPointer> seriesPointerMap) {
-        HangoutSummaryDTO dto = new HangoutSummaryDTO(pointer, requestingUserId);
+        HangoutSummaryDTO dto = new HangoutSummaryDTO(pointer, requestingUserId, includeEmbeddedVotes);
         dto.setInterestLevels(HangoutDataTransformer.transformAttendanceForBackwardCompatibility(
                 dto.getInterestLevels(), attendanceBackwardCompatEnabled));
         hangoutService.enrichHostAtPlaceInfo(dto);
@@ -821,6 +829,7 @@ public class GroupServiceImpl implements GroupService {
      * @return SeriesSummaryDTO with transformed parts
      */
     SeriesSummaryDTO createSeriesSummaryDTO(SeriesPointer seriesPointer, String requestingUserId,
+                                               boolean includeEmbeddedVotes,
                                                Map<String, SeriesPointer> seriesPointerMap) {
         SeriesSummaryDTO dto = new SeriesSummaryDTO();
 
@@ -838,7 +847,8 @@ public class GroupServiceImpl implements GroupService {
         List<HangoutSummaryDTO> parts = new ArrayList<>();
         if (seriesPointer.getParts() != null) {
             for (HangoutPointer part : seriesPointer.getParts()) {
-                HangoutSummaryDTO partDTO = buildEnrichedHangoutDTO(part, requestingUserId, false, seriesPointerMap);
+                HangoutSummaryDTO partDTO = buildEnrichedHangoutDTO(
+                    part, requestingUserId, false, includeEmbeddedVotes, seriesPointerMap);
                 parts.add(partDTO);
             }
         }

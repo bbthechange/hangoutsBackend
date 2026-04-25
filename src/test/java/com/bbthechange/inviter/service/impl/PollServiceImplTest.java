@@ -1088,4 +1088,101 @@ class PollServiceImplTest {
             verify(hangoutRepository, never()).deleteVote(any(), any(), any(), any());
         }
     }
+
+    @Nested
+    class GetPollDetailEmbeddedVotesGate {
+
+        @org.junit.jupiter.api.AfterEach
+        void clearRequestContext() {
+            org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+        }
+
+        private void bindClientInfoToRequest(com.bbthechange.inviter.config.ClientInfo clientInfo) {
+            org.springframework.mock.web.MockHttpServletRequest request =
+                new org.springframework.mock.web.MockHttpServletRequest();
+            if (clientInfo != null) {
+                request.setAttribute(com.bbthechange.inviter.config.ClientInfo.REQUEST_ATTRIBUTE, clientInfo);
+            }
+            org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(
+                new org.springframework.web.context.request.ServletRequestAttributes(request));
+        }
+
+        private List<BaseItem> seedPollWithOneVote() {
+            Hangout hangout = new Hangout();
+            HangoutDetailData hangoutData = HangoutDetailData.builder().withHangout(hangout).build();
+            when(hangoutRepository.getHangoutDetailData(eventId)).thenReturn(hangoutData);
+            when(authorizationService.canUserViewHangout(userId, hangout)).thenReturn(true);
+
+            Poll poll = new Poll(eventId, "Test Poll", "Description", false);
+            poll.setPollId(pollId);
+            PollOption option = new PollOption(eventId, pollId, "Lasagna");
+            option.setOptionId(optionId);
+            String voterId = UUID.randomUUID().toString();
+            Vote vote = new Vote(eventId, pollId, optionId, voterId, "YES");
+
+            List<BaseItem> data = Arrays.asList(poll, option, vote);
+            when(hangoutRepository.getSpecificPollData(eventId, pollId)).thenReturn(data);
+            return data;
+        }
+
+        @Test
+        void iosVersionInRange_StripsEmbeddedVotesAndSkipsDisplayNameLookup() {
+            bindClientInfoToRequest(new com.bbthechange.inviter.config.ClientInfo(
+                "2.2.0", null, "ios", null, null, "ios"));
+            seedPollWithOneVote();
+
+            PollDetailDTO result = pollService.getPollDetail(eventId, pollId, userId);
+
+            assertThat(result.getOptions()).hasSize(1);
+            PollOptionDetailDTO optDto = result.getOptions().get(0);
+            assertThat(optDto.getVoteCount()).isEqualTo(1);
+            assertThat(optDto.getVotes()).isEmpty();
+
+            // Skipping the votes loop also skips the per-vote displayName enrichment.
+            verify(userService, never()).getUserSummary(any(UUID.class));
+        }
+
+        @Test
+        void iosOutOfRange_PopulatesEmbeddedVotesAndEnrichesDisplayName() {
+            bindClientInfoToRequest(new com.bbthechange.inviter.config.ClientInfo(
+                "2.3.0", null, "ios", null, null, "ios"));
+            List<BaseItem> data = seedPollWithOneVote();
+            Vote vote = (Vote) data.get(2);
+
+            UserSummaryDTO summary = new UserSummaryDTO();
+            summary.setDisplayName("Alice");
+            when(userService.getUserSummary(UUID.fromString(vote.getUserId())))
+                .thenReturn(Optional.of(summary));
+
+            PollDetailDTO result = pollService.getPollDetail(eventId, pollId, userId);
+
+            PollOptionDetailDTO optDto = result.getOptions().get(0);
+            assertThat(optDto.getVotes()).hasSize(1);
+            assertThat(optDto.getVotes().get(0).getDisplayName()).isEqualTo("Alice");
+            verify(userService).getUserSummary(UUID.fromString(vote.getUserId()));
+        }
+
+        @Test
+        void androidInVersionRange_DoesNotGate() {
+            bindClientInfoToRequest(new com.bbthechange.inviter.config.ClientInfo(
+                "2.2.0", null, "android", null, null, "android"));
+            seedPollWithOneVote();
+            when(userService.getUserSummary(any(UUID.class))).thenReturn(Optional.empty());
+
+            PollDetailDTO result = pollService.getPollDetail(eventId, pollId, userId);
+
+            assertThat(result.getOptions().get(0).getVotes()).hasSize(1);
+        }
+
+        @Test
+        void noRequestContext_DoesNotGate() {
+            // currentClientInfo() returns null when there's no bound request — fail-open.
+            seedPollWithOneVote();
+            when(userService.getUserSummary(any(UUID.class))).thenReturn(Optional.empty());
+
+            PollDetailDTO result = pollService.getPollDetail(eventId, pollId, userId);
+
+            assertThat(result.getOptions().get(0).getVotes()).hasSize(1);
+        }
+    }
 }

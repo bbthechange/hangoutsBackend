@@ -679,6 +679,12 @@ public class PollServiceImpl implements PollService {
             .map(item -> (Vote) item)
             .collect(Collectors.groupingBy(Vote::getOptionId));
 
+        // iOS 2.2.x has a strict Vote decoder that rejects the abbreviated VoteDTO shape.
+        // Strip embedded option-vote arrays (and skip displayName enrichment) for that range.
+        ClientInfo clientInfo = currentClientInfo();
+        boolean includeEmbeddedVotes =
+            !(clientInfo != null && clientInfo.isIosVersionInRange("2.2.0", "2.3.0"));
+
         // Build detailed option DTOs with vote details
         List<PollOptionDetailDTO> optionDTOs = options.stream()
             .map(option -> {
@@ -686,14 +692,16 @@ public class PollServiceImpl implements PollService {
                 boolean userVoted = optionVotes.stream()
                     .anyMatch(vote -> vote.getUserId().equals(userId));
 
-                List<VoteDTO> voteDTOs = optionVotes.stream()
-                    .map(vote -> {
-                        VoteDTO dto = new VoteDTO(vote);
-                        userService.getUserSummary(UUID.fromString(vote.getUserId()))
-                            .ifPresent(u -> dto.setDisplayName(u.getDisplayName()));
-                        return dto;
-                    })
-                    .collect(Collectors.toList());
+                List<VoteDTO> voteDTOs = includeEmbeddedVotes
+                    ? optionVotes.stream()
+                        .map(vote -> {
+                            VoteDTO dto = new VoteDTO(vote);
+                            userService.getUserSummary(UUID.fromString(vote.getUserId()))
+                                .ifPresent(u -> dto.setDisplayName(u.getDisplayName()));
+                            return dto;
+                        })
+                        .collect(Collectors.toList())
+                    : List.of();
 
                 // Runtime calculation - count the actual votes
                 int voteCount = optionVotes.size();

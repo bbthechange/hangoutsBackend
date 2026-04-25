@@ -22,17 +22,29 @@ public class HangoutDataTransformer {
      * Transform raw poll data into nested PollWithOptionsDTO objects.
      * Calculates vote counts at runtime and includes user-specific voting status.
      *
-     * @param polls List of poll objects
-     * @param allOptions List of all poll options across all polls
-     * @param allVotes List of all votes across all polls
-     * @param requestingUserId User ID to check if they voted on each option
-     * @return List of polls with nested options and vote counts
+     * Backward-compatible overload — emits the embedded per-option votes list.
      */
     public static List<PollWithOptionsDTO> transformPollData(
             List<Poll> polls,
             List<PollOption> allOptions,
             List<Vote> allVotes,
             String requestingUserId) {
+        return transformPollData(polls, allOptions, allVotes, requestingUserId, true);
+    }
+
+    /**
+     * Transform raw poll data into nested PollWithOptionsDTO objects.
+     *
+     * @param includeEmbeddedVotes when {@code false}, leaves {@code PollOptionDTO.votes} as the
+     *     default empty list. Used to gate-strip the votes array for iOS 2.2.x clients whose
+     *     strict {@code Vote} decoder rejects the abbreviated {@code VoteDTO} shape.
+     */
+    public static List<PollWithOptionsDTO> transformPollData(
+            List<Poll> polls,
+            List<PollOption> allOptions,
+            List<Vote> allVotes,
+            String requestingUserId,
+            boolean includeEmbeddedVotes) {
 
         // Group options and votes by poll ID
         Map<String, List<PollOption>> optionsByPoll = allOptions.stream()
@@ -65,11 +77,13 @@ public class HangoutDataTransformer {
                                         voteCount, userVoted,
                                         option.getCreatedBy(), option.getStructuredValue());
 
-                                // Attach voter list (displayName enriched later by service layer)
-                                List<VoteDTO> voteDTOs = optionVotes.stream()
-                                        .map(VoteDTO::new)
-                                        .collect(Collectors.toList());
-                                optionDTO.setVotes(voteDTOs);
+                                if (includeEmbeddedVotes) {
+                                    // Attach voter list (displayName enriched later by service layer)
+                                    List<VoteDTO> voteDTOs = optionVotes.stream()
+                                            .map(VoteDTO::new)
+                                            .collect(Collectors.toList());
+                                    optionDTO.setVotes(voteDTOs);
+                                }
                                 optionDTO.setTimeInput(option.getTimeInput());
 
                                 return optionDTO;

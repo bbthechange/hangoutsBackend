@@ -223,6 +223,59 @@ class ClientInfoTest {
     }
 
     @Nested
+    class IsIosVersionInRange {
+
+        @Test
+        void iosAtMin_ReturnsTrue() {
+            ClientInfo info = new ClientInfo("2.2.0", null, "ios", null, null, "ios");
+            assertThat(info.isIosVersionInRange("2.2.0", "2.3.0")).isTrue();
+        }
+
+        @Test
+        void iosAtPatchInsideRange_ReturnsTrue() {
+            ClientInfo info = new ClientInfo("2.2.99", null, "ios", null, null, "ios");
+            assertThat(info.isIosVersionInRange("2.2.0", "2.3.0")).isTrue();
+        }
+
+        @Test
+        void iosAtMaxExclusive_ReturnsFalse() {
+            ClientInfo info = new ClientInfo("2.3.0", null, "ios", null, null, "ios");
+            assertThat(info.isIosVersionInRange("2.2.0", "2.3.0")).isFalse();
+        }
+
+        @Test
+        void iosBelowMin_ReturnsFalse() {
+            ClientInfo info = new ClientInfo("2.1.5", null, "ios", null, null, "ios");
+            assertThat(info.isIosVersionInRange("2.2.0", "2.3.0")).isFalse();
+        }
+
+        @Test
+        void iosWithNullVersion_ReturnsFalse() {
+            ClientInfo info = new ClientInfo(null, null, "ios", null, null, "ios");
+            assertThat(info.isIosVersionInRange("2.2.0", "2.3.0")).isFalse();
+        }
+
+        @Test
+        void androidInRange_ReturnsFalse() {
+            ClientInfo info = new ClientInfo("2.2.0", null, "android", null, null, "android");
+            assertThat(info.isIosVersionInRange("2.2.0", "2.3.0")).isFalse();
+        }
+
+        @Test
+        void webInRange_ReturnsFalse() {
+            ClientInfo info = new ClientInfo("2.2.0", null, "web", null, null, "web");
+            assertThat(info.isIosVersionInRange("2.2.0", "2.3.0")).isFalse();
+        }
+
+        @Test
+        void iosWith20PointReleaseDoesNotMatch22Prefix() {
+            // Guards against the startsWith("2.2") pitfall: "2.20.0" must not match a 2.2 range.
+            ClientInfo info = new ClientInfo("2.20.0", null, "ios", null, null, "ios");
+            assertThat(info.isIosVersionInRange("2.2.0", "2.3.0")).isFalse();
+        }
+    }
+
+    @Nested
     class ToLogString {
 
         @Test

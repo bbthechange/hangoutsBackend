@@ -91,3 +91,19 @@ Key substrate rules enforced in `PollServiceImpl`:
 
 ### Config
 - `time-polls.min-suggestion-version` in `application.properties` — the minimum iOS/Android version that ships with TIME poll UI. Must be set to the actual version before Slice 2 deploys. Default `"UNKNOWN"` disables the gate so it never mis-fires in dev.
+
+## 6. iOS 2.2.x embedded-vote workaround
+
+iOS 2.2.x ships a strict `Vote` decoder that requires `pollId/optionId/userId/voteType/createdAt`, but the server's `VoteDTO` (used inside `PollOptionDTO.votes` and `PollOptionDetailDTO.votes`) carries only `userId/voteType/displayName`. Without the workaround, any poll with at least one cast vote fails decoding and the **entire feed/hangout-detail/poll-detail payload** errors on the client. iOS 2.3+ fixes the decoder; older clients used a different field name (`voters`) and ignored the array tolerantly.
+
+The server gates the embedded `votes` array (leaves it as the default empty list) when `ClientInfo.isIosVersionInRange("2.2.0", "2.3.0")`. `voteCount` and `userVoted` are unaffected — they are what iOS actually renders.
+
+Gate is applied in three transformer paths (all request-scoped):
+
+1. `HangoutDataTransformer.transformPollData(..., boolean includeEmbeddedVotes)` — drives the group feed (via `HangoutSummaryDTO`) and hangout detail (via `HangoutServiceImpl.transformPollData`).
+2. `HangoutSummaryDTO(pointer, requestingUserId, includeEmbeddedVotes)` — feed builder; the two-arg constructor is preserved for backward compatibility and delegates with `true`.
+3. `PollServiceImpl.transformToPollDetailDTO` — poll detail endpoint; uses `currentClientInfo()` directly. When gated, **also skips the per-vote `userService.getUserSummary` displayName lookup** (small perf win for affected clients).
+
+`PollServiceImpl.transformToPollWithOptionsDTO` (the `GET /hangouts/{id}/polls` list path) never populates the embedded array; default empty list serializes as `"votes":[]` which iOS 2.2 decodes cleanly.
+
+Range chosen as `[2.2.0, 2.3.0)` (not `startsWith("2.2")`) to avoid `2.20.x` collisions and to auto-disable when the iOS fix ships in 2.3 — no backend redeploy required. Predicate fails closed when `appVersion` is null on an iOS client (so we never strip from a client we can't identify).

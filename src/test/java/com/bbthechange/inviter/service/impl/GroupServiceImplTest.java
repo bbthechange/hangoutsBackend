@@ -1379,7 +1379,7 @@ class GroupServiceImplTest {
         seriesPointer.setEventSeriesType("WATCH_PARTY");
 
         // When
-        SeriesSummaryDTO result = groupService.createSeriesSummaryDTO(seriesPointer, USER_ID, new java.util.HashMap<>());
+        SeriesSummaryDTO result = groupService.createSeriesSummaryDTO(seriesPointer, USER_ID, true, new java.util.HashMap<>());
 
         // Then
         assertThat(result.getSeriesTitle()).isEqualTo("Movie Night Series");
@@ -1398,7 +1398,7 @@ class GroupServiceImplTest {
         seriesPointer.setParts(null);
 
         // When
-        SeriesSummaryDTO result = groupService.createSeriesSummaryDTO(seriesPointer, USER_ID, new java.util.HashMap<>());
+        SeriesSummaryDTO result = groupService.createSeriesSummaryDTO(seriesPointer, USER_ID, true, new java.util.HashMap<>());
 
         // Then
         assertThat(result.getParts()).isEmpty();
