@@ -36,7 +36,7 @@ public class HangoutDataTransformer {
      * Transform raw poll data into nested PollWithOptionsDTO objects.
      *
      * @param includeEmbeddedVotes when {@code false}, leaves {@code PollOptionDTO.votes} as the
-     *     default empty list. Used to gate-strip the votes array for iOS 2.2.x clients whose
+     *     default empty list. Used to gate-strip the votes array for iOS 2.1.x clients whose
      *     strict {@code Vote} decoder rejects the abbreviated {@code VoteDTO} shape.
      */
     public static List<PollWithOptionsDTO> transformPollData(

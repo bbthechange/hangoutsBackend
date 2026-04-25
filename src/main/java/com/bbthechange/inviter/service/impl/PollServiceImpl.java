@@ -679,11 +679,11 @@ public class PollServiceImpl implements PollService {
             .map(item -> (Vote) item)
             .collect(Collectors.groupingBy(Vote::getOptionId));
 
-        // iOS 2.2.x has a strict Vote decoder that rejects the abbreviated VoteDTO shape.
+        // iOS 2.1.x has a strict Vote decoder that rejects the abbreviated VoteDTO shape.
         // Strip embedded option-vote arrays (and skip displayName enrichment) for that range.
         ClientInfo clientInfo = currentClientInfo();
         boolean includeEmbeddedVotes =
-            !(clientInfo != null && clientInfo.isIosVersionInRange("2.2.0", "2.3.0"));
+            !(clientInfo != null && clientInfo.isIosVersionInRange("2.1.0", "2.2.0"));
 
         // Build detailed option DTOs with vote details
         List<PollOptionDetailDTO> optionDTOs = options.stream()

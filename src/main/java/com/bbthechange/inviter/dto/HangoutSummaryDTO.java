@@ -130,7 +130,7 @@ public class HangoutSummaryDTO implements FeedItem {
      * Create HangoutSummaryDTO from HangoutPointer with transformed nested data.
      *
      * @param includeEmbeddedVotes when {@code false}, leaves the per-option votes array empty.
-     *     Used to gate-strip the votes payload for iOS 2.2.x clients whose strict {@code Vote}
+     *     Used to gate-strip the votes payload for iOS 2.1.x clients whose strict {@code Vote}
      *     decoder rejects the abbreviated server-side {@code VoteDTO}.
      */
     public HangoutSummaryDTO(HangoutPointer pointer, String requestingUserId,

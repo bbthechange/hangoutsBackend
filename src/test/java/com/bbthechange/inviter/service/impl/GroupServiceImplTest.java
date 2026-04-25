@@ -2052,7 +2052,7 @@ class GroupServiceImplTest {
         assertThat(series.getParts()).hasSize(2);
     }
 
-    // ==================== iOS 2.2.x Embedded-Vote Gate (end-to-end) ====================
+    // ==================== iOS 2.1.x Embedded-Vote Gate (end-to-end) ====================
 
     private HangoutPointer pointerWithVotedPoll(String hangoutId) {
         HangoutPointer pointer = createTestHangoutPointer(hangoutId);
@@ -2069,18 +2069,18 @@ class GroupServiceImplTest {
     }
 
     @Test
-    void hydrateFeed_iOS220Client_StripsEmbeddedVotesPreservesCounts() {
+    void hydrateFeed_iOS210Client_StripsEmbeddedVotesPreservesCounts() {
         HangoutPointer pointer = pointerWithVotedPoll("a1111111-1111-1111-1111-111111111111");
-        com.bbthechange.inviter.config.ClientInfo iosTwoTwo =
-            new com.bbthechange.inviter.config.ClientInfo("2.2.0", null, "ios", null, null, "ios");
+        com.bbthechange.inviter.config.ClientInfo iosTwoOne =
+            new com.bbthechange.inviter.config.ClientInfo("2.1.0", null, "ios", null, null, "ios");
 
-        List<FeedItem> result = groupService.hydrateFeed(List.of(pointer), USER_ID, iosTwoTwo);
+        List<FeedItem> result = groupService.hydrateFeed(List.of(pointer), USER_ID, iosTwoOne);
 
         assertThat(result).hasSize(1);
         HangoutSummaryDTO dto = (HangoutSummaryDTO) result.get(0);
         assertThat(dto.getPolls()).hasSize(1);
         PollOptionDTO optionDTO = dto.getPolls().get(0).getOptions().get(0);
-        // Counts/userVoted (what iOS 2.2 actually renders) survive untouched.
+        // Counts/userVoted (what iOS 2.1 actually renders) survive untouched.
         assertThat(optionDTO.getVoteCount()).isEqualTo(1);
         assertThat(optionDTO.isUserVoted()).isTrue();
         // But the strict-decoder-incompatible embedded array is stripped.
@@ -2088,12 +2088,12 @@ class GroupServiceImplTest {
     }
 
     @Test
-    void hydrateFeed_iOS230Client_PopulatesEmbeddedVotes() {
+    void hydrateFeed_iOS220Client_PopulatesEmbeddedVotes() {
         HangoutPointer pointer = pointerWithVotedPoll("a2222222-2222-2222-2222-222222222222");
-        com.bbthechange.inviter.config.ClientInfo iosTwoThree =
-            new com.bbthechange.inviter.config.ClientInfo("2.3.0", null, "ios", null, null, "ios");
+        com.bbthechange.inviter.config.ClientInfo iosTwoTwo =
+            new com.bbthechange.inviter.config.ClientInfo("2.2.0", null, "ios", null, null, "ios");
 
-        List<FeedItem> result = groupService.hydrateFeed(List.of(pointer), USER_ID, iosTwoThree);
+        List<FeedItem> result = groupService.hydrateFeed(List.of(pointer), USER_ID, iosTwoTwo);
 
         HangoutSummaryDTO dto = (HangoutSummaryDTO) result.get(0);
         PollOptionDTO optionDTO = dto.getPolls().get(0).getOptions().get(0);
@@ -2102,10 +2102,10 @@ class GroupServiceImplTest {
     }
 
     @Test
-    void hydrateFeed_AndroidIn22Range_DoesNotGate() {
+    void hydrateFeed_AndroidIn21Range_DoesNotGate() {
         HangoutPointer pointer = pointerWithVotedPoll("a3333333-3333-3333-3333-333333333333");
         com.bbthechange.inviter.config.ClientInfo android =
-            new com.bbthechange.inviter.config.ClientInfo("2.2.0", null, "android", null, null, "android");
+            new com.bbthechange.inviter.config.ClientInfo("2.1.0", null, "android", null, null, "android");
 
         List<FeedItem> result = groupService.hydrateFeed(List.of(pointer), USER_ID, android);
 

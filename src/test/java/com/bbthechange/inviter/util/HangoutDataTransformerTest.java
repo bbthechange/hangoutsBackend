@@ -163,7 +163,7 @@ class HangoutDataTransformerTest {
         assertThat(option1DTO.getVoteCount()).isEqualTo(2);
         assertThat(option1DTO.isUserVoted()).isTrue();
 
-        // But the embedded votes array stays empty (default field value), unblocking iOS 2.2.x.
+        // But the embedded votes array stays empty (default field value), unblocking iOS 2.1.x.
         assertThat(option1DTO.getVotes()).isEmpty();
         PollOptionDTO option2DTO = dto.getOptions().stream()
                 .filter(o -> o.getOptionId().equals(option2Id))

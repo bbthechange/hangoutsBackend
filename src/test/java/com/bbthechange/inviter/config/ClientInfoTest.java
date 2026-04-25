@@ -227,51 +227,51 @@ class ClientInfoTest {
 
         @Test
         void iosAtMin_ReturnsTrue() {
-            ClientInfo info = new ClientInfo("2.2.0", null, "ios", null, null, "ios");
-            assertThat(info.isIosVersionInRange("2.2.0", "2.3.0")).isTrue();
+            ClientInfo info = new ClientInfo("2.1.0", null, "ios", null, null, "ios");
+            assertThat(info.isIosVersionInRange("2.1.0", "2.2.0")).isTrue();
         }
 
         @Test
         void iosAtPatchInsideRange_ReturnsTrue() {
-            ClientInfo info = new ClientInfo("2.2.99", null, "ios", null, null, "ios");
-            assertThat(info.isIosVersionInRange("2.2.0", "2.3.0")).isTrue();
+            ClientInfo info = new ClientInfo("2.1.99", null, "ios", null, null, "ios");
+            assertThat(info.isIosVersionInRange("2.1.0", "2.2.0")).isTrue();
         }
 
         @Test
         void iosAtMaxExclusive_ReturnsFalse() {
-            ClientInfo info = new ClientInfo("2.3.0", null, "ios", null, null, "ios");
-            assertThat(info.isIosVersionInRange("2.2.0", "2.3.0")).isFalse();
+            ClientInfo info = new ClientInfo("2.2.0", null, "ios", null, null, "ios");
+            assertThat(info.isIosVersionInRange("2.1.0", "2.2.0")).isFalse();
         }
 
         @Test
         void iosBelowMin_ReturnsFalse() {
-            ClientInfo info = new ClientInfo("2.1.5", null, "ios", null, null, "ios");
-            assertThat(info.isIosVersionInRange("2.2.0", "2.3.0")).isFalse();
+            ClientInfo info = new ClientInfo("2.0.5", null, "ios", null, null, "ios");
+            assertThat(info.isIosVersionInRange("2.1.0", "2.2.0")).isFalse();
         }
 
         @Test
         void iosWithNullVersion_ReturnsFalse() {
             ClientInfo info = new ClientInfo(null, null, "ios", null, null, "ios");
-            assertThat(info.isIosVersionInRange("2.2.0", "2.3.0")).isFalse();
+            assertThat(info.isIosVersionInRange("2.1.0", "2.2.0")).isFalse();
         }
 
         @Test
         void androidInRange_ReturnsFalse() {
-            ClientInfo info = new ClientInfo("2.2.0", null, "android", null, null, "android");
-            assertThat(info.isIosVersionInRange("2.2.0", "2.3.0")).isFalse();
+            ClientInfo info = new ClientInfo("2.1.0", null, "android", null, null, "android");
+            assertThat(info.isIosVersionInRange("2.1.0", "2.2.0")).isFalse();
         }
 
         @Test
         void webInRange_ReturnsFalse() {
-            ClientInfo info = new ClientInfo("2.2.0", null, "web", null, null, "web");
-            assertThat(info.isIosVersionInRange("2.2.0", "2.3.0")).isFalse();
+            ClientInfo info = new ClientInfo("2.1.0", null, "web", null, null, "web");
+            assertThat(info.isIosVersionInRange("2.1.0", "2.2.0")).isFalse();
         }
 
         @Test
-        void iosWith20PointReleaseDoesNotMatch22Prefix() {
-            // Guards against the startsWith("2.2") pitfall: "2.20.0" must not match a 2.2 range.
-            ClientInfo info = new ClientInfo("2.20.0", null, "ios", null, null, "ios");
-            assertThat(info.isIosVersionInRange("2.2.0", "2.3.0")).isFalse();
+        void iosWith10PointReleaseDoesNotMatch21Prefix() {
+            // Guards against the startsWith("2.1") pitfall: "2.10.0" must not match a 2.1 range.
+            ClientInfo info = new ClientInfo("2.10.0", null, "ios", null, null, "ios");
+            assertThat(info.isIosVersionInRange("2.1.0", "2.2.0")).isFalse();
         }
 
         @Test
@@ -281,13 +281,13 @@ class ClientInfoTest {
             org.springframework.mock.web.MockHttpServletRequest request =
                 new org.springframework.mock.web.MockHttpServletRequest();
             request.addHeader("X-Client-Type", "mobile");
-            request.addHeader("X-App-Version", "2.2.0");
-            request.addHeader("User-Agent", "HangoutApp/2.2.0 (iPhone; iOS 18.1)");
+            request.addHeader("X-App-Version", "2.1.0");
+            request.addHeader("User-Agent", "HangoutApp/2.1.0 (iPhone; iOS 18.1)");
 
             ClientInfo info = ClientInfo.fromRequest(request);
 
             assertThat(info.isIos()).isTrue();
-            assertThat(info.isIosVersionInRange("2.2.0", "2.3.0")).isTrue();
+            assertThat(info.isIosVersionInRange("2.1.0", "2.2.0")).isTrue();
         }
     }
 

@@ -1135,7 +1135,7 @@ class PollServiceImplTest {
         @Test
         void iosVersionInRange_StripsEmbeddedVotesAndSkipsDisplayNameLookup() {
             bindClientInfoToRequest(new com.bbthechange.inviter.config.ClientInfo(
-                "2.2.0", null, "ios", null, null, "ios"));
+                "2.1.0", null, "ios", null, null, "ios"));
             seedPollWithOneVote();
 
             PollDetailDTO result = pollService.getPollDetail(eventId, pollId, userId);
@@ -1152,7 +1152,7 @@ class PollServiceImplTest {
         @Test
         void iosOutOfRange_PopulatesEmbeddedVotesAndEnrichesDisplayName() {
             bindClientInfoToRequest(new com.bbthechange.inviter.config.ClientInfo(
-                "2.3.0", null, "ios", null, null, "ios"));
+                "2.2.0", null, "ios", null, null, "ios"));
             List<BaseItem> data = seedPollWithOneVote();
             Vote vote = (Vote) data.get(2);
 
@@ -1172,7 +1172,7 @@ class PollServiceImplTest {
         @Test
         void androidInVersionRange_DoesNotGate() {
             bindClientInfoToRequest(new com.bbthechange.inviter.config.ClientInfo(
-                "2.2.0", null, "android", null, null, "android"));
+                "2.1.0", null, "android", null, null, "android"));
             seedPollWithOneVote();
             when(userService.getUserSummary(any(UUID.class))).thenReturn(Optional.empty());
 

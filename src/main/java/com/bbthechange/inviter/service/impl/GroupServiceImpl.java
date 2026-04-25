@@ -706,11 +706,11 @@ public class GroupServiceImpl implements GroupService {
         // Determine if client supports watch parties (version >= 2.0.0 or null/unknown version)
         boolean supportsWatchParty = clientInfo == null || clientInfo.isVersionAtLeast(WATCH_PARTY_MIN_VERSION);
         boolean supportsNewFeedFeatures = clientInfo == null || clientInfo.isVersionAtLeast(NEW_FEED_FEATURES_MIN_VERSION);
-        // iOS 2.2.x has a strict Vote decoder that rejects the abbreviated VoteDTO shape.
+        // iOS 2.1.x has a strict Vote decoder that rejects the abbreviated VoteDTO shape.
         // Strip embedded option-vote arrays for that version range only; voteCount/userVoted
         // are unaffected and remain authoritative for rendering.
         boolean includeEmbeddedVotes =
-            !(clientInfo != null && clientInfo.isIosVersionInRange("2.2.0", "2.3.0"));
+            !(clientInfo != null && clientInfo.isIosVersionInRange("2.1.0", "2.2.0"));
 
         // First Pass: Identify all hangouts that are part of series that will be shown
         // For watch parties with old clients, we DON'T add their hangouts here so they
