@@ -107,6 +107,7 @@ Returns `HangoutDetailDTO` with `polls: PollWithOptionsDTO[]`. TIME polls appear
 - `canAddOptions`: `true` = your app version may add options to this poll; `false` = do not offer "add option" UI. Missing → treat as `true`. Not an authorization signal.
 - `PollOptionDTO.timeInput`: populated only for TIME polls. Same `TimeInfo` shape the app uses for hangouts.
 - `PollOptionDTO.text` on TIME polls: server-generated display string. Do not rely on it.
+- `PollOptionDTO.votes`: `[{ userId, voteType, displayName? }, ...]` when populated — display-only metadata for the per-voter list. **Always treat `voteCount` and `userVoted` as authoritative for rendering**, never the length of `votes`. The server emits an empty array (`"votes": []`) for clients in `X-App-Version` range `[2.1.0, 2.2.0)` regardless of actual vote count, to work around a strict-decoder bug in iOS 2.1.x; counts and `userVoted` remain correct on those clients. See `POLLS_CONTEXT.md §6` for the workaround details. The gate auto-disables once 2.2 ships.
 
 ## Client rendering rules
 
