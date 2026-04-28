@@ -223,71 +223,84 @@ class ClientInfoTest {
     }
 
     @Nested
-    class IsIosVersionInRange {
+    class IsAppVersionInRange {
 
         @Test
-        void iosAtMin_ReturnsTrue() {
+        void atMin_ReturnsTrue() {
             ClientInfo info = new ClientInfo("2.1.0", null, "ios", null, null, "ios");
-            assertThat(info.isIosVersionInRange("2.1.0", "2.2.0")).isTrue();
+            assertThat(info.isAppVersionInRange("2.1.0", "2.2.0")).isTrue();
         }
 
         @Test
-        void iosAtPatchInsideRange_ReturnsTrue() {
+        void atPatchInsideRange_ReturnsTrue() {
             ClientInfo info = new ClientInfo("2.1.99", null, "ios", null, null, "ios");
-            assertThat(info.isIosVersionInRange("2.1.0", "2.2.0")).isTrue();
+            assertThat(info.isAppVersionInRange("2.1.0", "2.2.0")).isTrue();
         }
 
         @Test
-        void iosAtMaxExclusive_ReturnsFalse() {
+        void atMaxExclusive_ReturnsFalse() {
             ClientInfo info = new ClientInfo("2.2.0", null, "ios", null, null, "ios");
-            assertThat(info.isIosVersionInRange("2.1.0", "2.2.0")).isFalse();
+            assertThat(info.isAppVersionInRange("2.1.0", "2.2.0")).isFalse();
         }
 
         @Test
-        void iosBelowMin_ReturnsFalse() {
+        void belowMin_ReturnsFalse() {
             ClientInfo info = new ClientInfo("2.0.5", null, "ios", null, null, "ios");
-            assertThat(info.isIosVersionInRange("2.1.0", "2.2.0")).isFalse();
+            assertThat(info.isAppVersionInRange("2.1.0", "2.2.0")).isFalse();
         }
 
         @Test
-        void iosWithNullVersion_ReturnsFalse() {
+        void nullVersion_ReturnsFalse() {
             ClientInfo info = new ClientInfo(null, null, "ios", null, null, "ios");
-            assertThat(info.isIosVersionInRange("2.1.0", "2.2.0")).isFalse();
+            assertThat(info.isAppVersionInRange("2.1.0", "2.2.0")).isFalse();
         }
 
         @Test
-        void androidInRange_ReturnsFalse() {
+        void bareTwoPartVersion_TreatedAsZeroPatch() {
+            // The shipped iOS 2.1.x build sends X-App-Version: "2.1" (no patch). Must fall
+            // inside [2.1.0, 2.2.0) — compareVersions backfills missing parts as zero.
+            ClientInfo info = new ClientInfo("2.1", null, null, null, null, "web");
+            assertThat(info.isAppVersionInRange("2.1.0", "2.2.0")).isTrue();
+        }
+
+        @Test
+        void androidInRange_AlsoMatches() {
+            // Pure version check — clientType is irrelevant. Safe because Android's
+            // PollOptionDto doesn't declare the votes field, so the gate is a no-op there.
             ClientInfo info = new ClientInfo("2.1.0", null, "android", null, null, "android");
-            assertThat(info.isIosVersionInRange("2.1.0", "2.2.0")).isFalse();
+            assertThat(info.isAppVersionInRange("2.1.0", "2.2.0")).isTrue();
         }
 
         @Test
-        void webInRange_ReturnsFalse() {
+        void webInRange_AlsoMatches() {
             ClientInfo info = new ClientInfo("2.1.0", null, "web", null, null, "web");
-            assertThat(info.isIosVersionInRange("2.1.0", "2.2.0")).isFalse();
+            assertThat(info.isAppVersionInRange("2.1.0", "2.2.0")).isTrue();
         }
 
         @Test
-        void iosWith10PointReleaseDoesNotMatch21Prefix() {
+        void with10PointReleaseDoesNotMatch21Prefix() {
             // Guards against the startsWith("2.1") pitfall: "2.10.0" must not match a 2.1 range.
             ClientInfo info = new ClientInfo("2.10.0", null, "ios", null, null, "ios");
-            assertThat(info.isIosVersionInRange("2.1.0", "2.2.0")).isFalse();
+            assertThat(info.isAppVersionInRange("2.1.0", "2.2.0")).isFalse();
         }
 
         @Test
-        void mobileClientTypeWithIphoneUserAgent_StillGatesAsIos() {
-            // X-Client-Type: mobile + iPhone User-Agent should be treated as iOS via
-            // derivePlatform → isIos(). Built through fromRequest so derivePlatform runs.
+        void noClientTypeOrIphoneUserAgent_StillGatesByVersion() {
+            // The actual broken iOS 2.1.x build sends no X-Client-Type, version "2.1", and a
+            // User-Agent of "Hango/6 CFNetwork/3860.400.51 Darwin/25.3.0" — no iPhone marker.
+            // Reproduce that exact wire shape and confirm the version-only gate fires.
             org.springframework.mock.web.MockHttpServletRequest request =
                 new org.springframework.mock.web.MockHttpServletRequest();
-            request.addHeader("X-Client-Type", "mobile");
-            request.addHeader("X-App-Version", "2.1.0");
-            request.addHeader("User-Agent", "HangoutApp/2.1.0 (iPhone; iOS 18.1)");
+            request.addHeader("X-Build-Number", "6");
+            request.addHeader("X-App-Version", "2.1");
+            request.addHeader("User-Agent", "Hango/6 CFNetwork/3860.400.51 Darwin/25.3.0");
 
             ClientInfo info = ClientInfo.fromRequest(request);
 
-            assertThat(info.isIos()).isTrue();
-            assertThat(info.isIosVersionInRange("2.1.0", "2.2.0")).isTrue();
+            // isIos() returns false here — confirming the old gate would have missed.
+            assertThat(info.isIos()).isFalse();
+            // But the new version-only gate still catches it.
+            assertThat(info.isAppVersionInRange("2.1.0", "2.2.0")).isTrue();
         }
     }
 

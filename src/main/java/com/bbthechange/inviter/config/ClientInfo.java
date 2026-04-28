@@ -84,14 +84,14 @@ public record ClientInfo(
     }
 
     /**
-     * True if this is an iOS client whose appVersion falls in [minInclusive, maxExclusive).
-     * Returns false if appVersion is null (cannot determine) or clientType isn't iOS.
-     * Used to gate payload-shape workarounds for specific shipped iOS builds.
+     * True if appVersion falls in [minInclusive, maxExclusive). Pure version-based check —
+     * does not gate on clientType because real-world iOS requests have been observed without
+     * an X-Client-Type header and with a User-Agent that doesn't carry iPhone markers
+     * (CFNetwork/Darwin), so isIos() can't reliably identify them. Versions are project-wide
+     * unique enough that the version range alone is the safer discriminator. Returns false
+     * if appVersion is null.
      */
-    public boolean isIosVersionInRange(String minInclusive, String maxExclusive) {
-        if (!isIos()) {
-            return false;
-        }
+    public boolean isAppVersionInRange(String minInclusive, String maxExclusive) {
         if (appVersion == null) {
             return false;
         }

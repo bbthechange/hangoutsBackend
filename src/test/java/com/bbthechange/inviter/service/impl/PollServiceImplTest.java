@@ -1170,15 +1170,44 @@ class PollServiceImplTest {
         }
 
         @Test
-        void androidInVersionRange_DoesNotGate() {
+        void androidInVersionRange_AlsoGates() {
+            // Pure version-based gate — Android in 2.1.x range strips too. Safe in practice
+            // because Android's PollOptionDto doesn't declare a votes field, so it ignores
+            // both the populated and the empty array.
             bindClientInfoToRequest(new com.bbthechange.inviter.config.ClientInfo(
                 "2.1.0", null, "android", null, null, "android"));
             seedPollWithOneVote();
-            when(userService.getUserSummary(any(UUID.class))).thenReturn(Optional.empty());
 
             PollDetailDTO result = pollService.getPollDetail(eventId, pollId, userId);
 
-            assertThat(result.getOptions().get(0).getVotes()).hasSize(1);
+            assertThat(result.getOptions().get(0).getVotes()).isEmpty();
+            verify(userService, never()).getUserSummary(any(UUID.class));
+        }
+
+        @Test
+        void noXClientTypeBareTwoPartVersion_GatesViaVersion() {
+            // Reproduce the actual Proxyman-captured iOS 2.1 request shape: no X-Client-Type
+            // header, X-App-Version "2.1", User-Agent without "iPhone". Verifies the gate
+            // catches it through the version range alone.
+            org.springframework.mock.web.MockHttpServletRequest request =
+                new org.springframework.mock.web.MockHttpServletRequest();
+            request.addHeader("X-Build-Number", "6");
+            request.addHeader("X-App-Version", "2.1");
+            request.addHeader("User-Agent", "Hango/6 CFNetwork/3860.400.51 Darwin/25.3.0");
+            com.bbthechange.inviter.config.ClientInfo info =
+                com.bbthechange.inviter.config.ClientInfo.fromRequest(request);
+            org.springframework.mock.web.MockHttpServletRequest scoped =
+                new org.springframework.mock.web.MockHttpServletRequest();
+            scoped.setAttribute(com.bbthechange.inviter.config.ClientInfo.REQUEST_ATTRIBUTE, info);
+            org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(
+                new org.springframework.web.context.request.ServletRequestAttributes(scoped));
+
+            seedPollWithOneVote();
+
+            PollDetailDTO result = pollService.getPollDetail(eventId, pollId, userId);
+
+            assertThat(result.getOptions().get(0).getVotes()).isEmpty();
+            verify(userService, never()).getUserSummary(any(UUID.class));
         }
 
         @Test

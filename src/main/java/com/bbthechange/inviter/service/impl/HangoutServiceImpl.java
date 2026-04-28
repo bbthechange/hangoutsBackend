@@ -309,7 +309,7 @@ public class HangoutServiceImpl implements HangoutService {
         // Strip embedded option-vote arrays for iOS 2.1.x (strict Vote decoder); voteCount/userVoted
         // are unaffected and remain authoritative for rendering on those clients.
         boolean includeEmbeddedVotes =
-            !(clientInfo != null && clientInfo.isIosVersionInRange("2.1.0", "2.2.0"));
+            !(clientInfo != null && clientInfo.isAppVersionInRange("2.1.0", "2.2.0"));
         List<PollWithOptionsDTO> pollsWithOptions = transformPollData(hangoutDetail, requestingUserId, includeEmbeddedVotes);
         
         // Enrich poll voter display names from username cache

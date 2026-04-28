@@ -683,7 +683,7 @@ public class PollServiceImpl implements PollService {
         // Strip embedded option-vote arrays (and skip displayName enrichment) for that range.
         ClientInfo clientInfo = currentClientInfo();
         boolean includeEmbeddedVotes =
-            !(clientInfo != null && clientInfo.isIosVersionInRange("2.1.0", "2.2.0"));
+            !(clientInfo != null && clientInfo.isAppVersionInRange("2.1.0", "2.2.0"));
 
         // Build detailed option DTOs with vote details
         List<PollOptionDetailDTO> optionDTOs = options.stream()

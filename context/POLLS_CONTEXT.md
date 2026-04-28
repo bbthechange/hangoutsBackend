@@ -96,7 +96,9 @@ Key substrate rules enforced in `PollServiceImpl`:
 
 iOS 2.1.x ships a strict `Vote` decoder that requires `pollId/optionId/userId/voteType/createdAt`, but the server's `VoteDTO` (used inside `PollOptionDTO.votes` and `PollOptionDetailDTO.votes`) carries only `userId/voteType/displayName`. Without the workaround, any poll with at least one cast vote fails decoding and the **entire feed/hangout-detail/poll-detail payload** errors on the client. iOS 2.2+ fixes the decoder; older clients used a different field name (`voters`) and ignored the array tolerantly.
 
-The server gates the embedded `votes` array (leaves it as the default empty list) when `ClientInfo.isIosVersionInRange("2.1.0", "2.2.0")`. `voteCount` and `userVoted` are unaffected — they are what iOS actually renders.
+The server gates the embedded `votes` array (leaves it as the default empty list) when `ClientInfo.isAppVersionInRange("2.1.0", "2.2.0")`. `voteCount` and `userVoted` are unaffected — they are what iOS actually renders.
+
+**The gate is version-only, not iOS-only.** The shipped iOS 2.1 build sends no `X-Client-Type` header and a `User-Agent` of `Hango/6 CFNetwork/3860.400.51 Darwin/25.3.0` with no "iPhone" marker, so `ClientInfo.isIos()` returns `false` for it. Gating on version alone is safe because Android's `PollOptionDto` and web clients don't depend on the embedded `votes` array, so an empty list is a no-op for them.
 
 Gate is applied in three transformer paths (all request-scoped):
 

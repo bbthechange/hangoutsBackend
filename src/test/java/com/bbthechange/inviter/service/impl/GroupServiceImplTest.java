@@ -2102,7 +2102,9 @@ class GroupServiceImplTest {
     }
 
     @Test
-    void hydrateFeed_AndroidIn21Range_DoesNotGate() {
+    void hydrateFeed_AndroidIn21Range_AlsoGates() {
+        // Version-only gate: Android with 2.1.x is also stripped. No-op for Android because
+        // its PollOptionDto doesn't declare a votes field.
         HangoutPointer pointer = pointerWithVotedPoll("a3333333-3333-3333-3333-333333333333");
         com.bbthechange.inviter.config.ClientInfo android =
             new com.bbthechange.inviter.config.ClientInfo("2.1.0", null, "android", null, null, "android");
@@ -2110,7 +2112,28 @@ class GroupServiceImplTest {
         List<FeedItem> result = groupService.hydrateFeed(List.of(pointer), USER_ID, android);
 
         HangoutSummaryDTO dto = (HangoutSummaryDTO) result.get(0);
-        assertThat(dto.getPolls().get(0).getOptions().get(0).getVotes()).hasSize(1);
+        assertThat(dto.getPolls().get(0).getOptions().get(0).getVotes()).isEmpty();
+    }
+
+    @Test
+    void hydrateFeed_NoClientTypeBareTwoPartVersion_GatesViaVersion() {
+        // Reproduces the actual Proxyman-captured iOS 2.1 request: no X-Client-Type, version
+        // "2.1", User-Agent without "iPhone". The version-only gate must catch it.
+        HangoutPointer pointer = pointerWithVotedPoll("a5555555-5555-5555-5555-555555555555");
+        org.springframework.mock.web.MockHttpServletRequest request =
+            new org.springframework.mock.web.MockHttpServletRequest();
+        request.addHeader("X-App-Version", "2.1");
+        request.addHeader("User-Agent", "Hango/6 CFNetwork/3860.400.51 Darwin/25.3.0");
+        com.bbthechange.inviter.config.ClientInfo info =
+            com.bbthechange.inviter.config.ClientInfo.fromRequest(request);
+
+        List<FeedItem> result = groupService.hydrateFeed(List.of(pointer), USER_ID, info);
+
+        HangoutSummaryDTO dto = (HangoutSummaryDTO) result.get(0);
+        assertThat(dto.getPolls().get(0).getOptions().get(0).getVotes()).isEmpty();
+        // Counts/userVoted still authoritative.
+        assertThat(dto.getPolls().get(0).getOptions().get(0).getVoteCount()).isEqualTo(1);
+        assertThat(dto.getPolls().get(0).getOptions().get(0).isUserVoted()).isTrue();
     }
 
     @Test

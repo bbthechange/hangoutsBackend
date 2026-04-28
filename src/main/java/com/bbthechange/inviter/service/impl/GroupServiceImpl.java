@@ -710,7 +710,7 @@ public class GroupServiceImpl implements GroupService {
         // Strip embedded option-vote arrays for that version range only; voteCount/userVoted
         // are unaffected and remain authoritative for rendering.
         boolean includeEmbeddedVotes =
-            !(clientInfo != null && clientInfo.isIosVersionInRange("2.1.0", "2.2.0"));
+            !(clientInfo != null && clientInfo.isAppVersionInRange("2.1.0", "2.2.0"));
 
         // First Pass: Identify all hangouts that are part of series that will be shown
         // For watch parties with old clients, we DON'T add their hangouts here so they
