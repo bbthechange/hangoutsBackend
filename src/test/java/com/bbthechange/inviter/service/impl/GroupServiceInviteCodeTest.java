@@ -17,6 +17,7 @@ import com.bbthechange.inviter.service.InviteService;
 import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.S3Service;
 import com.bbthechange.inviter.service.UserService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -101,7 +102,8 @@ class GroupServiceInviteCodeTest {
             feedSortingService,
             forwardFillSuggestionService,
             attributeSuggestionService,
-            nudgeService
+            nudgeService,
+            new SimpleMeterRegistry()
         );
     }
 

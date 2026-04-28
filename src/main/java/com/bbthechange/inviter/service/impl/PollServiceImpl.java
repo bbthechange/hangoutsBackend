@@ -16,6 +16,7 @@ import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.exception.*;
 import com.bbthechange.inviter.util.InviterKeyFactory;
 import com.bbthechange.inviter.util.TimePollOptionTextGenerator;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,6 +54,7 @@ public class PollServiceImpl implements PollService {
     private final FuzzyTimeService fuzzyTimeService;
     private final TimePollConfig timePollConfig;
     private final TimePollService timePollService;
+    private final MeterRegistry meterRegistry;
 
     @Autowired
     public PollServiceImpl(HangoutRepository hangoutRepository, GroupRepository groupRepository,
@@ -64,7 +66,8 @@ public class PollServiceImpl implements PollService {
                           UserService userService,
                           FuzzyTimeService fuzzyTimeService,
                           TimePollConfig timePollConfig,
-                          TimePollService timePollService) {
+                          TimePollService timePollService,
+                          MeterRegistry meterRegistry) {
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
         this.authorizationService = authorizationService;
@@ -75,6 +78,7 @@ public class PollServiceImpl implements PollService {
         this.fuzzyTimeService = fuzzyTimeService;
         this.timePollConfig = timePollConfig;
         this.timePollService = timePollService;
+        this.meterRegistry = meterRegistry;
     }
 
     @Override
@@ -684,6 +688,11 @@ public class PollServiceImpl implements PollService {
         ClientInfo clientInfo = currentClientInfo();
         boolean includeEmbeddedVotes =
             !(clientInfo != null && clientInfo.isAppVersionInRange("2.1.0", "2.2.0"));
+        if (!includeEmbeddedVotes) {
+            meterRegistry.counter("poll_votes_strip_gate_fired_total",
+                "app_version", clientInfo.appVersion(),
+                "endpoint", "poll_detail").increment();
+        }
 
         // Build detailed option DTOs with vote details
         List<PollOptionDetailDTO> optionDTOs = options.stream()

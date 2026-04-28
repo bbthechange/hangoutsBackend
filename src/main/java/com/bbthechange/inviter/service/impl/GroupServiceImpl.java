@@ -39,6 +39,7 @@ import com.bbthechange.inviter.util.RepositoryTokenData;
 import com.bbthechange.inviter.util.InviteCodeGenerator;
 import com.bbthechange.inviter.util.HangoutDataTransformer;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Value;
 
 /**
@@ -78,6 +79,7 @@ public class GroupServiceImpl implements GroupService {
     private final ForwardFillSuggestionService forwardFillSuggestionService;
     private final com.bbthechange.inviter.service.AttributeSuggestionService attributeSuggestionService;
     private final com.bbthechange.inviter.service.NudgeService nudgeService;
+    private final MeterRegistry meterRegistry;
 
     @Value("${inviter.attendance.backward-compat-interested:true}")
     private boolean attendanceBackwardCompatEnabled;
@@ -91,7 +93,8 @@ public class GroupServiceImpl implements GroupService {
                            FeedSortingService feedSortingService,
                            ForwardFillSuggestionService forwardFillSuggestionService,
                            com.bbthechange.inviter.service.AttributeSuggestionService attributeSuggestionService,
-                           com.bbthechange.inviter.service.NudgeService nudgeService) {
+                           com.bbthechange.inviter.service.NudgeService nudgeService,
+                           MeterRegistry meterRegistry) {
         this.groupRepository = groupRepository;
         this.hangoutRepository = hangoutRepository;
         this.userRepository = userRepository;
@@ -106,6 +109,7 @@ public class GroupServiceImpl implements GroupService {
         this.forwardFillSuggestionService = forwardFillSuggestionService;
         this.attributeSuggestionService = attributeSuggestionService;
         this.nudgeService = nudgeService;
+        this.meterRegistry = meterRegistry;
     }
     
     @Override
@@ -711,6 +715,11 @@ public class GroupServiceImpl implements GroupService {
         // are unaffected and remain authoritative for rendering.
         boolean includeEmbeddedVotes =
             !(clientInfo != null && clientInfo.isAppVersionInRange("2.1.0", "2.2.0"));
+        if (!includeEmbeddedVotes) {
+            meterRegistry.counter("poll_votes_strip_gate_fired_total",
+                "app_version", clientInfo.appVersion(),
+                "endpoint", "feed").increment();
+        }
 
         // First Pass: Identify all hangouts that are part of series that will be shown
         // For watch parties with old clients, we DON'T add their hangouts here so they

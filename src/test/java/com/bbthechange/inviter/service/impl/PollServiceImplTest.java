@@ -11,11 +11,14 @@ import com.bbthechange.inviter.service.GroupTimestampService;
 import com.bbthechange.inviter.service.PollService;
 import com.bbthechange.inviter.service.UserService;
 import com.bbthechange.inviter.testutil.HangoutPointerTestBuilder;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.*;
@@ -59,6 +62,10 @@ class PollServiceImplTest {
 
     @Mock
     private com.bbthechange.inviter.service.TimePollService timePollService;
+
+    // Real registry so the gate test can assert the counter increments + tags.
+    @Spy
+    private MeterRegistry meterRegistry = new SimpleMeterRegistry();
 
     @InjectMocks
     private PollServiceImpl pollService;
@@ -1147,6 +1154,28 @@ class PollServiceImplTest {
 
             // Skipping the votes loop also skips the per-vote displayName enrichment.
             verify(userService, never()).getUserSummary(any(UUID.class));
+
+            // Observability: counter fires with the offending app_version + endpoint tags so
+            // we can monitor 2.1.x adoption and remove this gate when traffic drops near zero.
+            double count = meterRegistry.counter("poll_votes_strip_gate_fired_total",
+                "app_version", "2.1.0", "endpoint", "poll_detail").count();
+            assertThat(count).isEqualTo(1.0);
+        }
+
+        @Test
+        void iosOutOfRange_DoesNotIncrementGateCounter() {
+            bindClientInfoToRequest(new com.bbthechange.inviter.config.ClientInfo(
+                "2.2.0", null, "ios", null, null, "ios"));
+            List<BaseItem> data = seedPollWithOneVote();
+            Vote vote = (Vote) data.get(2);
+            when(userService.getUserSummary(UUID.fromString(vote.getUserId())))
+                .thenReturn(Optional.empty());
+
+            pollService.getPollDetail(eventId, pollId, userId);
+
+            // No gated calls → counter stays at zero across all tag combinations.
+            assertThat(meterRegistry.find("poll_votes_strip_gate_fired_total").counters())
+                .allSatisfy(c -> assertThat(c.count()).isZero());
         }
 
         @Test

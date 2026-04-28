@@ -14,10 +14,12 @@ import com.bbthechange.inviter.service.NudgeService;
 import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.TimePollService;
 import com.bbthechange.inviter.service.UserService;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.Answers;
 
 /**
  * Base class for HangoutServiceImpl tests.
@@ -69,6 +71,12 @@ abstract class HangoutServiceTestBase {
 
     @Mock
     protected TimePollService timePollService;
+
+    // RETURNS_DEEP_STUBS so chained calls like meterRegistry.counter(...).increment() return
+    // mocks that don't NPE without per-test stubbing. Lenient because most tests don't fire
+    // the iOS 2.1.x vote-strip gate path.
+    @Mock(answer = Answers.RETURNS_DEEP_STUBS)
+    protected MeterRegistry meterRegistry;
 
     @InjectMocks
     protected HangoutServiceImpl hangoutService;

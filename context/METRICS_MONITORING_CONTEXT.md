@@ -50,6 +50,7 @@ public class MyService {
 - **HTTP requests**: request duration, status codes (auto-configured)
 - **Rate limiting**: `rate_limit_exceeded_total{endpoint}` (via `RateLimitingService`)
   - Tracked endpoints: `/auth/resend-code`, `/auth/verify`, `/groups/invite/preview`, `/auth/request-password-reset`, `/auth/verify-reset-code`, `/auth/refresh`
+- **iOS 2.1 vote-strip gate**: `poll_votes_strip_gate_fired_total{app_version, endpoint}` — fires every time the embedded poll-vote array is stripped for a client in `[2.1.0, 2.2.0)`. Endpoints: `feed`, `hangout_detail`, `poll_detail`. Used to time the removal of the workaround (see `POLLS_CONTEXT.md §6`). Delete this metric and instrumentation once 2.1.x traffic drops to zero.
 
 ### Candidates for Future Instrumentation
 These are currently log-only, not tracked as metrics:

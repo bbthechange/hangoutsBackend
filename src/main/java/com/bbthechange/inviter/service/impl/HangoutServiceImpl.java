@@ -21,6 +21,7 @@ import com.bbthechange.inviter.exception.*;
 import com.bbthechange.inviter.util.HangoutDataTransformer;
 import com.bbthechange.inviter.util.HangoutPointerFactory;
 import com.bbthechange.inviter.exception.RepositoryException;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -58,6 +59,7 @@ public class HangoutServiceImpl implements HangoutService {
     private final NudgeService nudgeService;
     private final AttributeSuggestionService attributeSuggestionService;
     private final TimePollService timePollService;
+    private final MeterRegistry meterRegistry;
 
     @Value("${inviter.attendance.backward-compat-interested:true}")
     private boolean attendanceBackwardCompatEnabled;
@@ -74,7 +76,8 @@ public class HangoutServiceImpl implements HangoutService {
                               MomentumService momentumService,
                               NudgeService nudgeService,
                               AttributeSuggestionService attributeSuggestionService,
-                              @Lazy TimePollService timePollService) {
+                              @Lazy TimePollService timePollService,
+                              MeterRegistry meterRegistry) {
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
         this.fuzzyTimeService = fuzzyTimeService;
@@ -89,6 +92,7 @@ public class HangoutServiceImpl implements HangoutService {
         this.nudgeService = nudgeService;
         this.attributeSuggestionService = attributeSuggestionService;
         this.timePollService = timePollService;
+        this.meterRegistry = meterRegistry;
     }
     
     @Override
@@ -310,6 +314,11 @@ public class HangoutServiceImpl implements HangoutService {
         // are unaffected and remain authoritative for rendering on those clients.
         boolean includeEmbeddedVotes =
             !(clientInfo != null && clientInfo.isAppVersionInRange("2.1.0", "2.2.0"));
+        if (!includeEmbeddedVotes) {
+            meterRegistry.counter("poll_votes_strip_gate_fired_total",
+                "app_version", clientInfo.appVersion(),
+                "endpoint", "hangout_detail").increment();
+        }
         List<PollWithOptionsDTO> pollsWithOptions = transformPollData(hangoutDetail, requestingUserId, includeEmbeddedVotes);
         
         // Enrich poll voter display names from username cache

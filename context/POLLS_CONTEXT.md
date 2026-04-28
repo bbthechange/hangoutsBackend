@@ -100,6 +100,24 @@ The server gates the embedded `votes` array (leaves it as the default empty list
 
 **The gate is version-only, not iOS-only.** The shipped iOS 2.1 build sends no `X-Client-Type` header and a `User-Agent` of `Hango/6 CFNetwork/3860.400.51 Darwin/25.3.0` with no "iPhone" marker, so `ClientInfo.isIos()` returns `false` for it. Gating on version alone is safe because Android's `PollOptionDto` and web clients don't depend on the embedded `votes` array, so an empty list is a no-op for them.
 
+### Observability
+
+Every time the gate fires, the affected service emits a Micrometer counter so we know when it's safe to remove the workaround:
+
+```
+poll_votes_strip_gate_fired_total{app_version, endpoint}
+```
+
+`endpoint` is one of `feed`, `hangout_detail`, `poll_detail`. `app_version` carries the offending raw `X-App-Version` header value (e.g. `"2.1"`, `"2.1.0"`).
+
+Removal trigger: when this counter approaches zero in production for ~2 consecutive weeks, the gate has done its job and can be deleted. PromQL:
+
+```promql
+sum(increase(poll_votes_strip_gate_fired_total{environment="production"}[$aggregation_interval])) by (app_version, endpoint)
+```
+
+Cleanup steps once the metric is quiet: delete the three `meterRegistry.counter(...)` calls and `MeterRegistry` injections, delete `ClientInfo.isAppVersionInRange`, drop the `includeEmbeddedVotes` parameter from `HangoutDataTransformer.transformPollData` and `HangoutSummaryDTO`, collapse the backward-compat overloads, delete the related tests, delete this doc section.
+
 Gate is applied in three transformer paths (all request-scoped):
 
 1. `HangoutDataTransformer.transformPollData(..., boolean includeEmbeddedVotes)` — drives the group feed (via `HangoutSummaryDTO`) and hangout detail (via `HangoutServiceImpl.transformPollData`).
