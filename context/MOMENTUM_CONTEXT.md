@@ -184,6 +184,7 @@ Every hangout in the response carries a `surfaceReason` field: `CONFIRMED | GAIN
 - Momentum fields are additive — old clients ignore them
 - `confirmed` field defaults to null (treated as false/float)
 - Hangouts created by old clients get `momentumCategory=null` — clients should treat null as legacy/CONFIRMED behavior
+- **`recomputeMomentum` treats `null` momentumCategory the same as CONFIRMED** and skips recompute (never demote/promote). This matches the read-path convention (`FeedSortingService` renders null as CONFIRMED) and protects hangouts created outside `HangoutServiceImpl.createHangout()` — TV watch party episodes (`WatchPartyServiceImpl` / `WatchPartyBackgroundServiceImpl`), generic series episodes (`EventSeriesServiceImpl`), and legacy pre-momentum rows — none of which run `initializeMomentum`. Without this guard, the first Interested RSVP would promote them to GAINING_MOMENTUM and fire a spurious "gaining traction" push.
 - Feed sorting uses slot-based interleaving (see Section 12)
 
 ## 12. Slot-Based Feed Interleaving (Feature 1)

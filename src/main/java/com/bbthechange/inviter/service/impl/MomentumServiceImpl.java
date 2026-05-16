@@ -136,9 +136,16 @@ public class MomentumServiceImpl implements MomentumService {
             return;
         }
 
-        // Never demote from CONFIRMED
-        if (MomentumCategory.CONFIRMED.equals(hangout.getMomentumCategory())) {
-            logger.debug("Hangout {} is already CONFIRMED, skipping recompute", hangoutId);
+        // Never demote from CONFIRMED. A null momentumCategory is treated as CONFIRMED
+        // here, matching the documented null=legacy/CONFIRMED convention (MOMENTUM_CONTEXT
+        // §11) and FeedSortingService. Hangouts created outside HangoutServiceImpl
+        // (TV watch party episodes, generic series episodes, legacy pre-momentum rows)
+        // never run initializeMomentum, so they carry a null category and display as
+        // CONFIRMED — recomputing them would spuriously promote to GAINING_MOMENTUM and
+        // fire a "gaining traction" push on the first RSVP.
+        MomentumCategory currentCategory = hangout.getMomentumCategory();
+        if (currentCategory == null || MomentumCategory.CONFIRMED.equals(currentCategory)) {
+            logger.debug("Hangout {} is CONFIRMED (or null=legacy/CONFIRMED), skipping recompute", hangoutId);
             return;
         }
 
