@@ -174,20 +174,54 @@ class MomentumServiceImplTest {
     }
 
     @Test
-    void recomputeMomentum_nullCategory_skipsRecomputeAndDoesNotSave() {
+    void recomputeMomentum_nullCategoryNoTicket_skipsScoreRecomputeAndDoesNotSave() {
         // Regression: TV watch party episodes / generic series episodes / legacy rows
         // are created without initializeMomentum, so momentumCategory is null. The read
         // path treats null as CONFIRMED, so they display confirmed. recomputeMomentum
-        // must treat null the same as CONFIRMED — otherwise the first Interested RSVP
-        // promotes them to GAINING_MOMENTUM and fires a spurious "gaining traction" push.
+        // must NOT score/promote them — otherwise the first Interested RSVP promotes
+        // them to GAINING_MOMENTUM and fires a spurious "gaining traction" push.
         Hangout hangout = buildHangout("h-null-momentum", null);
         when(hangoutRepository.findHangoutById("h-null-momentum")).thenReturn(Optional.of(hangout));
+        // An RSVP that would otherwise cross threshold — must be ignored for null category.
+        List<InterestLevel> attendance = List.of(interestLevel("GOING", Instant.now()));
+        when(hangoutRepository.getHangoutDetailData("h-null-momentum")).thenReturn(detailData(attendance));
 
         momentumService.recomputeMomentum("h-null-momentum");
 
         assertThat(hangout.getMomentumCategory()).isNull();
-        verify(hangoutRepository, never()).getHangoutDetailData(any());
         verify(hangoutRepository, never()).save(any(Hangout.class));
+        verify(notificationService, never()).notifyMomentumChange(
+                any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void recomputeMomentum_nullCategoryWithTicketPurchase_stillConfirmsAndNotifies() {
+        // The ticket-purchase concrete action (auto-confirm rule 1) must still fire for
+        // a null-category hangout (legacy / generic series part with a ticket link) —
+        // the null guard runs *after* the ticket check so a real purchase still
+        // confirms and sends the legitimate "bought tickets — it's on!" push.
+        Hangout hangout = buildHangout("h-null-ticket", null);
+        when(hangoutRepository.findHangoutById("h-null-ticket")).thenReturn(Optional.of(hangout));
+
+        Participation purchase = new Participation();
+        purchase.setType(ParticipationType.TICKET_PURCHASED);
+        purchase.setUserId(UUID.randomUUID().toString());
+        HangoutDetailData detail = HangoutDetailData.builder()
+                .withAttendance(List.of())
+                .withParticipations(List.of(purchase))
+                .build();
+        when(hangoutRepository.getHangoutDetailData("h-null-ticket")).thenReturn(detail);
+        when(adaptiveNotificationService.shouldSendNotification(any(), any(), any(), any()))
+                .thenReturn(true);
+
+        momentumService.recomputeMomentum("h-null-ticket");
+
+        assertThat(hangout.getMomentumCategory()).isEqualTo(MomentumCategory.CONFIRMED);
+        assertThat(hangout.getConfirmedBy()).isEqualTo("SYSTEM");
+        verify(hangoutRepository).save(any(Hangout.class));
+        verify(notificationService).notifyMomentumChange(
+                any(), any(), any(), any(), any(),
+                eq(AdaptiveNotificationService.SIGNAL_CONCRETE_ACTION));
     }
 
     @Test

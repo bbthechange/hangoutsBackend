@@ -136,16 +136,9 @@ public class MomentumServiceImpl implements MomentumService {
             return;
         }
 
-        // Never demote from CONFIRMED. A null momentumCategory is treated as CONFIRMED
-        // here, matching the documented null=legacy/CONFIRMED convention (MOMENTUM_CONTEXT
-        // §11) and FeedSortingService. Hangouts created outside HangoutServiceImpl
-        // (TV watch party episodes, generic series episodes, legacy pre-momentum rows)
-        // never run initializeMomentum, so they carry a null category and display as
-        // CONFIRMED — recomputing them would spuriously promote to GAINING_MOMENTUM and
-        // fire a "gaining traction" push on the first RSVP.
-        MomentumCategory currentCategory = hangout.getMomentumCategory();
-        if (currentCategory == null || MomentumCategory.CONFIRMED.equals(currentCategory)) {
-            logger.debug("Hangout {} is CONFIRMED (or null=legacy/CONFIRMED), skipping recompute", hangoutId);
+        // Never demote from CONFIRMED.
+        if (MomentumCategory.CONFIRMED.equals(hangout.getMomentumCategory())) {
+            logger.debug("Hangout {} is already CONFIRMED, skipping recompute", hangoutId);
             return;
         }
 
@@ -163,6 +156,20 @@ public class MomentumServiceImpl implements MomentumService {
             String actorName = lookupDisplayName(findTicketPurchaserUserId(detailData));
             maybeNotifyMomentumChange(hangout, previousCategory, MomentumCategory.CONFIRMED,
                     AdaptiveNotificationService.SIGNAL_CONCRETE_ACTION, interestLevels, actorName);
+            return;
+        }
+
+        // A null momentumCategory means the hangout was created outside
+        // HangoutServiceImpl.createHangout() (TV watch party episodes, generic series
+        // episodes, legacy pre-momentum rows) and never ran initializeMomentum. The read
+        // path (FeedSortingService) treats null as CONFIRMED, so these already display as
+        // confirmed. We must NOT score/promote them — doing so would spuriously surface
+        // GAINING_MOMENTUM and fire a "gaining traction" push on the first RSVP. The
+        // ticket-purchase concrete action (Step 4 above) is the one legitimate
+        // confirmation path for these and intentionally runs *before* this guard so a
+        // real ticket purchase still confirms and notifies.
+        if (hangout.getMomentumCategory() == null) {
+            logger.debug("Hangout {} has null (legacy/CONFIRMED) momentum, skipping score recompute", hangoutId);
             return;
         }
 
