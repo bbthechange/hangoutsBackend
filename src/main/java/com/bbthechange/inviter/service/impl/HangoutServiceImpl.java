@@ -13,7 +13,9 @@ import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.S3Service;
 import com.bbthechange.inviter.service.GroupTimestampService;
 import com.bbthechange.inviter.service.TimePollService;
+import com.bbthechange.inviter.service.WatchPartyHostNudgeScheduler;
 import com.bbthechange.inviter.repository.HangoutRepository;
+import com.bbthechange.inviter.repository.EventSeriesRepository;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.dto.*;
@@ -45,7 +47,13 @@ public class HangoutServiceImpl implements HangoutService {
     private static final Logger logger = LoggerFactory.getLogger(HangoutServiceImpl.class);
     private static final String NEW_FEATURES_MIN_VERSION = "2.0.0";
 
+    // Coalesce window: location-change notifications fired within this window of a
+    // host-claim notification are suppressed (UX doc Flow 4 — avoid back-to-back pushes
+    // when the claimer adds an address right after taking the host slot).
+    private static final long HOST_CLAIM_COALESCE_WINDOW_MS = 600_000L;
+
     private final HangoutRepository hangoutRepository;
+    private final EventSeriesRepository eventSeriesRepository;
     private final GroupRepository groupRepository;
     private final FuzzyTimeService fuzzyTimeService;
     private final UserService userService;
@@ -59,13 +67,16 @@ public class HangoutServiceImpl implements HangoutService {
     private final NudgeService nudgeService;
     private final AttributeSuggestionService attributeSuggestionService;
     private final TimePollService timePollService;
+    private final WatchPartyHostNudgeScheduler watchPartyHostNudgeScheduler;
     private final MeterRegistry meterRegistry;
 
     @Value("${inviter.attendance.backward-compat-interested:true}")
     private boolean attendanceBackwardCompatEnabled;
 
     @Autowired
-    public HangoutServiceImpl(HangoutRepository hangoutRepository, GroupRepository groupRepository,
+    public HangoutServiceImpl(HangoutRepository hangoutRepository,
+                              EventSeriesRepository eventSeriesRepository,
+                              GroupRepository groupRepository,
                               FuzzyTimeService fuzzyTimeService, UserService userService,
                               @Lazy EventSeriesService eventSeriesService,
                               NotificationService notificationService,
@@ -77,8 +88,10 @@ public class HangoutServiceImpl implements HangoutService {
                               NudgeService nudgeService,
                               AttributeSuggestionService attributeSuggestionService,
                               @Lazy TimePollService timePollService,
+                              WatchPartyHostNudgeScheduler watchPartyHostNudgeScheduler,
                               MeterRegistry meterRegistry) {
         this.hangoutRepository = hangoutRepository;
+        this.eventSeriesRepository = eventSeriesRepository;
         this.groupRepository = groupRepository;
         this.fuzzyTimeService = fuzzyTimeService;
         this.userService = userService;
@@ -92,6 +105,7 @@ public class HangoutServiceImpl implements HangoutService {
         this.nudgeService = nudgeService;
         this.attributeSuggestionService = attributeSuggestionService;
         this.timePollService = timePollService;
+        this.watchPartyHostNudgeScheduler = watchPartyHostNudgeScheduler;
         this.meterRegistry = meterRegistry;
     }
     
@@ -463,6 +477,11 @@ public class HangoutServiceImpl implements HangoutService {
         boolean descriptionChanged = false;
         boolean ticketFieldChanged = false;
 
+        // Capture old host BEFORE any mutation so the watch-party host-claim cascade
+        // (further down) can detect null/empty → set transitions accurately.
+        String oldHostAtPlaceUserId = hangout.getHostAtPlaceUserId();
+        boolean hostAtPlaceChanged = false;
+
         // Update canonical record fields
         if (request.getTitle() != null && !request.getTitle().equals(hangout.getTitle())) {
             hangout.setTitle(request.getTitle());
@@ -560,6 +579,7 @@ public class HangoutServiceImpl implements HangoutService {
         if (!Objects.equals(request.getHostAtPlaceUserId(), hangout.getHostAtPlaceUserId())) {
             hangout.setHostAtPlaceUserId(request.getHostAtPlaceUserId());
             needsPointerUpdate = true;
+            hostAtPlaceChanged = true;
         }
 
         // Place category field
@@ -662,27 +682,64 @@ public class HangoutServiceImpl implements HangoutService {
             logger.info("Initiated async deletion of old hangout image: {}", oldMainImagePath);
         }
 
+        // Watch-party host-claim cascade runs BEFORE the time/location push so that a
+        // same-call "claim + change address" PUT has the claim's lastHostNotificationAt
+        // visible to the coalesce check below (the cascade mutates the local hangout).
+        // Also handles host abdication (re-schedule nudge) and auto-RSVPs self-claimers.
+        if (hostAtPlaceChanged && hangout.getSeriesId() != null) {
+            try {
+                handleWatchPartyHostChange(hangout, oldHostAtPlaceUserId, requestingUserId);
+            } catch (Exception e) {
+                logger.warn("Failed to handle watch-party host change for hangout {}: {}",
+                        hangoutId, e.getMessage());
+            }
+        }
+
         // Send notifications for time/location changes to interested users
         if (timeChanged || locationChanged) {
             try {
                 String changeType = (timeChanged && locationChanged) ? "time_and_location"
                                    : timeChanged ? "time" : "location";
-                HangoutDetailData detailData = hangoutRepository.getHangoutDetailData(hangoutId);
-                Set<String> interestedUserIds = com.bbthechange.inviter.util.InterestLevelQueries
-                    .goingOrInterestedOnHangout(detailData);
 
-                // Extract location name for notification message
-                String newLocationName = null;
-                if (locationChanged && hangout.getLocation() != null) {
-                    newLocationName = hangout.getLocation().getName();
-                    if (newLocationName == null || newLocationName.trim().isEmpty()) {
-                        newLocationName = hangout.getLocation().getStreetAddress();
+                // Coalesce: for watch-party hangouts, suppress the location-change push if a
+                // host-claim notification fired within the last 10 min. Time changes still go
+                // out (they're a different signal). Coalesce only triggers for pure
+                // location-only changes.
+                boolean coalesceLocation = false;
+                if (locationChanged && !timeChanged && hangout.getSeriesId() != null
+                        && hangout.getLastHostNotificationAt() != null) {
+                    long sinceClaim = System.currentTimeMillis() - hangout.getLastHostNotificationAt();
+                    if (sinceClaim >= 0 && sinceClaim < HOST_CLAIM_COALESCE_WINDOW_MS) {
+                        EventSeries seriesForCoalesce = eventSeriesRepository
+                                .findById(hangout.getSeriesId()).orElse(null);
+                        if (seriesForCoalesce != null && seriesForCoalesce.isWatchParty()) {
+                            coalesceLocation = true;
+                            meterRegistry.counter("notification_coalesced",
+                                    "reason", "host_claim_recent").increment();
+                            logger.info("Coalesced location-change notification for hangout {} " +
+                                    "(host-claim fired {} ms ago)", hangoutId, sinceClaim);
+                        }
                     }
                 }
 
-                notificationService.notifyHangoutUpdated(hangoutId, hangout.getTitle(),
-                    hangout.getAssociatedGroups(), changeType, requestingUserId, interestedUserIds,
-                    newLocationName);
+                if (!coalesceLocation) {
+                    HangoutDetailData detailData = hangoutRepository.getHangoutDetailData(hangoutId);
+                    Set<String> interestedUserIds = com.bbthechange.inviter.util.InterestLevelQueries
+                        .goingOrInterestedOnHangout(detailData);
+
+                    // Extract location name for notification message
+                    String newLocationName = null;
+                    if (locationChanged && hangout.getLocation() != null) {
+                        newLocationName = hangout.getLocation().getName();
+                        if (newLocationName == null || newLocationName.trim().isEmpty()) {
+                            newLocationName = hangout.getLocation().getStreetAddress();
+                        }
+                    }
+
+                    notificationService.notifyHangoutUpdated(hangoutId, hangout.getTitle(),
+                        hangout.getAssociatedGroups(), changeType, requestingUserId, interestedUserIds,
+                        newLocationName);
+                }
             } catch (Exception e) {
                 logger.warn("Failed to send hangout update notifications for {}: {}", hangoutId, e.getMessage());
                 // Continue execution - notifications shouldn't break the update
@@ -690,6 +747,96 @@ public class HangoutServiceImpl implements HangoutService {
         }
 
         logger.info("Updated hangout {} by user {}", hangoutId, requestingUserId);
+    }
+
+    /**
+     * Watch-party host-claim cascade (UX Flow 4). Called from updateHangout when
+     * hostAtPlaceUserId changes on a hangout whose series is a watch party.
+     *
+     *   null/empty → non-null: cancel scheduled nudge, mark nudge resolved (so any
+     *                          in-flight EventBridge fire is a no-op), send claim
+     *                          notification to the GOING/INTERESTED set, auto-RSVP
+     *                          the claimer to GOING if they claimed themselves.
+     *   non-null → null:       host abdicated — re-schedule the nudge.
+     *
+     * Non-watch-party series are a silent no-op. Each external call is independently
+     * try/caught so one failure doesn't strand the others.
+     */
+    private void handleWatchPartyHostChange(Hangout hangout, String oldHostUserId, String requestingUserId) {
+        EventSeries series = eventSeriesRepository.findById(hangout.getSeriesId()).orElse(null);
+        if (series == null || !series.isWatchParty()) {
+            return;
+        }
+
+        String newHostUserId = hangout.getHostAtPlaceUserId();
+        boolean wasEmpty = (oldHostUserId == null || oldHostUserId.isEmpty());
+        boolean nowEmpty = (newHostUserId == null || newHostUserId.isEmpty());
+
+        if (!wasEmpty && nowEmpty) {
+            // Host abdication — re-schedule the nudge so the group is reminded next cycle.
+            try {
+                watchPartyHostNudgeScheduler.scheduleHostNudge(hangout, series);
+            } catch (Exception e) {
+                logger.warn("Failed to re-schedule host nudge after abdication for hangout {}: {}",
+                        hangout.getHangoutId(), e.getMessage());
+            }
+            return;
+        }
+
+        if (wasEmpty && !nowEmpty) {
+            // Host claimed. Cancel the scheduled nudge and mark resolved so any in-flight
+            // EventBridge fire becomes a no-op (handler checks hostNudgeSentAt).
+            try {
+                watchPartyHostNudgeScheduler.cancelHostNudge(hangout);
+            } catch (Exception e) {
+                logger.warn("Failed to cancel host nudge after claim for hangout {}: {}",
+                        hangout.getHangoutId(), e.getMessage());
+            }
+            try {
+                hangoutRepository.setHostNudgeSentAtIfNull(hangout.getHangoutId(), System.currentTimeMillis());
+            } catch (Exception e) {
+                logger.warn("Failed to mark host nudge as sent after claim for hangout {}: {}",
+                        hangout.getHangoutId(), e.getMessage());
+            }
+
+            // Build the recipient set the same way as the existing time/location notification
+            // block (GOING/INTERESTED on the hangout). The claimer is excluded inside
+            // NotificationService.notifyWatchPartyHostClaimed.
+            Set<String> recipients;
+            try {
+                HangoutDetailData detailData = hangoutRepository.getHangoutDetailData(hangout.getHangoutId());
+                recipients = com.bbthechange.inviter.util.InterestLevelQueries
+                        .goingOrInterestedOnHangout(detailData);
+            } catch (Exception e) {
+                logger.warn("Failed to resolve recipients for host-claim notification on hangout {}: {}",
+                        hangout.getHangoutId(), e.getMessage());
+                recipients = Set.of();
+            }
+
+            try {
+                notificationService.notifyWatchPartyHostClaimed(series, hangout, requestingUserId, recipients);
+                // Reflect the new timestamp locally so the location-change block (which
+                // runs after this cascade) sees it via getLastHostNotificationAt() and
+                // can coalesce a same-call address change.
+                hangout.setLastHostNotificationAt(System.currentTimeMillis());
+            } catch (Exception e) {
+                logger.warn("Failed to send host-claim notification for hangout {}: {}",
+                        hangout.getHangoutId(), e.getMessage());
+            }
+        }
+
+        // Auto-RSVP when the requesting user claimed themselves as host. Fires for any
+        // null/empty → non-null transition that targets the caller; mirrors the iOS
+        // "claiming host implies attending" UX (Flow 3).
+        if (requestingUserId != null && requestingUserId.equals(newHostUserId)) {
+            try {
+                setUserInterest(hangout.getHangoutId(),
+                        new SetInterestRequest("GOING", null), requestingUserId);
+            } catch (Exception e) {
+                logger.warn("Failed to auto-RSVP host claimer {} on hangout {}: {}",
+                        requestingUserId, hangout.getHangoutId(), e.getMessage());
+            }
+        }
     }
     
     @Override
@@ -704,6 +851,15 @@ public class HangoutServiceImpl implements HangoutService {
 
         // Cancel any scheduled reminder
         hangoutSchedulerService.cancelReminder(hangout);
+
+        // Cancel any scheduled watch-party host nudge. Safe even when no schedule exists
+        // (the client treats ResourceNotFound as success).
+        try {
+            watchPartyHostNudgeScheduler.cancelHostNudge(hangout);
+        } catch (Exception e) {
+            logger.warn("Failed to cancel host nudge for deleted hangout {}: {}",
+                    hangoutId, e.getMessage());
+        }
 
         // Cancel any outstanding TIME-poll adoption schedules before rows go away.
         try {

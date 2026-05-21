@@ -2,6 +2,7 @@ package com.bbthechange.inviter.service.impl;
 
 import com.bbthechange.inviter.dto.*;
 import com.bbthechange.inviter.model.*;
+import com.bbthechange.inviter.repository.EventSeriesRepository;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.service.EventSeriesService;
@@ -14,6 +15,7 @@ import com.bbthechange.inviter.service.NudgeService;
 import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.TimePollService;
 import com.bbthechange.inviter.service.UserService;
+import com.bbthechange.inviter.service.WatchPartyHostNudgeScheduler;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -32,6 +34,9 @@ abstract class HangoutServiceTestBase {
 
     @Mock
     protected HangoutRepository hangoutRepository;
+
+    @Mock
+    protected EventSeriesRepository eventSeriesRepository;
 
     @Mock
     protected GroupRepository groupRepository;
@@ -71,6 +76,9 @@ abstract class HangoutServiceTestBase {
 
     @Mock
     protected TimePollService timePollService;
+
+    @Mock
+    protected WatchPartyHostNudgeScheduler watchPartyHostNudgeScheduler;
 
     // RETURNS_DEEP_STUBS so chained calls like meterRegistry.counter(...).increment() return
     // mocks that don't NPE without per-test stubbing. Lenient because most tests don't fire

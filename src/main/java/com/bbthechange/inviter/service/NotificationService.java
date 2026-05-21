@@ -84,6 +84,22 @@ public interface NotificationService {
                                      String body);
 
     /**
+     * Notify users that a watch-party episode now has a host.
+     * Builds the body internally ("{ClaimerName} is hosting {Day}'s {Show} episode."),
+     * excludes the claimer from the supplied recipients, and persists
+     * lastHostNotificationAt on the hangout for coalesce checks.
+     *
+     * @param series          The owning EventSeries (for deep-link context and show name)
+     * @param hangout         The hangout that was claimed (timezone resolved from series)
+     * @param claimerUserId   User who claimed the host role (excluded from recipients)
+     * @param recipients      Pre-filtered set of recipients (claimer will be removed)
+     */
+    void notifyWatchPartyHostClaimed(com.bbthechange.inviter.model.EventSeries series,
+                                      com.bbthechange.inviter.model.Hangout hangout,
+                                      String claimerUserId,
+                                      Set<String> recipients);
+
+    /**
      * Notify users on the "needs ride" list that a new car has been offered.
      * The driver is excluded from notifications.
      *

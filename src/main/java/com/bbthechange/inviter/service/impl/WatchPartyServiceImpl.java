@@ -10,6 +10,7 @@ import com.bbthechange.inviter.exception.ValidationException;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.*;
 import com.bbthechange.inviter.service.GroupTimestampService;
+import com.bbthechange.inviter.service.WatchPartyHostNudgeScheduler;
 import com.bbthechange.inviter.service.WatchPartyService;
 import com.bbthechange.inviter.util.HangoutPointerFactory;
 import com.bbthechange.inviter.util.InviterKeyFactory;
@@ -47,6 +48,7 @@ public class WatchPartyServiceImpl implements WatchPartyService {
     private final TvMazeClient tvMazeClient;
     private final PointerUpdateService pointerUpdateService;
     private final SeriesNotificationPreferenceRepository seriesNotificationPreferenceRepository;
+    private final WatchPartyHostNudgeScheduler watchPartyHostNudgeScheduler;
 
     @Autowired
     public WatchPartyServiceImpl(
@@ -58,7 +60,8 @@ public class WatchPartyServiceImpl implements WatchPartyService {
             GroupTimestampService groupTimestampService,
             TvMazeClient tvMazeClient,
             PointerUpdateService pointerUpdateService,
-            SeriesNotificationPreferenceRepository seriesNotificationPreferenceRepository) {
+            SeriesNotificationPreferenceRepository seriesNotificationPreferenceRepository,
+            WatchPartyHostNudgeScheduler watchPartyHostNudgeScheduler) {
         this.groupRepository = groupRepository;
         this.hangoutRepository = hangoutRepository;
         this.eventSeriesRepository = eventSeriesRepository;
@@ -68,6 +71,7 @@ public class WatchPartyServiceImpl implements WatchPartyService {
         this.tvMazeClient = tvMazeClient;
         this.pointerUpdateService = pointerUpdateService;
         this.seriesNotificationPreferenceRepository = seriesNotificationPreferenceRepository;
+        this.watchPartyHostNudgeScheduler = watchPartyHostNudgeScheduler;
     }
 
     @Override
@@ -90,7 +94,7 @@ public class WatchPartyServiceImpl implements WatchPartyService {
 
         // 6. Create EventSeries
         String seriesTitle = request.getShowName() + " Season " + request.getSeasonNumber();
-        EventSeries eventSeries = createEventSeries(groupId, request, seriesTitle, season);
+        EventSeries eventSeries = createEventSeries(groupId, request, seriesTitle, season, requestingUserId);
 
         // 7. Create Hangouts and HangoutPointers for each combined episode
         List<Hangout> hangouts = new ArrayList<>();
@@ -152,6 +156,17 @@ public class WatchPartyServiceImpl implements WatchPartyService {
 
         // 9. Save all records
         saveAllRecords(season, eventSeries, hangouts, pointers, seriesPointer);
+
+        // 9b. Schedule host nudge for each hangout. The scheduler's gates short-circuit
+        // virtual / already-hosted / past-fire-time hangouts — caller stays unconditional.
+        for (Hangout h : hangouts) {
+            try {
+                watchPartyHostNudgeScheduler.scheduleHostNudge(h, eventSeries);
+            } catch (Exception e) {
+                logger.warn("Failed to schedule host nudge for hangout {}: {}",
+                        h.getHangoutId(), e.getMessage());
+            }
+        }
 
         // 10. Update group timestamp for cache invalidation
         groupTimestampService.updateGroupTimestamps(List.of(groupId));
@@ -263,6 +278,15 @@ public class WatchPartyServiceImpl implements WatchPartyService {
         // 3. Delete all hangouts and their pointers
         if (series.getHangoutIds() != null) {
             for (String hangoutId : series.getHangoutIds()) {
+                // Cancel any scheduled host nudge before removing the hangout row.
+                // Fetched only to give the scheduler the persisted schedule name; safe
+                // when missing because cancelHostNudge regenerates from convention.
+                try {
+                    hangoutRepository.findHangoutById(hangoutId).ifPresent(watchPartyHostNudgeScheduler::cancelHostNudge);
+                } catch (Exception e) {
+                    logger.warn("Failed to cancel host nudge for hangout {} during watch-party delete: {}",
+                            hangoutId, e.getMessage());
+                }
                 // Delete hangout pointer
                 groupRepository.deleteHangoutPointer(groupId, hangoutId);
                 // Delete hangout
@@ -336,6 +360,21 @@ public class WatchPartyServiceImpl implements WatchPartyService {
 
         boolean hostChanged = !Objects.equals(effectiveDefaultHostId, series.getDefaultHostId());
 
+        // Capture model BEFORE applying request.watchPartyModel so the cascade below can
+        // detect VIRTUAL ↔ IN_PERSON transitions and re/un-schedule nudges per UX Flow 1.
+        // Use isVirtualWatchParty() on both sides so any future normalization (null →
+        // IN_PERSON, case, etc.) stays symmetric.
+        boolean virtualBefore = series.isVirtualWatchParty();
+        boolean modelChanged = false;
+        if (request.getWatchPartyModel() != null
+                && !Objects.equals(request.getWatchPartyModel(), series.getWatchPartyModel())) {
+            series.setWatchPartyModel(request.getWatchPartyModel());
+            modelChanged = true;
+        }
+        boolean virtualAfter = series.isVirtualWatchParty();
+        boolean toggledToVirtual = modelChanged && virtualAfter && !virtualBefore;
+        boolean toggledToInPerson = modelChanged && !virtualAfter && virtualBefore;
+
         // 7. Apply time/host settings to series
         series.setDefaultTime(effectiveDefaultTime);
         series.setTimezone(effectiveTimezone);
@@ -351,7 +390,7 @@ public class WatchPartyServiceImpl implements WatchPartyService {
         Long minTimestamp = series.getStartTimestamp();
         Long maxTimestamp = series.getEndTimestamp();
 
-        if (shouldCascade && (timeSettingsChanged || hostChanged) && series.getHangoutIds() != null) {
+        if (shouldCascade && (timeSettingsChanged || hostChanged || modelChanged) && series.getHangoutIds() != null) {
             // Get Season to look up original air timestamps
             Season season = getSeasonFromSeries(series);
 
@@ -428,6 +467,33 @@ public class WatchPartyServiceImpl implements WatchPartyService {
 
                     // Update HangoutPointer
                     updateHangoutPointer(hangout, groupId);
+                }
+
+                // Host-nudge cascade. Done after persist so the scheduler sees the new state.
+                // Each block is independently try/caught so one EventBridge failure doesn't
+                // strand the rest of the cascade.
+                String currentHost = hangout.getHostAtPlaceUserId();
+                boolean hostlessAfter = (currentHost == null || currentHost.isEmpty());
+                try {
+                    if (toggledToVirtual) {
+                        // Virtual series don't need a host — cancel any pending nudges.
+                        watchPartyHostNudgeScheduler.cancelHostNudge(hangout);
+                    } else if (toggledToInPerson) {
+                        // Newly in-person: schedule for the hangouts that still lack a host.
+                        if (hostlessAfter) {
+                            watchPartyHostNudgeScheduler.scheduleHostNudge(hangout, series);
+                        }
+                    } else if (hostChanged && !hostlessAfter) {
+                        // Default-host cascade gave this hangout a host — cancel the nudge.
+                        watchPartyHostNudgeScheduler.cancelHostNudge(hangout);
+                    } else if (timeSettingsChanged && hostlessAfter) {
+                        // Time shift moved the fire window — re-schedule. createOrUpdate
+                        // overwrites the existing schedule in place.
+                        watchPartyHostNudgeScheduler.scheduleHostNudge(hangout, series);
+                    }
+                } catch (Exception e) {
+                    logger.warn("Failed to update host nudge schedule for hangout {} during cascade: {}",
+                            hangout.getHangoutId(), e.getMessage());
                 }
             }
         }
@@ -877,7 +943,8 @@ public class WatchPartyServiceImpl implements WatchPartyService {
         return season;
     }
 
-    private EventSeries createEventSeries(String groupId, CreateWatchPartyRequest request, String seriesTitle, Season season) {
+    private EventSeries createEventSeries(String groupId, CreateWatchPartyRequest request, String seriesTitle, Season season,
+                                          String requestingUserId) {
         EventSeries series = new EventSeries(seriesTitle, null, groupId);
 
         // Set watch party specific fields
@@ -888,6 +955,12 @@ public class WatchPartyServiceImpl implements WatchPartyService {
         series.setDayOverride(request.getDayOverride());
         series.setTimezone(request.getTimezone());
         series.setIsGeneratedTitle(true);
+        // watchPartyModel is required on create — recorded so virtual-vs-in-person gating
+        // and host-nudge scheduling work from the first save.
+        series.setWatchPartyModel(request.getWatchPartyModel());
+        // Recorded so the host-nudge recipient resolver always includes the creator
+        // (Flow 2 in the UX doc).
+        series.setCreatedBy(requestingUserId);
 
         // External ID fields for GSI lookup
         series.setExternalId(String.valueOf(request.getShowId()));

@@ -68,6 +68,9 @@ class WatchPartyServiceImplTvMazeTest {
     @Mock
     private SeriesNotificationPreferenceRepository seriesNotificationPreferenceRepository;
 
+    @Mock
+    private com.bbthechange.inviter.service.WatchPartyHostNudgeScheduler watchPartyHostNudgeScheduler;
+
     @InjectMocks
     private WatchPartyServiceImpl watchPartyService;
 

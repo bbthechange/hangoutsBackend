@@ -79,6 +79,9 @@ class WatchPartyServiceImplTest {
     @Mock
     private SeriesNotificationPreferenceRepository seriesNotificationPreferenceRepository;
 
+    @Mock
+    private com.bbthechange.inviter.service.WatchPartyHostNudgeScheduler watchPartyHostNudgeScheduler;
+
     @InjectMocks
     private WatchPartyServiceImpl watchPartyService;
 
@@ -557,6 +560,28 @@ class WatchPartyServiceImplTest {
 
             // Verify tvmazeSeasonId is set correctly from the request
             assertThat(savedSeason.getTvmazeSeasonId()).isEqualTo(tvmazeSeasonId);
+        }
+
+        @Test
+        void createWatchParty_SchedulesHostNudgeForEachHangout() {
+            // Two episodes >20h apart produce two distinct hangouts; the scheduler
+            // is invoked unconditionally once per hangout (its internal gates skip
+            // virtual/has-host/past cases).
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+
+            List<CreateWatchPartyEpisodeRequest> episodes = List.of(
+                    createEpisode(101, "Pilot", BASE_TIMESTAMP, 60),
+                    createEpisode(102, "Episode 2", BASE_TIMESTAMP + (25 * ONE_HOUR), 45)
+            );
+            CreateWatchPartyRequest request = createValidRequest(episodes);
+
+            when(seasonRepository.findByShowIdAndSeasonNumber(SHOW_ID, SEASON_NUMBER))
+                    .thenReturn(Optional.empty());
+
+            watchPartyService.createWatchParty(GROUP_ID, request, USER_ID);
+
+            verify(watchPartyHostNudgeScheduler, times(2))
+                    .scheduleHostNudge(any(Hangout.class), any(EventSeries.class));
         }
 
         @Test
@@ -1190,6 +1215,72 @@ class WatchPartyServiceImplTest {
             assertThat(savedPointer.getInterestLevels())
                     .extracting(InterestLevel::getUserId)
                     .containsExactlyInAnyOrder(USER_ID, "another-user-id-456");
+        }
+
+        @Test
+        void updateWatchParty_ModelToggleInPersonToVirtual_CancelsNudgeForFutureHangouts() {
+            // Series was IN_PERSON, flipping to VIRTUAL: every future hangout's nudge
+            // should be cancelled (Flow 1 in the UX doc).
+            testSeries.setWatchPartyModel("IN_PERSON");
+
+            UpdateWatchPartyRequest request = UpdateWatchPartyRequest.builder()
+                    .watchPartyModel("VIRTUAL")
+                    .changeExistingUpcomingHangouts(true)
+                    .build();
+
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(testHangout));
+
+            watchPartyService.updateWatchParty(GROUP_ID, SERIES_ID, request, USER_ID);
+
+            verify(watchPartyHostNudgeScheduler).cancelHostNudge(testHangout);
+            verify(watchPartyHostNudgeScheduler, never()).scheduleHostNudge(any(), any());
+        }
+
+        @Test
+        void updateWatchParty_ModelToggleVirtualToInPerson_SchedulesNudgeForHostlessFutureHangouts() {
+            // Series flips VIRTUAL → IN_PERSON: schedule the nudge for any hostless
+            // future hangout.
+            testSeries.setWatchPartyModel("VIRTUAL");
+            testHangout.setHostAtPlaceUserId(null);
+
+            UpdateWatchPartyRequest request = UpdateWatchPartyRequest.builder()
+                    .watchPartyModel("IN_PERSON")
+                    .changeExistingUpcomingHangouts(true)
+                    .build();
+
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(testHangout));
+
+            watchPartyService.updateWatchParty(GROUP_ID, SERIES_ID, request, USER_ID);
+
+            verify(watchPartyHostNudgeScheduler).scheduleHostNudge(eq(testHangout), any(EventSeries.class));
+            verify(watchPartyHostNudgeScheduler, never()).cancelHostNudge(any());
+        }
+
+        @Test
+        void updateWatchParty_DefaultHostIdCascade_CancelsNudgeForHangoutsThatGetHost() {
+            // Series defaults a new host onto hostless future hangouts: every such
+            // hangout had its nudge cancelled.
+            testSeries.setDefaultHostId(null);
+            testHangout.setHostAtPlaceUserId(null);
+
+            UpdateWatchPartyRequest request = UpdateWatchPartyRequest.builder()
+                    .defaultHostId(DEFAULT_HOST_ID)
+                    .changeExistingUpcomingHangouts(true)
+                    .build();
+
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(testHangout));
+
+            watchPartyService.updateWatchParty(GROUP_ID, SERIES_ID, request, USER_ID);
+
+            // Host was applied → cancelHostNudge fires.
+            verify(watchPartyHostNudgeScheduler).cancelHostNudge(testHangout);
+            assertThat(testHangout.getHostAtPlaceUserId()).isEqualTo(DEFAULT_HOST_ID);
         }
     }
 

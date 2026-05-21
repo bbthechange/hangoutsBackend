@@ -16,6 +16,7 @@ import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.SeasonRepository;
 import com.bbthechange.inviter.service.GroupTimestampService;
 import com.bbthechange.inviter.service.NotificationService;
+import com.bbthechange.inviter.service.WatchPartyHostNudgeScheduler;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -62,6 +63,9 @@ class WatchPartyBackgroundServiceImplTest {
     private PointerUpdateService pointerUpdateService;
 
     @Mock
+    private WatchPartyHostNudgeScheduler watchPartyHostNudgeScheduler;
+
+    @Mock
     private Counter counter;
 
     private WatchPartyBackgroundServiceImpl service;
@@ -77,7 +81,8 @@ class WatchPartyBackgroundServiceImplTest {
                 groupTimestampService,
                 notificationService,
                 meterRegistry,
-                pointerUpdateService
+                pointerUpdateService,
+                watchPartyHostNudgeScheduler
         );
     }
 
@@ -168,6 +173,33 @@ class WatchPartyBackgroundServiceImplTest {
         // Then
         verify(eventSeriesRepository, never()).findAllByExternalIdAndSource(anyString(), anyString());
         verify(meterRegistry).counter("watchparty_background_total", "action", "new_episode", "status", "invalid_key");
+    }
+
+    @Test
+    void processNewEpisode_SchedulesHostNudgeForEachCreatedHangout() {
+        // Given two series watching the same show — each gets a hangout AND a host-nudge schedule.
+        EpisodeData episode = new EpisodeData(456, "Pilot", 1705363200L);
+        episode.setRuntime(60);
+        NewEpisodeMessage message = new NewEpisodeMessage("TVMAZE#SHOW#123|SEASON#1", episode);
+
+        EventSeries seriesA = new EventSeries("Show A Season 1", null, "c8c3f5d4-5e8b-4c2a-a9f2-b3c2d1e4f5a6");
+        seriesA.setDefaultTime("20:00");
+        seriesA.setTimezone("America/New_York");
+        seriesA.setHangoutIds(new ArrayList<>());
+
+        EventSeries seriesB = new EventSeries("Show A Season 1", null, "d8d3f5d4-5e8b-4c2a-a9f2-b3c2d1e4f5b7");
+        seriesB.setDefaultTime("19:00");
+        seriesB.setTimezone("America/Los_Angeles");
+        seriesB.setHangoutIds(new ArrayList<>());
+
+        when(eventSeriesRepository.findAllByExternalIdAndSource("123", "TVMAZE"))
+                .thenReturn(List.of(seriesA, seriesB));
+
+        // When
+        service.processNewEpisode(message);
+
+        // Then
+        verify(watchPartyHostNudgeScheduler, times(2)).scheduleHostNudge(any(Hangout.class), any(EventSeries.class));
     }
 
     @Test

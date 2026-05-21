@@ -7,6 +7,7 @@ import com.bbthechange.inviter.repository.*;
 import com.bbthechange.inviter.service.GroupTimestampService;
 import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.WatchPartyBackgroundService;
+import com.bbthechange.inviter.service.WatchPartyHostNudgeScheduler;
 import com.bbthechange.inviter.util.HangoutPointerFactory;
 import com.bbthechange.inviter.util.InviterKeyFactory;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -42,6 +43,7 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
     private final NotificationService notificationService;
     private final MeterRegistry meterRegistry;
     private final PointerUpdateService pointerUpdateService;
+    private final WatchPartyHostNudgeScheduler watchPartyHostNudgeScheduler;
 
     public WatchPartyBackgroundServiceImpl(
             EventSeriesRepository eventSeriesRepository,
@@ -51,7 +53,8 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
             GroupTimestampService groupTimestampService,
             NotificationService notificationService,
             MeterRegistry meterRegistry,
-            PointerUpdateService pointerUpdateService) {
+            PointerUpdateService pointerUpdateService,
+            WatchPartyHostNudgeScheduler watchPartyHostNudgeScheduler) {
         this.eventSeriesRepository = eventSeriesRepository;
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
@@ -60,6 +63,7 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
         this.notificationService = notificationService;
         this.meterRegistry = meterRegistry;
         this.pointerUpdateService = pointerUpdateService;
+        this.watchPartyHostNudgeScheduler = watchPartyHostNudgeScheduler;
     }
 
     @Override
@@ -106,6 +110,15 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
                 // Save records
                 hangoutRepository.save(hangout);
                 groupRepository.saveHangoutPointer(pointer);
+
+                // Schedule host nudge for the new episode. Gates inside the scheduler skip
+                // virtual / hosted / past-fire-time hangouts.
+                try {
+                    watchPartyHostNudgeScheduler.scheduleHostNudge(hangout, series);
+                } catch (Exception e) {
+                    logger.warn("Failed to schedule host nudge for new episode hangout {}: {}",
+                            hangout.getHangoutId(), e.getMessage());
+                }
 
                 // Add hangout to series
                 series.addHangout(hangout.getHangoutId());

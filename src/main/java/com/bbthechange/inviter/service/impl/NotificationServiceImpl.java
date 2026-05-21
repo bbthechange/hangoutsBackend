@@ -555,6 +555,84 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     @Override
+    public void notifyWatchPartyHostClaimed(com.bbthechange.inviter.model.EventSeries series,
+                                             com.bbthechange.inviter.model.Hangout hangout,
+                                             String claimerUserId,
+                                             Set<String> recipients) {
+        String hangoutId = hangout.getHangoutId();
+        String seriesId = series.getSeriesId();
+
+        Set<String> usersToNotify = recipients == null ? new HashSet<>() : new HashSet<>(recipients);
+        if (claimerUserId != null) {
+            usersToNotify.remove(claimerUserId);
+        }
+
+        if (usersToNotify.isEmpty()) {
+            logger.debug("No recipients to notify for host-claim on hangout {} (series {})", hangoutId, seriesId);
+            // Still record lastHostNotificationAt so the coalesce window starts at the claim
+            // moment, mirroring the visible-notification path. Suppresses redundant
+            // location-change pushes that arrive within the window.
+            try {
+                hangoutRepository.updateLastHostNotificationAt(hangoutId, System.currentTimeMillis());
+            } catch (Exception e) {
+                logger.warn("Failed to persist lastHostNotificationAt for hangout {}: {}", hangoutId, e.getMessage());
+            }
+            return;
+        }
+
+        String claimerName = resolveDisplayName(claimerUserId);
+        String day = formatDayOfWeek(hangout.getStartTimestamp(), series.getTimezone());
+        String showName = series.getSeriesTitle() != null ? series.getSeriesTitle() : "Show";
+        String body = String.format("%s is hosting %s's %s episode.", claimerName, day, showName);
+
+        logger.info("Sending host-claim notifications for hangout {} (series {}) to {} users",
+                hangoutId, seriesId, usersToNotify.size());
+
+        int successCount = 0;
+        int failureCount = 0;
+        for (String userId : usersToNotify) {
+            try {
+                boolean sent = sendWatchPartyUpdateToUser(userId, seriesId, series.getGroupId(), body);
+                if (sent) {
+                    successCount++;
+                }
+            } catch (Exception e) {
+                failureCount++;
+                logger.warn("Failed to send host-claim notification to user {}: {}", userId, e.getMessage());
+            }
+        }
+
+        if (successCount > 0) {
+            meterRegistry.counter("watchparty_host_claim_notification", "status", "sent").increment(successCount);
+        }
+        if (failureCount > 0) {
+            meterRegistry.counter("watchparty_host_claim_notification", "status", "error").increment(failureCount);
+        }
+
+        try {
+            hangoutRepository.updateLastHostNotificationAt(hangoutId, System.currentTimeMillis());
+        } catch (Exception e) {
+            logger.warn("Failed to persist lastHostNotificationAt for hangout {}: {}", hangoutId, e.getMessage());
+        }
+    }
+
+    private String formatDayOfWeek(Long startTimestamp, String timezone) {
+        if (startTimestamp == null) {
+            return "this week";
+        }
+        java.time.ZoneId zone;
+        try {
+            zone = (timezone != null && !timezone.isEmpty())
+                ? java.time.ZoneId.of(timezone)
+                : java.time.ZoneId.of("America/Los_Angeles");
+        } catch (Exception e) {
+            zone = java.time.ZoneId.of("America/Los_Angeles");
+        }
+        java.time.DayOfWeek dow = java.time.Instant.ofEpochSecond(startTimestamp).atZone(zone).getDayOfWeek();
+        return dow.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH);
+    }
+
+    @Override
     public void notifyWatchPartyUpdate(Set<String> userIds, String seriesId, String message) {
         if (userIds == null || userIds.isEmpty()) {
             logger.debug("No users to notify for watch party update on series {}", seriesId);
