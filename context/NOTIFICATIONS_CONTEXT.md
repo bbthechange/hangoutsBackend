@@ -304,6 +304,8 @@ TV watch party feature adds notifications for episode-level events. See `TV_WATC
 | New episode added | GOING/INTERESTED on series | "New episode added: {title}" |
 | Title updated | GOING/INTERESTED on series | "Episode renamed: {newTitle}" |
 | Episode removed | GOING/INTERESTED on series | "{title} has been removed" |
+| Host needed (in-person, ~48h pre-air) | Resolved recipient set (see below) minus muted users | "{Show} — {Episode} airs {Day} and still needs a host!" |
+| Host claimed | GOING/INTERESTED on hangout | "{ClaimerName} is hosting {Day}'s {Show} episode." |
 
 ### Methods
 
@@ -312,7 +314,28 @@ TV watch party feature adds notifications for episode-level events. See `TV_WATC
 void notifyWatchPartyNewEpisode(String seriesId, String groupId, Hangout hangout);
 void notifyWatchPartyTitleUpdated(String seriesId, String groupId, Hangout hangout);
 void notifyWatchPartyEpisodeRemoved(String seriesId, String groupId, String title);
+
+// Host nudge (in-person series only — virtual series skip these).
+// Body is built upstream by WatchPartyHostNudgeService; recipients are pre-filtered
+// by WatchPartyHostNudgeRecipientResolver (mute filter applied last).
+void notifyWatchPartyHostNeeded(Set<String> userIds, EventSeries series, Hangout hangout, String body);
+
+// Sent when hostAtPlaceUserId transitions from empty → set on a watch-party hangout.
+// Excludes claimerUserId; persists Hangout.lastHostNotificationAt for the
+// location-change coalesce check (10-minute window).
+void notifyWatchPartyHostClaimed(EventSeries series, Hangout hangout, String claimerUserId, Set<String> recipients);
 ```
+
+### Per-series Mute Preferences
+
+Users can mute individual nudge types per series via `PUT /watch-parties/{seriesId}/notification-preferences` (see `TV_WATCH_PARTY_CONTEXT.md`).
+
+**Entity:** `SeriesNotificationPreference` (PK=`USER#{userId}`, SK=`SERIESPREF#{seriesId}`)
+- `mutedNudgeTypes: Map<String, Boolean>` — keys are constants from `NudgeTypes` (e.g. `HOST_NUDGE`). `true` means muted; absence means not muted.
+- Sparse — the row is only created on first mute and is deleted when the map empties.
+- **Adding a new nudge type adds a new key constant, not a new column.** No DTO/schema/endpoint change.
+
+The recipient resolver calls `SeriesNotificationPreferenceRepository.findMutedUsersForSeries(seriesId, NudgeTypes.HOST_NUDGE, candidates)` to get muted users, then removes them from the candidate set. Per-type isolation lives in the repository — a mute for one nudge type never filters another.
 
 ### Targeting
 

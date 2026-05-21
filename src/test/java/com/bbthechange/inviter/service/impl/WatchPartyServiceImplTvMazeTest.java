@@ -14,6 +14,7 @@ import com.bbthechange.inviter.repository.EventSeriesRepository;
 import com.bbthechange.inviter.repository.GroupRepository;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.SeasonRepository;
+import com.bbthechange.inviter.repository.SeriesNotificationPreferenceRepository;
 import com.bbthechange.inviter.service.GroupTimestampService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -63,6 +64,9 @@ class WatchPartyServiceImplTvMazeTest {
 
     @Mock
     private TvMazeClient tvMazeClient;
+
+    @Mock
+    private SeriesNotificationPreferenceRepository seriesNotificationPreferenceRepository;
 
     @InjectMocks
     private WatchPartyServiceImpl watchPartyService;

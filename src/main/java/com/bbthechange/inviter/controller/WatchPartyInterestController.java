@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.controller;
 
 import com.bbthechange.inviter.dto.watchparty.SetSeriesInterestRequest;
+import com.bbthechange.inviter.dto.watchparty.SetSeriesNotificationPreferenceRequest;
 import com.bbthechange.inviter.service.WatchPartyService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -79,6 +80,35 @@ public class WatchPartyInterestController extends BaseController {
         logger.info("User {} removing interest from watch party series {}", userId, seriesId);
 
         watchPartyService.removeUserInterest(seriesId, userId);
+
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Mute or unmute a single nudge type for a watch party series (per-user).
+     *
+     * <p>Authorization: user must be a member of a group that the series belongs to.
+     * Per contract §4, non-member access surfaces as 404 (not 403) — the endpoint
+     * does not leak existence of series the caller can't access. Unknown
+     * {@code nudgeType} values are rejected as 400.</p>
+     *
+     * @param seriesId   The watch party series ID (UUID format)
+     * @param request    Request body with {@code nudgeType} (one of {@code NudgeTypes}) and {@code muted}
+     * @param httpRequest HTTP request for user ID extraction
+     * @return 204 No Content on success
+     */
+    @PutMapping("/{seriesId}/notification-preferences")
+    public ResponseEntity<Void> setNotificationPreference(
+            @PathVariable @Pattern(regexp = "[0-9a-f-]{36}", message = "Invalid series ID format") String seriesId,
+            @Valid @RequestBody SetSeriesNotificationPreferenceRequest request,
+            HttpServletRequest httpRequest) {
+
+        String userId = extractUserId(httpRequest);
+        logger.info("User {} setting notification preference nudgeType={} muted={} on watch party series {}",
+                userId, request.getNudgeType(), request.getMuted(), seriesId);
+
+        watchPartyService.setSeriesNotificationPreference(
+                seriesId, request.getNudgeType(), request.getMuted(), userId);
 
         return ResponseEntity.noContent().build();
     }

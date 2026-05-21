@@ -113,4 +113,21 @@ public interface WatchPartyService {
      * @throws com.bbthechange.inviter.exception.UnauthorizedException if user is not in any associated group
      */
     void removeUserInterest(String seriesId, String requestingUserId);
+
+    /**
+     * Set or clear a per-user, per-series notification mute for a single nudge type.
+     *
+     * <p>Reuses the {@code setUserInterest} auth check: the series must exist, be a watch
+     * party, and the requesting user must be a member of its owning group. Unknown
+     * {@code nudgeType} values are rejected as a validation error (HTTP 400).</p>
+     *
+     * @param seriesId         the watch party series ID
+     * @param nudgeType        a constant from {@link com.bbthechange.inviter.util.NudgeTypes}
+     * @param muted            {@code true} to mute, {@code false} to clear the mute
+     * @param requestingUserId the authenticated caller
+     * @throws com.bbthechange.inviter.exception.ResourceNotFoundException if series doesn't exist or user has no access
+     * @throws com.bbthechange.inviter.exception.UnauthorizedException     if user is not a member of the owning group
+     * @throws com.bbthechange.inviter.exception.ValidationException       if {@code nudgeType} is not a known constant
+     */
+    void setSeriesNotificationPreference(String seriesId, String nudgeType, boolean muted, String requestingUserId);
 }

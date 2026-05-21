@@ -9,6 +9,7 @@ import com.bbthechange.inviter.exception.ValidationException;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.*;
 import com.bbthechange.inviter.service.GroupTimestampService;
+import com.bbthechange.inviter.util.NudgeTypes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -74,6 +75,9 @@ class WatchPartyServiceImplTest {
 
     @Mock
     private PointerUpdateService pointerUpdateService;
+
+    @Mock
+    private SeriesNotificationPreferenceRepository seriesNotificationPreferenceRepository;
 
     @InjectMocks
     private WatchPartyServiceImpl watchPartyService;
@@ -2402,6 +2406,95 @@ class WatchPartyServiceImplTest {
             java.time.ZonedDateTime wrongZdt = java.time.Instant.ofEpochSecond(wrongResult)
                     .atZone(java.time.ZoneId.of(newTimezone));
             assertThat(wrongZdt.getDayOfMonth()).isEqualTo(5); // confirms the bug without the fix
+        }
+    }
+
+    @Nested
+    class SetSeriesNotificationPreferenceTests {
+
+        @Test
+        void mute_validNudgeType_setsViaRepository() {
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(groupRepository.findSeriesPointer(GROUP_ID, SERIES_ID)).thenReturn(Optional.empty());
+
+            watchPartyService.setSeriesNotificationPreference(SERIES_ID, NudgeTypes.HOST_NUDGE, true, USER_ID);
+
+            verify(seriesNotificationPreferenceRepository)
+                    .setMuted(USER_ID, SERIES_ID, NudgeTypes.HOST_NUDGE, true);
+        }
+
+        @Test
+        void unmute_validNudgeType_clearsViaRepository() {
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(groupRepository.findSeriesPointer(GROUP_ID, SERIES_ID)).thenReturn(Optional.empty());
+
+            watchPartyService.setSeriesNotificationPreference(SERIES_ID, NudgeTypes.HOST_NUDGE, false, USER_ID);
+
+            verify(seriesNotificationPreferenceRepository)
+                    .setMuted(USER_ID, SERIES_ID, NudgeTypes.HOST_NUDGE, false);
+        }
+
+        @Test
+        void unknownNudgeType_throwsValidation_andDoesNotTouchRepository() {
+            assertThatThrownBy(() -> watchPartyService.setSeriesNotificationPreference(
+                    SERIES_ID, "FAKE_NUDGE", true, USER_ID))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessageContaining("Unknown nudgeType");
+
+            verifyNoInteractions(seriesNotificationPreferenceRepository);
+            // Should fail fast before any auth lookup
+            verifyNoInteractions(eventSeriesRepository);
+        }
+
+        @Test
+        void nullNudgeType_throwsValidation() {
+            assertThatThrownBy(() -> watchPartyService.setSeriesNotificationPreference(
+                    SERIES_ID, null, true, USER_ID))
+                    .isInstanceOf(ValidationException.class);
+
+            verifyNoInteractions(seriesNotificationPreferenceRepository);
+        }
+
+        @Test
+        void seriesNotFound_throwsResourceNotFound() {
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> watchPartyService.setSeriesNotificationPreference(
+                    SERIES_ID, NudgeTypes.HOST_NUDGE, true, USER_ID))
+                    .isInstanceOf(ResourceNotFoundException.class)
+                    .hasMessageContaining("Watch party series not found");
+
+            verifyNoInteractions(seriesNotificationPreferenceRepository);
+        }
+
+        @Test
+        void notWatchParty_throwsResourceNotFound() {
+            testSeries.setEventSeriesType("REGULAR");
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+
+            assertThatThrownBy(() -> watchPartyService.setSeriesNotificationPreference(
+                    SERIES_ID, NudgeTypes.HOST_NUDGE, true, USER_ID))
+                    .isInstanceOf(ResourceNotFoundException.class)
+                    .hasMessageContaining("not a watch party");
+
+            verifyNoInteractions(seriesNotificationPreferenceRepository);
+        }
+
+        @Test
+        void nonMember_throwsResourceNotFound_toAvoidLeakingExistence() {
+            // Contract §4: non-member surfaces as 404, not 403 — endpoint must not
+            // confirm a series exists when the caller has no business knowing.
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(false);
+
+            assertThatThrownBy(() -> watchPartyService.setSeriesNotificationPreference(
+                    SERIES_ID, NudgeTypes.HOST_NUDGE, true, USER_ID))
+                    .isInstanceOf(ResourceNotFoundException.class)
+                    .hasMessageContaining("Watch party series not found");
+
+            verifyNoInteractions(seriesNotificationPreferenceRepository);
         }
     }
 }

@@ -1,10 +1,13 @@
 package com.bbthechange.inviter.controller;
 
 import com.bbthechange.inviter.dto.watchparty.SetSeriesInterestRequest;
+import com.bbthechange.inviter.dto.watchparty.SetSeriesNotificationPreferenceRequest;
 import com.bbthechange.inviter.exception.ResourceNotFoundException;
 import com.bbthechange.inviter.exception.UnauthorizedException;
+import com.bbthechange.inviter.exception.ValidationException;
 import com.bbthechange.inviter.service.JwtService;
 import com.bbthechange.inviter.service.WatchPartyService;
+import com.bbthechange.inviter.util.NudgeTypes;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -26,8 +29,10 @@ import java.util.UUID;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -286,6 +291,130 @@ class WatchPartyInterestControllerTest {
                     .andExpect(status().isForbidden());
 
             verify(watchPartyService).removeUserInterest(eq(seriesId), eq(userId));
+        }
+    }
+
+    @Nested
+    @DisplayName("PUT /watch-parties/{seriesId}/notification-preferences Tests")
+    class SetNotificationPreferenceTests {
+
+        @Test
+        @DisplayName("Should return 204 and call service for valid mute request")
+        void setNotificationPreference_WhenMutedTrue_Returns204() throws Exception {
+            SetSeriesNotificationPreferenceRequest request =
+                    new SetSeriesNotificationPreferenceRequest(NudgeTypes.HOST_NUDGE, true);
+
+            mockMvc.perform(put("/watch-parties/{seriesId}/notification-preferences", seriesId)
+                    .header("Authorization", "Bearer " + validJWT)
+                    .requestAttr("userId", userId)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isNoContent());
+
+            verify(watchPartyService).setSeriesNotificationPreference(
+                    eq(seriesId), eq(NudgeTypes.HOST_NUDGE), eq(true), eq(userId));
+        }
+
+        @Test
+        @DisplayName("Should return 204 and call service for valid unmute request")
+        void setNotificationPreference_WhenMutedFalse_Returns204() throws Exception {
+            SetSeriesNotificationPreferenceRequest request =
+                    new SetSeriesNotificationPreferenceRequest(NudgeTypes.HOST_NUDGE, false);
+
+            mockMvc.perform(put("/watch-parties/{seriesId}/notification-preferences", seriesId)
+                    .header("Authorization", "Bearer " + validJWT)
+                    .requestAttr("userId", userId)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isNoContent());
+
+            verify(watchPartyService).setSeriesNotificationPreference(
+                    eq(seriesId), eq(NudgeTypes.HOST_NUDGE), eq(false), eq(userId));
+        }
+
+        @Test
+        @DisplayName("Should return 400 when service rejects unknown nudgeType")
+        void setNotificationPreference_WithUnknownNudgeType_Returns400() throws Exception {
+            SetSeriesNotificationPreferenceRequest request =
+                    new SetSeriesNotificationPreferenceRequest("FAKE_NUDGE", true);
+            doThrow(new ValidationException("Unknown nudgeType: FAKE_NUDGE"))
+                    .when(watchPartyService).setSeriesNotificationPreference(
+                            eq(seriesId), eq("FAKE_NUDGE"), eq(true), eq(userId));
+
+            mockMvc.perform(put("/watch-parties/{seriesId}/notification-preferences", seriesId)
+                    .header("Authorization", "Bearer " + validJWT)
+                    .requestAttr("userId", userId)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("Should return 400 for invalid seriesId format")
+        void setNotificationPreference_WithInvalidSeriesId_Returns400() throws Exception {
+            SetSeriesNotificationPreferenceRequest request =
+                    new SetSeriesNotificationPreferenceRequest(NudgeTypes.HOST_NUDGE, true);
+
+            mockMvc.perform(put("/watch-parties/{seriesId}/notification-preferences", "not-a-uuid")
+                    .header("Authorization", "Bearer " + validJWT)
+                    .requestAttr("userId", userId)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isBadRequest());
+
+            verify(watchPartyService, never()).setSeriesNotificationPreference(
+                    any(), any(), anyBoolean(), any());
+        }
+
+        @Test
+        @DisplayName("Should return 400 when nudgeType is missing")
+        void setNotificationPreference_WithMissingNudgeType_Returns400() throws Exception {
+            String requestJson = "{\"muted\": true}";
+
+            mockMvc.perform(put("/watch-parties/{seriesId}/notification-preferences", seriesId)
+                    .header("Authorization", "Bearer " + validJWT)
+                    .requestAttr("userId", userId)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(requestJson))
+                    .andExpect(status().isBadRequest());
+
+            verify(watchPartyService, never()).setSeriesNotificationPreference(
+                    any(), any(), anyBoolean(), any());
+        }
+
+        @Test
+        @DisplayName("Should return 400 when muted is missing")
+        void setNotificationPreference_WithMissingMuted_Returns400() throws Exception {
+            String requestJson = "{\"nudgeType\": \"HOST_NUDGE\"}";
+
+            mockMvc.perform(put("/watch-parties/{seriesId}/notification-preferences", seriesId)
+                    .header("Authorization", "Bearer " + validJWT)
+                    .requestAttr("userId", userId)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(requestJson))
+                    .andExpect(status().isBadRequest());
+
+            verify(watchPartyService, never()).setSeriesNotificationPreference(
+                    any(), any(), anyBoolean(), any());
+        }
+
+        @Test
+        @DisplayName("Should return 404 when service throws ResourceNotFoundException (including non-member case)")
+        void setNotificationPreference_WhenSeriesNotFoundOrInaccessible_Returns404() throws Exception {
+            // Per contract §4, both "series doesn't exist" and "user has no access" surface
+            // as 404 — the service wraps UnauthorizedException to avoid leaking existence.
+            SetSeriesNotificationPreferenceRequest request =
+                    new SetSeriesNotificationPreferenceRequest(NudgeTypes.HOST_NUDGE, true);
+            doThrow(new ResourceNotFoundException("Watch party series not found: " + seriesId))
+                    .when(watchPartyService).setSeriesNotificationPreference(
+                            eq(seriesId), eq(NudgeTypes.HOST_NUDGE), eq(true), eq(userId));
+
+            mockMvc.perform(put("/watch-parties/{seriesId}/notification-preferences", seriesId)
+                    .header("Authorization", "Bearer " + validJWT)
+                    .requestAttr("userId", userId)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isNotFound());
         }
     }
 }

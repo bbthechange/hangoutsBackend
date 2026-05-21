@@ -118,6 +118,19 @@ On read, the `hostAtPlaceUserId` is resolved to display name and image path:
 - **User deleted:** If the user is deleted after the hangout was created, the `hostAtPlaceUserId` is still returned but `displayName` and `imagePath` will be null
 - **Invalid user ID:** Attempting to set an invalid user ID throws `ValidationException` and the operation is rejected
 
+### Side Effects on Watch Party Hangouts
+
+When `hostAtPlaceUserId` transitions from empty → set on a hangout that belongs to a watch-party series, `HangoutServiceImpl.updateHangout()` runs additional side effects:
+
+1. **Cancel pending host nudge.** Calls `WatchPartyHostNudgeScheduler.cancelHostNudge(hangout)` and marks `Hangout.hostNudgeSentAt` so any in-flight EventBridge fire becomes a no-op.
+2. **Send host-claim notification.** Calls `NotificationService.notifyWatchPartyHostClaimed(...)` to fan out to GOING/INTERESTED users on the hangout (claimer excluded). This is a **separate code path** from the existing `location`-change notification — host change drives it, not location change. Persists `Hangout.lastHostNotificationAt` for the coalesce check.
+3. **Auto-RSVP the claimer.** The claimer's hangout-level RSVP is set to GOING (hosting implies attending).
+4. **Coalesce with a near-term location change.** If a `location`-change notification would fire within 10 minutes of the host-claim notification, it is suppressed (counter `notification_coalesced{reason=host_claim_recent}`).
+
+These behaviors apply **only to watch-party hangouts** (the parent series has `eventSeriesType == "WATCH_PARTY"`). Non-watch-party hangouts treat `hostAtPlaceUserId` purely as a denormalized attribute with no scheduling or notification side effects.
+
+For full lifecycle details (schedule on create, cancel on series delete, virtual model gating), see `TV_WATCH_PARTY_CONTEXT.md` "Host Nudge Pipeline".
+
 ## 5. Cross-Cutting Concerns: Event Series
 
 The `Hangout` entity is deeply connected to the `EventSeries` feature.

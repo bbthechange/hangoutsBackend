@@ -21,7 +21,7 @@ TV Watch Party allows users to schedule a series of hangouts for a TV season. Th
 | File | Purpose |
 |------|---------|
 | `WatchPartyController.java` | CRUD endpoints for `/groups/{groupId}/watch-parties` |
-| `WatchPartyInterestController.java` | Interest endpoint `/watch-parties/{seriesId}/interest` |
+| `WatchPartyInterestController.java` | Interest + notification-preference endpoints under `/watch-parties/{seriesId}/...` |
 | `InternalWatchPartyController.java` | Internal endpoints for SQS testing and poll triggers |
 
 ### Services
@@ -32,7 +32,9 @@ TV Watch Party allows users to schedule a series of hangouts for a TV season. Th
 | `WatchPartyBackgroundServiceImpl.java` | Processes SQS messages (NEW_EPISODE, UPDATE_TITLE, REMOVE_EPISODE) |
 | `WatchPartySqsServiceImpl.java` | Sends messages to SQS queues |
 | `TvMazePollingServiceImpl.java` | Polls TVMaze API for show updates |
-| `WatchPartyHostCheckService.java` | Validates host user IDs |
+| `WatchPartyHostNudgeScheduler.java` | Creates/cancels EventBridge schedules for the per-hangout host nudge |
+| `WatchPartyHostNudgeService.java` | Handles `WATCH_PARTY_HOST_NUDGE` SQS messages: guards, idempotency, dispatch |
+| `WatchPartyHostNudgeRecipientResolver.java` | Composes the recipient set for the host nudge using `InterestLevelQueries` + mute filter |
 | `TvMazeClient.java` | HTTP client for TVMaze API with retry logic |
 | `HangoutPointerFactory.java` | Centralized factory for creating/updating HangoutPointer records (shared with HangoutService, EventSeriesService) |
 | `PointerUpdateService.java` | Optimistic-locking retry logic for pointer updates, including `upsertPointerWithRetry()` |
@@ -111,6 +113,7 @@ Extends EventSeries with watch party-specific fields:
 | `timezone` | String | **Required.** IANA timezone (e.g., "America/New_York") |
 | `mainImagePath` | String | TVMaze show image URL (set via `showImageUrl` on create/update) |
 | `deletedEpisodeIds` | Set<String> | User-deleted episodes (prevents re-creation) |
+| `watchPartyModel` | String | `"IN_PERSON"` or `"VIRTUAL"`. Null = legacy row, treated as IN_PERSON. Drives the host-nudge gate (virtual series never nudge). See `EventSeries.isVirtualWatchParty()`. |
 
 **isWatchParty() method:** Returns `true` if `eventSeriesType == "WATCH_PARTY"`
 
@@ -120,6 +123,9 @@ Extends EventSeries with watch party-specific fields:
 |-------|------|-------------|
 | `titleNotificationSent` | Boolean | True after first title update notification |
 | `combinedExternalIds` | List<String> | All TVMaze episode IDs if combined hangout |
+| `hostNudgeScheduleName` | String | EventBridge schedule name (`hostnudge-{hangoutId}`), persisted for idempotent update/delete |
+| `hostNudgeSentAt` | Long | Epoch ms. Idempotency flag — set on send OR on host claim so any in-flight fire becomes a no-op |
+| `lastHostNotificationAt` | Long | Epoch ms. Used by the host-claim → location-change coalesce check |
 
 ### SeriesPointer (Watch Party Fields)
 
@@ -189,6 +195,26 @@ Sets user's interest level on the series.
 **Levels:** `GOING`, `INTERESTED`, `NOT_GOING`
 
 **Note:** Series interest is for notification targeting only. No inheritance to individual hangouts.
+
+### PUT /watch-parties/{seriesId}/notification-preferences
+
+Sets or clears a per-user, per-series mute for a single nudge type.
+
+**Request:**
+```json
+{ "nudgeType": "HOST_NUDGE", "muted": true }
+```
+
+- `nudgeType`: one of the constants in `NudgeTypes` (currently only `HOST_NUDGE`). Unknown values → `400`.
+- `muted`: `true` to mute, `false` to clear.
+
+**Response:** `204 No Content` — `404` if series doesn't exist or user has no access, `400` for unknown nudge type.
+
+**Auth:** Same as `/interest` — user must be a member of a group that owns the series. The single-key write is atomic so concurrent updates to other nudge-type keys never clobber each other.
+
+### Future nudge types
+
+The mute endpoint and the `SeriesNotificationPreference.mutedNudgeTypes` map are designed so additional nudge types (e.g. `LOCATION_NUDGE`, `TIME_NUDGE`) register a new constant in `NudgeTypes` without DTO, endpoint, or schema changes. The full extension recipe — scheduler, handler, recipient resolver, schedule-name prefix, etc. — lives in `docs/design/WATCH_PARTY_HOST_NUDGE_CONTRACT.md` §8.
 
 ## 5. Episode Combination Logic
 
@@ -287,6 +313,47 @@ EventBridge (2hr) ──▶ trigger-poll endpoint ──▶ TvMazePollingService
 **UPDATE_TITLE:** Emitted when episode title changes. Updates hangouts where `isGeneratedTitle=true`. Pointers are updated via `PointerUpdateService.upsertPointerWithRetry()` with `HangoutPointerFactory.applyHangoutFields()`, which preserves existing collections (polls, votes, cars, etc.). Only sends push notifications if `titleNotificationSent=false`.
 
 **REMOVE_EPISODE:** Emitted when episode removed from TVMaze. Deletes hangouts and notifies users.
+
+### Host Nudge Pipeline (in-person watch parties only)
+
+Per-hangout EventBridge schedule fired ~48h before air time. Separate from the TVMaze update pipeline and reuses the existing `ScheduledEventListener` SQS path.
+
+```
+WatchPartyServiceImpl.createWatchParty ──▶ WatchPartyHostNudgeScheduler.scheduleHostNudge
+WatchPartyBackgroundServiceImpl.processNewEpisode ──▶ (same)
+                                                                │
+                                                                ▼
+                                                EventBridge schedule
+                                                  hostnudge-{hangoutId}
+                                                                │
+                                                                ▼
+                                                          SQS queue
+                                                  {"type":"WATCH_PARTY_HOST_NUDGE",
+                                                   "hangoutId":"..."}
+                                                                │
+                                                                ▼
+                                                ScheduledEventListener
+                                                                │
+                                                                ▼
+                                              WatchPartyHostNudgeService.processHostNudge
+                                                                │
+                       ┌────────────────────────────────────────┼─────────────────────────┐
+                       ▼                                        ▼                         ▼
+            guard: hangout exists?           guard: still hostless?        guard: in send window?
+                       │                                        │                         │
+                       └──────────────────┬─────────────────────┴─────────────────────────┘
+                                          ▼
+                          atomic setHostNudgeSentAtIfNull(...)
+                                          │
+                                          ▼
+                       WatchPartyHostNudgeRecipientResolver.resolve
+                          (InterestLevelQueries + mute filter)
+                                          │
+                                          ▼
+                       NotificationService.notifyWatchPartyHostNeeded
+```
+
+**Cancellation triggers** (`WatchPartyHostNudgeScheduler.cancelHostNudge`): host claim (`hostAtPlaceUserId` set), hangout deletion, series deletion, model toggled to virtual.
 
 ### Processing Guards
 

@@ -13,6 +13,7 @@ import com.bbthechange.inviter.service.GroupTimestampService;
 import com.bbthechange.inviter.service.WatchPartyService;
 import com.bbthechange.inviter.util.HangoutPointerFactory;
 import com.bbthechange.inviter.util.InviterKeyFactory;
+import com.bbthechange.inviter.util.NudgeTypes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,6 +46,7 @@ public class WatchPartyServiceImpl implements WatchPartyService {
     private final GroupTimestampService groupTimestampService;
     private final TvMazeClient tvMazeClient;
     private final PointerUpdateService pointerUpdateService;
+    private final SeriesNotificationPreferenceRepository seriesNotificationPreferenceRepository;
 
     @Autowired
     public WatchPartyServiceImpl(
@@ -55,7 +57,8 @@ public class WatchPartyServiceImpl implements WatchPartyService {
             UserRepository userRepository,
             GroupTimestampService groupTimestampService,
             TvMazeClient tvMazeClient,
-            PointerUpdateService pointerUpdateService) {
+            PointerUpdateService pointerUpdateService,
+            SeriesNotificationPreferenceRepository seriesNotificationPreferenceRepository) {
         this.groupRepository = groupRepository;
         this.hangoutRepository = hangoutRepository;
         this.eventSeriesRepository = eventSeriesRepository;
@@ -64,6 +67,7 @@ public class WatchPartyServiceImpl implements WatchPartyService {
         this.groupTimestampService = groupTimestampService;
         this.tvMazeClient = tvMazeClient;
         this.pointerUpdateService = pointerUpdateService;
+        this.seriesNotificationPreferenceRepository = seriesNotificationPreferenceRepository;
     }
 
     @Override
@@ -571,6 +575,28 @@ public class WatchPartyServiceImpl implements WatchPartyService {
     }
 
     private record SeriesInterestContext(String groupId, SeriesPointer pointer) {}
+
+    @Override
+    public void setSeriesNotificationPreference(String seriesId, String nudgeType, boolean muted, String requestingUserId) {
+        if (!NudgeTypes.isValid(nudgeType)) {
+            throw new ValidationException("Unknown nudgeType: " + nudgeType);
+        }
+
+        // Reuses the auth check from setUserInterest — series must exist, be a watch party,
+        // and the caller must be a member of the owning group. Per the contract (§4), a
+        // non-member is surfaced as 404 (not 403) so endpoint responses don't leak the
+        // existence of series the caller can't access.
+        try {
+            validateAndGetSeriesInterestContext(seriesId, requestingUserId);
+        } catch (UnauthorizedException e) {
+            throw new ResourceNotFoundException("Watch party series not found: " + seriesId);
+        }
+
+        seriesNotificationPreferenceRepository.setMuted(requestingUserId, seriesId, nudgeType, muted);
+
+        logger.info("User {} {} nudgeType {} for watch party series {}",
+                requestingUserId, muted ? "muted" : "unmuted", nudgeType, seriesId);
+    }
 
     // ============================================================================
     // HELPER METHODS - VALIDATION
