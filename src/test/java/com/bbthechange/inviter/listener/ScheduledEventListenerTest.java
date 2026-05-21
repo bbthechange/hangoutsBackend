@@ -317,15 +317,22 @@ class ScheduledEventListenerTest {
             String hangoutId = "hangout-xyz";
             String messageBody = "{\"type\":\"WATCH_PARTY_HOST_NUDGE\",\"hangoutId\":\"" + hangoutId + "\"}";
 
-            // Stub service throws by default in Phase 1 — handleMessage swallows the throw.
-            doThrow(new UnsupportedOperationException("Phase 2"))
+            listener.handleMessage(messageBody);
+
+            verify(watchPartyHostNudgeService).processHostNudge(hangoutId);
+            verify(notificationService, never()).sendHangoutReminder(any());
+        }
+
+        @Test
+        void handleMessage_WithWatchPartyHostNudgeType_ServiceThrows_EmitsErrorCounter() {
+            String hangoutId = "hangout-abc";
+            String messageBody = "{\"type\":\"WATCH_PARTY_HOST_NUDGE\",\"hangoutId\":\"" + hangoutId + "\"}";
+            doThrow(new RuntimeException("boom"))
                 .when(watchPartyHostNudgeService).processHostNudge(hangoutId);
 
             listener.handleMessage(messageBody);
 
             verify(watchPartyHostNudgeService).processHostNudge(hangoutId);
-            verify(notificationService, never()).sendHangoutReminder(any());
-            // Stub throws → error counter must increment so phase-1 deploys are observable.
             verify(meterRegistry).counter("watchparty_host_nudge_total", "status", "error");
         }
 

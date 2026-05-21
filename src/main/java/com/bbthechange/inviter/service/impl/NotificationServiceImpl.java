@@ -543,6 +543,18 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     @Override
+    public void notifyWatchPartyHostNeeded(Set<String> userIds,
+                                            com.bbthechange.inviter.model.EventSeries series,
+                                            com.bbthechange.inviter.model.Hangout hangout,
+                                            String body) {
+        if (userIds == null || userIds.isEmpty()) {
+            logger.debug("No users to notify for host-needed nudge on hangout {}", hangout.getHangoutId());
+            return;
+        }
+        notifyWatchPartyUpdate(userIds, series.getSeriesId(), body);
+    }
+
+    @Override
     public void notifyWatchPartyUpdate(Set<String> userIds, String seriesId, String message) {
         if (userIds == null || userIds.isEmpty()) {
             logger.debug("No users to notify for watch party update on series {}", seriesId);

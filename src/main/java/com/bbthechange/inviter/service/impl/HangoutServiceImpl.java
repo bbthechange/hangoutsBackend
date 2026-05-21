@@ -668,10 +668,8 @@ public class HangoutServiceImpl implements HangoutService {
                 String changeType = (timeChanged && locationChanged) ? "time_and_location"
                                    : timeChanged ? "time" : "location";
                 HangoutDetailData detailData = hangoutRepository.getHangoutDetailData(hangoutId);
-                Set<String> interestedUserIds = detailData.getAttendance().stream()
-                    .filter(level -> "GOING".equals(level.getStatus()) || "INTERESTED".equals(level.getStatus()))
-                    .map(InterestLevel::getUserId)
-                    .collect(Collectors.toSet());
+                Set<String> interestedUserIds = com.bbthechange.inviter.util.InterestLevelQueries
+                    .goingOrInterestedOnHangout(detailData);
 
                 // Extract location name for notification message
                 String newLocationName = null;

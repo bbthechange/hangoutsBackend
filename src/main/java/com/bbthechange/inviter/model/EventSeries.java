@@ -46,6 +46,7 @@ public class EventSeries extends BaseItem {
     private String timezone;              // IANA timezone (e.g., "America/Los_Angeles")
     private Set<String> deletedEpisodeIds; // Episode IDs that user has deleted from series
     private String watchPartyModel;       // "IN_PERSON" or "VIRTUAL". Nullable for legacy rows; null treated as IN_PERSON.
+    private String createdBy;             // User ID who created the series (recipient resolver always includes them in nudges)
 
     // Default constructor for DynamoDB
     public EventSeries() {
@@ -349,6 +350,15 @@ public class EventSeries extends BaseItem {
      */
     public boolean isVirtualWatchParty() {
         return "VIRTUAL".equals(watchPartyModel);
+    }
+
+    public String getCreatedBy() {
+        return createdBy;
+    }
+
+    public void setCreatedBy(String createdBy) {
+        this.createdBy = createdBy;
+        touch();
     }
 
     /**

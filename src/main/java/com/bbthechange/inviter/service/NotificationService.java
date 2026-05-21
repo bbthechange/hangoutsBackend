@@ -70,6 +70,20 @@ public interface NotificationService {
     void notifyWatchPartyUpdate(Set<String> userIds, String seriesId, String message);
 
     /**
+     * Notify users that a watch-party episode still needs a host.
+     * Caller supplies the fully-built body (formatting lives in the host-nudge service).
+     *
+     * @param userIds  Pre-filtered set of recipients
+     * @param series   The owning EventSeries (for deep-link context)
+     * @param hangout  The hangout that needs a host
+     * @param body     The notification body text
+     */
+    void notifyWatchPartyHostNeeded(Set<String> userIds,
+                                     com.bbthechange.inviter.model.EventSeries series,
+                                     com.bbthechange.inviter.model.Hangout hangout,
+                                     String body);
+
+    /**
      * Notify users on the "needs ride" list that a new car has been offered.
      * The driver is excluded from notifications.
      *
