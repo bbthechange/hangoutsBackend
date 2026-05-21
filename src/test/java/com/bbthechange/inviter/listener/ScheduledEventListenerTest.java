@@ -35,6 +35,9 @@ class ScheduledEventListenerTest {
     private com.bbthechange.inviter.service.TimePollService timePollService;
 
     @Mock
+    private com.bbthechange.inviter.service.impl.WatchPartyHostNudgeService watchPartyHostNudgeService;
+
+    @Mock
     private MeterRegistry meterRegistry;
 
     @Mock
@@ -52,7 +55,8 @@ class ScheduledEventListenerTest {
         lenient().when(meterRegistry.counter(anyString(), any(String[].class))).thenReturn(counter);
         listener = new ScheduledEventListener(
                 hangoutRepository, notificationService,
-                timePollService, meterRegistry, objectMapper);
+                timePollService, watchPartyHostNudgeService,
+                meterRegistry, objectMapper);
         listener.setIdeaAddBatchHandler(ideaAddBatchHandler);
     }
 
@@ -298,6 +302,51 @@ class ScheduledEventListenerTest {
             listener.handleMessage(messageBody);
 
             verify(meterRegistry).counter("idea_batch_notification_total", "status", "no_handler");
+        }
+    }
+
+    // ============================================================================
+    // Watch party host nudge dispatch tests
+    // ============================================================================
+
+    @Nested
+    class WatchPartyHostNudge {
+
+        @Test
+        void handleMessage_WithWatchPartyHostNudgeType_DelegatesToService() {
+            String hangoutId = "hangout-xyz";
+            String messageBody = "{\"type\":\"WATCH_PARTY_HOST_NUDGE\",\"hangoutId\":\"" + hangoutId + "\"}";
+
+            // Stub service throws by default in Phase 1 — handleMessage swallows the throw.
+            doThrow(new UnsupportedOperationException("Phase 2"))
+                .when(watchPartyHostNudgeService).processHostNudge(hangoutId);
+
+            listener.handleMessage(messageBody);
+
+            verify(watchPartyHostNudgeService).processHostNudge(hangoutId);
+            verify(notificationService, never()).sendHangoutReminder(any());
+            // Stub throws → error counter must increment so phase-1 deploys are observable.
+            verify(meterRegistry).counter("watchparty_host_nudge_total", "status", "error");
+        }
+
+        @Test
+        void handleMessage_WithWatchPartyHostNudgeType_MissingHangoutId_DoesNotDispatch() {
+            String messageBody = "{\"type\":\"WATCH_PARTY_HOST_NUDGE\"}";
+
+            listener.handleMessage(messageBody);
+
+            verify(watchPartyHostNudgeService, never()).processHostNudge(anyString());
+            verify(meterRegistry).counter("watchparty_host_nudge_total", "status", "missing_id");
+        }
+
+        @Test
+        void handleMessage_WithWatchPartyHostNudgeType_BlankHangoutId_DoesNotDispatch() {
+            String messageBody = "{\"type\":\"WATCH_PARTY_HOST_NUDGE\",\"hangoutId\":\"\"}";
+
+            listener.handleMessage(messageBody);
+
+            verify(watchPartyHostNudgeService, never()).processHostNudge(anyString());
+            verify(meterRegistry).counter("watchparty_host_nudge_total", "status", "missing_id");
         }
     }
 }

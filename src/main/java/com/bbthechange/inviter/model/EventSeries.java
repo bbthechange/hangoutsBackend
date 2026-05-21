@@ -45,6 +45,7 @@ public class EventSeries extends BaseItem {
     private Integer dayOverride;          // Day of week override (0=Sunday, 6=Saturday)
     private String timezone;              // IANA timezone (e.g., "America/Los_Angeles")
     private Set<String> deletedEpisodeIds; // Episode IDs that user has deleted from series
+    private String watchPartyModel;       // "IN_PERSON" or "VIRTUAL". Nullable for legacy rows; null treated as IN_PERSON.
 
     // Default constructor for DynamoDB
     public EventSeries() {
@@ -331,6 +332,23 @@ public class EventSeries extends BaseItem {
      */
     public boolean isWatchParty() {
         return "WATCH_PARTY".equals(eventSeriesType);
+    }
+
+    public String getWatchPartyModel() {
+        return watchPartyModel;
+    }
+
+    public void setWatchPartyModel(String watchPartyModel) {
+        this.watchPartyModel = watchPartyModel;
+        touch();
+    }
+
+    /**
+     * True only when watchPartyModel is "VIRTUAL". Null and "IN_PERSON" return false.
+     * Legacy series default to in-person behavior.
+     */
+    public boolean isVirtualWatchParty() {
+        return "VIRTUAL".equals(watchPartyModel);
     }
 
     /**

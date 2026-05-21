@@ -1669,6 +1669,98 @@ public class HangoutRepositoryImpl implements HangoutRepository {
     }
 
     // ============================================================================
+    // HOST NUDGE OPERATIONS
+    // ============================================================================
+
+    @Override
+    public boolean setHostNudgeSentAtIfNull(String hangoutId, long timestamp) {
+        return performanceTracker.trackQuery("setHostNudgeSentAtIfNull", TABLE_NAME, () -> {
+            try {
+                UpdateItemRequest request = UpdateItemRequest.builder()
+                    .tableName(TABLE_NAME)
+                    .key(Map.of(
+                        "pk", AttributeValue.builder().s(InviterKeyFactory.getEventPk(hangoutId)).build(),
+                        "sk", AttributeValue.builder().s(InviterKeyFactory.getMetadataSk()).build()
+                    ))
+                    .updateExpression("SET hostNudgeSentAt = :timestamp, updatedAt = :now")
+                    .conditionExpression("attribute_not_exists(hostNudgeSentAt)")
+                    .expressionAttributeValues(Map.of(
+                        ":timestamp", AttributeValue.builder().n(String.valueOf(timestamp)).build(),
+                        ":now", AttributeValue.builder().n(String.valueOf(Instant.now().toEpochMilli())).build()
+                    ))
+                    .build();
+
+                dynamoDbClient.updateItem(request);
+                logger.debug("Successfully set hostNudgeSentAt for hangout {} to {}", hangoutId, timestamp);
+                return true;
+
+            } catch (ConditionalCheckFailedException e) {
+                logger.debug("Host nudge already claimed for hangout {} (idempotency check passed)", hangoutId);
+                return false;
+            } catch (DynamoDbException e) {
+                logger.error("Failed to set hostNudgeSentAt for hangout {}", hangoutId, e);
+                throw new RepositoryException("Failed to set hostNudgeSentAt", e);
+            }
+        });
+    }
+
+    @Override
+    public void updateHostNudgeScheduleName(String hangoutId, String name) {
+        performanceTracker.trackQuery("updateHostNudgeScheduleName", TABLE_NAME, () -> {
+            try {
+                UpdateItemRequest request = UpdateItemRequest.builder()
+                    .tableName(TABLE_NAME)
+                    .key(Map.of(
+                        "pk", AttributeValue.builder().s(InviterKeyFactory.getEventPk(hangoutId)).build(),
+                        "sk", AttributeValue.builder().s(InviterKeyFactory.getMetadataSk()).build()
+                    ))
+                    .updateExpression("SET hostNudgeScheduleName = :name, updatedAt = :now")
+                    .expressionAttributeValues(Map.of(
+                        ":name", AttributeValue.builder().s(name).build(),
+                        ":now", AttributeValue.builder().n(String.valueOf(Instant.now().toEpochMilli())).build()
+                    ))
+                    .build();
+
+                dynamoDbClient.updateItem(request);
+                logger.debug("Updated hostNudgeScheduleName for hangout {} to {}", hangoutId, name);
+                return null;
+
+            } catch (DynamoDbException e) {
+                logger.error("Failed to update hostNudgeScheduleName for hangout {}", hangoutId, e);
+                throw new RepositoryException("Failed to update hostNudgeScheduleName", e);
+            }
+        });
+    }
+
+    @Override
+    public void updateLastHostNotificationAt(String hangoutId, long timestamp) {
+        performanceTracker.trackQuery("updateLastHostNotificationAt", TABLE_NAME, () -> {
+            try {
+                UpdateItemRequest request = UpdateItemRequest.builder()
+                    .tableName(TABLE_NAME)
+                    .key(Map.of(
+                        "pk", AttributeValue.builder().s(InviterKeyFactory.getEventPk(hangoutId)).build(),
+                        "sk", AttributeValue.builder().s(InviterKeyFactory.getMetadataSk()).build()
+                    ))
+                    .updateExpression("SET lastHostNotificationAt = :timestamp, updatedAt = :now")
+                    .expressionAttributeValues(Map.of(
+                        ":timestamp", AttributeValue.builder().n(String.valueOf(timestamp)).build(),
+                        ":now", AttributeValue.builder().n(String.valueOf(Instant.now().toEpochMilli())).build()
+                    ))
+                    .build();
+
+                dynamoDbClient.updateItem(request);
+                logger.debug("Updated lastHostNotificationAt for hangout {} to {}", hangoutId, timestamp);
+                return null;
+
+            } catch (DynamoDbException e) {
+                logger.error("Failed to update lastHostNotificationAt for hangout {}", hangoutId, e);
+                throw new RepositoryException("Failed to update lastHostNotificationAt", e);
+            }
+        });
+    }
+
+    // ============================================================================
     // EXTERNAL ID LOOKUP OPERATIONS
     // ============================================================================
 

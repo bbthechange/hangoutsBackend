@@ -89,6 +89,7 @@ class WatchPartyControllerTest {
                     .showName("Test Show")
                     .defaultTime("20:00")
                     .timezone("America/Los_Angeles")
+                    .watchPartyModel("IN_PERSON")
                     .episodes(List.of(
                             CreateWatchPartyEpisodeRequest.builder()
                                     .episodeId(98765)

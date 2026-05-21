@@ -41,6 +41,7 @@ public final class InviterKeyFactory {
     public static final String FLOATING_SK_PREFIX = "FLOATING#";
     public static final String PARTICIPATION_PREFIX = "PARTICIPATION";
     public static final String RESERVEOFFER_PREFIX = "RESERVEOFFER";
+    public static final String SERIES_PREF_PREFIX = "SERIESPREF";
 
     // TVMaze Season prefixes
     public static final String TVMAZE_PREFIX = "TVMAZE";
@@ -79,6 +80,16 @@ public final class InviterKeyFactory {
     public static String getUserSk(String userId) {
         validateId(userId, "User");
         return USER_PREFIX + DELIMITER + userId;
+    }
+
+    public static String getUserPk(String userId) {
+        validateId(userId, "User");
+        return USER_PREFIX + DELIMITER + userId;
+    }
+
+    public static String getSeriesPrefSk(String seriesId) {
+        validateId(seriesId, "Series");
+        return SERIES_PREF_PREFIX + DELIMITER + seriesId;
     }
     
     public static String getMetadataSk() {

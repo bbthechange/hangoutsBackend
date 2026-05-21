@@ -4,6 +4,7 @@ import com.bbthechange.inviter.model.Hangout;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.TimePollService;
+import com.bbthechange.inviter.service.impl.WatchPartyHostNudgeService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.awspring.cloud.sqs.annotation.SqsListener;
@@ -36,6 +37,7 @@ public class ScheduledEventListener {
 
     private static final String TYPE_POLL_ADOPTION = "POLL_ADOPTION";
     private static final String TYPE_IDEA_ADD_BATCH = "IDEA_ADD_BATCH";
+    private static final String TYPE_WATCH_PARTY_HOST_NUDGE = "WATCH_PARTY_HOST_NUDGE";
 
     // Reminder window: 90-150 minutes before start (2 hours +/- 30 min tolerance)
     private static final long MIN_MINUTES_BEFORE_START = 90;
@@ -44,6 +46,7 @@ public class ScheduledEventListener {
     private final HangoutRepository hangoutRepository;
     private final NotificationService notificationService;
     private final TimePollService timePollService;
+    private final WatchPartyHostNudgeService watchPartyHostNudgeService;
     private final MeterRegistry meterRegistry;
     private final ObjectMapper objectMapper;
 
@@ -53,11 +56,13 @@ public class ScheduledEventListener {
     public ScheduledEventListener(HangoutRepository hangoutRepository,
                                    NotificationService notificationService,
                                    TimePollService timePollService,
+                                   WatchPartyHostNudgeService watchPartyHostNudgeService,
                                    MeterRegistry meterRegistry,
                                    ObjectMapper objectMapper) {
         this.hangoutRepository = hangoutRepository;
         this.notificationService = notificationService;
         this.timePollService = timePollService;
+        this.watchPartyHostNudgeService = watchPartyHostNudgeService;
         this.meterRegistry = meterRegistry;
         this.objectMapper = objectMapper;
     }
@@ -80,6 +85,8 @@ public class ScheduledEventListener {
                 handlePollAdoption(node, messageBody);
             } else if (TYPE_IDEA_ADD_BATCH.equals(type)) {
                 handleIdeaAddBatch(node, messageBody);
+            } else if (TYPE_WATCH_PARTY_HOST_NUDGE.equals(type)) {
+                handleWatchPartyHostNudge(node, messageBody);
             } else {
                 handleReminder(node, messageBody);
             }
@@ -139,6 +146,27 @@ public class ScheduledEventListener {
             return null;
         }
         return fieldNode.asText();
+    }
+
+    private void handleWatchPartyHostNudge(JsonNode node, String messageBody) {
+        JsonNode hangoutIdNode = node.get("hangoutId");
+        if (hangoutIdNode == null || hangoutIdNode.isNull() || hangoutIdNode.asText().isBlank()) {
+            logger.warn("Received WATCH_PARTY_HOST_NUDGE with missing hangoutId: {}", messageBody);
+            meterRegistry.counter("watchparty_host_nudge_total", "status", "missing_id").increment();
+            return;
+        }
+        String hangoutId = hangoutIdNode.asText();
+        logger.info("Processing WATCH_PARTY_HOST_NUDGE for hangout={}", hangoutId);
+        // Phase 2 fills the handler body. Until then, delegate to the stub so the
+        // dispatch wiring is verifiable. Track any throw locally so a misbehaving
+        // stub or phase-2 bug surfaces in metrics — the outer handleMessage()
+        // also swallows the throw to keep the SQS message acked.
+        try {
+            watchPartyHostNudgeService.processHostNudge(hangoutId);
+        } catch (RuntimeException e) {
+            meterRegistry.counter("watchparty_host_nudge_total", "status", "error").increment();
+            throw e;
+        }
     }
 
     private void handleReminder(JsonNode node, String messageBody) {

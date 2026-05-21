@@ -229,6 +229,24 @@ public interface HangoutRepository {
     void clearReminderSentAt(String hangoutId);
 
     /**
+     * Atomically set hostNudgeSentAt iff currently null/absent.
+     * Returns true if this call claimed the nudge, false if another caller already did.
+     * Mirrors setReminderSentAtIfNull.
+     */
+    boolean setHostNudgeSentAtIfNull(String hangoutId, long timestamp);
+
+    /**
+     * Persist the EventBridge schedule name on the hangout for later cancel/update.
+     * Mirrors updateReminderScheduleName.
+     */
+    void updateHostNudgeScheduleName(String hangoutId, String name);
+
+    /**
+     * Persist the last host-claim notification timestamp for coalesce checks.
+     */
+    void updateLastHostNotificationAt(String hangoutId, long timestamp);
+
+    /**
      * Find a hangout by its external ID and external source.
      * Uses the ExternalIdIndex GSI for efficient lookup.
      *

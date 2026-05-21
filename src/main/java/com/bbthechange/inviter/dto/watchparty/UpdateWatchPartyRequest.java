@@ -58,4 +58,10 @@ public class UpdateWatchPartyRequest {
      */
     @Builder.Default
     private Boolean changeExistingUpcomingHangouts = true;
+
+    /**
+     * Watch-party model: "IN_PERSON" or "VIRTUAL". Optional — omit to leave unchanged.
+     */
+    @Pattern(regexp = "^(IN_PERSON|VIRTUAL)$", message = "watchPartyModel must be IN_PERSON or VIRTUAL")
+    private String watchPartyModel;
 }

@@ -86,6 +86,14 @@ public class CreateWatchPartyRequest {
     private Integer tvmazeSeasonId;
 
     /**
+     * Watch-party model: "IN_PERSON" or "VIRTUAL". No default — client must choose.
+     * Drives host-nudge gating (virtual parties don't need a host).
+     */
+    @NotBlank(message = "watchPartyModel is required")
+    @Pattern(regexp = "^(IN_PERSON|VIRTUAL)$", message = "watchPartyModel must be IN_PERSON or VIRTUAL")
+    private String watchPartyModel;
+
+    /**
      * Episode list for Phase 2 (optional when tvmazeSeasonId is provided).
      * In Phase 3, episodes can be fetched from TVMaze using tvmazeSeasonId.
      */

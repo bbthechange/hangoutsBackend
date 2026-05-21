@@ -47,6 +47,11 @@ public class Hangout extends BaseItem {
     private String reminderScheduleName;  // EventBridge schedule name (e.g., "hangout-{id}") for updates/deletion
     private Long reminderSentAt;          // Epoch millis when reminder was sent (idempotency flag)
 
+    // Watch party host-nudge fields
+    private String hostNudgeScheduleName;  // EventBridge schedule name (e.g., "hostnudge-{id}") for cancel/update
+    private Long hostNudgeSentAt;          // Epoch millis when host nudge claimed (idempotency flag)
+    private Long lastHostNotificationAt;   // Epoch millis of last host-claim notification (coalesce check)
+
     // External source fields (for integration with Ticketmaster, Yelp, etc.)
     private String externalId;            // ID from external source
     private String externalSource;        // Source system name (e.g., "TICKETMASTER", "YELP")
@@ -321,6 +326,33 @@ public class Hangout extends BaseItem {
     public void setReminderSentAt(Long reminderSentAt) {
         this.reminderSentAt = reminderSentAt;
         touch(); // Update timestamp
+    }
+
+    public String getHostNudgeScheduleName() {
+        return hostNudgeScheduleName;
+    }
+
+    public void setHostNudgeScheduleName(String hostNudgeScheduleName) {
+        this.hostNudgeScheduleName = hostNudgeScheduleName;
+        touch();
+    }
+
+    public Long getHostNudgeSentAt() {
+        return hostNudgeSentAt;
+    }
+
+    public void setHostNudgeSentAt(Long hostNudgeSentAt) {
+        this.hostNudgeSentAt = hostNudgeSentAt;
+        touch();
+    }
+
+    public Long getLastHostNotificationAt() {
+        return lastHostNotificationAt;
+    }
+
+    public void setLastHostNotificationAt(Long lastHostNotificationAt) {
+        this.lastHostNotificationAt = lastHostNotificationAt;
+        touch();
     }
 
     @DynamoDbSecondaryPartitionKey(indexNames = "ExternalIdIndex")
