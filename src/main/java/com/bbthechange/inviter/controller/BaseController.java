@@ -58,6 +58,13 @@ public abstract class BaseController {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
             .body(new ErrorResponse("UNAUTHORIZED", e.getMessage()));
     }
+
+    @ExceptionHandler(ForbiddenException.class)
+    public ResponseEntity<ErrorResponse> handleForbidden(ForbiddenException e) {
+        logger.warn("Forbidden access attempt: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+            .body(new ErrorResponse("FORBIDDEN", e.getMessage()));
+    }
     
     @ExceptionHandler(ValidationException.class)
     public ResponseEntity<ErrorResponse> handleValidation(ValidationException e) {
