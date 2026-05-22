@@ -569,14 +569,6 @@ public class NotificationServiceImpl implements NotificationService {
 
         if (usersToNotify.isEmpty()) {
             logger.debug("No recipients to notify for host-claim on hangout {} (series {})", hangoutId, seriesId);
-            // Still record lastHostNotificationAt so the coalesce window starts at the claim
-            // moment, mirroring the visible-notification path. Suppresses redundant
-            // location-change pushes that arrive within the window.
-            try {
-                hangoutRepository.updateLastHostNotificationAt(hangoutId, System.currentTimeMillis());
-            } catch (Exception e) {
-                logger.warn("Failed to persist lastHostNotificationAt for hangout {}: {}", hangoutId, e.getMessage());
-            }
             return;
         }
 
@@ -607,12 +599,6 @@ public class NotificationServiceImpl implements NotificationService {
         }
         if (failureCount > 0) {
             meterRegistry.counter("watchparty_host_claim_notification", "status", "error").increment(failureCount);
-        }
-
-        try {
-            hangoutRepository.updateLastHostNotificationAt(hangoutId, System.currentTimeMillis());
-        } catch (Exception e) {
-            logger.warn("Failed to persist lastHostNotificationAt for hangout {}: {}", hangoutId, e.getMessage());
         }
     }
 

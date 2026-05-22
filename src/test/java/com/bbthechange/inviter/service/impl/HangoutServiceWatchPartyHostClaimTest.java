@@ -428,6 +428,103 @@ class HangoutServiceWatchPartyHostClaimTest extends HangoutServiceTestBase {
         }
 
         @Test
+        void updateHangout_SameCallHostClaim_NotifyThrowsAfterPersist_StillCoalescesLocation() {
+            // Acceptance for hangoutsBackend-ozx: when the host-claim cascade persists
+            // lastHostNotificationAt BEFORE dispatching the push and the push then throws,
+            // the in-memory hangout still reflects the timestamp, so the subsequent
+            // same-call location-change block coalesces the location push instead of
+            // firing it un-coalesced. Without this fix, a failed push would let the
+            // location-change push leak out within the suppress window.
+            String groupId = "11111111-1111-1111-1111-111111111111";
+            String hangoutId = UUID.randomUUID().toString();
+            String seriesId = UUID.randomUUID().toString();
+            String claimerId = UUID.randomUUID().toString();
+
+            Hangout existingHangout = WatchPartyTestFixtures.inPersonHangout(hangoutId, seriesId);
+            existingHangout.setHostAtPlaceUserId(null);
+            existingHangout.setAssociatedGroups(new ArrayList<>(List.of(groupId)));
+
+            UpdateHangoutRequest request = new UpdateHangoutRequest();
+            request.setHostAtPlaceUserId(claimerId);
+            com.bbthechange.inviter.dto.Address newAddress = new com.bbthechange.inviter.dto.Address();
+            newAddress.setName("Sarah's place");
+            newAddress.setStreetAddress("123 Main St");
+            request.setLocation(newAddress);
+
+            EventSeries series = WatchPartyTestFixtures.inPersonSeries(seriesId, groupId);
+
+            GroupMembership membership = createTestMembership(groupId, claimerId, "Group");
+            when(groupRepository.findMembership(groupId, claimerId)).thenReturn(Optional.of(membership));
+            when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(existingHangout));
+            when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+            when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+
+            UserSummaryDTO claimerUser = new UserSummaryDTO();
+            claimerUser.setDisplayName("Claimer");
+            when(userService.getUserSummary(UUID.fromString(claimerId))).thenReturn(Optional.of(claimerUser));
+
+            HangoutDetailData detail = HangoutDetailData.builder().withHangout(existingHangout).build();
+            when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(detail);
+
+            Counter coalesceCounter = mock(Counter.class);
+            when(meterRegistry.counter("notification_coalesced", "reason", "host_claim_recent"))
+                    .thenReturn(coalesceCounter);
+
+            // Notify throws AFTER the persist write happened.
+            doThrow(new RuntimeException("FCM down"))
+                    .when(notificationService).notifyWatchPartyHostClaimed(any(), any(), anyString(), anySet());
+
+            hangoutService.updateHangout(hangoutId, request, claimerId);
+
+            // Persist happened BEFORE the notify dispatch (the whole point of the fix).
+            verify(hangoutRepository).updateLastHostNotificationAt(eq(hangoutId), anyLong());
+            // Location-change push is still suppressed even though notify threw.
+            verify(notificationService, never()).notifyHangoutUpdated(anyString(), anyString(), anyList(),
+                    anyString(), anyString(), anySet(), any());
+            verify(coalesceCounter).increment();
+        }
+
+        @Test
+        void updateHangout_SameCallHostClaim_PersistsLastHostNotificationAt_BeforeNotify() {
+            // Acceptance for hangoutsBackend-ozx: persistence must occur strictly BEFORE
+            // notify dispatch so a failed push leaves the DB stamped (next request still
+            // coalesces).
+            String groupId = "11111111-1111-1111-1111-111111111111";
+            String hangoutId = UUID.randomUUID().toString();
+            String seriesId = UUID.randomUUID().toString();
+            String claimerId = UUID.randomUUID().toString();
+
+            Hangout existingHangout = WatchPartyTestFixtures.inPersonHangout(hangoutId, seriesId);
+            existingHangout.setHostAtPlaceUserId(null);
+            existingHangout.setAssociatedGroups(new ArrayList<>(List.of(groupId)));
+
+            UpdateHangoutRequest request = new UpdateHangoutRequest();
+            request.setHostAtPlaceUserId(claimerId);
+
+            EventSeries series = WatchPartyTestFixtures.inPersonSeries(seriesId, groupId);
+
+            GroupMembership membership = createTestMembership(groupId, claimerId, "Group");
+            when(groupRepository.findMembership(groupId, claimerId)).thenReturn(Optional.of(membership));
+            when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(existingHangout));
+            when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+            when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+
+            UserSummaryDTO claimerUser = new UserSummaryDTO();
+            claimerUser.setDisplayName("Claimer");
+            when(userService.getUserSummary(UUID.fromString(claimerId))).thenReturn(Optional.of(claimerUser));
+
+            HangoutDetailData detail = HangoutDetailData.builder().withHangout(existingHangout).build();
+            when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(detail);
+
+            hangoutService.updateHangout(hangoutId, request, claimerId);
+
+            InOrder ordered = inOrder(hangoutRepository, notificationService);
+            ordered.verify(hangoutRepository).updateLastHostNotificationAt(eq(hangoutId), anyLong());
+            ordered.verify(notificationService).notifyWatchPartyHostClaimed(eq(series), any(Hangout.class),
+                    eq(claimerId), anySet());
+        }
+
+        @Test
         void updateHangout_LocationChangeOutsideCoalesceWindow_StillNotifies() {
             String groupId = "11111111-1111-1111-1111-111111111111";
             String hangoutId = UUID.randomUUID().toString();

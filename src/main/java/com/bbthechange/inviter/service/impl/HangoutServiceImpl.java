@@ -841,14 +841,26 @@ public class HangoutServiceImpl implements HangoutService {
                 recipients = Set.of();
             }
 
+            // Persist + reflect lastHostNotificationAt BEFORE dispatching the notification.
+            // Separating persistence from delivery lets the coalesce window apply even if
+            // push delivery fails — otherwise a thrown notifyWatchPartyHostClaimed would
+            // leave the DB un-stamped and the subsequent location-change push would fire
+            // un-coalesced, contradicting the UX contract. (hangoutsBackend-ozx)
+            long notifyAt = System.currentTimeMillis();
+            try {
+                hangoutRepository.updateLastHostNotificationAt(hangout.getHangoutId(), notifyAt);
+                hangout.setLastHostNotificationAt(notifyAt);
+            } catch (Exception e) {
+                logger.warn("Failed to persist lastHostNotificationAt for hangout {}: {}",
+                        hangout.getHangoutId(), e.getMessage());
+                // Still set in-memory so the same-call location-change block coalesces.
+                hangout.setLastHostNotificationAt(notifyAt);
+            }
+
             boolean claimNotificationSent = false;
             try {
                 notificationService.notifyWatchPartyHostClaimed(series, hangout, requestingUserId, recipients);
                 claimNotificationSent = true;
-                // Reflect the new timestamp locally so the location-change block (which
-                // runs after this cascade) sees it via getLastHostNotificationAt() and
-                // can coalesce a same-call address change.
-                hangout.setLastHostNotificationAt(System.currentTimeMillis());
             } catch (Exception e) {
                 logger.warn("Failed to send host-claim notification for hangout {}: {}",
                         hangout.getHangoutId(), e.getMessage());

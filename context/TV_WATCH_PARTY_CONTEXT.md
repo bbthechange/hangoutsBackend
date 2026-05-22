@@ -128,7 +128,7 @@ Extends EventSeries with watch party-specific fields:
 | `combinedExternalIds` | List<String> | All TVMaze episode IDs if combined hangout |
 | `hostNudgeScheduleName` | String | EventBridge schedule name (`hostnudge-{hangoutId}`), persisted for idempotent update/delete |
 | `hostNudgeSentAt` | Long | Epoch ms. Idempotency flag — set on send OR on host claim so any in-flight fire becomes a no-op |
-| `lastHostNotificationAt` | Long | Epoch ms. Used by the host-claim → location-change coalesce check |
+| `lastHostNotificationAt` | Long | Epoch ms. Used by the host-claim → location-change coalesce check. Persisted by `HangoutServiceImpl.handleWatchPartyHostChange` via `HangoutRepository.updateLastHostNotificationAt` **before** `NotificationService.notifyWatchPartyHostClaimed` is dispatched, so a failed push still stamps the DB and the subsequent location-change push (same call or next request within the 10-min window) coalesces. Persistence is intentionally separated from delivery — the in-memory `Hangout` is also stamped so the same-call location-change block reads it without a re-read. |
 
 ### SeriesPointer (Watch Party Fields)
 
