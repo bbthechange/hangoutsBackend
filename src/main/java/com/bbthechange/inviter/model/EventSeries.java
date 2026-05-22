@@ -47,6 +47,7 @@ public class EventSeries extends BaseItem {
     private Set<String> deletedEpisodeIds; // Episode IDs that user has deleted from series
     private String watchPartyModel;       // "IN_PERSON" or "VIRTUAL". Nullable for legacy rows; null treated as IN_PERSON.
     private String createdBy;             // User ID who created the series (recipient resolver always includes them in nudges)
+    private Set<String> pastHosterUserIds; // Users who have ever been the host-at-place on any episode in this series. Maintained by HangoutServiceImpl.handleWatchPartyHostChange on host claim. Used by host-nudge recipient resolver to avoid an N+1 read of every past episode. Legacy series may be empty until next host change.
 
     // Default constructor for DynamoDB
     public EventSeries() {
@@ -359,6 +360,36 @@ public class EventSeries extends BaseItem {
     public void setCreatedBy(String createdBy) {
         this.createdBy = createdBy;
         touch();
+    }
+
+    public Set<String> getPastHosterUserIds() {
+        return pastHosterUserIds;
+    }
+
+    public void setPastHosterUserIds(Set<String> pastHosterUserIds) {
+        if (pastHosterUserIds == null || pastHosterUserIds.isEmpty()) {
+            this.pastHosterUserIds = null;
+        } else {
+            this.pastHosterUserIds = pastHosterUserIds;
+        }
+        touch();
+    }
+
+    /**
+     * Add a user to the past-hoster set. Returns true if the set changed.
+     */
+    public boolean addPastHosterUserId(String userId) {
+        if (userId == null || userId.isEmpty()) {
+            return false;
+        }
+        if (this.pastHosterUserIds == null) {
+            this.pastHosterUserIds = new HashSet<>();
+        }
+        boolean added = this.pastHosterUserIds.add(userId);
+        if (added) {
+            touch();
+        }
+        return added;
     }
 
     /**

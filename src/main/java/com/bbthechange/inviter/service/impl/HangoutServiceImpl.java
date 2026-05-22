@@ -807,8 +807,20 @@ public class HangoutServiceImpl implements HangoutService {
         }
 
         if (wasEmpty && !nowEmpty) {
-            // Host claimed. Cancel the scheduled nudge and mark resolved so any in-flight
-            // EventBridge fire becomes a no-op (handler checks hostNudgeSentAt).
+            // Host claimed. Record the new hoster on the series so the host-nudge recipient
+            // resolver can read past hosters with zero extra DynamoDB reads (replaces the
+            // per-episode findHangoutById N+1 in WatchPartyHostNudgeRecipientResolver).
+            try {
+                if (series.addPastHosterUserId(newHostUserId)) {
+                    eventSeriesRepository.save(series);
+                }
+            } catch (Exception e) {
+                logger.warn("Failed to record past hoster {} on series {} after claim: {}",
+                        newHostUserId, series.getSeriesId(), e.getMessage());
+            }
+
+            // Cancel the scheduled nudge and mark resolved so any in-flight EventBridge fire
+            // becomes a no-op (handler checks hostNudgeSentAt).
             try {
                 watchPartyHostNudgeScheduler.cancelHostNudge(hangout);
             } catch (Exception e) {

@@ -177,6 +177,86 @@ class HangoutServiceWatchPartyHostClaimTest extends HangoutServiceTestBase {
         }
 
         @Test
+        void updateHangout_OnWatchPartyHostClaim_RecordsClaimerInPastHosters() {
+            // Regression for hangoutsBackend-4l4: host-claim path must denormalize the new
+            // host onto EventSeries.pastHosterUserIds so the host-nudge recipient resolver
+            // can read past hosters without an N+1 fan-out across the series' hangouts.
+            String groupId = "11111111-1111-1111-1111-111111111111";
+            String hangoutId = UUID.randomUUID().toString();
+            String seriesId = UUID.randomUUID().toString();
+            String claimerId = UUID.randomUUID().toString();
+
+            Hangout existingHangout = WatchPartyTestFixtures.inPersonHangout(hangoutId, seriesId);
+            existingHangout.setHostAtPlaceUserId(null);
+            existingHangout.setAssociatedGroups(new ArrayList<>(List.of(groupId)));
+
+            UpdateHangoutRequest request = new UpdateHangoutRequest();
+            request.setHostAtPlaceUserId(claimerId);
+
+            EventSeries series = WatchPartyTestFixtures.inPersonSeries(seriesId, groupId);
+
+            GroupMembership membership = createTestMembership(groupId, claimerId, "Group");
+            when(groupRepository.findMembership(groupId, claimerId)).thenReturn(Optional.of(membership));
+            when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(existingHangout));
+            when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+
+            UserSummaryDTO claimerUser = new UserSummaryDTO();
+            claimerUser.setDisplayName("Claimer");
+            when(userService.getUserSummary(UUID.fromString(claimerId))).thenReturn(Optional.of(claimerUser));
+            when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+
+            HangoutDetailData detail = HangoutDetailData.builder().withHangout(existingHangout).build();
+            when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(detail);
+
+            // When
+            hangoutService.updateHangout(hangoutId, request, claimerId);
+
+            // Then: the new host is in the series' past-hoster set and series is persisted.
+            ArgumentCaptor<EventSeries> seriesCaptor = ArgumentCaptor.forClass(EventSeries.class);
+            verify(eventSeriesRepository).save(seriesCaptor.capture());
+            assertThat(seriesCaptor.getValue().getPastHosterUserIds()).contains(claimerId);
+        }
+
+        @Test
+        void updateHangout_OnWatchPartyHostClaim_PastHosterAlreadyPresent_SkipsSeriesSave() {
+            // If the claimer is already in pastHosterUserIds (re-claim after abdicate),
+            // we should not issue a redundant EventSeries write.
+            String groupId = "11111111-1111-1111-1111-111111111111";
+            String hangoutId = UUID.randomUUID().toString();
+            String seriesId = UUID.randomUUID().toString();
+            String claimerId = UUID.randomUUID().toString();
+
+            Hangout existingHangout = WatchPartyTestFixtures.inPersonHangout(hangoutId, seriesId);
+            existingHangout.setHostAtPlaceUserId(null);
+            existingHangout.setAssociatedGroups(new ArrayList<>(List.of(groupId)));
+
+            UpdateHangoutRequest request = new UpdateHangoutRequest();
+            request.setHostAtPlaceUserId(claimerId);
+
+            EventSeries series = WatchPartyTestFixtures.inPersonSeries(seriesId, groupId);
+            series.addPastHosterUserId(claimerId);
+
+            GroupMembership membership = createTestMembership(groupId, claimerId, "Group");
+            when(groupRepository.findMembership(groupId, claimerId)).thenReturn(Optional.of(membership));
+            when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(existingHangout));
+            when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+
+            UserSummaryDTO claimerUser = new UserSummaryDTO();
+            claimerUser.setDisplayName("Claimer");
+            when(userService.getUserSummary(UUID.fromString(claimerId))).thenReturn(Optional.of(claimerUser));
+            when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+
+            HangoutDetailData detail = HangoutDetailData.builder().withHangout(existingHangout).build();
+            when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(detail);
+
+            // When
+            hangoutService.updateHangout(hangoutId, request, claimerId);
+
+            // Then: series.save was NOT called for the past-hoster update.
+            verify(eventSeriesRepository, never()).save(any(EventSeries.class));
+        }
+
+        @Test
         void updateHangout_OnHostAbdication_ReschedulesNudge() {
             String groupId = "11111111-1111-1111-1111-111111111111";
             String hangoutId = UUID.randomUUID().toString();

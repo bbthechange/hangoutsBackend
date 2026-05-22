@@ -15,7 +15,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.HashSet;
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -96,25 +95,12 @@ public class WatchPartyHostNudgeRecipientResolver {
     }
 
     private Set<String> collectPastHosters(EventSeries series) {
-        List<String> ids = series.getHangoutIds();
-        if (ids == null || ids.isEmpty()) {
+        // Reads the denormalized set maintained by HangoutServiceImpl.handleWatchPartyHostChange.
+        // Legacy series written before this field existed may return empty until next host change.
+        Set<String> stored = series.getPastHosterUserIds();
+        if (stored == null || stored.isEmpty()) {
             return Set.of();
         }
-        Set<String> hosters = new HashSet<>();
-        for (String hangoutId : ids) {
-            try {
-                Optional<Hangout> opt = hangoutRepository.findHangoutById(hangoutId);
-                if (opt.isPresent()) {
-                    String hostId = opt.get().getHostAtPlaceUserId();
-                    if (hostId != null && !hostId.isEmpty()) {
-                        hosters.add(hostId);
-                    }
-                }
-            } catch (Exception e) {
-                logger.warn("Failed to load past hangout {} while resolving host-nudge recipients: {}",
-                    hangoutId, e.getMessage());
-            }
-        }
-        return hosters;
+        return new HashSet<>(stored);
     }
 }

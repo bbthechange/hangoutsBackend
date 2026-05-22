@@ -114,6 +114,8 @@ Extends EventSeries with watch party-specific fields:
 | `mainImagePath` | String | TVMaze show image URL (set via `showImageUrl` on create/update) |
 | `deletedEpisodeIds` | Set<String> | User-deleted episodes (prevents re-creation) |
 | `watchPartyModel` | String | `"IN_PERSON"` or `"VIRTUAL"`. Null = legacy row, treated as IN_PERSON. Drives the host-nudge gate (virtual series never nudge). See `EventSeries.isVirtualWatchParty()`. |
+| `createdBy` | String | User ID of series creator. Recipient resolver always includes them in nudges. |
+| `pastHosterUserIds` | Set<String> | Denormalized set of users who have ever been `hostAtPlaceUserId` on any episode in the series. Maintained by `HangoutServiceImpl.handleWatchPartyHostChange` on host claim. Read by `WatchPartyHostNudgeRecipientResolver` to avoid an N+1 per-episode fan-out. Legacy series may be empty until the next host change. |
 
 **isWatchParty() method:** Returns `true` if `eventSeriesType == "WATCH_PARTY"`
 

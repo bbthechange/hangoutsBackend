@@ -156,20 +156,37 @@ class WatchPartyHostNudgeRecipientResolverTest {
     @Test
     void past_hoster_included() {
         EventSeries s = series();
-        s.getHangoutIds().add(PAST_HG_ID);
+        s.addPastHosterUserId("past-host");
         Hangout h = hangout();
-        Hangout pastHangout = WatchPartyTestFixtures.inPersonHangout(PAST_HG_ID, SERIES_ID);
-        pastHangout.setHostAtPlaceUserId("past-host");
 
         when(hangoutRepository.getHangoutDetailData(HANGOUT_ID))
             .thenReturn(detail(List.of()));
         when(groupRepository.findSeriesPointer(GROUP_ID, SERIES_ID))
             .thenReturn(Optional.empty());
-        when(hangoutRepository.findHangoutById(PAST_HG_ID)).thenReturn(Optional.of(pastHangout));
 
         Set<String> result = resolver.resolve(s, h);
 
         assertThat(result).contains("past-host");
+        // Past hosters are read from the denormalized set; no per-episode lookup.
+        verify(hangoutRepository, org.mockito.Mockito.never()).findHangoutById(anyString());
+    }
+
+    @Test
+    void emptyPastHosters_doesNotIssuePerEpisodeReads() {
+        // Regression for hangoutsBackend-4l4: even with N hangouts in the series,
+        // recipient resolution must not iterate hangoutRepository.findHangoutById.
+        EventSeries s = series();
+        s.getHangoutIds().add(PAST_HG_ID);
+        Hangout h = hangout();
+
+        when(hangoutRepository.getHangoutDetailData(HANGOUT_ID))
+            .thenReturn(detail(List.of(level("u-going", "GOING"))));
+        when(groupRepository.findSeriesPointer(GROUP_ID, SERIES_ID))
+            .thenReturn(Optional.empty());
+
+        resolver.resolve(s, h);
+
+        verify(hangoutRepository, org.mockito.Mockito.never()).findHangoutById(anyString());
     }
 
     @Test
