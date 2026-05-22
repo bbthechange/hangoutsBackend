@@ -1705,6 +1705,33 @@ public class HangoutRepositoryImpl implements HangoutRepository {
     }
 
     @Override
+    public void clearHostNudgeSentAt(String hangoutId) {
+        performanceTracker.trackQuery("clearHostNudgeSentAt", TABLE_NAME, () -> {
+            try {
+                UpdateItemRequest request = UpdateItemRequest.builder()
+                    .tableName(TABLE_NAME)
+                    .key(Map.of(
+                        "pk", AttributeValue.builder().s(InviterKeyFactory.getEventPk(hangoutId)).build(),
+                        "sk", AttributeValue.builder().s(InviterKeyFactory.getMetadataSk()).build()
+                    ))
+                    .updateExpression("REMOVE hostNudgeSentAt SET updatedAt = :now")
+                    .expressionAttributeValues(Map.of(
+                        ":now", AttributeValue.builder().n(String.valueOf(Instant.now().toEpochMilli())).build()
+                    ))
+                    .build();
+
+                dynamoDbClient.updateItem(request);
+                logger.debug("Cleared hostNudgeSentAt for hangout {}", hangoutId);
+                return null;
+
+            } catch (DynamoDbException e) {
+                logger.error("Failed to clear hostNudgeSentAt for hangout {}", hangoutId, e);
+                throw new RepositoryException("Failed to clear hostNudgeSentAt", e);
+            }
+        });
+    }
+
+    @Override
     public void updateHostNudgeScheduleName(String hangoutId, String name) {
         performanceTracker.trackQuery("updateHostNudgeScheduleName", TABLE_NAME, () -> {
             try {

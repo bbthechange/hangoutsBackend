@@ -114,12 +114,28 @@ public class WatchPartyHostNudgeService {
             return;
         }
 
-        Set<String> recipients = recipientResolver.resolve(series, hangout);
-        String body = buildMessageBody(series, hangout);
-        notificationService.notifyWatchPartyHostNeeded(recipients, series, hangout, body);
+        try {
+            Set<String> recipients = recipientResolver.resolve(series, hangout);
+            String body = buildMessageBody(series, hangout);
+            notificationService.notifyWatchPartyHostNeeded(recipients, series, hangout, body);
 
-        meterRegistry.counter(COUNTER, "status", "sent").increment();
-        logger.info("Host nudge: sent for hangout {} to {} recipients", hangoutId, recipients.size());
+            meterRegistry.counter(COUNTER, "status", "sent").increment();
+            logger.info("Host nudge: sent for hangout {} to {} recipients", hangoutId, recipients.size());
+        } catch (RuntimeException e) {
+            // Compensating write: roll back the idempotency claim so the nudge isn't lost
+            // permanently. ScheduledEventListener swallows exceptions to ack the SQS
+            // message, so without this rollback a single dispatch failure would leave the
+            // flag set forever with no notification delivered — silent permanent failure.
+            logger.error("Host nudge dispatch failed for hangout {}, clearing claim", hangoutId, e);
+            try {
+                hangoutRepository.clearHostNudgeSentAt(hangoutId);
+            } catch (Exception cleanupEx) {
+                logger.error("Failed to clear host nudge claim after dispatch failure for hangout {}",
+                    hangoutId, cleanupEx);
+            }
+            meterRegistry.counter(COUNTER, "status", "error").increment();
+            throw e;
+        }
     }
 
     /**

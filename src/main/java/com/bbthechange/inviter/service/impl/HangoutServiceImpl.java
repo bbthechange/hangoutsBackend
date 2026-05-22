@@ -792,13 +792,6 @@ public class HangoutServiceImpl implements HangoutService {
                 logger.warn("Failed to cancel host nudge after claim for hangout {}: {}",
                         hangout.getHangoutId(), e.getMessage());
             }
-            try {
-                hangoutRepository.setHostNudgeSentAtIfNull(hangout.getHangoutId(), System.currentTimeMillis());
-            } catch (Exception e) {
-                logger.warn("Failed to mark host nudge as sent after claim for hangout {}: {}",
-                        hangout.getHangoutId(), e.getMessage());
-            }
-
             // Build the recipient set the same way as the existing time/location notification
             // block (GOING/INTERESTED on the hangout). The claimer is excluded inside
             // NotificationService.notifyWatchPartyHostClaimed.
@@ -813,8 +806,10 @@ public class HangoutServiceImpl implements HangoutService {
                 recipients = Set.of();
             }
 
+            boolean claimNotificationSent = false;
             try {
                 notificationService.notifyWatchPartyHostClaimed(series, hangout, requestingUserId, recipients);
+                claimNotificationSent = true;
                 // Reflect the new timestamp locally so the location-change block (which
                 // runs after this cascade) sees it via getLastHostNotificationAt() and
                 // can coalesce a same-call address change.
@@ -822,6 +817,19 @@ public class HangoutServiceImpl implements HangoutService {
             } catch (Exception e) {
                 logger.warn("Failed to send host-claim notification for hangout {}: {}",
                         hangout.getHangoutId(), e.getMessage());
+            }
+
+            // Mark the nudge resolved only after the claim notification succeeded so a
+            // failed dispatch doesn't leave the flag set with no notification delivered.
+            // A future EventBridge nudge fire will harmlessly no-op via the host_claimed
+            // gate in WatchPartyHostNudgeService even when this flag isn't set.
+            if (claimNotificationSent) {
+                try {
+                    hangoutRepository.setHostNudgeSentAtIfNull(hangout.getHangoutId(), System.currentTimeMillis());
+                } catch (Exception e) {
+                    logger.warn("Failed to mark host nudge as sent after claim for hangout {}: {}",
+                            hangout.getHangoutId(), e.getMessage());
+                }
             }
         }
 

@@ -86,6 +86,53 @@ class HangoutServiceWatchPartyHostClaimTest extends HangoutServiceTestBase {
         }
 
         @Test
+        void updateHangout_OnWatchPartyHostClaim_NotifyThrows_DoesNotSetNudgeFlag() {
+            // Acceptance: if notifyWatchPartyHostClaimed throws, we must NOT persist
+            // the hostNudgeSentAt flag, otherwise the EventBridge nudge would be
+            // suppressed despite the group never receiving a host-claim notification.
+            // A future EventBridge fire will harmlessly no-op via the host_claimed
+            // gate (hostAtPlaceUserId != null) in WatchPartyHostNudgeService.
+            String groupId = "11111111-1111-1111-1111-111111111111";
+            String hangoutId = UUID.randomUUID().toString();
+            String seriesId = UUID.randomUUID().toString();
+            String claimerId = UUID.randomUUID().toString();
+
+            Hangout existingHangout = WatchPartyTestFixtures.inPersonHangout(hangoutId, seriesId);
+            existingHangout.setHostAtPlaceUserId(null);
+            existingHangout.setAssociatedGroups(new ArrayList<>(List.of(groupId)));
+
+            UpdateHangoutRequest request = new UpdateHangoutRequest();
+            request.setHostAtPlaceUserId(claimerId);
+
+            EventSeries series = WatchPartyTestFixtures.inPersonSeries(seriesId, groupId);
+
+            GroupMembership membership = createTestMembership(groupId, claimerId, "Group");
+            when(groupRepository.findMembership(groupId, claimerId)).thenReturn(Optional.of(membership));
+            when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(existingHangout));
+            when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+
+            UserSummaryDTO claimerUser = new UserSummaryDTO();
+            claimerUser.setDisplayName("Claimer");
+            when(userService.getUserSummary(UUID.fromString(claimerId))).thenReturn(Optional.of(claimerUser));
+
+            when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+
+            HangoutDetailData detail = HangoutDetailData.builder().withHangout(existingHangout).build();
+            when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(detail);
+
+            doThrow(new RuntimeException("FCM down"))
+                    .when(notificationService).notifyWatchPartyHostClaimed(any(), any(), anyString(), anySet());
+
+            // When — the update itself should succeed (cascade exception is logged not propagated).
+            hangoutService.updateHangout(hangoutId, request, claimerId);
+
+            // Then — notify was attempted but the idempotency flag was NOT set.
+            verify(notificationService).notifyWatchPartyHostClaimed(eq(series), any(Hangout.class),
+                    eq(claimerId), anySet());
+            verify(hangoutRepository, never()).setHostNudgeSentAtIfNull(anyString(), anyLong());
+        }
+
+        @Test
         void updateHangout_OnHostAbdication_ReschedulesNudge() {
             String groupId = "11111111-1111-1111-1111-111111111111";
             String hangoutId = UUID.randomUUID().toString();

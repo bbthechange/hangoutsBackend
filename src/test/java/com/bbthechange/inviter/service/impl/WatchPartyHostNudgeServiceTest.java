@@ -21,6 +21,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -201,6 +202,53 @@ class WatchPartyHostNudgeServiceTest {
 
         assertThat(counter("lost_race")).isEqualTo(1.0);
         verifyNoInteractions(recipientResolver, notificationService);
+    }
+
+    @Test
+    void processHostNudge_notifyThrows_clearsClaimAndRethrows() {
+        // Acceptance: simulate notifyWatchPartyHostNeeded throwing; assert hostNudgeSentAt
+        // is rolled back (compensating REMOVE) and the exception propagates so the
+        // listener's error path runs. Without this, FCM/APNS hiccups would leave the
+        // idempotency flag set forever with no notification ever delivered.
+        Hangout h = validHangout();
+        EventSeries s = validSeries();
+        when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(h));
+        when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(s));
+        when(hangoutRepository.setHostNudgeSentAtIfNull(eq(HANGOUT_ID), anyLong())).thenReturn(true);
+        when(recipientResolver.resolve(s, h)).thenReturn(Set.of("u1", "u2"));
+        doThrow(new RuntimeException("FCM throttle"))
+            .when(notificationService).notifyWatchPartyHostNeeded(any(), any(), any(), anyString());
+
+        assertThatThrownBy(() -> service.processHostNudge(HANGOUT_ID))
+            .isInstanceOf(RuntimeException.class)
+            .hasMessageContaining("FCM throttle");
+
+        verify(hangoutRepository).clearHostNudgeSentAt(HANGOUT_ID);
+        assertThat(counter("error")).isEqualTo(1.0);
+        assertThat(counter("sent")).isEqualTo(0.0);
+    }
+
+    @Test
+    void processHostNudge_clearAfterNotifyFailure_doesNotMaskOriginalException() {
+        // If the compensating clear itself fails, we still propagate the original
+        // notify exception so the operator sees the real cause.
+        Hangout h = validHangout();
+        EventSeries s = validSeries();
+        when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(h));
+        when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(s));
+        when(hangoutRepository.setHostNudgeSentAtIfNull(eq(HANGOUT_ID), anyLong())).thenReturn(true);
+        when(recipientResolver.resolve(s, h)).thenReturn(Set.of("u1"));
+        doThrow(new RuntimeException("FCM down"))
+            .when(notificationService).notifyWatchPartyHostNeeded(any(), any(), any(), anyString());
+        doThrow(new RuntimeException("DynamoDB write throttled"))
+            .when(hangoutRepository).clearHostNudgeSentAt(HANGOUT_ID);
+
+        assertThatThrownBy(() -> service.processHostNudge(HANGOUT_ID))
+            .isInstanceOf(RuntimeException.class)
+            .hasMessageContaining("FCM down");
+
+        verify(hangoutRepository).clearHostNudgeSentAt(HANGOUT_ID);
+        assertThat(counter("error")).isEqualTo(1.0);
     }
 
     @Test

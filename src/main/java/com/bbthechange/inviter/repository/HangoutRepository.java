@@ -236,6 +236,13 @@ public interface HangoutRepository {
     boolean setHostNudgeSentAtIfNull(String hangoutId, long timestamp);
 
     /**
+     * REMOVE hostNudgeSentAt. Used as a compensating write when the idempotency
+     * claim was acquired but the downstream notification dispatch failed — without
+     * this rollback the flag would suppress all future retries.
+     */
+    void clearHostNudgeSentAt(String hangoutId);
+
+    /**
      * Persist the EventBridge schedule name on the hangout for later cancel/update.
      * Mirrors updateReminderScheduleName.
      */

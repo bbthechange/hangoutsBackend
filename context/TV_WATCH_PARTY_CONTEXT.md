@@ -351,7 +351,18 @@ WatchPartyBackgroundServiceImpl.processNewEpisode ──▶ (same)
                                           │
                                           ▼
                        NotificationService.notifyWatchPartyHostNeeded
+                                          │
+                            (on RuntimeException)
+                                          │
+                                          ▼
+                         hangoutRepository.clearHostNudgeSentAt(...)
+                                  (compensating REMOVE)
+                                          │
+                                          ▼
+                                       rethrow
 ```
+
+**Failure path:** if the dispatch throws after the claim is acquired, the service issues a compensating `REMOVE hostNudgeSentAt` and rethrows. `ScheduledEventListener` still acks the SQS message (no auto-retry), but the cleared flag means the nudge isn't *permanently* dead — a re-scheduled or manually re-triggered fire can attempt delivery again. The host-claim cascade in `HangoutServiceImpl.handleWatchPartyHostChange` follows the same shape: `setHostNudgeSentAtIfNull` only runs after `notifyWatchPartyHostClaimed` succeeds; a failed dispatch leaves the flag clear so the EventBridge fire still runs (and harmlessly no-ops via the `host_claimed` gate).
 
 **Cancellation triggers** (`WatchPartyHostNudgeScheduler.cancelHostNudge`): host claim (`hostAtPlaceUserId` set), hangout deletion, series deletion, model toggled to virtual.
 
