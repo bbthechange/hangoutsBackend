@@ -116,6 +116,7 @@ Extends EventSeries with watch party-specific fields:
 | `watchPartyModel` | String | `"IN_PERSON"` or `"VIRTUAL"`. Null = legacy row, treated as IN_PERSON. Drives the host-nudge gate (virtual series never nudge). See `EventSeries.isVirtualWatchParty()`. |
 | `createdBy` | String | User ID of series creator. Recipient resolver always includes them in nudges. |
 | `pastHosterUserIds` | Set<String> | Denormalized set of users who have ever been `hostAtPlaceUserId` on any episode in the series. Maintained by `HangoutServiceImpl.handleWatchPartyHostChange` on host claim. Read by `WatchPartyHostNudgeRecipientResolver` to avoid an N+1 per-episode fan-out. Legacy series may be empty until the next host change. |
+| `lastHostNudgeFiredAt` | Long | Epoch ms of the most recent successful host-nudge dispatch for this series. Read by `WatchPartyHostNudgeService.processHostNudge` as a cross-episode coalesce gate (`COALESCE_WINDOW_MILLIS = 24h`) so a long-running season doesn't push the same recipient set every week. Persisted via `EventSeriesRepository.updateLastHostNudgeFiredAt` after a successful send; persist failure is logged but does not roll back the dispatch. |
 
 **isWatchParty() method:** Returns `true` if `eventSeriesType == "WATCH_PARTY"`
 
@@ -367,6 +368,10 @@ WatchPartyBackgroundServiceImpl.processNewEpisode ──▶ (same)
 **Failure path:** if the dispatch throws after the claim is acquired, the service issues a compensating `REMOVE hostNudgeSentAt` and rethrows. `ScheduledEventListener` still acks the SQS message (no auto-retry), but the cleared flag means the nudge isn't *permanently* dead — a re-scheduled or manually re-triggered fire can attempt delivery again. The host-claim cascade in `HangoutServiceImpl.handleWatchPartyHostChange` follows the same shape: `setHostNudgeSentAtIfNull` only runs after `notifyWatchPartyHostClaimed` succeeds; a failed dispatch leaves the flag clear so the EventBridge fire still runs (and harmlessly no-ops via the `host_claimed` gate).
 
 **Cancellation triggers** (`WatchPartyHostNudgeScheduler.cancelHostNudge`): host claim (`hostAtPlaceUserId` set), hangout deletion, series deletion, model toggled to virtual.
+
+**Blast-radius safeguards:**
+- **Cross-episode series coalesce:** `WatchPartyHostNudgeService.processHostNudge` reads `EventSeries.lastHostNudgeFiredAt` BEFORE claiming the hangout. If `now - lastHostNudgeFiredAt < COALESCE_WINDOW_MILLIS (24h)`, the fire is skipped and `watchparty_host_nudge_total{status=series_coalesced}` increments. After a successful dispatch the service persists `now` via `EventSeriesRepository.updateLastHostNudgeFiredAt`. Prevents a 22-episode season from pushing the same recipient set 22 separate times.
+- **Recipient cap (`MAX_RECIPIENTS = 200`):** `WatchPartyHostNudgeRecipientResolver.resolve` truncates the resolved set to 200 and emits the `watchparty_host_nudge_recipients_capped` counter (no tags) plus a `WARN` log naming the series. Guards against an accidental "huge group" series unbounded fan-out.
 
 ### Processing Guards
 

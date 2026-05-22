@@ -22,6 +22,7 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -270,6 +271,87 @@ class WatchPartyHostNudgeServiceTest {
         assertThat(recipientsCap.getValue()).containsExactlyInAnyOrder("u1", "u2");
         assertThat(bodyCap.getValue()).contains("My Show").contains("still needs a host");
         assertThat(counter("sent")).isEqualTo(1.0);
+    }
+
+    // ===== Cross-episode series coalesce =====
+
+    @Test
+    void processHostNudge_seriesNudgedWithin24h_isCoalesced() {
+        // Spec acceptance: two episodes in same series fire 12h apart — second is
+        // skipped with series_coalesced counter. Without this gate a 22-episode
+        // season would push the same recipient set 22 separate times.
+        Hangout h = validHangout();
+        EventSeries s = validSeries();
+        s.setLastHostNudgeFiredAt(System.currentTimeMillis() - 12L * 3600 * 1000); // 12h ago
+        when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(h));
+        when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(s));
+
+        service.processHostNudge(HANGOUT_ID);
+
+        assertThat(counter("series_coalesced")).isEqualTo(1.0);
+        assertThat(counter("sent")).isEqualTo(0.0);
+        verify(hangoutRepository, never()).setHostNudgeSentAtIfNull(anyString(), anyLong());
+        verifyNoInteractions(recipientResolver, notificationService);
+        verify(eventSeriesRepository, never()).updateLastHostNudgeFiredAt(anyString(), anyLong());
+    }
+
+    @Test
+    void processHostNudge_seriesNudgedOver24hAgo_proceeds() {
+        // Spec acceptance: two episodes fire 25h apart — both deliver.
+        Hangout h = validHangout();
+        EventSeries s = validSeries();
+        s.setLastHostNudgeFiredAt(System.currentTimeMillis() - 25L * 3600 * 1000); // 25h ago
+        when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(h));
+        when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(s));
+        when(hangoutRepository.setHostNudgeSentAtIfNull(eq(HANGOUT_ID), anyLong())).thenReturn(true);
+        when(recipientResolver.resolve(s, h)).thenReturn(Set.of("u1"));
+
+        service.processHostNudge(HANGOUT_ID);
+
+        verify(notificationService).notifyWatchPartyHostNeeded(any(), eq(s), eq(h), anyString());
+        assertThat(counter("sent")).isEqualTo(1.0);
+        assertThat(counter("series_coalesced")).isEqualTo(0.0);
+    }
+
+    @Test
+    void processHostNudge_firstFireForSeries_persistsLastHostNudgeFiredAt() {
+        Hangout h = validHangout();
+        EventSeries s = validSeries();
+        s.setLastHostNudgeFiredAt(null); // never fired
+        when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(h));
+        when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(s));
+        when(hangoutRepository.setHostNudgeSentAtIfNull(eq(HANGOUT_ID), anyLong())).thenReturn(true);
+        when(recipientResolver.resolve(s, h)).thenReturn(Set.of("u1"));
+
+        service.processHostNudge(HANGOUT_ID);
+
+        ArgumentCaptor<Long> tsCap = ArgumentCaptor.forClass(Long.class);
+        verify(eventSeriesRepository).updateLastHostNudgeFiredAt(eq(SERIES_ID), tsCap.capture());
+        // Sanity: the persisted timestamp is recent (within last 10s of test wall clock)
+        assertThat(tsCap.getValue()).isCloseTo(System.currentTimeMillis(), within(10_000L));
+        assertThat(counter("sent")).isEqualTo(1.0);
+    }
+
+    @Test
+    void processHostNudge_persistFailure_doesNotMaskSuccessfulSend() {
+        // If updateLastHostNudgeFiredAt throws after a successful dispatch, the nudge
+        // still went out — we must NOT roll back the hangout claim or fail the SQS
+        // message. The coalesce gate just won't fire for this cycle.
+        Hangout h = validHangout();
+        EventSeries s = validSeries();
+        when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(h));
+        when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(s));
+        when(hangoutRepository.setHostNudgeSentAtIfNull(eq(HANGOUT_ID), anyLong())).thenReturn(true);
+        when(recipientResolver.resolve(s, h)).thenReturn(Set.of("u1"));
+        doThrow(new RuntimeException("DynamoDB throttled"))
+            .when(eventSeriesRepository).updateLastHostNudgeFiredAt(anyString(), anyLong());
+
+        service.processHostNudge(HANGOUT_ID); // should NOT throw
+
+        verify(notificationService).notifyWatchPartyHostNeeded(any(), eq(s), eq(h), anyString());
+        verify(hangoutRepository, never()).clearHostNudgeSentAt(anyString());
+        assertThat(counter("sent")).isEqualTo(1.0);
+        assertThat(counter("error")).isEqualTo(0.0);
     }
 
     // ===== Body formatting =====

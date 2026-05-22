@@ -9,6 +9,7 @@ import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.SeriesNotificationPreferenceRepository;
 import com.bbthechange.inviter.util.InterestLevelQueries;
 import com.bbthechange.inviter.util.NudgeTypes;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Component;
 import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Builds the user-id set for the watch-party host nudge per the UX rules:
@@ -34,17 +36,27 @@ public class WatchPartyHostNudgeRecipientResolver {
 
     private static final Logger logger = LoggerFactory.getLogger(WatchPartyHostNudgeRecipientResolver.class);
 
+    /**
+     * Safety cap on host-nudge blast radius. A series that resolves more than this many
+     * candidate recipients is treated as an accidental "huge group" — recipients are
+     * truncated to the cap and a warning metric is emitted so operators can investigate.
+     */
+    static final int MAX_RECIPIENTS = 200;
+
     private final HangoutRepository hangoutRepository;
     private final GroupRepository groupRepository;
     private final SeriesNotificationPreferenceRepository preferenceRepository;
+    private final MeterRegistry meterRegistry;
 
     @Autowired
     public WatchPartyHostNudgeRecipientResolver(HangoutRepository hangoutRepository,
                                                 GroupRepository groupRepository,
-                                                SeriesNotificationPreferenceRepository preferenceRepository) {
+                                                SeriesNotificationPreferenceRepository preferenceRepository,
+                                                MeterRegistry meterRegistry) {
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
         this.preferenceRepository = preferenceRepository;
+        this.meterRegistry = meterRegistry;
     }
 
     public Set<String> resolve(EventSeries series, Hangout hangout) {
@@ -87,6 +99,18 @@ public class WatchPartyHostNudgeRecipientResolver {
         Set<String> muted = preferenceRepository.findMutedUsersForSeries(
             series.getSeriesId(), NudgeTypes.HOST_NUDGE, candidates);
         candidates.removeAll(muted);
+
+        if (candidates.size() > MAX_RECIPIENTS) {
+            // The cap is a safety guard, not a fairness mechanism — which 200 of the N
+            // candidates are kept is intentionally arbitrary (HashSet iteration order).
+            // The capped-counter metric is the signal operators care about; if a real
+            // series ever hits this, the right fix is to investigate the membership,
+            // not to deterministically reshuffle the dropped users.
+            logger.warn("Host nudge: capping recipients from {} to {} for series {} (hangout {})",
+                candidates.size(), MAX_RECIPIENTS, series.getSeriesId(), hangout.getHangoutId());
+            meterRegistry.counter("watchparty_host_nudge_recipients_capped").increment();
+            return candidates.stream().limit(MAX_RECIPIENTS).collect(Collectors.toSet());
+        }
 
         logger.debug("Resolved {} host-nudge recipients for hangout {} in series {}",
             candidates.size(), hangout.getHangoutId(), series.getSeriesId());

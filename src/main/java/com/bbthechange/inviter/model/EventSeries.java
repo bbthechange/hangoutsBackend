@@ -48,6 +48,7 @@ public class EventSeries extends BaseItem {
     private String watchPartyModel;       // "IN_PERSON" or "VIRTUAL". Nullable for legacy rows; null treated as IN_PERSON.
     private String createdBy;             // User ID who created the series (recipient resolver always includes them in nudges)
     private Set<String> pastHosterUserIds; // Users who have ever been the host-at-place on any episode in this series. Maintained by HangoutServiceImpl.handleWatchPartyHostChange on host claim. Used by host-nudge recipient resolver to avoid an N+1 read of every past episode. Legacy series may be empty until next host change.
+    private Long lastHostNudgeFiredAt;    // Epoch millis of the last successful host-nudge dispatch for this series. Cross-episode coalesce gate in WatchPartyHostNudgeService — episodes inside the coalesce window are skipped to avoid pushing the same group every week of a long season.
 
     // Default constructor for DynamoDB
     public EventSeries() {
@@ -390,6 +391,15 @@ public class EventSeries extends BaseItem {
             touch();
         }
         return added;
+    }
+
+    public Long getLastHostNudgeFiredAt() {
+        return lastHostNudgeFiredAt;
+    }
+
+    public void setLastHostNudgeFiredAt(Long lastHostNudgeFiredAt) {
+        this.lastHostNudgeFiredAt = lastHostNudgeFiredAt;
+        touch();
     }
 
     /**

@@ -97,7 +97,8 @@ Used as keys in `SeriesNotificationPreference.mutedNudgeTypes` and (eventually) 
 |---------|------|
 | `watchparty_host_nudge_schedule_created` | `status` ∈ {`success`, `error`, `skipped_virtual`, `skipped_has_host`, `skipped_past`} |
 | `watchparty_host_nudge_schedule_deleted` | `status` ∈ {`success`, `error`} |
-| `watchparty_host_nudge_total` | `status` ∈ {`sent`, `already_sent`, `host_claimed`, `not_found`, `not_in_series`, `wrong_series_type`, `outside_window`, `lost_race`, `error`} |
+| `watchparty_host_nudge_total` | `status` ∈ {`sent`, `already_sent`, `host_claimed`, `not_found`, `not_in_series`, `wrong_series_type`, `outside_window`, `lost_race`, `series_coalesced`, `error`} |
+| `watchparty_host_nudge_recipients_capped` | (no tags) — emitted by `WatchPartyHostNudgeRecipientResolver` when the resolved recipient set exceeds `MAX_RECIPIENTS = 200`; the set is truncated to 200 and the dispatch proceeds. |
 | `watchparty_host_claim_notification` | `status` ∈ {`sent`, `error`} |
 | `notification_coalesced` | `reason` ∈ {`host_claim_recent`} |
 

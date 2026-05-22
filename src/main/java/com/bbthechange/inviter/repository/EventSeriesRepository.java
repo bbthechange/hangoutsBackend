@@ -88,6 +88,16 @@ public interface EventSeriesRepository {
     List<EventSeries> findAllByExternalIdAndSource(String externalId, String externalSource);
 
     /**
+     * Persist the timestamp of the most recent host-nudge dispatch for this series.
+     * Used as the cross-episode coalesce gate so a long-running series doesn't
+     * fan out the same nudge every week.
+     *
+     * @param seriesId   The series identifier
+     * @param timestamp  Epoch millis to write into lastHostNudgeFiredAt
+     */
+    void updateLastHostNudgeFiredAt(String seriesId, long timestamp);
+
+    /**
      * Find all Watch Party EventSeries.
      * Performs a scan with filter on eventSeriesType = "WATCH_PARTY".
      * Use sparingly as scans are expensive operations.

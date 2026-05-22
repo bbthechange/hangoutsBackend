@@ -10,6 +10,8 @@ import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.SeriesNotificationPreferenceRepository;
 import com.bbthechange.inviter.testutil.WatchPartyTestFixtures;
 import com.bbthechange.inviter.util.NudgeTypes;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,6 +24,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -44,6 +48,7 @@ class WatchPartyHostNudgeRecipientResolverTest {
     private SeriesNotificationPreferenceRepository preferenceRepository;
 
     private WatchPartyHostNudgeRecipientResolver resolver;
+    private MeterRegistry meterRegistry;
 
     private static final String GROUP_ID = "33333333-3333-3333-3333-333333333333";
     private static final String SERIES_ID = "22222222-2222-2222-2222-222222222222";
@@ -52,8 +57,9 @@ class WatchPartyHostNudgeRecipientResolverTest {
 
     @BeforeEach
     void setUp() {
+        meterRegistry = new SimpleMeterRegistry();
         resolver = new WatchPartyHostNudgeRecipientResolver(
-            hangoutRepository, groupRepository, preferenceRepository);
+            hangoutRepository, groupRepository, preferenceRepository, meterRegistry);
         // Default: nobody muted; resolver-specific tests override.
         lenient().when(preferenceRepository.findMutedUsersForSeries(
             anyString(), anyString(), any())).thenReturn(Set.of());
@@ -242,5 +248,50 @@ class WatchPartyHostNudgeRecipientResolverTest {
         assertThat(result).isEmpty();
         verify(preferenceRepository, org.mockito.Mockito.never())
             .findMutedUsersForSeries(anyString(), anyString(), any());
+    }
+
+    @Test
+    void over_max_recipients_caps_and_emits_metric() {
+        // 201 candidate users (all GOING on the hangout) — must truncate to MAX_RECIPIENTS
+        // and bump watchparty_host_nudge_recipients_capped exactly once. Protects against
+        // an accidental "huge group" series fanning out unbounded pushes.
+        EventSeries s = series();
+        Hangout h = hangout();
+
+        List<com.bbthechange.inviter.model.InterestLevel> attendance = IntStream.range(0, 201)
+            .mapToObj(i -> level("u-" + i, "GOING"))
+            .collect(Collectors.toList());
+        when(hangoutRepository.getHangoutDetailData(HANGOUT_ID))
+            .thenReturn(detail(attendance));
+        when(groupRepository.findSeriesPointer(GROUP_ID, SERIES_ID))
+            .thenReturn(Optional.empty());
+
+        Set<String> result = resolver.resolve(s, h);
+
+        assertThat(result).hasSize(WatchPartyHostNudgeRecipientResolver.MAX_RECIPIENTS);
+        assertThat(meterRegistry.counter("watchparty_host_nudge_recipients_capped").count())
+            .isEqualTo(1.0);
+    }
+
+    @Test
+    void exactly_max_recipients_does_not_emit_cap_metric() {
+        // Boundary: a series with exactly 200 candidates is at the cap but not over.
+        // No cap metric should fire — otherwise operators get noise at the edge.
+        EventSeries s = series();
+        Hangout h = hangout();
+
+        List<com.bbthechange.inviter.model.InterestLevel> attendance = IntStream.range(0, 200)
+            .mapToObj(i -> level("u-" + i, "GOING"))
+            .collect(Collectors.toList());
+        when(hangoutRepository.getHangoutDetailData(HANGOUT_ID))
+            .thenReturn(detail(attendance));
+        when(groupRepository.findSeriesPointer(GROUP_ID, SERIES_ID))
+            .thenReturn(Optional.empty());
+
+        Set<String> result = resolver.resolve(s, h);
+
+        assertThat(result).hasSize(200);
+        assertThat(meterRegistry.counter("watchparty_host_nudge_recipients_capped").count())
+            .isEqualTo(0.0);
     }
 }

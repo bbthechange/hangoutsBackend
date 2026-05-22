@@ -286,6 +286,34 @@ public class EventSeriesRepositoryImpl implements EventSeriesRepository {
     }
 
     @Override
+    public void updateLastHostNudgeFiredAt(String seriesId, long timestamp) {
+        performanceTracker.trackQuery("updateLastHostNudgeFiredAt", TABLE_NAME, () -> {
+            try {
+                UpdateItemRequest request = UpdateItemRequest.builder()
+                    .tableName(TABLE_NAME)
+                    .key(Map.of(
+                        "pk", AttributeValue.builder().s(InviterKeyFactory.getSeriesPk(seriesId)).build(),
+                        "sk", AttributeValue.builder().s(InviterKeyFactory.getMetadataSk()).build()
+                    ))
+                    .updateExpression("SET lastHostNudgeFiredAt = :ts, updatedAt = :now")
+                    .expressionAttributeValues(Map.of(
+                        ":ts", AttributeValue.builder().n(String.valueOf(timestamp)).build(),
+                        ":now", AttributeValue.builder().n(String.valueOf(java.time.Instant.now().toEpochMilli())).build()
+                    ))
+                    .build();
+
+                dynamoDbClient.updateItem(request);
+                logger.debug("Set lastHostNudgeFiredAt={} for series {}", timestamp, seriesId);
+                return null;
+
+            } catch (DynamoDbException e) {
+                logger.error("Failed to update lastHostNudgeFiredAt for series {}", seriesId, e);
+                throw new RepositoryException("Failed to update lastHostNudgeFiredAt", e);
+            }
+        });
+    }
+
+    @Override
     public List<EventSeries> findAllWatchPartySeries() {
         return performanceTracker.trackQuery("findAllWatchPartySeries", TABLE_NAME, () -> {
             try {

@@ -10,6 +10,7 @@ import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.SeriesNotificationPreferenceRepository;
 import com.bbthechange.inviter.testutil.WatchPartyTestFixtures;
 import com.bbthechange.inviter.util.NudgeTypes;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -62,7 +63,7 @@ class WatchPartyHostNudgeMuteIntegrationTest {
     void setUp() {
         preferenceRepository = new InMemorySeriesNotificationPreferenceRepository();
         resolver = new WatchPartyHostNudgeRecipientResolver(
-                hangoutRepository, groupRepository, preferenceRepository);
+                hangoutRepository, groupRepository, preferenceRepository, new SimpleMeterRegistry());
     }
 
     @Test

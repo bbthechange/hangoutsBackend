@@ -35,6 +35,13 @@ public class WatchPartyHostNudgeService {
     private static final long MIN_MINUTES_BEFORE_AIR = 36L * 60;
     private static final long MAX_MINUTES_BEFORE_AIR = 60L * 60;
 
+    /**
+     * Cross-episode coalesce window. If the series fired a host nudge less than
+     * this long ago, suppress the next episode's nudge — a 22-episode season
+     * otherwise pushes the same recipient set 22 separate times.
+     */
+    static final long COALESCE_WINDOW_MILLIS = 24L * 60 * 60 * 1000;
+
     private final HangoutRepository hangoutRepository;
     private final EventSeriesRepository eventSeriesRepository;
     private final WatchPartyHostNudgeRecipientResolver recipientResolver;
@@ -107,6 +114,22 @@ public class WatchPartyHostNudgeService {
         }
 
         long now = System.currentTimeMillis();
+
+        // Soft cross-episode coalesce: read-check, send, persist. Two episodes whose
+        // SQS messages fire concurrently can both pass this gate and both dispatch
+        // before either persist lands — that's an accepted bounded over-send (at most
+        // a couple of fan-outs during an SQS backlog drain) in exchange for not failing
+        // the dispatch if the persist throws afterward. The 22-episodes-per-season
+        // problem this fix actually targets is sequential (weekly), so a read-then-write
+        // gate is sufficient there.
+        Long lastSeriesFire = series.getLastHostNudgeFiredAt();
+        if (lastSeriesFire != null && (now - lastSeriesFire) < COALESCE_WINDOW_MILLIS) {
+            logger.info("Host nudge: series {} coalesced (last fired {} ms ago, window {} ms) for hangout {}",
+                series.getSeriesId(), now - lastSeriesFire, COALESCE_WINDOW_MILLIS, hangoutId);
+            meterRegistry.counter(COUNTER, "status", "series_coalesced").increment();
+            return;
+        }
+
         boolean claimed = hangoutRepository.setHostNudgeSentAtIfNull(hangoutId, now);
         if (!claimed) {
             logger.info("Host nudge: lost race for hangout {}", hangoutId);
@@ -118,6 +141,17 @@ public class WatchPartyHostNudgeService {
             Set<String> recipients = recipientResolver.resolve(series, hangout);
             String body = buildMessageBody(series, hangout);
             notificationService.notifyWatchPartyHostNeeded(recipients, series, hangout, body);
+
+            // Persist the series-level coalesce timestamp AFTER a successful send.
+            // Best-effort: if this write fails, the nudge still happened — we just lose
+            // the coalesce gate for this cycle, which means at most one extra fan-out
+            // before the next episode's claim lands. Better than failing the whole flow.
+            try {
+                eventSeriesRepository.updateLastHostNudgeFiredAt(series.getSeriesId(), now);
+            } catch (RuntimeException persistEx) {
+                logger.error("Host nudge: failed to persist lastHostNudgeFiredAt for series {} after successful send",
+                    series.getSeriesId(), persistEx);
+            }
 
             meterRegistry.counter(COUNTER, "status", "sent").increment();
             logger.info("Host nudge: sent for hangout {} to {} recipients", hangoutId, recipients.size());
