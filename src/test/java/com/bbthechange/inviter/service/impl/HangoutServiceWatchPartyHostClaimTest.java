@@ -9,6 +9,7 @@ import io.micrometer.core.instrument.Counter;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -83,6 +84,49 @@ class HangoutServiceWatchPartyHostClaimTest extends HangoutServiceTestBase {
             verify(hangoutRepository).saveInterestLevel(levelCaptor.capture());
             assertThat(levelCaptor.getValue().getUserId()).isEqualTo(claimerId);
             assertThat(levelCaptor.getValue().getStatus()).isEqualTo("GOING");
+        }
+
+        @Test
+        void updateHangout_OnWatchPartyHostClaim_AutoRsvpsClaimerBeforeNotifying() {
+            // Regression for hangoutsBackend-gcd: auto-RSVP must persist the claimer's
+            // GOING status BEFORE the recipient resolver runs, otherwise a concurrent or
+            // re-fired host-needed nudge could target the claimer for the hangout they
+            // just claimed.
+            String groupId = "11111111-1111-1111-1111-111111111111";
+            String hangoutId = UUID.randomUUID().toString();
+            String seriesId = UUID.randomUUID().toString();
+            String claimerId = UUID.randomUUID().toString();
+
+            Hangout existingHangout = WatchPartyTestFixtures.inPersonHangout(hangoutId, seriesId);
+            existingHangout.setHostAtPlaceUserId(null);
+            existingHangout.setAssociatedGroups(new ArrayList<>(List.of(groupId)));
+
+            UpdateHangoutRequest request = new UpdateHangoutRequest();
+            request.setHostAtPlaceUserId(claimerId);
+
+            EventSeries series = WatchPartyTestFixtures.inPersonSeries(seriesId, groupId);
+
+            GroupMembership membership = createTestMembership(groupId, claimerId, "Group");
+            when(groupRepository.findMembership(groupId, claimerId)).thenReturn(Optional.of(membership));
+            when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(existingHangout));
+            when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+
+            UserSummaryDTO claimerUser = new UserSummaryDTO();
+            claimerUser.setDisplayName("Claimer");
+            when(userService.getUserSummary(UUID.fromString(claimerId))).thenReturn(Optional.of(claimerUser));
+            when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+
+            HangoutDetailData detail = HangoutDetailData.builder().withHangout(existingHangout).build();
+            when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(detail);
+
+            // When
+            hangoutService.updateHangout(hangoutId, request, claimerId);
+
+            // Then: saveInterestLevel (auto-RSVP) must occur BEFORE notifyWatchPartyHostClaimed.
+            InOrder ordered = inOrder(hangoutRepository, notificationService);
+            ordered.verify(hangoutRepository).saveInterestLevel(any(InterestLevel.class));
+            ordered.verify(notificationService).notifyWatchPartyHostClaimed(eq(series), any(Hangout.class),
+                    eq(claimerId), anySet());
         }
 
         @Test

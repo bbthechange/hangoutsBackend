@@ -753,10 +753,16 @@ public class HangoutServiceImpl implements HangoutService {
      * Watch-party host-claim cascade (UX Flow 4). Called from updateHangout when
      * hostAtPlaceUserId changes on a hangout whose series is a watch party.
      *
-     *   null/empty → non-null: cancel scheduled nudge, mark nudge resolved (so any
-     *                          in-flight EventBridge fire is a no-op), send claim
-     *                          notification to the GOING/INTERESTED set, auto-RSVP
-     *                          the claimer to GOING if they claimed themselves.
+     *   Any transition landing on requester: auto-RSVP requester to GOING. Runs
+     *                          unconditionally before the abdication/claim branches so
+     *                          any concurrent recipient resolver (this notification,
+     *                          another episode's nudge, an admin re-fire) sees the
+     *                          claimer as GOING and won't pull them into a "needs a
+     *                          host" set for the hangout they just claimed.
+     *   null/empty → non-null: cancel scheduled nudge, send claim notification to the
+     *                          GOING/INTERESTED set, then mark nudge resolved (only
+     *                          after notify succeeds, so a failed dispatch doesn't
+     *                          suppress future nudges).
      *   non-null → null:       host abdicated — re-schedule the nudge.
      *
      * Non-watch-party series are a silent no-op. Each external call is independently
@@ -771,6 +777,23 @@ public class HangoutServiceImpl implements HangoutService {
         String newHostUserId = hangout.getHostAtPlaceUserId();
         boolean wasEmpty = (oldHostUserId == null || oldHostUserId.isEmpty());
         boolean nowEmpty = (newHostUserId == null || newHostUserId.isEmpty());
+
+        // Auto-RSVP the requester to GOING when they're claiming themselves as host. Runs
+        // BEFORE the notification cascade so any recipient resolver (this one, another
+        // episode's nudge, an admin re-fire arriving in this window) sees the claimer as
+        // GOING on this hangout — otherwise they could land in the "needs a host"
+        // recipient set for the hangout they just claimed. The claimer is still excluded
+        // from the host-claim push inside NotificationService.notifyWatchPartyHostClaimed.
+        // No-op when abdicating (newHostUserId is null, equals is false).
+        if (requestingUserId != null && requestingUserId.equals(newHostUserId)) {
+            try {
+                setUserInterest(hangout.getHangoutId(),
+                        new SetInterestRequest("GOING", null), requestingUserId);
+            } catch (Exception e) {
+                logger.warn("Failed to auto-RSVP host claimer {} on hangout {}: {}",
+                        requestingUserId, hangout.getHangoutId(), e.getMessage());
+            }
+        }
 
         if (!wasEmpty && nowEmpty) {
             // Host abdication — re-schedule the nudge so the group is reminded next cycle.
@@ -830,19 +853,6 @@ public class HangoutServiceImpl implements HangoutService {
                     logger.warn("Failed to mark host nudge as sent after claim for hangout {}: {}",
                             hangout.getHangoutId(), e.getMessage());
                 }
-            }
-        }
-
-        // Auto-RSVP when the requesting user claimed themselves as host. Fires for any
-        // null/empty → non-null transition that targets the caller; mirrors the iOS
-        // "claiming host implies attending" UX (Flow 3).
-        if (requestingUserId != null && requestingUserId.equals(newHostUserId)) {
-            try {
-                setUserInterest(hangout.getHangoutId(),
-                        new SetInterestRequest("GOING", null), requestingUserId);
-            } catch (Exception e) {
-                logger.warn("Failed to auto-RSVP host claimer {} on hangout {}: {}",
-                        requestingUserId, hangout.getHangoutId(), e.getMessage());
             }
         }
     }
