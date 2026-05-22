@@ -109,7 +109,9 @@ create_*.py
 docs/fixes/
 docs/TDD_FAILURE_ANALYSIS_AND_PROMPT_REQUIREMENTS.md
 
-.claude/
+.claude/settings.local.json
+.claude/ENVIRONMENT_DETAILS.md
+.claude/skills/api-caller/
 .platform
 
 # Beads / Dolt files (added by bd init)
