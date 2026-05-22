@@ -337,6 +337,8 @@ Users can mute individual nudge types per series via `PUT /watch-parties/{series
 
 The recipient resolver calls `SeriesNotificationPreferenceRepository.findMutedUsersForSeries(seriesId, NudgeTypes.HOST_NUDGE, candidates)` to get muted users, then removes them from the candidate set. Per-type isolation lives in the repository — a mute for one nudge type never filters another.
 
+The repository's `BatchGetItem` retries `unprocessedKeys` with exponential backoff (100ms / 200ms / 400ms, 3 retries) so a transient throttle doesn't drop muted users from the result. If the retry budget is exhausted, the dropped key count is logged and the `series_pref_batchget_dropped` counter (tagged by `nudgeType`) is incremented so the failure mode "pushed to a muted user" is visible in metrics.
+
 ### Targeting
 
 Watch party notifications target users based on **series-level interest** (stored in `SeriesPointer.interestLevels`), not individual hangout attendance.

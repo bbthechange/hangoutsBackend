@@ -4,6 +4,7 @@ import com.bbthechange.inviter.exception.RepositoryException;
 import com.bbthechange.inviter.model.SeriesNotificationPreference;
 import com.bbthechange.inviter.repository.SeriesNotificationPreferenceRepository;
 import com.bbthechange.inviter.util.InviterKeyFactory;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,6 +35,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ThreadLocalRandom;
 
 @Repository
 public class SeriesNotificationPreferenceRepositoryImpl implements SeriesNotificationPreferenceRepository {
@@ -41,18 +43,24 @@ public class SeriesNotificationPreferenceRepositoryImpl implements SeriesNotific
     private static final Logger logger = LoggerFactory.getLogger(SeriesNotificationPreferenceRepositoryImpl.class);
     private static final String TABLE_NAME = "InviterTable";
     private static final int BATCH_GET_LIMIT = 100;
+    private static final int BATCH_GET_MAX_RETRIES = 3;
+    private static final long BATCH_GET_INITIAL_BACKOFF_MILLIS = 100L;
+    private static final String COUNTER_BATCHGET_DROPPED = "series_pref_batchget_dropped";
 
     private final DynamoDbClient dynamoDbClient;
     private final DynamoDbTable<SeriesNotificationPreference> preferenceTable;
     private final TableSchema<SeriesNotificationPreference> preferenceSchema;
+    private final MeterRegistry meterRegistry;
 
     @Autowired
     public SeriesNotificationPreferenceRepositoryImpl(
             DynamoDbClient dynamoDbClient,
-            DynamoDbEnhancedClient dynamoDbEnhancedClient) {
+            DynamoDbEnhancedClient dynamoDbEnhancedClient,
+            MeterRegistry meterRegistry) {
         this.dynamoDbClient = dynamoDbClient;
         this.preferenceSchema = TableSchema.fromBean(SeriesNotificationPreference.class);
         this.preferenceTable = dynamoDbEnhancedClient.table(TABLE_NAME, this.preferenceSchema);
+        this.meterRegistry = meterRegistry;
     }
 
     @Override
@@ -96,41 +104,89 @@ public class SeriesNotificationPreferenceRepositoryImpl implements SeriesNotific
                 keys.add(key);
             }
 
-            BatchGetItemRequest request = BatchGetItemRequest.builder()
-                .requestItems(Map.of(TABLE_NAME,
-                    KeysAndAttributes.builder().keys(keys).build()))
-                .build();
+            Map<String, KeysAndAttributes> requestItems = Map.of(TABLE_NAME,
+                KeysAndAttributes.builder().keys(keys).build());
 
-            try {
-                BatchGetItemResponse response = dynamoDbClient.batchGetItem(request);
-                List<Map<String, AttributeValue>> items = response.responses().get(TABLE_NAME);
-                if (items == null) {
-                    continue;
+            int retries = 0;
+            long backoffMillis = BATCH_GET_INITIAL_BACKOFF_MILLIS;
+            while (requestItems != null && !requestItems.isEmpty()) {
+                BatchGetItemRequest request = BatchGetItemRequest.builder()
+                    .requestItems(requestItems)
+                    .build();
+                BatchGetItemResponse response;
+                try {
+                    response = dynamoDbClient.batchGetItem(request);
+                } catch (DynamoDbException e) {
+                    logger.error("Failed to batch get SeriesNotificationPreference for series {} nudgeType {}",
+                        seriesId, nudgeType, e);
+                    throw new RepositoryException("Failed to batch get SeriesNotificationPreference", e);
                 }
-                for (Map<String, AttributeValue> item : items) {
-                    AttributeValue mapAttr = item.get("mutedNudgeTypes");
-                    if (mapAttr == null || mapAttr.m() == null) {
-                        continue;
-                    }
-                    AttributeValue flag = mapAttr.m().get(nudgeType);
-                    if (flag != null && Boolean.TRUE.equals(flag.bool())) {
-                        AttributeValue userIdAttr = item.get("userId");
-                        if (userIdAttr != null && userIdAttr.s() != null) {
-                            mutedUsers.add(userIdAttr.s());
+
+                List<Map<String, AttributeValue>> items = response.responses().get(TABLE_NAME);
+                if (items != null) {
+                    for (Map<String, AttributeValue> item : items) {
+                        AttributeValue mapAttr = item.get("mutedNudgeTypes");
+                        if (mapAttr == null || mapAttr.m() == null) {
+                            continue;
+                        }
+                        AttributeValue flag = mapAttr.m().get(nudgeType);
+                        if (flag != null && Boolean.TRUE.equals(flag.bool())) {
+                            AttributeValue userIdAttr = item.get("userId");
+                            if (userIdAttr != null && userIdAttr.s() != null) {
+                                mutedUsers.add(userIdAttr.s());
+                            }
                         }
                     }
                 }
-                if (response.hasUnprocessedKeys() && !response.unprocessedKeys().isEmpty()) {
-                    logger.warn("BatchGetItem had unprocessed keys for series {} nudgeType {}", seriesId, nudgeType);
+
+                Map<String, KeysAndAttributes> unprocessed = response.unprocessedKeys();
+                if (unprocessed == null || unprocessed.isEmpty()) {
+                    break;
                 }
-            } catch (DynamoDbException e) {
-                logger.error("Failed to batch get SeriesNotificationPreference for series {} nudgeType {}",
-                    seriesId, nudgeType, e);
-                throw new RepositoryException("Failed to batch get SeriesNotificationPreference", e);
+
+                if (retries >= BATCH_GET_MAX_RETRIES) {
+                    int droppedCount = countKeys(unprocessed);
+                    logger.warn("BatchGetItem retry budget exhausted for series {} nudgeType {} — "
+                            + "{} key(s) unprocessed, may push to muted users",
+                        seriesId, nudgeType, droppedCount);
+                    meterRegistry.counter(COUNTER_BATCHGET_DROPPED,
+                        "nudgeType", nudgeType, "reason", "exhausted").increment(droppedCount);
+                    break;
+                }
+
+                // Jitter prevents synchronous retry stampedes across concurrent listeners.
+                long sleepMillis = backoffMillis + ThreadLocalRandom.current().nextLong(backoffMillis / 2 + 1);
+                try {
+                    Thread.sleep(sleepMillis);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    int droppedCount = countKeys(unprocessed);
+                    logger.warn("BatchGetItem retry interrupted for series {} nudgeType {} — "
+                            + "{} key(s) unprocessed", seriesId, nudgeType, droppedCount);
+                    meterRegistry.counter(COUNTER_BATCHGET_DROPPED,
+                        "nudgeType", nudgeType, "reason", "interrupted").increment(droppedCount);
+                    break;
+                }
+                retries++;
+                backoffMillis *= 2;
+                requestItems = unprocessed;
             }
         }
 
         return mutedUsers;
+    }
+
+    private static int countKeys(Map<String, KeysAndAttributes> requestItems) {
+        if (requestItems == null) {
+            return 0;
+        }
+        int total = 0;
+        for (KeysAndAttributes ka : requestItems.values()) {
+            if (ka != null && ka.keys() != null) {
+                total += ka.keys().size();
+            }
+        }
+        return total;
     }
 
     @Override

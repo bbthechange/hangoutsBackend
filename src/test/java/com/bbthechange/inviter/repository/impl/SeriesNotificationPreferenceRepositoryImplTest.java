@@ -3,6 +3,8 @@ package com.bbthechange.inviter.repository.impl;
 import com.bbthechange.inviter.model.SeriesNotificationPreference;
 import com.bbthechange.inviter.util.InviterKeyFactory;
 import com.bbthechange.inviter.util.NudgeTypes;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -18,6 +20,7 @@ import software.amazon.awssdk.services.dynamodb.model.BatchGetItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.BatchGetItemResponse;
 import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
 import software.amazon.awssdk.services.dynamodb.model.DeleteItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.KeysAndAttributes;
 import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.UpdateItemResponse;
 
@@ -54,6 +57,7 @@ class SeriesNotificationPreferenceRepositoryImplTest {
         org.mockito.Mockito.mock(DynamoDbTable.class);
 
     private SeriesNotificationPreferenceRepositoryImpl repository;
+    private MeterRegistry meterRegistry;
 
     private String userId;
     private String seriesId;
@@ -62,7 +66,9 @@ class SeriesNotificationPreferenceRepositoryImplTest {
     void setUp() {
         lenient().when(dynamoDbEnhancedClient.table(eq(TABLE_NAME), any(TableSchema.class)))
             .thenReturn(preferenceTable);
-        repository = new SeriesNotificationPreferenceRepositoryImpl(dynamoDbClient, dynamoDbEnhancedClient);
+        meterRegistry = new SimpleMeterRegistry();
+        repository = new SeriesNotificationPreferenceRepositoryImpl(
+            dynamoDbClient, dynamoDbEnhancedClient, meterRegistry);
 
         userId = UUID.randomUUID().toString();
         seriesId = UUID.randomUUID().toString();
@@ -306,6 +312,92 @@ class SeriesNotificationPreferenceRepositoryImplTest {
         assertThat(keys).hasSize(1);
         assertThat(keys.get(0).get("pk").s()).isEqualTo(InviterKeyFactory.getUserPk(userA));
         assertThat(keys.get(0).get("sk").s()).isEqualTo(InviterKeyFactory.getSeriesPrefSk(seriesId));
+    }
+
+    @Test
+    void findMutedUsersForSeries_RetriesUnprocessedKeys_AndIncludesAllMutedUsers() {
+        String userA = UUID.randomUUID().toString();
+        String userB = UUID.randomUUID().toString();
+
+        // First call: returns A muted but unprocessed key for B (simulated throttle).
+        Map<String, AttributeValue> rowA = Map.of(
+            "userId", AttributeValue.builder().s(userA).build(),
+            "mutedNudgeTypes", AttributeValue.builder().m(Map.of(
+                NudgeTypes.HOST_NUDGE, AttributeValue.builder().bool(true).build()
+            )).build()
+        );
+        Map<String, AttributeValue> bKey = new HashMap<>();
+        bKey.put("pk", AttributeValue.builder().s(InviterKeyFactory.getUserPk(userB)).build());
+        bKey.put("sk", AttributeValue.builder().s(InviterKeyFactory.getSeriesPrefSk(seriesId)).build());
+        BatchGetItemResponse firstResponse = BatchGetItemResponse.builder()
+            .responses(Map.of(TABLE_NAME, List.of(rowA)))
+            .unprocessedKeys(Map.of(TABLE_NAME,
+                KeysAndAttributes.builder().keys(List.of(bKey)).build()))
+            .build();
+
+        // Retry: returns B muted, no more unprocessed keys.
+        Map<String, AttributeValue> rowB = Map.of(
+            "userId", AttributeValue.builder().s(userB).build(),
+            "mutedNudgeTypes", AttributeValue.builder().m(Map.of(
+                NudgeTypes.HOST_NUDGE, AttributeValue.builder().bool(true).build()
+            )).build()
+        );
+        BatchGetItemResponse secondResponse = BatchGetItemResponse.builder()
+            .responses(Map.of(TABLE_NAME, List.of(rowB)))
+            .build();
+
+        when(dynamoDbClient.batchGetItem(any(BatchGetItemRequest.class)))
+            .thenReturn(firstResponse)
+            .thenReturn(secondResponse);
+
+        Set<String> result = repository.findMutedUsersForSeries(
+            seriesId, NudgeTypes.HOST_NUDGE, Arrays.asList(userA, userB));
+
+        // Both muted users must be excluded from notifications — neither dropped.
+        assertThat(result).containsExactlyInAnyOrder(userA, userB);
+        verify(dynamoDbClient, org.mockito.Mockito.times(2)).batchGetItem(any(BatchGetItemRequest.class));
+
+        // Retry should be on the unprocessed key only.
+        ArgumentCaptor<BatchGetItemRequest> captor = ArgumentCaptor.forClass(BatchGetItemRequest.class);
+        verify(dynamoDbClient, org.mockito.Mockito.times(2)).batchGetItem(captor.capture());
+        List<Map<String, AttributeValue>> retryKeys =
+            captor.getAllValues().get(1).requestItems().get(TABLE_NAME).keys();
+        assertThat(retryKeys).hasSize(1);
+        assertThat(retryKeys.get(0).get("pk").s()).isEqualTo(InviterKeyFactory.getUserPk(userB));
+
+        // No drops recorded — retry succeeded before exhaustion.
+        assertThat(meterRegistry.find("series_pref_batchget_dropped").counter()).isNull();
+    }
+
+    @Test
+    void findMutedUsersForSeries_IncrementsDroppedCounter_WhenRetryBudgetExhausted() {
+        String userA = UUID.randomUUID().toString();
+
+        Map<String, AttributeValue> aKey = new HashMap<>();
+        aKey.put("pk", AttributeValue.builder().s(InviterKeyFactory.getUserPk(userA)).build());
+        aKey.put("sk", AttributeValue.builder().s(InviterKeyFactory.getSeriesPrefSk(seriesId)).build());
+        BatchGetItemResponse throttledResponse = BatchGetItemResponse.builder()
+            .responses(Map.of(TABLE_NAME, Collections.emptyList()))
+            .unprocessedKeys(Map.of(TABLE_NAME,
+                KeysAndAttributes.builder().keys(List.of(aKey)).build()))
+            .build();
+
+        // Every call returns unprocessed keys — retry budget gets exhausted.
+        when(dynamoDbClient.batchGetItem(any(BatchGetItemRequest.class))).thenReturn(throttledResponse);
+
+        Set<String> result = repository.findMutedUsersForSeries(
+            seriesId, NudgeTypes.HOST_NUDGE, List.of(userA));
+
+        // No muted users surfaced — this is the failure mode the counter tracks.
+        assertThat(result).isEmpty();
+
+        // 1 initial + 3 retries = 4 total calls before giving up.
+        verify(dynamoDbClient, org.mockito.Mockito.times(4)).batchGetItem(any(BatchGetItemRequest.class));
+
+        assertThat(meterRegistry.find("series_pref_batchget_dropped")
+                .tag("nudgeType", NudgeTypes.HOST_NUDGE)
+                .tag("reason", "exhausted")
+                .counter().count()).isEqualTo(1.0);
     }
 
     // ============================================================================
