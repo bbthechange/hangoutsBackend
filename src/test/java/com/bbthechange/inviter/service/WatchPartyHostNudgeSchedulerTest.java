@@ -46,6 +46,10 @@ class WatchPartyHostNudgeSchedulerTest {
         return meterRegistry.counter(name, "status", status).count();
     }
 
+    private double activeGauge() {
+        return meterRegistry.get("watchparty_host_nudge_schedules_active").gauge().value();
+    }
+
     private static final String HG_1 = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
     private static final String HG_2 = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
     private static final String HG_3 = "cccccccc-cccc-cccc-cccc-cccccccccccc";
@@ -246,5 +250,101 @@ class WatchPartyHostNudgeSchedulerTest {
         scheduler.cancelHostNudge(h);
 
         assertThat(counter("watchparty_host_nudge_schedule_deleted", "error")).isEqualTo(1.0);
+    }
+
+    // ================= active-schedules gauge =================
+
+    @Test
+    void activeGauge_startsAtZero() {
+        assertThat(activeGauge()).isZero();
+    }
+
+    @Test
+    void activeGauge_incrementsOnNewSchedule() {
+        Hangout h = futureHangout(HG_1, SERIES);
+        EventSeries s = WatchPartyTestFixtures.inPersonSeries(SERIES, GROUP);
+
+        scheduler.scheduleHostNudge(h, s);
+
+        assertThat(activeGauge()).isEqualTo(1.0);
+    }
+
+    @Test
+    void activeGauge_doesNotIncrementOnUpdate() {
+        // existing schedule name → expectedToExist=true → update path, no net new schedule
+        Hangout h = futureHangout(HG_1, SERIES);
+        h.setHostNudgeScheduleName("hostnudge-" + HG_1);
+        EventSeries s = WatchPartyTestFixtures.inPersonSeries(SERIES, GROUP);
+
+        scheduler.scheduleHostNudge(h, s);
+
+        assertThat(activeGauge()).isZero();
+    }
+
+    @Test
+    void activeGauge_doesNotIncrementOnSkippedOrError() {
+        EventSeries virtual = WatchPartyTestFixtures.virtualSeries(SERIES, GROUP);
+        scheduler.scheduleHostNudge(futureHangout(HG_1, SERIES), virtual);
+        assertThat(activeGauge()).isZero();
+
+        Hangout errH = futureHangout(HG_2, SERIES);
+        doThrow(new RuntimeException("boom"))
+            .when(eventBridgeClient).createOrUpdateSchedule(anyString(), anyString(), anyString(), anyBoolean());
+        scheduler.scheduleHostNudge(errH, WatchPartyTestFixtures.inPersonSeries(SERIES, GROUP));
+        assertThat(activeGauge()).isZero();
+    }
+
+    @Test
+    void activeGauge_decrementsOnSuccessfulCancel() {
+        Hangout h = futureHangout(HG_1, SERIES);
+        EventSeries s = WatchPartyTestFixtures.inPersonSeries(SERIES, GROUP);
+        scheduler.scheduleHostNudge(h, s);
+        assertThat(activeGauge()).isEqualTo(1.0);
+
+        h.setHostNudgeScheduleName("hostnudge-" + HG_1);
+        scheduler.cancelHostNudge(h);
+
+        assertThat(activeGauge()).isZero();
+    }
+
+    @Test
+    void activeGauge_doesNotDecrementOnCancelError() {
+        Hangout h = futureHangout(HG_1, SERIES);
+        h.setHostNudgeScheduleName("schedule-x");
+        doThrow(new RuntimeException("boom")).when(eventBridgeClient).deleteSchedule(eq("schedule-x"));
+
+        scheduler.cancelHostNudge(h);
+
+        assertThat(activeGauge()).isZero();
+    }
+
+    @Test
+    void activeGauge_cancelWithoutStoredName_doesNotGoNegative() {
+        // No prior scheduleHostNudge call → activeSchedules was never incremented.
+        // Calling cancel must not push gauge below zero.
+        Hangout h = futureHangout(HG_1, SERIES);
+        h.setHostNudgeScheduleName(null);
+
+        scheduler.cancelHostNudge(h);
+
+        assertThat(activeGauge()).isZero();
+    }
+
+    @Test
+    void activeGauge_pastFireTimeCleanup_decrementsWhenScheduleExisted() {
+        // Set up: a hangout with an existing stored schedule, but fire time has passed.
+        // The cleanup delete should decrement the gauge.
+        Hangout h = futureHangout(HG_1, SERIES);
+        EventSeries s = WatchPartyTestFixtures.inPersonSeries(SERIES, GROUP);
+        scheduler.scheduleHostNudge(h, s);
+        assertThat(activeGauge()).isEqualTo(1.0);
+
+        // Now flip fire time into the past and re-call: the past-fire-time branch
+        // sees existing schedule name and triggers cleanup delete.
+        h.setHostNudgeScheduleName("hostnudge-" + HG_1);
+        h.setStartTimestamp(Instant.now().getEpochSecond() + 600); // 10min away → fire time 47h50m past
+        scheduler.scheduleHostNudge(h, s);
+
+        assertThat(activeGauge()).isZero();
     }
 }

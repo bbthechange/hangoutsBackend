@@ -51,6 +51,9 @@ public class MyService {
 - **Rate limiting**: `rate_limit_exceeded_total{endpoint}` (via `RateLimitingService`)
   - Tracked endpoints: `/auth/resend-code`, `/auth/verify`, `/groups/invite/preview`, `/auth/request-password-reset`, `/auth/verify-reset-code`, `/auth/refresh`
 - **iOS 2.1 vote-strip gate**: `poll_votes_strip_gate_fired_total{app_version, endpoint}` — fires every time the embedded poll-vote array is stripped for a client in `[2.1.0, 2.2.0)`. Endpoints: `feed`, `hangout_detail`, `poll_detail`. Used to time the removal of the workaround (see `POLLS_CONTEXT.md §6`). Delete this metric and instrumentation once 2.1.x traffic drops to zero.
+- **Watch-party host-nudge schedules** (`WatchPartyHostNudgeScheduler`):
+  - Counters: `watchparty_host_nudge_schedule_created{status}` and `watchparty_host_nudge_schedule_deleted{status}` (status: `success`, `error`, `skipped_virtual`, `skipped_has_host`, `skipped_past`).
+  - Gauge: `watchparty_host_nudge_schedules_active` — running count of net EventBridge host-nudge schedules created since process start (incremented on a successful new create where `expectedToExist=false`, decremented on a successful delete). Approximate per-instance — does NOT survive restarts and does not reconcile with AWS state. Useful as a leak/quota-pressure indicator. AWS quota: 1M schedules/region, 100 TPS on `CreateSchedule`. A 24-episode show × N groups creates 24N schedules; alert if the gauge climbs without a matching delete rate. For ground truth use `aws scheduler list-schedules --group-name <group>` filtered to the `hostnudge-` prefix.
 
 ### Candidates for Future Instrumentation
 These are currently log-only, not tracked as metrics:

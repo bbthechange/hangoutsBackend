@@ -4,6 +4,7 @@ import com.bbthechange.inviter.client.EventBridgeSchedulerClient;
 import com.bbthechange.inviter.model.EventSeries;
 import com.bbthechange.inviter.model.Hangout;
 import com.bbthechange.inviter.repository.HangoutRepository;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Schedules / cancels EventBridge schedules for the watch-party host nudge.
@@ -32,6 +34,7 @@ public class WatchPartyHostNudgeScheduler {
     private static final String SCHEDULE_PREFIX = "hostnudge-";
     private static final String COUNTER_CREATED = "watchparty_host_nudge_schedule_created";
     private static final String COUNTER_DELETED = "watchparty_host_nudge_schedule_deleted";
+    private static final String GAUGE_ACTIVE = "watchparty_host_nudge_schedules_active";
 
     private static final DateTimeFormatter SCHEDULE_TIME_FORMATTER =
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss").withZone(ZoneOffset.UTC);
@@ -39,6 +42,7 @@ public class WatchPartyHostNudgeScheduler {
     private final EventBridgeSchedulerClient eventBridgeClient;
     private final HangoutRepository hangoutRepository;
     private final MeterRegistry meterRegistry;
+    private final AtomicLong activeSchedules = new AtomicLong(0L);
 
     @Autowired
     public WatchPartyHostNudgeScheduler(EventBridgeSchedulerClient eventBridgeClient,
@@ -47,6 +51,9 @@ public class WatchPartyHostNudgeScheduler {
         this.eventBridgeClient = eventBridgeClient;
         this.hangoutRepository = hangoutRepository;
         this.meterRegistry = meterRegistry;
+        Gauge.builder(GAUGE_ACTIVE, activeSchedules, AtomicLong::doubleValue)
+            .description("Approximate count of active EventBridge host-nudge schedules (created - deleted since process start)")
+            .register(meterRegistry);
     }
 
     /**
@@ -97,6 +104,7 @@ public class WatchPartyHostNudgeScheduler {
             if (existing != null && !existing.isEmpty()) {
                 try {
                     eventBridgeClient.deleteSchedule(existing);
+                    activeSchedules.decrementAndGet();
                 } catch (Exception e) {
                     logger.warn("Failed to clean up stale host-nudge schedule {}: {}", existing, e.getMessage());
                 }
@@ -117,6 +125,9 @@ public class WatchPartyHostNudgeScheduler {
             eventBridgeClient.createOrUpdateSchedule(scheduleName, scheduleExpression, inputJson, expectedToExist);
             hangoutRepository.updateHostNudgeScheduleName(hangout.getHangoutId(), scheduleName);
             meterRegistry.counter(COUNTER_CREATED, "status", "success").increment();
+            if (!expectedToExist) {
+                activeSchedules.incrementAndGet();
+            }
             logger.info("Scheduled host nudge for hangout {} at {}", hangout.getHangoutId(), scheduleExpression);
         } catch (Exception e) {
             logger.error("Failed to schedule host nudge for hangout {}: {}",
@@ -136,14 +147,16 @@ public class WatchPartyHostNudgeScheduler {
             return;
         }
 
-        String scheduleName = hangout.getHostNudgeScheduleName();
-        if (scheduleName == null || scheduleName.isEmpty()) {
-            scheduleName = generateScheduleName(hangout.getHangoutId());
-        }
+        String storedName = hangout.getHostNudgeScheduleName();
+        boolean hadTrackedSchedule = storedName != null && !storedName.isEmpty();
+        String scheduleName = hadTrackedSchedule ? storedName : generateScheduleName(hangout.getHangoutId());
 
         try {
             eventBridgeClient.deleteSchedule(scheduleName);
             meterRegistry.counter(COUNTER_DELETED, "status", "success").increment();
+            if (hadTrackedSchedule) {
+                activeSchedules.decrementAndGet();
+            }
             logger.info("Cancelled host nudge for hangout {}", hangout.getHangoutId());
         } catch (Exception e) {
             logger.error("Failed to cancel host nudge for hangout {}: {}",
