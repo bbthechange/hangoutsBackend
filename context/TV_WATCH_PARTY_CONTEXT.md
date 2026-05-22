@@ -162,7 +162,7 @@ Creates a watch party series.
 
 **`showImageUrl`** validation: Must start with `https://static.tvmaze.com/` and be ≤2048 characters. Stored as `mainImagePath` on EventSeries and denormalized to SeriesPointer.
 
-**Response:** `WatchPartyResponse` with `seriesId`, `mainImagePath`, and list of created hangouts
+**Response:** `WatchPartyResponse` with `seriesId`, `mainImagePath`, `watchPartyModel`, and list of created hangouts. `watchPartyModel` echoes the persisted value (null on legacy rows; clients treat null as `IN_PERSON`). `WatchPartyDetailResponse` (GET) carries the same `watchPartyModel` field.
 
 ### PUT /groups/{groupId}/watch-parties/{seriesId}
 

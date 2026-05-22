@@ -179,6 +179,7 @@ public class WatchPartyServiceImpl implements WatchPartyService {
                 .seriesTitle(seriesTitle)
                 .mainImagePath(eventSeries.getMainImagePath())
                 .hangouts(hangoutSummaries)
+                .watchPartyModel(eventSeries.getWatchPartyModel())
                 .build();
     }
 
@@ -255,6 +256,7 @@ public class WatchPartyServiceImpl implements WatchPartyService {
                 .mainImagePath(series.getMainImagePath())
                 .hangouts(hangoutSummaries)
                 .interestLevels(interestLevelDTOs)
+                .watchPartyModel(series.getWatchPartyModel())
                 .build();
     }
 

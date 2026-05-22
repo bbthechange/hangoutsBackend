@@ -86,6 +86,12 @@ public class WatchPartyDetailResponse {
     private List<SeriesInterestLevelDTO> interestLevels;
 
     /**
+     * Watch party model: "IN_PERSON" or "VIRTUAL".
+     * Null on legacy rows; clients treat null as IN_PERSON.
+     */
+    private String watchPartyModel;
+
+    /**
      * Set interest levels from InterestLevel models.
      * Converts the internal status field to the external level field.
      *

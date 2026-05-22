@@ -660,12 +660,15 @@ class WatchPartyServiceImplTest {
             when(seasonRepository.findByShowIdAndSeasonNumber(SHOW_ID, SEASON_NUMBER))
                     .thenReturn(Optional.empty());
 
-            watchPartyService.createWatchParty(GROUP_ID, request, USER_ID);
+            WatchPartyResponse response = watchPartyService.createWatchParty(GROUP_ID, request, USER_ID);
 
             ArgumentCaptor<EventSeries> seriesCaptor = ArgumentCaptor.forClass(EventSeries.class);
             verify(eventSeriesRepository).save(seriesCaptor.capture());
             EventSeries savedSeries = seriesCaptor.getValue();
             assertThat(savedSeries.getWatchPartyModel()).isEqualTo("VIRTUAL");
+            // Response must echo the persisted model so the client can render
+            // mode-specific affordances without a re-read (UX Flow 1).
+            assertThat(response.getWatchPartyModel()).isEqualTo("VIRTUAL");
         }
     }
 
@@ -763,6 +766,40 @@ class WatchPartyServiceImplTest {
             assertThatThrownBy(() -> watchPartyService.getWatchParty(GROUP_ID, SERIES_ID, USER_ID))
                     .isInstanceOf(ResourceNotFoundException.class)
                     .hasMessageContaining("Watch party not found in group");
+        }
+
+        @Test
+        void getWatchParty_whenSeriesHasWatchPartyModel_returnsItInResponse() {
+            // Clients need watchPartyModel on the detail response to render
+            // mode-specific UI (UX Flow 1).
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+
+            EventSeries series = createWatchPartySeries();
+            series.setWatchPartyModel("VIRTUAL");
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(series));
+            when(hangoutRepository.findHangoutById("hangout-1")).thenReturn(Optional.empty());
+            when(hangoutRepository.findHangoutById("hangout-2")).thenReturn(Optional.empty());
+
+            WatchPartyDetailResponse response = watchPartyService.getWatchParty(GROUP_ID, SERIES_ID, USER_ID);
+
+            assertThat(response.getWatchPartyModel()).isEqualTo("VIRTUAL");
+        }
+
+        @Test
+        void getWatchParty_whenLegacySeriesHasNullWatchPartyModel_returnsNull() {
+            // Legacy rows persisted before watchPartyModel existed return null.
+            // Clients treat null as IN_PERSON (matches EventSeries.isVirtualWatchParty()).
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+
+            EventSeries series = createWatchPartySeries();
+            // watchPartyModel intentionally left null
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(series));
+            when(hangoutRepository.findHangoutById("hangout-1")).thenReturn(Optional.empty());
+            when(hangoutRepository.findHangoutById("hangout-2")).thenReturn(Optional.empty());
+
+            WatchPartyDetailResponse response = watchPartyService.getWatchParty(GROUP_ID, SERIES_ID, USER_ID);
+
+            assertThat(response.getWatchPartyModel()).isNull();
         }
     }
 

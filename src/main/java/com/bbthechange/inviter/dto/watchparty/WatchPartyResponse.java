@@ -35,4 +35,10 @@ public class WatchPartyResponse {
      * List of hangouts created for episodes.
      */
     private List<WatchPartyHangoutSummary> hangouts;
+
+    /**
+     * Watch party model: "IN_PERSON" or "VIRTUAL".
+     * Null on legacy rows; clients treat null as IN_PERSON.
+     */
+    private String watchPartyModel;
 }
