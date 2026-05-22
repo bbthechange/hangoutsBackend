@@ -180,6 +180,32 @@ class WatchPartyHostNudgeSchedulerTest {
     }
 
     @Test
+    void scheduleHostNudge_legacyNullModel_logsAndCountsPromotion() {
+        String hangoutId = HG_2;
+        Hangout h = futureHangout(hangoutId, SERIES);
+        EventSeries s = WatchPartyTestFixtures.inPersonSeries(SERIES, GROUP);
+        s.setWatchPartyModel(null);
+
+        scheduler.scheduleHostNudge(h, s);
+
+        // Legacy null-model is treated as IN_PERSON: schedule still gets created.
+        verify(eventBridgeClient).createOrUpdateSchedule(anyString(), anyString(), anyString(), anyBoolean());
+        verify(hangoutRepository).updateHostNudgeScheduleName(eq(hangoutId), anyString());
+        assertThat(meterRegistry.counter("watchparty_legacy_model_promoted").count()).isEqualTo(1.0);
+        assertThat(counter("watchparty_host_nudge_schedule_created", "success")).isEqualTo(1.0);
+    }
+
+    @Test
+    void scheduleHostNudge_explicitInPersonModel_doesNotIncrementLegacyCounter() {
+        Hangout h = futureHangout(HG_3, SERIES);
+        EventSeries s = WatchPartyTestFixtures.inPersonSeries(SERIES, GROUP); // model = "IN_PERSON"
+
+        scheduler.scheduleHostNudge(h, s);
+
+        assertThat(meterRegistry.counter("watchparty_legacy_model_promoted").count()).isZero();
+    }
+
+    @Test
     void scheduleHostNudge_existingScheduleName_useUpdateFirst() {
         String hangoutId = HG_3;
         Hangout h = futureHangout(hangoutId, SERIES);

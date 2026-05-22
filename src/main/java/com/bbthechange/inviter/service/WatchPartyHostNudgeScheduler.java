@@ -34,6 +34,7 @@ public class WatchPartyHostNudgeScheduler {
     private static final String SCHEDULE_PREFIX = "hostnudge-";
     private static final String COUNTER_CREATED = "watchparty_host_nudge_schedule_created";
     private static final String COUNTER_DELETED = "watchparty_host_nudge_schedule_deleted";
+    private static final String COUNTER_LEGACY_MODEL_PROMOTED = "watchparty_legacy_model_promoted";
     private static final String GAUGE_ACTIVE = "watchparty_host_nudge_schedules_active";
 
     private static final DateTimeFormatter SCHEDULE_TIME_FORMATTER =
@@ -73,6 +74,12 @@ public class WatchPartyHostNudgeScheduler {
             logger.info("Skipping host nudge for hangout {}: series is virtual", hangout.getHangoutId());
             meterRegistry.counter(COUNTER_CREATED, "status", "skipped_virtual").increment();
             return;
+        }
+
+        if (series != null && series.getWatchPartyModel() == null) {
+            logger.info("Watch-party series {} has null watchPartyModel (legacy); treating as IN_PERSON for host-nudge",
+                series.getSeriesId());
+            meterRegistry.counter(COUNTER_LEGACY_MODEL_PROMOTED).increment();
         }
 
         if (hangout.getHostAtPlaceUserId() != null && !hangout.getHostAtPlaceUserId().isEmpty()) {
