@@ -179,7 +179,7 @@ Updates watch party settings.
 }
 ```
 
-**`changeExistingUpcomingHangouts`** (default: true): If true, cascades changes to all future hangouts. When cascading a timezone change, the original timezone is used for air date extraction to prevent date drift (see Time Calculation section).
+**`changeExistingUpcomingHangouts`** (default: true): If true, cascades changes to all future hangouts. When cascading a timezone change, the original timezone is used for air date extraction to prevent date drift (see Time Calculation section). **Exception — model toggle:** a `watchPartyModel` flip (VIRTUAL ↔ IN_PERSON) ALWAYS syncs host-nudge schedules for every future hangout regardless of this flag (VIRTUAL→IN_PERSON schedules nudges for hostless hangouts; IN_PERSON→VIRTUAL cancels stale ones). Hangout time/host fields stay untouched when `false`.
 **`showImageUrl`**: Set to new URL to change image, `""` to clear, omit to leave unchanged.
 
 ### DELETE /groups/{groupId}/watch-parties/{seriesId}

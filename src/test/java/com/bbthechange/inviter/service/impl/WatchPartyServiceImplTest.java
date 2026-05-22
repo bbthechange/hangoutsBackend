@@ -1314,6 +1314,84 @@ class WatchPartyServiceImplTest {
         }
 
         @Test
+        void updateWatchParty_ModelToggleVirtualToInPerson_NoCascade_SchedulesNudgeForHostlessFutureHangouts() {
+            // Series flips VIRTUAL → IN_PERSON with cascade=false: the per-hangout
+            // schedule sync must still run, otherwise the now-in-person series
+            // never gets nudges scheduled for its hostless future hangouts.
+            testSeries.setWatchPartyModel("VIRTUAL");
+            testHangout.setHostAtPlaceUserId(null);
+
+            UpdateWatchPartyRequest request = UpdateWatchPartyRequest.builder()
+                    .watchPartyModel("IN_PERSON")
+                    .changeExistingUpcomingHangouts(false)
+                    .build();
+
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(testHangout));
+
+            watchPartyService.updateWatchParty(GROUP_ID, SERIES_ID, request, USER_ID);
+
+            // Schedule cascade must fire even with cascade=false.
+            verify(watchPartyHostNudgeScheduler).scheduleHostNudge(eq(testHangout), any(EventSeries.class));
+            verify(watchPartyHostNudgeScheduler, never()).cancelHostNudge(any());
+            // Hangout state must NOT be mutated.
+            verify(hangoutRepository, never()).save(any(Hangout.class));
+            verify(pointerUpdateService, never()).upsertPointerWithRetry(
+                    anyString(), anyString(), any(Hangout.class), any(), anyString());
+        }
+
+        @Test
+        void updateWatchParty_ModelToggleInPersonToVirtual_NoCascade_CancelsNudgeForFutureHangouts() {
+            // Series flips IN_PERSON → VIRTUAL with cascade=false: stale nudges
+            // must be cancelled for every future hangout — otherwise a "needs a
+            // host" push fires for a virtual party.
+            testSeries.setWatchPartyModel("IN_PERSON");
+
+            UpdateWatchPartyRequest request = UpdateWatchPartyRequest.builder()
+                    .watchPartyModel("VIRTUAL")
+                    .changeExistingUpcomingHangouts(false)
+                    .build();
+
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(testHangout));
+
+            watchPartyService.updateWatchParty(GROUP_ID, SERIES_ID, request, USER_ID);
+
+            verify(watchPartyHostNudgeScheduler).cancelHostNudge(testHangout);
+            verify(watchPartyHostNudgeScheduler, never()).scheduleHostNudge(any(), any());
+            // Hangout state must NOT be mutated.
+            verify(hangoutRepository, never()).save(any(Hangout.class));
+            verify(pointerUpdateService, never()).upsertPointerWithRetry(
+                    anyString(), anyString(), any(Hangout.class), any(), anyString());
+        }
+
+        @Test
+        void updateWatchParty_TimeSettingsChanged_NoCascade_DoesNotTouchSchedules() {
+            // Time-shift with cascade=false must NOT touch schedules: hangout
+            // times weren't updated, so existing schedules still match. Preserves
+            // historical behavior captured by updateWatchParty_WithoutCascade_PreservesHangouts.
+            testSeries.setWatchPartyModel("IN_PERSON");
+            testHangout.setHostAtPlaceUserId(null);
+
+            UpdateWatchPartyRequest request = UpdateWatchPartyRequest.builder()
+                    .defaultTime("21:00")
+                    .changeExistingUpcomingHangouts(false)
+                    .build();
+
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(hangoutRepository.findHangoutById(HANGOUT_ID)).thenReturn(Optional.of(testHangout));
+
+            watchPartyService.updateWatchParty(GROUP_ID, SERIES_ID, request, USER_ID);
+
+            verify(watchPartyHostNudgeScheduler, never()).scheduleHostNudge(any(), any());
+            verify(watchPartyHostNudgeScheduler, never()).cancelHostNudge(any());
+            verify(hangoutRepository, never()).save(any(Hangout.class));
+        }
+
+        @Test
         void updateWatchParty_DefaultHostIdCascade_CancelsNudgeForHangoutsThatGetHost() {
             // Series defaults a new host onto hostless future hangouts: every such
             // hangout had its nudge cancelled.

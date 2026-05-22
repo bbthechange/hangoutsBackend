@@ -390,7 +390,16 @@ public class WatchPartyServiceImpl implements WatchPartyService {
         Long minTimestamp = series.getStartTimestamp();
         Long maxTimestamp = series.getEndTimestamp();
 
-        if (shouldCascade && (timeSettingsChanged || hostChanged || modelChanged) && series.getHangoutIds() != null) {
+        // Model toggle (VIRTUAL ↔ IN_PERSON) MUST sync schedules even when
+        // changeExistingUpcomingHangouts=false: otherwise virtual series leave
+        // stale nudges scheduled, and newly-in-person series never schedule
+        // them for hostless future hangouts. Hangout-state mutations
+        // (timestamps, hostAtPlaceUserId) remain gated on shouldCascade.
+        boolean iterateHangouts =
+                series.getHangoutIds() != null
+                        && (modelChanged
+                                || (shouldCascade && (timeSettingsChanged || hostChanged)));
+        if (iterateHangouts) {
             // Get Season to look up original air timestamps
             Season season = getSeasonFromSeries(series);
 
@@ -410,8 +419,8 @@ public class WatchPartyServiceImpl implements WatchPartyService {
 
                 boolean hangoutUpdated = false;
 
-                // Update timestamps if time settings changed
-                if (timeSettingsChanged && season != null) {
+                // Update timestamps if time settings changed (gated on shouldCascade)
+                if (shouldCascade && timeSettingsChanged && season != null) {
                     // Get original air timestamp from episode
                     Long originalAirTimestamp = getOriginalAirTimestamp(hangout, season);
                     if (originalAirTimestamp != null) {
@@ -455,8 +464,8 @@ public class WatchPartyServiceImpl implements WatchPartyService {
                     }
                 }
 
-                // Update host if changed
-                if (hostChanged) {
+                // Update host if changed (gated on shouldCascade)
+                if (shouldCascade && hostChanged) {
                     hangout.setHostAtPlaceUserId(effectiveDefaultHostId);
                     hangoutUpdated = true;
                 }
@@ -472,6 +481,12 @@ public class WatchPartyServiceImpl implements WatchPartyService {
                 // Host-nudge cascade. Done after persist so the scheduler sees the new state.
                 // Each block is independently try/caught so one EventBridge failure doesn't
                 // strand the rest of the cascade.
+                //
+                // Model-toggle branches run regardless of shouldCascade — the series-level
+                // model flip alone is enough to invalidate every future hangout's schedule.
+                // Host/time branches stay gated on shouldCascade because without it the
+                // hangout's host and time fields above were not touched, so the existing
+                // schedule still matches the hangout state.
                 String currentHost = hangout.getHostAtPlaceUserId();
                 boolean hostlessAfter = (currentHost == null || currentHost.isEmpty());
                 try {
@@ -483,10 +498,10 @@ public class WatchPartyServiceImpl implements WatchPartyService {
                         if (hostlessAfter) {
                             watchPartyHostNudgeScheduler.scheduleHostNudge(hangout, series);
                         }
-                    } else if (hostChanged && !hostlessAfter) {
+                    } else if (shouldCascade && hostChanged && !hostlessAfter) {
                         // Default-host cascade gave this hangout a host — cancel the nudge.
                         watchPartyHostNudgeScheduler.cancelHostNudge(hangout);
-                    } else if (timeSettingsChanged && hostlessAfter) {
+                    } else if (shouldCascade && timeSettingsChanged && hostlessAfter) {
                         // Time shift moved the fire window — re-schedule. createOrUpdate
                         // overwrites the existing schedule in place.
                         watchPartyHostNudgeScheduler.scheduleHostNudge(hangout, series);
