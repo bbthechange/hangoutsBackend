@@ -86,10 +86,10 @@ public class CreateWatchPartyRequest {
     private Integer tvmazeSeasonId;
 
     /**
-     * Watch-party model: "IN_PERSON" or "VIRTUAL". No default — client must choose.
+     * Watch-party model: "IN_PERSON" or "VIRTUAL". Optional — defaults to "IN_PERSON"
+     * on the server when omitted so existing clients keep working until they adopt the field.
      * Drives host-nudge gating (virtual parties don't need a host).
      */
-    @NotBlank(message = "watchPartyModel is required")
     @Pattern(regexp = "^(IN_PERSON|VIRTUAL)$", message = "watchPartyModel must be IN_PERSON or VIRTUAL")
     private String watchPartyModel;
 

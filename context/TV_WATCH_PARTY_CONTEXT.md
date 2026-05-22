@@ -155,7 +155,7 @@ Creates a watch party series.
 ```
 
 **Required:** `showId`, `seasonNumber`, `tvmazeSeasonId`, `showName`, `defaultTime`, `timezone`
-**Optional:** `dayOverride`, `defaultHostId`, `showImageUrl`
+**Optional:** `dayOverride`, `defaultHostId`, `showImageUrl`, `watchPartyModel` (`IN_PERSON` or `VIRTUAL`; null defaults to `IN_PERSON` server-side for backwards-compat with clients that haven't adopted the field yet)
 
 **`showImageUrl`** validation: Must start with `https://static.tvmaze.com/` and be ≤2048 characters. Stored as `mainImagePath` on EventSeries and denormalized to SeriesPointer.
 

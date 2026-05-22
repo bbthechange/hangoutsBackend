@@ -955,9 +955,12 @@ public class WatchPartyServiceImpl implements WatchPartyService {
         series.setDayOverride(request.getDayOverride());
         series.setTimezone(request.getTimezone());
         series.setIsGeneratedTitle(true);
-        // watchPartyModel is required on create — recorded so virtual-vs-in-person gating
-        // and host-nudge scheduling work from the first save.
-        series.setWatchPartyModel(request.getWatchPartyModel());
+        // Default null → IN_PERSON for backwards-compat with clients that don't yet
+        // send watchPartyModel. Drives virtual-vs-in-person gating and host-nudge scheduling.
+        String watchPartyModel = request.getWatchPartyModel() != null
+                ? request.getWatchPartyModel()
+                : "IN_PERSON";
+        series.setWatchPartyModel(watchPartyModel);
         // Recorded so the host-nudge recipient resolver always includes the creator
         // (Flow 2 in the UX doc).
         series.setCreatedBy(requestingUserId);

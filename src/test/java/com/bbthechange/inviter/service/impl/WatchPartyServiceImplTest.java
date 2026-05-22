@@ -614,6 +614,59 @@ class WatchPartyServiceImplTest {
             // Verify tvmazeSeasonId is null (graceful handling)
             assertThat(savedSeason.getTvmazeSeasonId()).isNull();
         }
+
+        @Test
+        void createWatchParty_WhenWatchPartyModelOmitted_DefaultsToInPerson() {
+            // Older clients don't send watchPartyModel; server must default it to IN_PERSON
+            // so the series persists and host-nudge gating still picks the in-person path.
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+
+            CreateWatchPartyRequest request = CreateWatchPartyRequest.builder()
+                    .showId(SHOW_ID)
+                    .seasonNumber(SEASON_NUMBER)
+                    .showName(SHOW_NAME)
+                    .defaultTime(DEFAULT_TIME)
+                    .timezone(TIMEZONE)
+                    .episodes(List.of(createEpisode(101, "Pilot", BASE_TIMESTAMP, 60)))
+                    .build();
+            // No watchPartyModel set — explicitly null
+
+            when(seasonRepository.findByShowIdAndSeasonNumber(SHOW_ID, SEASON_NUMBER))
+                    .thenReturn(Optional.empty());
+
+            watchPartyService.createWatchParty(GROUP_ID, request, USER_ID);
+
+            ArgumentCaptor<EventSeries> seriesCaptor = ArgumentCaptor.forClass(EventSeries.class);
+            verify(eventSeriesRepository).save(seriesCaptor.capture());
+            EventSeries savedSeries = seriesCaptor.getValue();
+            assertThat(savedSeries.getWatchPartyModel()).isEqualTo("IN_PERSON");
+        }
+
+        @Test
+        void createWatchParty_WhenWatchPartyModelProvided_HonorsRequestValue() {
+            // When a newer client sends VIRTUAL, persist it as-is — no defaulting.
+            when(groupRepository.isUserMemberOfGroup(GROUP_ID, USER_ID)).thenReturn(true);
+
+            CreateWatchPartyRequest request = CreateWatchPartyRequest.builder()
+                    .showId(SHOW_ID)
+                    .seasonNumber(SEASON_NUMBER)
+                    .showName(SHOW_NAME)
+                    .defaultTime(DEFAULT_TIME)
+                    .timezone(TIMEZONE)
+                    .watchPartyModel("VIRTUAL")
+                    .episodes(List.of(createEpisode(101, "Pilot", BASE_TIMESTAMP, 60)))
+                    .build();
+
+            when(seasonRepository.findByShowIdAndSeasonNumber(SHOW_ID, SEASON_NUMBER))
+                    .thenReturn(Optional.empty());
+
+            watchPartyService.createWatchParty(GROUP_ID, request, USER_ID);
+
+            ArgumentCaptor<EventSeries> seriesCaptor = ArgumentCaptor.forClass(EventSeries.class);
+            verify(eventSeriesRepository).save(seriesCaptor.capture());
+            EventSeries savedSeries = seriesCaptor.getValue();
+            assertThat(savedSeries.getWatchPartyModel()).isEqualTo("VIRTUAL");
+        }
     }
 
     // ============================================================================

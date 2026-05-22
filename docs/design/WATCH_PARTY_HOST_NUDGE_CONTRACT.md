@@ -41,7 +41,7 @@ public boolean isVirtualWatchParty() {
 
 | DTO | Field | Type | Required |
 |-----|-------|------|----------|
-| `CreateWatchPartyRequest` | `watchPartyModel` | `String` | Yes (no default per UX) |
+| `CreateWatchPartyRequest` | `watchPartyModel` | `String` | Optional. Server defaults null to `"IN_PERSON"` for backwards-compat with clients that don't yet send the field. Pattern-validated when present (`IN_PERSON|VIRTUAL`). |
 | `UpdateWatchPartyRequest` | `watchPartyModel` | `String` | Optional (omit = leave unchanged) |
 
 ### EventBridge schedule name format
