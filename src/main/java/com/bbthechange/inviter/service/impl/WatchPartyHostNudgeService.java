@@ -5,6 +5,7 @@ import com.bbthechange.inviter.model.Hangout;
 import com.bbthechange.inviter.repository.EventSeriesRepository;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.service.NotificationService;
+import com.bbthechange.inviter.util.EpisodeTitles;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -189,18 +190,11 @@ public class WatchPartyHostNudgeService {
         }
 
         String episodeTitle = hangout.getTitle();
-        if (episodeTitle == null || episodeTitle.isBlank() || isTbaTitle(episodeTitle)) {
+        if (episodeTitle == null || episodeTitle.isBlank() || EpisodeTitles.isTba(episodeTitle)) {
             return String.format("%s's %s episode still needs a host!", day, showName);
         }
 
         return String.format("%s — %s airs %s and still needs a host!", showName, episodeTitle, day);
-    }
-
-    private boolean isTbaTitle(String title) {
-        String trimmed = title.trim().toLowerCase(Locale.ROOT);
-        return trimmed.equals("tba") || trimmed.equals("tbd")
-            || trimmed.equals("tba.") || trimmed.equals("tbd.")
-            || trimmed.startsWith("tba ") || trimmed.startsWith("tbd ");
     }
 
     private String formatDayOfWeek(Long startTimestamp, String timezone) {
