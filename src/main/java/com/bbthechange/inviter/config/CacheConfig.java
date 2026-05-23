@@ -27,7 +27,7 @@ public class CacheConfig {
      */
     @Bean
     public CacheManager cacheManager() {
-        CaffeineCacheManager cacheManager = new CaffeineCacheManager("friendlyNames");
+        CaffeineCacheManager cacheManager = new CaffeineCacheManager("friendlyNames", "showFlavors");
         cacheManager.setCaffeine(Caffeine.newBuilder()
                 .expireAfterWrite(60, TimeUnit.MINUTES)
                 .maximumSize(10000) // 10,000 entries (~5MB memory footprint)

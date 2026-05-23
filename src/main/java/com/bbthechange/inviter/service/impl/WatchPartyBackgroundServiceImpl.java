@@ -10,6 +10,7 @@ import com.bbthechange.inviter.service.WatchPartyBackgroundService;
 import com.bbthechange.inviter.service.WatchPartyHostNudgeScheduler;
 import com.bbthechange.inviter.util.HangoutPointerFactory;
 import com.bbthechange.inviter.util.InviterKeyFactory;
+import com.bbthechange.inviter.util.WatchPartyTitleFormatter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,6 +45,7 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
     private final MeterRegistry meterRegistry;
     private final PointerUpdateService pointerUpdateService;
     private final WatchPartyHostNudgeScheduler watchPartyHostNudgeScheduler;
+    private final WatchPartyTitleFormatter titleFormatter;
 
     public WatchPartyBackgroundServiceImpl(
             EventSeriesRepository eventSeriesRepository,
@@ -54,7 +56,8 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
             NotificationService notificationService,
             MeterRegistry meterRegistry,
             PointerUpdateService pointerUpdateService,
-            WatchPartyHostNudgeScheduler watchPartyHostNudgeScheduler) {
+            WatchPartyHostNudgeScheduler watchPartyHostNudgeScheduler,
+            WatchPartyTitleFormatter titleFormatter) {
         this.eventSeriesRepository = eventSeriesRepository;
         this.hangoutRepository = hangoutRepository;
         this.groupRepository = groupRepository;
@@ -64,6 +67,7 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
         this.meterRegistry = meterRegistry;
         this.pointerUpdateService = pointerUpdateService;
         this.watchPartyHostNudgeScheduler = watchPartyHostNudgeScheduler;
+        this.titleFormatter = titleFormatter;
     }
 
     @Override
@@ -73,7 +77,7 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
 
         try {
             // Parse seasonKey to get showId
-            Integer showId = parseShowIdFromSeasonKey(message.getSeasonKey());
+            Integer showId = InviterKeyFactory.parseShowIdFromSeasonId(message.getSeasonKey());
             if (showId == null) {
                 logger.error("Failed to parse showId from seasonKey: {}", message.getSeasonKey());
                 meterRegistry.counter("watchparty_background_total", "action", "new_episode", "status", "invalid_key").increment();
@@ -104,7 +108,7 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
                 }
 
                 // Create hangout for this series
-                Hangout hangout = createHangoutFromEpisode(series, episode);
+                Hangout hangout = createHangoutFromEpisode(series, episode, showId);
                 HangoutPointer pointer = HangoutPointerFactory.fromHangout(hangout, series.getGroupId());
 
                 // Save records
@@ -176,9 +180,15 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
             long nowTimestamp = Instant.now().getEpochSecond();
             int updated = 0;
             Set<String> groupsToUpdate = new HashSet<>();
+            // Per-invocation cache of seriesId → showId so we resolve each series at most
+            // once. All matched hangouts share the same externalId (TVMaze episode), so in
+            // practice this is a 1–N lookup where N == number of distinct watching groups.
+            Map<String, Integer> showIdBySeriesId = new HashMap<>();
 
             for (Hangout hangout : hangouts) {
-                // Skip if not using generated title
+                // Skip if not using generated title — the user has customized this title,
+                // so we must never overwrite it. This gate stays BEFORE the formatter call
+                // (see TV_WATCH_PARTY_CONTEXT guardrail).
                 if (!Boolean.TRUE.equals(hangout.getIsGeneratedTitle())) {
                     continue;
                 }
@@ -188,14 +198,19 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
                     continue;
                 }
 
+                // Apply the central formatter — null/blank/TBA pass through unchanged so the
+                // host-nudge TBA detection downstream still works.
+                Integer showId = resolveShowIdForHangout(hangout, showIdBySeriesId);
+                String formattedTitle = titleFormatter.formatEpisodeTitle(showId, message.getNewTitle());
+
                 // Skip if title hasn't actually changed
-                if (message.getNewTitle().equals(hangout.getTitle())) {
+                if (java.util.Objects.equals(formattedTitle, hangout.getTitle())) {
                     continue;
                 }
 
                 // Update title
                 String oldTitle = hangout.getTitle();
-                hangout.setTitle(message.getNewTitle());
+                hangout.setTitle(formattedTitle);
 
                 // Only send push notification once per hangout
                 boolean shouldNotify = !Boolean.TRUE.equals(hangout.getTitleNotificationSent());
@@ -225,11 +240,12 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
 
                 updated++;
                 logger.debug("Updated hangout {} title from '{}' to '{}'",
-                        hangout.getHangoutId(), oldTitle, message.getNewTitle());
+                        hangout.getHangoutId(), oldTitle, formattedTitle);
 
-                // Notify interested users about title change (only once per hangout)
+                // Notify interested users about title change (only once per hangout).
+                // Use the formatted title so the push copy matches what's stored.
                 if (shouldNotify && hangout.getSeriesId() != null) {
-                    notifyTitleUpdate(hangout.getSeriesId(), oldTitle, message.getNewTitle());
+                    notifyTitleUpdate(hangout.getSeriesId(), oldTitle, formattedTitle);
                 }
             }
 
@@ -317,29 +333,34 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
     // HELPER METHODS
     // ============================================================================
 
-    private Integer parseShowIdFromSeasonKey(String seasonKey) {
-        // Format: "TVMAZE#SHOW#{showId}|SEASON#{seasonNumber}"
-        if (seasonKey == null) return null;
-
-        try {
-            String[] parts = seasonKey.split("\\|");
-            if (parts.length < 1) return null;
-
-            // Parse "TVMAZE#SHOW#{showId}"
-            String[] showParts = parts[0].split("#");
-            if (showParts.length >= 3) {
-                return Integer.parseInt(showParts[2]);
-            }
-        } catch (NumberFormatException e) {
-            logger.warn("Failed to parse showId from seasonKey: {}", seasonKey);
+    /**
+     * Resolve the TVMaze show ID for a hangout's series, caching per-message so we read
+     * each EventSeries at most once. Returns null if the series is missing or its
+     * {@code seasonId} can't be parsed — callers fall back to the uncurated formatter
+     * branch (no prefix).
+     */
+    private Integer resolveShowIdForHangout(Hangout hangout, Map<String, Integer> cache) {
+        String seriesId = hangout.getSeriesId();
+        if (seriesId == null || seriesId.isEmpty()) {
+            return null;
         }
-        return null;
+        if (cache.containsKey(seriesId)) {
+            return cache.get(seriesId);
+        }
+        Integer showId = eventSeriesRepository.findById(seriesId)
+                .map(EventSeries::getSeasonId)
+                .map(InviterKeyFactory::parseShowIdFromSeasonId)
+                .orElse(null);
+        cache.put(seriesId, showId);
+        return showId;
     }
 
-    private Hangout createHangoutFromEpisode(EventSeries series, EpisodeData episode) {
+    private Hangout createHangoutFromEpisode(EventSeries series, EpisodeData episode, Integer showId) {
         Hangout hangout = new Hangout();
         hangout.setHangoutId(UUID.randomUUID().toString());
-        hangout.setTitle(episode.getTitle());
+        // Route the title through the central formatter (single sanctioned path for
+        // watch-party episode titles). Null/blank/TBA pass through unchanged.
+        hangout.setTitle(titleFormatter.formatEpisodeTitle(showId, episode.getTitle()));
         hangout.setVisibility(EventVisibility.INVITE_ONLY);
         hangout.setSeriesId(series.getSeriesId());
         hangout.setAssociatedGroups(List.of(series.getGroupId()));

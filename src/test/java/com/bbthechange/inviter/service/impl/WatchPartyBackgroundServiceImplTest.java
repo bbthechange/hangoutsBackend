@@ -16,7 +16,9 @@ import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.SeasonRepository;
 import com.bbthechange.inviter.service.GroupTimestampService;
 import com.bbthechange.inviter.service.NotificationService;
+import com.bbthechange.inviter.service.ShowFlavorService;
 import com.bbthechange.inviter.service.WatchPartyHostNudgeScheduler;
+import com.bbthechange.inviter.util.WatchPartyTitleFormatter;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -66,6 +68,9 @@ class WatchPartyBackgroundServiceImplTest {
     private WatchPartyHostNudgeScheduler watchPartyHostNudgeScheduler;
 
     @Mock
+    private ShowFlavorService showFlavorService;
+
+    @Mock
     private Counter counter;
 
     private WatchPartyBackgroundServiceImpl service;
@@ -73,6 +78,9 @@ class WatchPartyBackgroundServiceImplTest {
     @BeforeEach
     void setUp() {
         when(meterRegistry.counter(anyString(), any(String[].class))).thenReturn(counter);
+        // Real formatter wrapped around a mocked ShowFlavorService that returns empty by
+        // default — preserves the legacy uncurated behavior the existing assertions assume.
+        WatchPartyTitleFormatter titleFormatter = new WatchPartyTitleFormatter(showFlavorService);
         service = new WatchPartyBackgroundServiceImpl(
                 eventSeriesRepository,
                 hangoutRepository,
@@ -82,7 +90,8 @@ class WatchPartyBackgroundServiceImplTest {
                 notificationService,
                 meterRegistry,
                 pointerUpdateService,
-                watchPartyHostNudgeScheduler
+                watchPartyHostNudgeScheduler,
+                titleFormatter
         );
     }
 
@@ -200,6 +209,54 @@ class WatchPartyBackgroundServiceImplTest {
 
         // Then
         verify(watchPartyHostNudgeScheduler, times(2)).scheduleHostNudge(any(Hangout.class), any(EventSeries.class));
+    }
+
+    @Test
+    void processNewEpisode_WithCuratedShow_AppliesShortNamePrefix() {
+        // Given a curated show: NEW_EPISODE must route through the formatter.
+        EpisodeData episode = new EpisodeData(456, "How To Videos", 1705363200L);
+        episode.setRuntime(60);
+        NewEpisodeMessage message = new NewEpisodeMessage("TVMAZE#SHOW#123|SEASON#1", episode);
+
+        EventSeries series = new EventSeries("RuPaul Season 18", null, "c8c3f5d4-5e8b-4c2a-a9f2-b3c2d1e4f5a6");
+        series.setDefaultTime("20:00");
+        series.setTimezone("America/New_York");
+        series.setHangoutIds(new ArrayList<>());
+
+        when(eventSeriesRepository.findAllByExternalIdAndSource("123", "TVMAZE"))
+                .thenReturn(List.of(series));
+        when(showFlavorService.getShortName(123)).thenReturn(Optional.of("All Stars"));
+
+        // When
+        service.processNewEpisode(message);
+
+        // Then
+        ArgumentCaptor<Hangout> hangoutCaptor = ArgumentCaptor.forClass(Hangout.class);
+        verify(hangoutRepository).save(hangoutCaptor.capture());
+        assertEquals("All Stars: How To Videos", hangoutCaptor.getValue().getTitle());
+    }
+
+    @Test
+    void processNewEpisode_WithCuratedShowAndTbaTitle_PreservesTba() {
+        // TBA pass-through is the hard contract — prefixing TBA would defeat host-nudge.
+        EpisodeData episode = new EpisodeData(456, "TBA", 1705363200L);
+        episode.setRuntime(60);
+        NewEpisodeMessage message = new NewEpisodeMessage("TVMAZE#SHOW#123|SEASON#1", episode);
+
+        EventSeries series = new EventSeries("RuPaul Season 18", null, "c8c3f5d4-5e8b-4c2a-a9f2-b3c2d1e4f5a6");
+        series.setDefaultTime("20:00");
+        series.setTimezone("America/New_York");
+        series.setHangoutIds(new ArrayList<>());
+
+        when(eventSeriesRepository.findAllByExternalIdAndSource("123", "TVMAZE"))
+                .thenReturn(List.of(series));
+        // showFlavorService.getShortName not stubbed: formatter must short-circuit before lookup.
+
+        service.processNewEpisode(message);
+
+        ArgumentCaptor<Hangout> hangoutCaptor = ArgumentCaptor.forClass(Hangout.class);
+        verify(hangoutRepository).save(hangoutCaptor.capture());
+        assertEquals("TBA", hangoutCaptor.getValue().getTitle());
     }
 
     @Test
@@ -379,6 +436,89 @@ class WatchPartyBackgroundServiceImplTest {
 
         // Then - no save since title hasn't changed
         verify(hangoutRepository, never()).save(any(Hangout.class));
+    }
+
+    @Test
+    void processUpdateTitle_WithCuratedShow_PrefixesShortName() {
+        // Given a curated show: the formatter applies the short-name prefix to the
+        // incoming raw title before persistence and notification.
+        UpdateTitleMessage message = new UpdateTitleMessage("456", "How To Videos");
+
+        String seriesId = "d7e8f9a0-b1c2-43d4-a5f6-7c8d9e0f1a2b";
+        String groupId = "c8c3f5d4-5e8b-4c2a-a9f2-b3c2d1e4f5a6";
+
+        Hangout hangout = new Hangout();
+        hangout.setHangoutId("a1b2c3d4-e5f6-47c8-9d1e-2f3a4b5c6d7e");
+        hangout.setTitle("Old Title");
+        hangout.setIsGeneratedTitle(true);
+        hangout.setTitleNotificationSent(false);
+        hangout.setStartTimestamp(System.currentTimeMillis() / 1000 + 3600);
+        hangout.setAssociatedGroups(List.of(groupId));
+        hangout.setSeriesId(seriesId);
+
+        EventSeries series = new EventSeries("RuPaul Season 18", null, groupId);
+        series.setSeriesId(seriesId);
+        series.setSeasonId("TVMAZE#SHOW#123|SEASON#1");
+
+        when(hangoutRepository.findAllByExternalIdAndSource("456", "TVMAZE"))
+                .thenReturn(List.of(hangout));
+        when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(showFlavorService.getShortName(123)).thenReturn(Optional.of("All Stars"));
+
+        service.processUpdateTitle(message);
+
+        ArgumentCaptor<Hangout> hangoutCaptor = ArgumentCaptor.forClass(Hangout.class);
+        verify(hangoutRepository).save(hangoutCaptor.capture());
+        assertEquals("All Stars: How To Videos", hangoutCaptor.getValue().getTitle());
+    }
+
+    @Test
+    void processUpdateTitle_WithCuratedShow_DoesNotPrefixTba() {
+        // Hard contract: TBA must remain TBA so host-nudge isTba detection still fires.
+        UpdateTitleMessage message = new UpdateTitleMessage("456", "TBA");
+
+        String seriesId = "d7e8f9a0-b1c2-43d4-a5f6-7c8d9e0f1a2b";
+        String groupId = "c8c3f5d4-5e8b-4c2a-a9f2-b3c2d1e4f5a6";
+
+        Hangout hangout = new Hangout();
+        hangout.setHangoutId("a1b2c3d4-e5f6-47c8-9d1e-2f3a4b5c6d7e");
+        hangout.setTitle("Old Title");
+        hangout.setIsGeneratedTitle(true);
+        hangout.setTitleNotificationSent(false);
+        hangout.setStartTimestamp(System.currentTimeMillis() / 1000 + 3600);
+        hangout.setAssociatedGroups(List.of(groupId));
+        hangout.setSeriesId(seriesId);
+
+        when(hangoutRepository.findAllByExternalIdAndSource("456", "TVMAZE"))
+                .thenReturn(List.of(hangout));
+        // No need to stub showFlavorService — TBA short-circuits before lookup.
+
+        service.processUpdateTitle(message);
+
+        ArgumentCaptor<Hangout> hangoutCaptor = ArgumentCaptor.forClass(Hangout.class);
+        verify(hangoutRepository).save(hangoutCaptor.capture());
+        assertEquals("TBA", hangoutCaptor.getValue().getTitle());
+    }
+
+    @Test
+    void processUpdateTitle_WithCustomTitleAndCuratedShow_DoesNotPrefix() {
+        // The isGeneratedTitle gate stays — user-edited titles must NEVER be touched,
+        // even when the formatter would otherwise apply.
+        UpdateTitleMessage message = new UpdateTitleMessage("456", "How To Videos");
+
+        Hangout hangout = new Hangout();
+        hangout.setHangoutId("a1b2c3d4-e5f6-47c8-9d1e-2f3a4b5c6d7e");
+        hangout.setTitle("My Custom Title");
+        hangout.setIsGeneratedTitle(false); // user-customized
+        hangout.setStartTimestamp(System.currentTimeMillis() / 1000 + 3600);
+
+        when(hangoutRepository.findAllByExternalIdAndSource("456", "TVMAZE"))
+                .thenReturn(List.of(hangout));
+
+        service.processUpdateTitle(message);
+
+        verify(hangoutRepository, never()).save(any(Hangout.class));
+        verify(showFlavorService, never()).getShortName(anyInt());
     }
 
     @Test

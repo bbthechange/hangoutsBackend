@@ -1,6 +1,7 @@
 package com.bbthechange.inviter.service;
 
 import com.bbthechange.inviter.dto.watchparty.CreateWatchPartyRequest;
+import com.bbthechange.inviter.dto.watchparty.ReformatTitlesResult;
 import com.bbthechange.inviter.dto.watchparty.UpdateWatchPartyRequest;
 import com.bbthechange.inviter.dto.watchparty.WatchPartyDetailResponse;
 import com.bbthechange.inviter.dto.watchparty.WatchPartyResponse;
@@ -130,4 +131,21 @@ public interface WatchPartyService {
      * @throws com.bbthechange.inviter.exception.ValidationException       if {@code nudgeType} is not a known constant
      */
     void setSeriesNotificationPreference(String seriesId, String nudgeType, boolean muted, String requestingUserId);
+
+    /**
+     * Admin backfill: re-run the {@code WatchPartyTitleFormatter} against every future-dated
+     * generated-title hangout in a series and persist the new title (canonical + pointer).
+     *
+     * <p>Idempotent — hangouts whose formatted title already matches the stored title are
+     * left untouched. No notifications fire. The series title and {@code SeriesPointer
+     * .seriesTitle} are intentionally NOT touched (per design).
+     *
+     * @param seriesId watch-party series ID
+     * @return scan/update counts for the curator
+     * @throws com.bbthechange.inviter.exception.ResourceNotFoundException if the series
+     *     does not exist, is not a watch party, or has no {@code ShowFlavor} record for
+     *     its show — running a backfill against an uncurated show is a no-op the curator
+     *     almost certainly didn't intend, so we surface it explicitly.
+     */
+    ReformatTitlesResult reformatWatchPartyTitles(String seriesId);
 }

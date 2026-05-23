@@ -1,10 +1,13 @@
 package com.bbthechange.inviter.controller;
 
 import com.bbthechange.inviter.dto.watchparty.PollResult;
+import com.bbthechange.inviter.dto.watchparty.ReformatTitlesResult;
 import com.bbthechange.inviter.dto.watchparty.sqs.ShowUpdatedMessage;
 import com.bbthechange.inviter.dto.watchparty.sqs.TestMessageRequest;
 import com.bbthechange.inviter.dto.watchparty.sqs.WatchPartyMessage;
+import com.bbthechange.inviter.exception.ResourceNotFoundException;
 import com.bbthechange.inviter.service.TvMazePollingService;
+import com.bbthechange.inviter.service.WatchPartyService;
 import com.bbthechange.inviter.service.WatchPartySqsService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.Counter;
@@ -49,6 +52,9 @@ class InternalWatchPartyControllerTest {
     @Mock
     private TvMazePollingService pollingService;
 
+    @Mock
+    private WatchPartyService watchPartyService;
+
     private SimpleMeterRegistry meterRegistry;
 
     @Nested
@@ -61,9 +67,9 @@ class InternalWatchPartyControllerTest {
         void setUp() {
             meterRegistry = new SimpleMeterRegistry();
             controllerWithPolling = new InternalWatchPartyController(
-                    sqsService, objectMapper, meterRegistry, Optional.of(pollingService));
+                    sqsService, objectMapper, meterRegistry, Optional.of(pollingService), watchPartyService);
             controllerWithoutPolling = new InternalWatchPartyController(
-                    sqsService, objectMapper, meterRegistry, Optional.empty());
+                    sqsService, objectMapper, meterRegistry, Optional.empty(), watchPartyService);
         }
 
         @Test
@@ -174,7 +180,7 @@ class InternalWatchPartyControllerTest {
         void setUp() {
             meterRegistry = new SimpleMeterRegistry();
             controller = new InternalWatchPartyController(
-                    sqsService, objectMapper, meterRegistry, Optional.of(pollingService));
+                    sqsService, objectMapper, meterRegistry, Optional.of(pollingService), watchPartyService);
         }
 
         @Test
@@ -273,7 +279,7 @@ class InternalWatchPartyControllerTest {
         void setUp() {
             meterRegistry = new SimpleMeterRegistry();
             controller = new InternalWatchPartyController(
-                    sqsService, objectMapper, meterRegistry, Optional.of(pollingService));
+                    sqsService, objectMapper, meterRegistry, Optional.of(pollingService), watchPartyService);
         }
 
         @Test
@@ -324,6 +330,50 @@ class InternalWatchPartyControllerTest {
                     .tag("queue", "tvmaze-updates")
                     .tag("type", "SHOW_UPDATED")
                     .counter();
+            assertThat(counter).isNotNull();
+            assertThat(counter.count()).isEqualTo(1.0);
+        }
+    }
+
+    @Nested
+    class ReformatTitlesTests {
+
+        private InternalWatchPartyController controller;
+
+        @BeforeEach
+        void setUp() {
+            meterRegistry = new SimpleMeterRegistry();
+            controller = new InternalWatchPartyController(
+                    sqsService, objectMapper, meterRegistry, Optional.of(pollingService), watchPartyService);
+        }
+
+        @Test
+        void reformatTitles_Success_Returns200WithResult() {
+            String seriesId = "series-123";
+            ReformatTitlesResult expected = new ReformatTitlesResult(seriesId, 5, 3, 2);
+            when(watchPartyService.reformatWatchPartyTitles(seriesId)).thenReturn(expected);
+
+            ResponseEntity<?> response = controller.reformatTitles(seriesId);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody()).isSameAs(expected);
+            Counter counter = meterRegistry.find("watchparty_reformat_titles_total")
+                    .tag("status", "success").counter();
+            assertThat(counter).isNotNull();
+            assertThat(counter.count()).isEqualTo(1.0);
+        }
+
+        @Test
+        void reformatTitles_SeriesMissing_Returns404() {
+            String seriesId = "series-missing";
+            when(watchPartyService.reformatWatchPartyTitles(seriesId))
+                    .thenThrow(new ResourceNotFoundException("Watch party series not found: " + seriesId));
+
+            ResponseEntity<?> response = controller.reformatTitles(seriesId);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+            Counter counter = meterRegistry.find("watchparty_reformat_titles_total")
+                    .tag("status", "not_found").counter();
             assertThat(counter).isNotNull();
             assertThat(counter.count()).isEqualTo(1.0);
         }

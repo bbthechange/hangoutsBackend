@@ -16,10 +16,12 @@ import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.repository.SeasonRepository;
 import com.bbthechange.inviter.repository.SeriesNotificationPreferenceRepository;
 import com.bbthechange.inviter.service.GroupTimestampService;
+import com.bbthechange.inviter.service.ShowFlavorService;
+import com.bbthechange.inviter.util.WatchPartyTitleFormatter;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -71,8 +73,30 @@ class WatchPartyServiceImplTvMazeTest {
     @Mock
     private com.bbthechange.inviter.service.WatchPartyHostNudgeScheduler watchPartyHostNudgeScheduler;
 
-    @InjectMocks
+    @Mock
+    private ShowFlavorService showFlavorService;
+
     private WatchPartyServiceImpl watchPartyService;
+
+    @BeforeEach
+    void setUp() {
+        // Real formatter wrapping a mock ShowFlavorService that returns empty by default —
+        // matches the legacy "no curated short name" behavior these tests assume.
+        WatchPartyTitleFormatter titleFormatter = new WatchPartyTitleFormatter(showFlavorService);
+        watchPartyService = new WatchPartyServiceImpl(
+                groupRepository,
+                hangoutRepository,
+                eventSeriesRepository,
+                seasonRepository,
+                null,
+                groupTimestampService,
+                tvMazeClient,
+                null,
+                seriesNotificationPreferenceRepository,
+                watchPartyHostNudgeScheduler,
+                titleFormatter,
+                showFlavorService);
+    }
 
     // Test constants
     private static final String GROUP_ID = "11111111-1111-1111-1111-111111111111";

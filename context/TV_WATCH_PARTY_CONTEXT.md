@@ -38,6 +38,8 @@ TV Watch Party allows users to schedule a series of hangouts for a TV season. Th
 | `TvMazeClient.java` | HTTP client for TVMaze API with retry logic |
 | `HangoutPointerFactory.java` | Centralized factory for creating/updating HangoutPointer records (shared with HangoutService, EventSeriesService) |
 | `PointerUpdateService.java` | Optimistic-locking retry logic for pointer updates, including `upsertPointerWithRetry()` |
+| `ShowFlavorService.java` | Read-through (Caffeine-cached) lookup of curated `ShowFlavor` metadata; missing/error/null all collapse to `Optional.empty()` |
+| `WatchPartyTitleFormatter.java` (util) | Single sanctioned path for episode-title formatting; honors null/blank/TBA pass-through; series titles are intentionally NOT formatted |
 
 ### Models
 
@@ -48,6 +50,7 @@ TV Watch Party allows users to schedule a series of hangouts for a TV season. Th
 | `EventSeries.java` | Extended with watch party fields |
 | `SeriesPointer.java` | Extended with interest levels |
 | `Hangout.java` | Extended with titleNotificationSent, combinedExternalIds |
+| `ShowFlavor.java` | Curated per-show metadata (sibling of `Season` in `TVMAZE#SHOW#{showId}` partition; SK = `FLAVOR`); schemaless-by-design |
 
 ### SQS Listeners
 
@@ -228,7 +231,7 @@ Episodes airing <20 hours apart are combined into a single hangout.
 2. Group consecutive episodes with <20 hours between them
 3. Create single hangout per group
 
-**Naming Rules:**
+**Naming Rules (no curated `ShowFlavor`):**
 | Count | Title Format |
 |-------|--------------|
 | 1 | Episode title |
@@ -237,10 +240,70 @@ Episodes airing <20 hours apart are combined into a single hangout.
 | 4 | "Quadruple Episode" |
 | 5+ | "Multi-Episode ({count} episodes)" |
 
+**Naming Rules (with curated `ShowFlavor.shortName`):**
+| Count | Title Format |
+|-------|--------------|
+| 1 | "{shortName}: {title}" |
+| 2 | "{shortName} Double: {title1}, {title2}" |
+| 3 | "{shortName} Triple Episode" |
+| 4 | "{shortName} Quadruple Episode" |
+| 5+ | "{shortName} Multi-Episode ({count})" |
+
+Every watch-party episode-title write must route through `WatchPartyTitleFormatter`
+— there is no second path. The series title (`EventSeries.seriesTitle` / `SeriesPointer.seriesTitle`)
+is intentionally NOT formatted by this helper; it stays as the full
+`"{showName} Season {n}"` string.
+
+**Hard contract — null/blank/TBA pass-through:** when `rawTitle == null`,
+`rawTitle.isBlank()`, or `EpisodeTitles.isTba(rawTitle)` returns true, the formatter
+returns `rawTitle` unchanged even when a `shortName` exists. Downstream consumers
+(notably `WatchPartyHostNudgeService`) call `EpisodeTitles.isTba(hangout.getTitle())`
+on the stored title — prefixing TBA would silently break host-nudge.
+
 **Combined Hangout Data:**
 - `externalId` = First episode's ID
 - `combinedExternalIds` = All episode IDs
 - Runtime = Sum of all runtimes
+
+### 5a. ShowFlavor (curated show metadata)
+
+Curated per-show metadata used to make episode titles more colloquial.
+
+**Storage:**
+- PK: `TVMAZE#SHOW#{showId}`, SK: `FLAVOR` (sibling of `SEASON#{n}` records)
+- Schemaless-by-design: future fields (RSVP labels, push templates, emoji, accent
+  color, etc.) added as nullable bean attributes — no migrations required.
+- V1 populates `shortName` only. Records are written offline by a curator/agent;
+  no in-app write path.
+
+**Lookup:** `ShowFlavorService.getFlavor(showId)` / `getShortName(showId)` are
+read-through and Caffeine-cached (`showFlavors` cache, 60-minute TTL, see
+`CacheConfig`). A missing flavor, a repository error, and a null/invalid show ID
+all collapse to `Optional.empty()` — callers never see a thrown exception.
+
+**Integration sites (every episode-title write site):**
+1. `WatchPartyServiceImpl.createWatchParty` (single + combined episodes at creation)
+2. `WatchPartyBackgroundServiceImpl.processNewEpisode` (NEW_EPISODE handler)
+3. `WatchPartyBackgroundServiceImpl.processUpdateTitle` (UPDATE_TITLE handler —
+   still gated by `isGeneratedTitle` so user-edited titles are NEVER touched)
+4. `WatchPartyServiceImpl.reformatWatchPartyTitles` (admin backfill endpoint)
+
+### 5b. POST /internal/watch-party/{seriesId}/reformat-titles
+
+Admin backfill that re-runs the formatter against every future-dated
+`isGeneratedTitle=true` hangout in a series. Use after a curator writes a new
+`ShowFlavor` record so existing hangouts pick up the curated short name without
+waiting for the next TVMaze title update.
+
+- Auth: `X-Api-Key` (internal endpoint, same as the other `/internal/watch-party/*`
+  routes).
+- Idempotent: hangouts whose formatted title already matches the stored title are
+  left untouched.
+- No notifications fired (background, curator-initiated).
+- 404 when the series doesn't exist, isn't a watch party, has no parseable
+  `showId`, or has no `ShowFlavor` record for its show.
+- Series title and `SeriesPointer.seriesTitle` are **not** touched (per design —
+  see contract above).
 
 ## 6. Time Calculation
 

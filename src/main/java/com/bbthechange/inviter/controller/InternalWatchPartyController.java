@@ -1,8 +1,11 @@
 package com.bbthechange.inviter.controller;
 
 import com.bbthechange.inviter.dto.watchparty.PollResult;
+import com.bbthechange.inviter.dto.watchparty.ReformatTitlesResult;
 import com.bbthechange.inviter.dto.watchparty.sqs.*;
+import com.bbthechange.inviter.exception.ResourceNotFoundException;
 import com.bbthechange.inviter.service.TvMazePollingService;
+import com.bbthechange.inviter.service.WatchPartyService;
 import com.bbthechange.inviter.service.WatchPartySqsService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -34,16 +37,19 @@ public class InternalWatchPartyController {
     private final ObjectMapper objectMapper;
     private final MeterRegistry meterRegistry;
     private final Optional<TvMazePollingService> pollingService;
+    private final WatchPartyService watchPartyService;
 
     public InternalWatchPartyController(
             WatchPartySqsService sqsService,
             ObjectMapper objectMapper,
             MeterRegistry meterRegistry,
-            Optional<TvMazePollingService> pollingService) {
+            Optional<TvMazePollingService> pollingService,
+            WatchPartyService watchPartyService) {
         this.sqsService = sqsService;
         this.objectMapper = objectMapper;
         this.meterRegistry = meterRegistry;
         this.pollingService = pollingService;
+        this.watchPartyService = watchPartyService;
     }
 
     /**
@@ -173,6 +179,29 @@ public class InternalWatchPartyController {
                     "status", "error",
                     "error", e.getMessage() != null ? e.getMessage() : "Unknown error"
             ));
+        }
+    }
+
+    /**
+     * Re-run the {@code WatchPartyTitleFormatter} against every future-dated generated-title
+     * hangout in a series. Use after the curator has written a new {@code ShowFlavor} record
+     * so existing hangouts pick up the curated short name without waiting for the next
+     * TVMaze title update.
+     *
+     * <p>Idempotent. No notifications fired. Returns 404 when the series doesn't exist,
+     * isn't a watch party, or has no {@code ShowFlavor} for its show.
+     */
+    @PostMapping("/{seriesId}/reformat-titles")
+    public ResponseEntity<?> reformatTitles(@PathVariable String seriesId) {
+        logger.info("Reformat titles requested for seriesId={}", seriesId);
+        try {
+            ReformatTitlesResult result = watchPartyService.reformatWatchPartyTitles(seriesId);
+            meterRegistry.counter("watchparty_reformat_titles_total", "status", "success").increment();
+            return ResponseEntity.ok(result);
+        } catch (ResourceNotFoundException e) {
+            logger.info("Reformat titles 404 for seriesId={}: {}", seriesId, e.getMessage());
+            meterRegistry.counter("watchparty_reformat_titles_total", "status", "not_found").increment();
+            return ResponseEntity.status(404).body(Map.of("error", e.getMessage()));
         }
     }
 

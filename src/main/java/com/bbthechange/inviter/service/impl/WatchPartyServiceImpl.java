@@ -10,11 +10,13 @@ import com.bbthechange.inviter.exception.ValidationException;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.*;
 import com.bbthechange.inviter.service.GroupTimestampService;
+import com.bbthechange.inviter.service.ShowFlavorService;
 import com.bbthechange.inviter.service.WatchPartyHostNudgeScheduler;
 import com.bbthechange.inviter.service.WatchPartyService;
 import com.bbthechange.inviter.util.HangoutPointerFactory;
 import com.bbthechange.inviter.util.InviterKeyFactory;
 import com.bbthechange.inviter.util.NudgeTypes;
+import com.bbthechange.inviter.util.WatchPartyTitleFormatter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -49,6 +51,8 @@ public class WatchPartyServiceImpl implements WatchPartyService {
     private final PointerUpdateService pointerUpdateService;
     private final SeriesNotificationPreferenceRepository seriesNotificationPreferenceRepository;
     private final WatchPartyHostNudgeScheduler watchPartyHostNudgeScheduler;
+    private final WatchPartyTitleFormatter titleFormatter;
+    private final ShowFlavorService showFlavorService;
 
     @Autowired
     public WatchPartyServiceImpl(
@@ -61,7 +65,9 @@ public class WatchPartyServiceImpl implements WatchPartyService {
             TvMazeClient tvMazeClient,
             PointerUpdateService pointerUpdateService,
             SeriesNotificationPreferenceRepository seriesNotificationPreferenceRepository,
-            WatchPartyHostNudgeScheduler watchPartyHostNudgeScheduler) {
+            WatchPartyHostNudgeScheduler watchPartyHostNudgeScheduler,
+            WatchPartyTitleFormatter titleFormatter,
+            ShowFlavorService showFlavorService) {
         this.groupRepository = groupRepository;
         this.hangoutRepository = hangoutRepository;
         this.eventSeriesRepository = eventSeriesRepository;
@@ -72,6 +78,8 @@ public class WatchPartyServiceImpl implements WatchPartyService {
         this.pointerUpdateService = pointerUpdateService;
         this.seriesNotificationPreferenceRepository = seriesNotificationPreferenceRepository;
         this.watchPartyHostNudgeScheduler = watchPartyHostNudgeScheduler;
+        this.titleFormatter = titleFormatter;
+        this.showFlavorService = showFlavorService;
     }
 
     @Override
@@ -89,7 +97,7 @@ public class WatchPartyServiceImpl implements WatchPartyService {
         Season season = createOrUpdateSeason(request, episodes);
 
         // 5. Apply episode combination logic
-        List<CombinedEpisode> combinedEpisodes = combineEpisodes(episodes);
+        List<CombinedEpisode> combinedEpisodes = combineEpisodes(episodes, request.getShowId());
         logger.info("Combined {} episodes into {} groups", episodes.size(), combinedEpisodes.size());
 
         // 6. Create EventSeries
@@ -681,6 +689,116 @@ public class WatchPartyServiceImpl implements WatchPartyService {
                 requestingUserId, muted ? "muted" : "unmuted", nudgeType, seriesId);
     }
 
+    @Override
+    public ReformatTitlesResult reformatWatchPartyTitles(String seriesId) {
+        EventSeries series = eventSeriesRepository.findById(seriesId)
+                .orElseThrow(() -> new ResourceNotFoundException("Watch party series not found: " + seriesId));
+        if (!WATCH_PARTY_TYPE.equals(series.getEventSeriesType())) {
+            throw new ResourceNotFoundException("Series is not a watch party: " + seriesId);
+        }
+
+        Integer showId = InviterKeyFactory.parseShowIdFromSeasonId(series.getSeasonId());
+        if (showId == null) {
+            throw new ResourceNotFoundException("Series has no parseable showId: " + seriesId);
+        }
+        // 404 when uncurated — curator almost certainly didn't mean to backfill an
+        // uncurated show; surface the no-op explicitly so they can fix the flavor write.
+        if (showFlavorService.getFlavor(showId).isEmpty()) {
+            throw new ResourceNotFoundException("No ShowFlavor record for showId: " + showId);
+        }
+
+        Season season = getSeasonFromSeries(series);
+        if (season == null) {
+            logger.warn("reformatWatchPartyTitles: Season missing for series {} — nothing to backfill", seriesId);
+            return new ReformatTitlesResult(seriesId, 0, 0, 0);
+        }
+
+        long nowSeconds = Instant.now().getEpochSecond();
+        String groupId = series.getGroupId();
+        int scanned = 0;
+        int updated = 0;
+        int skipped = 0;
+
+        List<String> hangoutIds = series.getHangoutIds() != null ? series.getHangoutIds() : List.of();
+        for (String hangoutId : hangoutIds) {
+            Optional<Hangout> hangoutOpt = hangoutRepository.findHangoutById(hangoutId);
+            if (hangoutOpt.isEmpty()) {
+                skipped++;
+                continue;
+            }
+            Hangout hangout = hangoutOpt.get();
+            scanned++;
+
+            if (hangout.getStartTimestamp() != null && hangout.getStartTimestamp() <= nowSeconds) {
+                skipped++;
+                continue;
+            }
+            if (!Boolean.TRUE.equals(hangout.getIsGeneratedTitle())) {
+                skipped++;
+                continue;
+            }
+
+            List<String> rawTitles = resolveRawTitlesFromSeason(hangout, season);
+            if (rawTitles.isEmpty()) {
+                skipped++;
+                continue;
+            }
+
+            String newTitle = titleFormatter.formatCombinedEpisodeTitle(showId, rawTitles);
+            if (Objects.equals(newTitle, hangout.getTitle())) {
+                // Idempotent — no-op.
+                skipped++;
+                continue;
+            }
+
+            hangout.setTitle(newTitle);
+            hangoutRepository.save(hangout);
+            pointerUpdateService.upsertPointerWithRetry(groupId, hangoutId, hangout,
+                    pointer -> HangoutPointerFactory.applyHangoutFields(pointer, hangout),
+                    "reformat-titles backfill");
+            updated++;
+        }
+
+        if (updated > 0) {
+            groupTimestampService.updateGroupTimestamps(List.of(groupId));
+        }
+
+        logger.info("reformatWatchPartyTitles: series={} scanned={} updated={} skipped={}",
+                seriesId, scanned, updated, skipped);
+        return new ReformatTitlesResult(seriesId, scanned, updated, skipped);
+    }
+
+    /**
+     * Reconstruct the constituent raw episode titles for a hangout from the Season cache.
+     * Single episode → list of one; combined → list of N (in {@code combinedExternalIds}
+     * order). Episodes that no longer exist in the Season cache are skipped — the
+     * formatter ignores empty positions but we keep the list sized to the combination.
+     */
+    private List<String> resolveRawTitlesFromSeason(Hangout hangout, Season season) {
+        List<String> ids = hangout.getCombinedExternalIds();
+        if (ids == null || ids.isEmpty()) {
+            String externalId = hangout.getExternalId();
+            if (externalId == null) {
+                return List.of();
+            }
+            ids = List.of(externalId);
+        }
+        List<String> titles = new ArrayList<>(ids.size());
+        for (String id : ids) {
+            try {
+                Integer episodeId = Integer.parseInt(id);
+                Optional<Episode> ep = season.findEpisodeById(episodeId);
+                if (ep.isPresent()) {
+                    titles.add(ep.get().getTitle());
+                }
+            } catch (NumberFormatException e) {
+                logger.warn("reformatWatchPartyTitles: non-numeric externalId '{}' on hangout {} — skipping",
+                        id, hangout.getHangoutId());
+            }
+        }
+        return titles;
+    }
+
     // ============================================================================
     // HELPER METHODS - VALIDATION
     // ============================================================================
@@ -764,10 +882,23 @@ public class WatchPartyServiceImpl implements WatchPartyService {
     // ============================================================================
 
     /**
-     * Combine episodes that air within 20 hours of each other.
-     * Episodes must be sorted by airTimestamp.
+     * Test/legacy entry: combine episodes without a show ID. The formatter
+     * collapses to its uncurated branch when {@code showId == null}.
      */
     List<CombinedEpisode> combineEpisodes(List<CreateWatchPartyEpisodeRequest> episodes) {
+        return combineEpisodes(episodes, null);
+    }
+
+    /**
+     * Combine episodes that air within 20 hours of each other.
+     * Episodes must be sorted by airTimestamp.
+     *
+     * <p>{@code showId} is threaded through to the title formatter so a curated
+     * {@code ShowFlavor.shortName} can be applied to the resulting hangout title.
+     * Pass {@code null} when the show ID is unknown — the formatter falls back to
+     * the legacy unformatted output unchanged.
+     */
+    List<CombinedEpisode> combineEpisodes(List<CreateWatchPartyEpisodeRequest> episodes, Integer showId) {
         if (episodes == null || episodes.isEmpty()) {
             return List.of();
         }
@@ -797,19 +928,19 @@ public class WatchPartyServiceImpl implements WatchPartyService {
                 currentGroup.add(current);
             } else {
                 // Emit current group and start new one
-                result.add(createCombinedEpisode(currentGroup));
+                result.add(createCombinedEpisode(currentGroup, showId));
                 currentGroup = new ArrayList<>();
                 currentGroup.add(current);
             }
         }
 
         // Don't forget the last group
-        result.add(createCombinedEpisode(currentGroup));
+        result.add(createCombinedEpisode(currentGroup, showId));
 
         return result;
     }
 
-    private CombinedEpisode createCombinedEpisode(List<CreateWatchPartyEpisodeRequest> episodes) {
+    private CombinedEpisode createCombinedEpisode(List<CreateWatchPartyEpisodeRequest> episodes, Integer showId) {
         CombinedEpisode combined = new CombinedEpisode();
 
         // Primary episode is the first one
@@ -829,34 +960,14 @@ public class WatchPartyServiceImpl implements WatchPartyService {
                 .sum();
         combined.setTotalRuntime(totalRuntime);
 
-        // Generate title
-        combined.setTitle(generateCombinedTitle(episodes));
+        // Title goes through the central formatter — single sanctioned path for
+        // episode titles (see WatchPartyTitleFormatter docs).
+        List<String> rawTitles = episodes.stream()
+                .map(CreateWatchPartyEpisodeRequest::getTitle)
+                .collect(Collectors.toList());
+        combined.setTitle(titleFormatter.formatCombinedEpisodeTitle(showId, rawTitles));
 
         return combined;
-    }
-
-    /**
-     * Generate title for combined episodes per design doc:
-     * - 1 episode: just the title
-     * - 2 episodes: "Double Episode: {name1}, {name2}"
-     * - 3 episodes: "Triple Episode"
-     * - 4 episodes: "Quadruple Episode"
-     * - 5+ episodes: "Multi-Episode ({count} episodes)"
-     */
-    String generateCombinedTitle(List<CreateWatchPartyEpisodeRequest> episodes) {
-        int count = episodes.size();
-
-        if (count == 1) {
-            return episodes.get(0).getTitle();
-        } else if (count == 2) {
-            return "Double Episode: " + episodes.get(0).getTitle() + ", " + episodes.get(1).getTitle();
-        } else if (count == 3) {
-            return "Triple Episode";
-        } else if (count == 4) {
-            return "Quadruple Episode";
-        } else {
-            return "Multi-Episode (" + count + " episodes)";
-        }
     }
 
     // ============================================================================
