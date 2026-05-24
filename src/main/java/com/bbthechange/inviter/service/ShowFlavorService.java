@@ -34,8 +34,11 @@ public class ShowFlavorService {
      * Return the curated flavor record for a show, or empty if not curated.
      * Cached in the "showFlavors" Caffeine cache (60-minute TTL, see {@code CacheConfig}).
      */
-    @Cacheable(value = "showFlavors", key = "#showId.toString()")
+    @Cacheable(value = "showFlavors", key = "#showId", condition = "#showId != null")
     public Optional<ShowFlavor> getFlavor(Integer showId) {
+        // Null short-circuit: also enforced by @Cacheable condition above so the SpEL key
+        // expression never evaluates on a null. Belt-and-suspenders — the service contract
+        // is "null collapses to Optional.empty()".
         if (showId == null) {
             return Optional.empty();
         }
