@@ -119,6 +119,32 @@ class WatchPartyTitleFormatterTest {
         }
 
         @Test
+        void doubleEpisode_allConstituentsTba_collapsesToTbaSentinel() {
+            // Hard contract: when every constituent is TBA, the combined title must remain
+            // detectable as TBA so WatchPartyHostNudgeService's clean-fallback branch fires.
+            assertThat(formatter.formatCombinedEpisodeTitle(CURATED_SHOW, List.of("TBA", "TBA")))
+                    .isEqualTo("TBA");
+        }
+
+        @Test
+        void doubleEpisode_allConstituentsTba_collapsesEvenWithoutFlavor() {
+            assertThat(formatter.formatCombinedEpisodeTitle(UNCURATED_SHOW, List.of("TBA", "TBA")))
+                    .isEqualTo("TBA");
+        }
+
+        @Test
+        void doubleEpisode_mixedBlankAndTba_collapsesToTbaSentinel() {
+            assertThat(formatter.formatCombinedEpisodeTitle(CURATED_SHOW, Arrays.asList(null, "  ", "TBA")))
+                    .isEqualTo("TBA");
+        }
+
+        @Test
+        void tripleEpisode_allConstituentsTba_collapsesToTbaSentinel() {
+            assertThat(formatter.formatCombinedEpisodeTitle(CURATED_SHOW, List.of("TBA", "tba", "  TBA  ")))
+                    .isEqualTo("TBA");
+        }
+
+        @Test
         void tripleEpisode_curated_addsPrefix() {
             assertThat(formatter.formatCombinedEpisodeTitle(CURATED_SHOW, List.of("A", "B", "C")))
                     .isEqualTo("All Stars Triple Episode");

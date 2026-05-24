@@ -30,6 +30,10 @@ import java.util.Optional;
  *   <li>{@code formatCombinedEpisodeTitle} treats the structural marker (Double/Triple/
  *       Quadruple/Multi-Episode) as the surface that carries meaning — constituent
  *       titles inside a Double are passed through verbatim, including TBA.</li>
+ *   <li>{@code formatCombinedEpisodeTitle} returns the canonical {@code "TBA"} sentinel
+ *       when EVERY constituent is null/blank/TBA. Otherwise the host-nudge fallback
+ *       branch (which keys on {@link EpisodeTitles#isTba(String)}) would miss
+ *       "All Stars Double: TBA, TBA" and render the verbose default copy.</li>
  * </ul>
  */
 @Component
@@ -88,6 +92,12 @@ public class WatchPartyTitleFormatter {
         int count = titles.size();
         if (count == 1) {
             return formatEpisodeTitle(showId, titles.get(0));
+        }
+
+        // All-TBA pass-through: when every constituent is null/blank/TBA, collapse to the
+        // canonical "TBA" sentinel so EpisodeTitles.isTba(title) still fires downstream.
+        if (titles.stream().allMatch(t -> t == null || t.isBlank() || EpisodeTitles.isTba(t))) {
+            return "TBA";
         }
 
         Optional<String> shortName = lookupShortName(showId);
