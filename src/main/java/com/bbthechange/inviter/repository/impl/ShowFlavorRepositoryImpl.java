@@ -3,7 +3,6 @@ package com.bbthechange.inviter.repository.impl;
 import com.bbthechange.inviter.exception.RepositoryException;
 import com.bbthechange.inviter.model.ShowFlavor;
 import com.bbthechange.inviter.repository.ShowFlavorRepository;
-import com.bbthechange.inviter.util.InviterKeyFactory;
 import com.bbthechange.inviter.util.QueryPerformanceTracker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,7 +23,7 @@ import java.util.Optional;
 public class ShowFlavorRepositoryImpl implements ShowFlavorRepository {
 
     private static final Logger logger = LoggerFactory.getLogger(ShowFlavorRepositoryImpl.class);
-    private static final String TABLE_NAME = "InviterTable";
+    private static final String TABLE_NAME = "ShowFlavors";
 
     private final DynamoDbClient dynamoDbClient;
     private final TableSchema<ShowFlavor> schema;
@@ -49,8 +48,7 @@ public class ShowFlavorRepositoryImpl implements ShowFlavorRepository {
                 GetItemRequest request = GetItemRequest.builder()
                         .tableName(TABLE_NAME)
                         .key(Map.of(
-                                "pk", AttributeValue.builder().s(InviterKeyFactory.getSeasonPk(showId)).build(),
-                                "sk", AttributeValue.builder().s(InviterKeyFactory.getFlavorSk()).build()
+                                "showId", AttributeValue.builder().n(showId.toString()).build()
                         ))
                         .build();
 

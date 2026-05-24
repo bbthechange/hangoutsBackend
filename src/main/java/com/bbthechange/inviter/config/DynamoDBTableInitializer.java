@@ -9,6 +9,7 @@ import com.bbthechange.inviter.model.RefreshToken;
 import com.bbthechange.inviter.model.VerificationCode;
 import com.bbthechange.inviter.model.PasswordResetRequest;
 import com.bbthechange.inviter.model.PlaceEnrichmentCacheEntry;
+import com.bbthechange.inviter.model.ShowFlavor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -54,6 +55,9 @@ public class DynamoDBTableInitializer implements ApplicationRunner {
 
         // Place enrichment cache table with TTL
         createTableIfNotExists("PlaceEnrichmentCache", PlaceEnrichmentCacheEntry.class);
+
+        // ShowFlavors table — curated per-show metadata, isolated from live user data
+        createTableIfNotExists("ShowFlavors", ShowFlavor.class);
 
         // Configure TTL for refresh tokens, verification codes, and password reset requests
         configureTTL("InviterTable", "expiryDate");

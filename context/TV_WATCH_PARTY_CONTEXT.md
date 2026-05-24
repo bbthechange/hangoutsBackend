@@ -50,7 +50,7 @@ TV Watch Party allows users to schedule a series of hangouts for a TV season. Th
 | `EventSeries.java` | Extended with watch party fields |
 | `SeriesPointer.java` | Extended with interest levels |
 | `Hangout.java` | Extended with titleNotificationSent, combinedExternalIds |
-| `ShowFlavor.java` | Curated per-show metadata (sibling of `Season` in `TVMAZE#SHOW#{showId}` partition; SK = `FLAVOR`); schemaless-by-design |
+| `ShowFlavor.java` | Curated per-show metadata; lives in its own `ShowFlavors` table (PK=`showId`, no SK, no GSI); schemaless-by-design |
 
 ### SQS Listeners
 
@@ -270,11 +270,15 @@ on the stored title — prefixing TBA would silently break host-nudge.
 Curated per-show metadata used to make episode titles more colloquial.
 
 **Storage:**
-- PK: `TVMAZE#SHOW#{showId}`, SK: `FLAVOR` (sibling of `SEASON#{n}` records)
+- Dedicated `ShowFlavors` DynamoDB table. PK = `showId` (Number). No sort key,
+  no GSI. Isolated from live user data (`InviterTable`) so populator
+  credentials, blast radius, and listing/auditing all stay scoped to editorial
+  content only.
 - Schemaless-by-design: future fields (RSVP labels, push templates, emoji, accent
   color, etc.) added as nullable bean attributes — no migrations required.
 - V1 populates `shortName` only. Records are written offline by a curator/agent;
-  no in-app write path.
+  no in-app write path. Wire format for a populator write:
+  `{"showId": {"N": "4596"}, "shortName": {"S": "All Stars"}, "lastUpdated": {"N": "..."}, "source": {"S": "manual"}}`.
 
 **Lookup:** `ShowFlavorService.getFlavor(showId)` / `getShortName(showId)` are
 read-through and Caffeine-cached (`showFlavors` cache, 60-minute TTL, see

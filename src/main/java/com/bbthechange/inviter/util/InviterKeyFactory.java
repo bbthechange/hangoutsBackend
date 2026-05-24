@@ -47,7 +47,6 @@ public final class InviterKeyFactory {
     public static final String TVMAZE_PREFIX = "TVMAZE";
     public static final String SHOW_PREFIX = "SHOW";
     public static final String SEASON_PREFIX = "SEASON";
-    public static final String FLAVOR_SK = "FLAVOR";
 
     // Status constants
     public static final String STATUS_ACTIVE = "ACTIVE";
@@ -403,14 +402,6 @@ public final class InviterKeyFactory {
      */
     public static boolean isSeasonItem(String sortKey) {
         return sortKey != null && sortKey.startsWith(SEASON_PREFIX + DELIMITER);
-    }
-
-    /**
-     * Generate the sort key for a ShowFlavor record.
-     * Format: FLAVOR (constant — sibling of SEASON# items in the same TVMAZE#SHOW#{showId} partition).
-     */
-    public static String getFlavorSk() {
-        return FLAVOR_SK;
     }
 
     /**
