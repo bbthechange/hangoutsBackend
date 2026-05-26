@@ -64,6 +64,7 @@ eb deploy                     # Deploy to production
 | **Idea Lists** | `context/IDEA_LISTS_CONTEXT.md` | Idea list CRUD, ideas within groups |
 | **Notifications** | `context/NOTIFICATIONS_CONTEXT.md` | Push notifications, device registration |
 | **TV Watch Party** | `context/TV_WATCH_PARTY_CONTEXT.md` | TV show watch parties, TVMaze integration, background polling |
+| **Show Flavor Curation** | `context/SHOW_FLAVOR_CURATION.md` | Runbook for curating per-show metadata (shortName, future fields) via `scripts/populate_show_flavors.py` — prod data is written by a script, not an API |
 | **Adding Attributes** | `context/ATTRIBUTE_ADDITION_GUIDE.md` | Guide for adding fields to User/Group/Hangout |
 | **Username Cache** | `context/USERNAME_CACHE_CONTEXT.md` | Caffeine cache for user display names, UserSummaryDTO usage |
 | **Momentum** | `context/MOMENTUM_CONTEXT.md` | Momentum states, scoring, auto-promotion |

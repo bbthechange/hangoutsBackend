@@ -279,6 +279,10 @@ Curated per-show metadata used to make episode titles more colloquial.
 - V1 populates `shortName` only. Records are written offline by a curator/agent;
   no in-app write path. Wire format for a populator write:
   `{"showId": {"N": "4596"}, "shortName": {"S": "All Stars"}, "lastUpdated": {"N": "..."}, "source": {"S": "manual"}}`.
+- **Curation workflow:** all writes go through `scripts/populate_show_flavors.py`.
+  See `SHOW_FLAVOR_CURATION.md` for the full curator runbook (CSV format,
+  dry-run discipline, staging-vs-prod path, cache caveat, how to add new
+  attributes).
 
 **Lookup:** `ShowFlavorService.getFlavor(showId)` / `getShortName(showId)` are
 read-through and Caffeine-cached (`showFlavors` cache, 60-minute TTL, see
