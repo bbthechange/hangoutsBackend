@@ -48,6 +48,14 @@ except ImportError:
 REGION = "us-west-2"
 TABLE = "ShowFlavors"
 
+# The script verifies the resolved AWS account against these expected IDs
+# before any write. This is the real staging-vs-prod safety boundary —
+# AWS profile names are not.
+EXPECTED_ACCOUNT_IDS = {
+    "staging": "575960429871",
+    "prod":    "871070087012",
+}
+
 # CSV column → (DDB attribute name, type code, parser function).
 # Type code is informational (PutItem auto-types from the Python value); kept
 # for documentation and for any future validation we add.
@@ -95,10 +103,48 @@ def parse_args():
     p.add_argument("--i-really-mean-prod", action="store_true",
                    help="Required together with --yes when --env=prod. Deliberately "
                         "cumbersome — prevents pasting a staging command at prod.")
-    p.add_argument("--profile", default=None,
-                   help="AWS profile override. Defaults: 'default' for staging, "
-                        "'prod' for prod.")
+    p.add_argument("--profile", required=True,
+                   help="AWS profile name (from ~/.aws/credentials). REQUIRED — "
+                        "there is no default to prevent the [default] profile "
+                        "from silently shipping to the wrong account. The "
+                        "script verifies the resolved account against the "
+                        "expected ID for --env before any write.")
     return p.parse_args()
+
+
+def verify_account(session, env):
+    """
+    Resolve the caller's AWS account via STS and require it to match the
+    expected account for the requested env. This is the real safety check —
+    profile names are not.
+
+    Returns (account_id, arn). Exits on mismatch or any resolution failure.
+    """
+    try:
+        sts = session.client("sts", region_name=REGION)
+        ident = sts.get_caller_identity()
+    except NoCredentialsError:
+        sys.exit("ERROR: no AWS credentials resolved for this profile. "
+                 "Check ~/.aws/credentials.")
+    except ClientError as e:
+        sys.exit(f"ERROR: STS GetCallerIdentity failed: {e}")
+    except Exception as e:  # pragma: no cover — defensive
+        sys.exit(f"ERROR: could not resolve AWS identity: {e}")
+
+    account = ident.get("Account", "")
+    arn = ident.get("Arn", "")
+    expected = EXPECTED_ACCOUNT_IDS[env]
+    if account != expected:
+        sys.exit(
+            "ERROR: AWS account mismatch — refusing to write.\n"
+            f"  --env={env} expects account: {expected}\n"
+            f"  Resolved account:            {account}\n"
+            f"  Resolved identity:           {arn}\n\n"
+            "This is the staging-vs-prod safety check. Fix your --profile "
+            "or ~/.aws/credentials and re-run. See "
+            "SHOW_FLAVOR_CURATION.md §6 for the canonical account IDs."
+        )
+    return account, arn
 
 
 def load_csv(path):
@@ -201,7 +247,7 @@ def preview(env, table, items, dry_run):
         print("  --dry-run set; no writes will happen.")
 
 
-def write_batch(items, profile):
+def write_batch(items, session):
     """
     Write all items in chunks of 25 (DynamoDB BatchWriteItem max).
 
@@ -215,7 +261,6 @@ def write_batch(items, profile):
     propagates after partial progress is recorded — caller should report
     written_count before re-raising or exiting.
     """
-    session = boto3.Session(profile_name=profile)
     table = session.resource("dynamodb", region_name=REGION).Table(TABLE)
     written = 0
     total = len(items)
@@ -260,9 +305,25 @@ def main():
         print("Nothing curatable to write. Exiting.")
         return
 
+    # Resolve and verify the AWS account BEFORE the preview, so a mismatch
+    # never displays a misleading "here's what would be written" banner that
+    # implies the target is what the operator thinks. Dry-run runs the same
+    # check — that's the only way dry-run can catch wrong-account config.
+    try:
+        session = boto3.Session(profile_name=args.profile)
+    except Exception as e:
+        sys.exit(f"ERROR: could not load AWS profile {args.profile!r}: {e}")
+
+    account, arn = verify_account(session, args.env)
+    print()
+    print(f"  AWS profile: {args.profile!r}")
+    print(f"  Account:     {account}  ({args.env})")
+    print(f"  Identity:    {arn}")
+
     preview(args.env, TABLE, items, args.dry_run)
 
     if args.dry_run:
+        print("\n  --dry-run set; account verified, no writes performed.")
         return
 
     skip_prompt = args.yes
@@ -275,15 +336,12 @@ def main():
             print("Aborted.")
             return
 
-    profile = args.profile or ("prod" if args.env == "prod" else "default")
-    print(f"\nConnecting with AWS profile: {profile!r}")
-
     written = 0
     total = len(items)
     try:
-        written, total = write_batch(items, profile)
+        written, total = write_batch(items, session)
     except NoCredentialsError:
-        sys.exit(f"ERROR: no AWS credentials for profile {profile!r}. "
+        sys.exit(f"ERROR: no AWS credentials for profile {args.profile!r}. "
                  f"Check ~/.aws/credentials.")
     except ClientError as e:
         # Partial write is possible — every prior chunk landed successfully.

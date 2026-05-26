@@ -34,6 +34,20 @@ codebase later and wonders "how does the table get populated?"
 
 ---
 
+## 1.5. AWS Account IDs (canonical)
+
+| Env | Account ID | Notes |
+|---|---|---|
+| Staging | `575960429871` | Staging EB env `inviter-staging`. |
+| Prod | `871070087012` | Production EB env `inviter-test`. Yes, the EB env is misleadingly named — the AWS account is prod. |
+
+⚠️ The script verifies the resolved AWS account against the expected ID for
+`--env` (via `sts:GetCallerIdentity`) and aborts on mismatch. **This is the
+real staging-vs-prod safety check — profile names are not.** Anyone whose
+`[default]` profile happens to point at the prod account (this has been seen
+in the wild on this team) is protected by the account check regardless of
+which `--env` they pass.
+
 ## 2. Data Model Recap
 
 See `TV_WATCH_PARTY_CONTEXT.md` §5a for the canonical model. Quick reminder:
@@ -133,19 +147,35 @@ curl -s "https://api.tvmaze.com/singlesearch/shows?q=rupauls%20drag%20race%20all
 - `boto3` installed: `pip install boto3`
 - AWS credentials configured for the target environment (see §6).
 
+### Step 0: Verify Your AWS Identity Before Anything
+
+The script verifies the account internally, but a 10-second sanity check up
+front is still smart:
+
+```bash
+aws sts get-caller-identity --profile staging
+aws sts get-caller-identity --profile prod
+```
+
+Confirm `Account` matches §1.5: staging → `575960429871`, prod → `871070087012`.
+If your `[default]` profile happens to be configured for either account, the
+script will still catch a mismatch, but **never rely on `--profile default`** —
+always pass the named profile that matches your intent.
+
 ### ✅ Always Dry-Run First
 
 ```bash
 python3 scripts/populate_show_flavors.py \
     --csv ~/Downloads/flavors-2026-05-26.csv \
     --env staging \
+    --profile staging \
     --source agent-v1 \
     --dry-run
 ```
 
-Dry-run validates the CSV, parses every row, and prints a sample of what
-*would* be written — without calling DynamoDB. **Do this every time before any
-real write, even in staging.**
+Dry-run validates the CSV, **resolves and verifies the AWS account**, and
+prints a sample of what *would* be written — without writing anything. **Do
+this every time before any real write, even in staging.**
 
 The output shows:
 
@@ -157,10 +187,17 @@ CSV parsed: 240 data rows / 187 curatable / 53 skipped
   First 5 rows to write:
     showId=   4596  shortName='All Stars'    source='agent-v1'
     ...
-  --dry-run set; no writes will happen.
+
+  AWS profile: 'staging'
+  Account:     575960429871  (staging)
+  Identity:    arn:aws:iam::575960429871:user/...
+
+  --dry-run set; account verified, no writes performed.
 ```
 
-If row counts or sample data look off, fix the CSV before proceeding.
+If row counts, sample data, or the resolved account look off, **stop** and fix
+before proceeding. On an account mismatch the script aborts before showing the
+preview.
 
 ### Staging Write
 
@@ -168,6 +205,7 @@ If row counts or sample data look off, fix the CSV before proceeding.
 python3 scripts/populate_show_flavors.py \
     --csv ~/Downloads/flavors-2026-05-26.csv \
     --env staging \
+    --profile staging \
     --source agent-v1
 ```
 
@@ -186,6 +224,7 @@ automation.
 python3 scripts/populate_show_flavors.py \
     --csv ~/Downloads/flavors-2026-05-26.csv \
     --env prod \
+    --profile prod \
     --source agent-v1
 ```
 
@@ -198,59 +237,80 @@ to prevent accidental pastes of a staging command at prod.
 | Flag | Purpose |
 |---|---|
 | `--csv PATH` | **Required.** CSV file to ingest. |
-| `--env staging\|prod` | **Required.** Target environment. |
+| `--env staging\|prod` | **Required.** Target environment. Verified against the resolved AWS account ID (see §1.5). |
+| `--profile NAME` | **Required.** AWS profile from `~/.aws/credentials`. No default — explicit avoids the `[default]`-points-at-the-wrong-account trap. |
 | `--source TAG` | **Required.** Audit tag written to `source` field. Examples: `agent-v1`, `manual-2026-05-26`, `curator-bbutler`. |
-| `--dry-run` | Validate and preview without writing. |
+| `--dry-run` | Validate, verify account, and preview without writing. |
 | `--yes` | Skip the interactive prompt (staging automation). |
 | `--i-really-mean-prod` | Required with `--yes` when `--env=prod`. |
-| `--profile NAME` | Override AWS profile (defaults: `default` for staging, `prod` for prod). |
 
 ---
 
 ## 6. AWS Credentials
 
-The script uses boto3, which reads credentials from `~/.aws/credentials` and
-`~/.aws/config`. Suggested setup:
+The script reads credentials from `~/.aws/credentials` and `~/.aws/config` via
+boto3. **Set up named profiles per environment — do not use `[default]`** for
+either staging or prod credentials. The reason is what just happened on this
+team: `[default]` had silently been configured for prod by a prior `aws
+configure` run, so any `--env=staging` invocation that omitted `--profile`
+would have written to prod. The script's account verification (§1.5) catches
+this, but the better fix is to never rely on `[default]` at all.
+
+Recommended `~/.aws/credentials`:
 
 ```ini
-# ~/.aws/credentials
-[default]
-aws_access_key_id     = STAGING_KEY
-aws_secret_access_key = STAGING_SECRET
+[staging]
+aws_access_key_id     = AKIA…STAGING…
+aws_secret_access_key = …
 
 [prod]
-aws_access_key_id     = PROD_KEY
-aws_secret_access_key = PROD_SECRET
+aws_access_key_id     = AKIA…PROD…
+aws_secret_access_key = …
 ```
 
+`~/.aws/config` (regions only — the account is set by which key/secret you
+authenticate with):
+
 ```ini
-# ~/.aws/config
-[default]
+[profile staging]
 region = us-west-2
 
 [profile prod]
 region = us-west-2
 ```
 
-⚠️ **About the `[default]` profile.** This doc treats `[default]` as the
-staging credentials for the script's convenience. If your shell already uses
-`[default]` for an unrelated account (personal AWS, a different project),
-**don't follow that convention** — pass `--profile <name>` explicitly on
-every invocation so the staging credentials never silently leak into
-unrelated `aws` calls.
+Then always pass `--profile staging` or `--profile prod` explicitly. The
+script verifies the resolved account matches the expected ID for `--env` —
+mismatches abort before any write.
 
-**Required IAM permission** (scope tight — this is curator credentials, not
+**Required IAM permissions** (scope tight — this is curator credentials, not
 backend access):
 
 ```json
 {
-  "Effect": "Allow",
-  "Action": ["dynamodb:BatchWriteItem", "dynamodb:PutItem", "dynamodb:DescribeTable"],
-  "Resource": "arn:aws:dynamodb:us-west-2:*:table/ShowFlavors"
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["sts:GetCallerIdentity"],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:BatchWriteItem",
+        "dynamodb:PutItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem"
+      ],
+      "Resource": "arn:aws:dynamodb:us-west-2:*:table/ShowFlavors"
+    }
+  ]
 }
 ```
 
-Optionally add `dynamodb:GetItem` if curators verify writes with `get-item`.
+`sts:GetCallerIdentity` is granted to every authenticated principal by
+default, so most curators won't need to add it explicitly — but it's listed
+for completeness in case a custom least-privilege policy strips it.
 
 ---
 
@@ -274,12 +334,24 @@ write:
 2. For each existing watch-party series whose show was just curated, call the
    reformat endpoint:
    ```bash
+   # Prod
    curl -X POST \
      -H "X-Api-Key: $INTERNAL_API_KEY" \
      "https://am6c8sp6kh.execute-api.us-west-2.amazonaws.com/prod/internal/watch-party/{seriesId}/reformat-titles"
+
+   # Staging
+   curl -X POST \
+     -H "X-Api-Key: $INTERNAL_API_KEY" \
+     "https://v7ihwy6uv9.execute-api.us-west-2.amazonaws.com/prod/internal/watch-party/{seriesId}/reformat-titles"
    ```
-   This re-runs the formatter on every future-dated `isGeneratedTitle=true`
-   hangout in the series. Idempotent. No notifications fired.
+   The internal API key lives in SSM Parameter Store at
+   `/inviter/scheduler/internal-api-key` (see `InternalApiKeyFilter`). Pull it
+   per-env: `aws ssm get-parameter --name /inviter/scheduler/internal-api-key
+   --with-decryption --profile staging` (or `prod`).
+
+   This endpoint re-runs the formatter on every future-dated
+   `isGeneratedTitle=true` hangout in the series. Idempotent. No notifications
+   fired.
 3. New watch parties created from this point pick up the flavor at creation
    time (no need to call reformat).
 
@@ -353,6 +425,19 @@ from `id`/`show_id`/etc.).
 ### `ERROR: no AWS credentials for profile 'prod'`
 Check `~/.aws/credentials` has a `[prod]` section. Or pass `--profile <name>`
 explicitly.
+
+### `ERROR: AWS account mismatch — refusing to write`
+The credentials behind your `--profile` resolved to an AWS account that
+doesn't match the expected one for the `--env` you passed. The script prints
+the expected vs resolved account IDs and identity ARN. Common causes:
+- `--profile default` where `[default]` is configured for a different account
+  than you assume. Solution: use a named profile (`--profile staging` /
+  `--profile prod`) so the credential source is unambiguous.
+- Stale or wrong credentials in the named profile. Run
+  `aws sts get-caller-identity --profile <name>` to see what account those
+  credentials actually authenticate to, and reconcile with §1.5.
+- New AWS account brought online: update `EXPECTED_ACCOUNT_IDS` at the top of
+  `scripts/populate_show_flavors.py` and update §1.5 here.
 
 ### `ResourceNotFoundException: Table ShowFlavors not found`
 The app hasn't created the table yet in this environment. Boot the backend
