@@ -48,9 +48,12 @@ class WatchPartyCrudTests extends StagingTestBase {
             .body("seriesId", notNullValue())
             .body("seriesTitle", containsString("Test Show"))
             .body("hangouts", hasSize(2))
-            .body("hangouts[0].title", equalTo("Pilot"))
+            // Titles are prefixed with show display name via WatchPartyTitleFormatter
+            // (shortName → showName precedence, " · " separator). Match the suffix so the
+            // assertion is robust to either form.
+            .body("hangouts[0].title", endsWith("Pilot"))
             .body("hangouts[0].externalId", equalTo("1"))
-            .body("hangouts[1].title", equalTo("Episode 2"))
+            .body("hangouts[1].title", endsWith("Episode 2"))
             .body("hangouts[1].externalId", equalTo("2"))
         .extract()
             .jsonPath().getString("seriesId");
