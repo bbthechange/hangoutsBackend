@@ -663,6 +663,24 @@ public class HangoutServiceImpl implements HangoutService {
             hangoutRepository.clearReminderSentAt(hangoutId);
             // Schedule a new reminder for the updated start time
             hangoutSchedulerService.scheduleReminder(hangout);
+
+            // Reschedule the watch-party host nudge for hostless episodes. The EventBridge
+            // schedule still points at the OLD fire time (48h before old air time) — if the
+            // new air time falls outside the handler's safety window the schedule fires
+            // into a no-op, the schedule self-deletes, and the hangout silently loses its
+            // host nudge. createOrUpdate semantics overwrite the existing schedule in place.
+            if (hangout.getSeriesId() != null
+                    && (hangout.getHostAtPlaceUserId() == null || hangout.getHostAtPlaceUserId().isEmpty())) {
+                try {
+                    EventSeries series = eventSeriesRepository.findById(hangout.getSeriesId()).orElse(null);
+                    if (series != null && series.isWatchParty() && !series.isVirtualWatchParty()) {
+                        watchPartyHostNudgeScheduler.scheduleHostNudge(hangout, series);
+                    }
+                } catch (Exception e) {
+                    logger.warn("Failed to reschedule host nudge after time edit for hangout {}: {}",
+                            hangoutId, e.getMessage());
+                }
+            }
         }
 
         // If this hangout is part of a series, update the series records

@@ -4,6 +4,7 @@ import com.bbthechange.inviter.dto.HangoutDetailData;
 import com.bbthechange.inviter.dto.UpdateHangoutRequest;
 import com.bbthechange.inviter.dto.UserSummaryDTO;
 import com.bbthechange.inviter.model.*;
+import com.bbthechange.inviter.service.FuzzyTimeService;
 import com.bbthechange.inviter.testutil.WatchPartyTestFixtures;
 import io.micrometer.core.instrument.Counter;
 import org.junit.jupiter.api.Nested;
@@ -559,6 +560,225 @@ class HangoutServiceWatchPartyHostClaimTest extends HangoutServiceTestBase {
             // Then
             verify(notificationService).notifyHangoutUpdated(eq(hangoutId), anyString(), anyList(),
                     eq("location"), eq(requestingUserId), anySet(), any());
+        }
+    }
+
+    // ============================================================================
+    // updateHangout — direct time-edit reschedules the host nudge (ah2)
+    // ============================================================================
+
+    @Nested
+    class TimeEditReschedulesHostNudge {
+
+        private static final String GROUP_ID = "11111111-1111-1111-1111-111111111111";
+
+        private com.bbthechange.inviter.dto.TimeInfo originalTimeInfo() {
+            com.bbthechange.inviter.dto.TimeInfo t = new com.bbthechange.inviter.dto.TimeInfo();
+            t.setPeriodGranularity("DAY");
+            t.setPeriodStart("2026-06-10T00:00:00Z");
+            t.setStartTime("2026-06-10T02:00:00Z");
+            return t;
+        }
+
+        private com.bbthechange.inviter.dto.TimeInfo shiftedTimeInfo() {
+            com.bbthechange.inviter.dto.TimeInfo t = new com.bbthechange.inviter.dto.TimeInfo();
+            t.setPeriodGranularity("DAY");
+            t.setPeriodStart("2026-06-12T00:00:00Z");
+            t.setStartTime("2026-06-12T02:00:00Z");
+            return t;
+        }
+
+        @Test
+        void updateHangout_TimeChangedOnHostlessInPersonWatchParty_ReschedulesHostNudge() {
+            String hangoutId = UUID.randomUUID().toString();
+            String seriesId = UUID.randomUUID().toString();
+            String requestingUserId = UUID.randomUUID().toString();
+
+            Hangout existingHangout = WatchPartyTestFixtures.inPersonHangout(hangoutId, seriesId);
+            existingHangout.setHostAtPlaceUserId(null); // hostless
+            existingHangout.setTimeInput(originalTimeInfo());
+            existingHangout.setAssociatedGroups(new ArrayList<>(List.of(GROUP_ID)));
+
+            UpdateHangoutRequest request = new UpdateHangoutRequest();
+            request.setTimeInfo(shiftedTimeInfo());
+
+            EventSeries series = WatchPartyTestFixtures.inPersonSeries(seriesId, GROUP_ID);
+
+            GroupMembership membership = createTestMembership(GROUP_ID, requestingUserId, "Group");
+            when(groupRepository.findMembership(GROUP_ID, requestingUserId)).thenReturn(Optional.of(membership));
+            when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(existingHangout));
+            when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+            when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+
+            FuzzyTimeService.TimeConversionResult timeResult =
+                    new FuzzyTimeService.TimeConversionResult(1781575200L, 1781582400L);
+            when(fuzzyTimeService.convert(any(com.bbthechange.inviter.dto.TimeInfo.class))).thenReturn(timeResult);
+
+            HangoutDetailData detail = HangoutDetailData.builder().withHangout(existingHangout).build();
+            when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(detail);
+
+            // When
+            hangoutService.updateHangout(hangoutId, request, requestingUserId);
+
+            // Then: scheduler reschedules nudge with the updated hangout + series.
+            verify(watchPartyHostNudgeScheduler).scheduleHostNudge(any(Hangout.class), eq(series));
+        }
+
+        @Test
+        void updateHangout_TimeChangedOnHostedWatchParty_DoesNotRescheduleHostNudge() {
+            String hangoutId = UUID.randomUUID().toString();
+            String seriesId = UUID.randomUUID().toString();
+            String requestingUserId = UUID.randomUUID().toString();
+            String hostUserId = UUID.randomUUID().toString();
+
+            Hangout existingHangout = WatchPartyTestFixtures.inPersonHangout(hangoutId, seriesId);
+            existingHangout.setHostAtPlaceUserId(hostUserId); // already hosted
+            existingHangout.setTimeInput(originalTimeInfo());
+            existingHangout.setAssociatedGroups(new ArrayList<>(List.of(GROUP_ID)));
+
+            UpdateHangoutRequest request = new UpdateHangoutRequest();
+            request.setTimeInfo(shiftedTimeInfo());
+            // Match existing host so the host-claim cascade does NOT fire; this isolates the
+            // new time-edit reschedule path from the abdication-driven reschedule.
+            request.setHostAtPlaceUserId(hostUserId);
+
+            // Host id validation runs because request.hostAtPlaceUserId != null.
+            UserSummaryDTO hostUser = new UserSummaryDTO();
+            hostUser.setDisplayName("Host");
+            when(userService.getUserSummary(UUID.fromString(hostUserId))).thenReturn(Optional.of(hostUser));
+
+            EventSeries series = WatchPartyTestFixtures.inPersonSeries(seriesId, GROUP_ID);
+
+            GroupMembership membership = createTestMembership(GROUP_ID, requestingUserId, "Group");
+            when(groupRepository.findMembership(GROUP_ID, requestingUserId)).thenReturn(Optional.of(membership));
+            when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(existingHangout));
+            when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+            lenient().when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+
+            FuzzyTimeService.TimeConversionResult timeResult =
+                    new FuzzyTimeService.TimeConversionResult(1781575200L, 1781582400L);
+            when(fuzzyTimeService.convert(any(com.bbthechange.inviter.dto.TimeInfo.class))).thenReturn(timeResult);
+
+            HangoutDetailData detail = HangoutDetailData.builder().withHangout(existingHangout).build();
+            when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(detail);
+
+            hangoutService.updateHangout(hangoutId, request, requestingUserId);
+
+            verify(watchPartyHostNudgeScheduler, never()).scheduleHostNudge(any(Hangout.class), any(EventSeries.class));
+        }
+
+        @Test
+        void updateHangout_TimeChangedOnVirtualWatchParty_DoesNotRescheduleHostNudge() {
+            String hangoutId = UUID.randomUUID().toString();
+            String seriesId = UUID.randomUUID().toString();
+            String requestingUserId = UUID.randomUUID().toString();
+
+            // Virtual series — host nudge never applies regardless of host presence.
+            Hangout existingHangout = WatchPartyTestFixtures.virtualHangout(hangoutId, seriesId);
+            existingHangout.setHostAtPlaceUserId(null);
+            existingHangout.setTimeInput(originalTimeInfo());
+            existingHangout.setAssociatedGroups(new ArrayList<>(List.of(GROUP_ID)));
+
+            UpdateHangoutRequest request = new UpdateHangoutRequest();
+            request.setTimeInfo(shiftedTimeInfo());
+
+            EventSeries series = WatchPartyTestFixtures.virtualSeries(seriesId, GROUP_ID);
+
+            GroupMembership membership = createTestMembership(GROUP_ID, requestingUserId, "Group");
+            when(groupRepository.findMembership(GROUP_ID, requestingUserId)).thenReturn(Optional.of(membership));
+            when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(existingHangout));
+            when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+            when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+
+            FuzzyTimeService.TimeConversionResult timeResult =
+                    new FuzzyTimeService.TimeConversionResult(1781575200L, 1781582400L);
+            when(fuzzyTimeService.convert(any(com.bbthechange.inviter.dto.TimeInfo.class))).thenReturn(timeResult);
+
+            HangoutDetailData detail = HangoutDetailData.builder().withHangout(existingHangout).build();
+            when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(detail);
+
+            hangoutService.updateHangout(hangoutId, request, requestingUserId);
+
+            verify(watchPartyHostNudgeScheduler, never()).scheduleHostNudge(any(Hangout.class), any(EventSeries.class));
+        }
+
+        @Test
+        void updateHangout_TimeChangedOnNonWatchPartySeries_DoesNotRescheduleHostNudge() {
+            String hangoutId = UUID.randomUUID().toString();
+            String seriesId = UUID.randomUUID().toString();
+            String requestingUserId = UUID.randomUUID().toString();
+
+            Hangout existingHangout = createTestHangout(hangoutId);
+            existingHangout.setSeriesId(seriesId);
+            existingHangout.setHostAtPlaceUserId(null);
+            existingHangout.setTimeInput(originalTimeInfo());
+            existingHangout.setAssociatedGroups(new ArrayList<>(List.of(GROUP_ID)));
+
+            UpdateHangoutRequest request = new UpdateHangoutRequest();
+            request.setTimeInfo(shiftedTimeInfo());
+
+            EventSeries nonWatchPartySeries = new EventSeries("Generic Series", null, GROUP_ID);
+            nonWatchPartySeries.setSeriesId(seriesId);
+            nonWatchPartySeries.setEventSeriesType(null); // not WATCH_PARTY
+
+            GroupMembership membership = createTestMembership(GROUP_ID, requestingUserId, "Group");
+            when(groupRepository.findMembership(GROUP_ID, requestingUserId)).thenReturn(Optional.of(membership));
+            when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(existingHangout));
+            when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+            when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(nonWatchPartySeries));
+
+            FuzzyTimeService.TimeConversionResult timeResult =
+                    new FuzzyTimeService.TimeConversionResult(1781575200L, 1781582400L);
+            when(fuzzyTimeService.convert(any(com.bbthechange.inviter.dto.TimeInfo.class))).thenReturn(timeResult);
+
+            HangoutDetailData detail = HangoutDetailData.builder().withHangout(existingHangout).build();
+            when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(detail);
+
+            hangoutService.updateHangout(hangoutId, request, requestingUserId);
+
+            verify(watchPartyHostNudgeScheduler, never()).scheduleHostNudge(any(Hangout.class), any(EventSeries.class));
+        }
+
+        @Test
+        void updateHangout_TimeChangedOnHostlessWatchParty_SchedulerThrows_UpdateStillSucceeds() {
+            // Reschedule failure must not break the update — the catch+log keeps the user-facing
+            // PUT successful, and the next scheduler cycle will recover.
+            String hangoutId = UUID.randomUUID().toString();
+            String seriesId = UUID.randomUUID().toString();
+            String requestingUserId = UUID.randomUUID().toString();
+
+            Hangout existingHangout = WatchPartyTestFixtures.inPersonHangout(hangoutId, seriesId);
+            existingHangout.setHostAtPlaceUserId(null);
+            existingHangout.setTimeInput(originalTimeInfo());
+            existingHangout.setAssociatedGroups(new ArrayList<>(List.of(GROUP_ID)));
+
+            UpdateHangoutRequest request = new UpdateHangoutRequest();
+            request.setTimeInfo(shiftedTimeInfo());
+
+            EventSeries series = WatchPartyTestFixtures.inPersonSeries(seriesId, GROUP_ID);
+
+            GroupMembership membership = createTestMembership(GROUP_ID, requestingUserId, "Group");
+            when(groupRepository.findMembership(GROUP_ID, requestingUserId)).thenReturn(Optional.of(membership));
+            when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(existingHangout));
+            when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+            when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+
+            FuzzyTimeService.TimeConversionResult timeResult =
+                    new FuzzyTimeService.TimeConversionResult(1781575200L, 1781582400L);
+            when(fuzzyTimeService.convert(any(com.bbthechange.inviter.dto.TimeInfo.class))).thenReturn(timeResult);
+
+            HangoutDetailData detail = HangoutDetailData.builder().withHangout(existingHangout).build();
+            when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(detail);
+
+            doThrow(new RuntimeException("EventBridge timeout"))
+                    .when(watchPartyHostNudgeScheduler).scheduleHostNudge(any(Hangout.class), any(EventSeries.class));
+
+            // Update succeeds despite scheduler failure.
+            hangoutService.updateHangout(hangoutId, request, requestingUserId);
+
+            verify(watchPartyHostNudgeScheduler).scheduleHostNudge(any(Hangout.class), eq(series));
+            // Generic 2h reminder still scheduled.
+            verify(hangoutSchedulerService).scheduleReminder(any(Hangout.class));
         }
     }
 
