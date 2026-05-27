@@ -780,6 +780,56 @@ class HangoutServiceWatchPartyHostClaimTest extends HangoutServiceTestBase {
             // Generic 2h reminder still scheduled.
             verify(hangoutSchedulerService).scheduleReminder(any(Hangout.class));
         }
+
+        @Test
+        void updateHangout_TimeChangedAfterHostNudgeAlreadyFired_DoesNotReSendNudge() {
+            // The caller TRUSTS the scheduler's own already-sent gate
+            // (WatchPartyHostNudgeScheduler short-circuits on hostNudgeSentAt != null).
+            // The reschedule path must NOT clear hostNudgeSentAt — host nudges are
+            // single-fire by design (unlike the generic reminderSentAt, which IS cleared).
+            // Regression guard: if someone mirrors the reminder pattern and adds a
+            // clearHostNudgeSentAt() call "for consistency", this test fails.
+            String hangoutId = UUID.randomUUID().toString();
+            String seriesId = UUID.randomUUID().toString();
+            String requestingUserId = UUID.randomUUID().toString();
+
+            Hangout existingHangout = WatchPartyTestFixtures.inPersonHangout(hangoutId, seriesId);
+            existingHangout.setHostAtPlaceUserId(null); // hostless
+            existingHangout.setTimeInput(originalTimeInfo());
+            existingHangout.setAssociatedGroups(new ArrayList<>(List.of(GROUP_ID)));
+            // Nudge already fired yesterday — the scheduler's gate would no-op a re-fire.
+            long alreadySentAt = System.currentTimeMillis() - 86_400_000L;
+            existingHangout.setHostNudgeSentAt(alreadySentAt);
+
+            UpdateHangoutRequest request = new UpdateHangoutRequest();
+            request.setTimeInfo(shiftedTimeInfo());
+
+            EventSeries series = WatchPartyTestFixtures.inPersonSeries(seriesId, GROUP_ID);
+
+            GroupMembership membership = createTestMembership(GROUP_ID, requestingUserId, "Group");
+            when(groupRepository.findMembership(GROUP_ID, requestingUserId)).thenReturn(Optional.of(membership));
+            when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(existingHangout));
+            when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+            when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+
+            FuzzyTimeService.TimeConversionResult timeResult =
+                    new FuzzyTimeService.TimeConversionResult(1781575200L, 1781582400L);
+            when(fuzzyTimeService.convert(any(com.bbthechange.inviter.dto.TimeInfo.class))).thenReturn(timeResult);
+
+            HangoutDetailData detail = HangoutDetailData.builder().withHangout(existingHangout).build();
+            when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(detail);
+
+            // When
+            hangoutService.updateHangout(hangoutId, request, requestingUserId);
+
+            // Then: scheduler IS invoked (caller doesn't gate on hostNudgeSentAt — the
+            // scheduler's own short-circuit handles the no-op, covered in scheduler tests).
+            verify(watchPartyHostNudgeScheduler).scheduleHostNudge(any(Hangout.class), eq(series));
+            // ...but the caller must NOT clear the already-sent flag.
+            verify(hangoutRepository, never()).clearHostNudgeSentAt(anyString());
+            // Defense in depth: the in-memory hangout's flag is untouched too.
+            assertThat(existingHangout.getHostNudgeSentAt()).isEqualTo(alreadySentAt);
+        }
     }
 
     // ============================================================================
