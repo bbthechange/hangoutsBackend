@@ -100,8 +100,10 @@ class WatchPartyTvMazeTests extends StagingTestBase {
             .post("/groups/" + groupId + "/watch-parties")
         .then()
             .statusCode(201)
-            // Verify first episode is "Winter Is Coming" (GoT S1E1)
-            .body("hangouts[0].title", equalTo(GOT_FIRST_EPISODE_TITLE))
+            // Verify first episode is "Winter is Coming" (GoT S1E1). WatchPartyTitleFormatter
+            // prefixes with the show display name ("{shortName|showName} · {raw}"), so match
+            // the suffix rather than the bare title.
+            .body("hangouts[0].title", endsWith(GOT_FIRST_EPISODE_TITLE))
             // Verify all hangouts have valid external IDs
             .body("hangouts.externalId", everyItem(notNullValue()))
             // Verify hangouts are ordered (by episode number)

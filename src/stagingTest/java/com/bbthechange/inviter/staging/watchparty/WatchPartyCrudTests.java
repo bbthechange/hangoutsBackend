@@ -210,7 +210,8 @@ class WatchPartyCrudTests extends StagingTestBase {
         .then()
             .statusCode(201)
             .body("hangouts", hasSize(1))
-            .body("hangouts[0].title", equalTo("Double Episode: Part 1, Part 2"))
+            // Show display name prefix from WatchPartyTitleFormatter — match suffix only.
+            .body("hangouts[0].title", endsWith("Double Episode: Part 1, Part 2"))
             .body("hangouts[0].combinedExternalIds", hasSize(2))
             .body("hangouts[0].combinedExternalIds", hasItems("1", "2"))
         .extract()
@@ -256,7 +257,8 @@ class WatchPartyCrudTests extends StagingTestBase {
         .then()
             .statusCode(201)
             .body("hangouts", hasSize(1))
-            .body("hangouts[0].title", equalTo("Triple Episode"))
+            // Show display name prefix from WatchPartyTitleFormatter — match suffix only.
+            .body("hangouts[0].title", endsWith("Triple Episode"))
             .body("hangouts[0].combinedExternalIds", hasSize(3))
         .extract()
             .jsonPath().getString("seriesId");
