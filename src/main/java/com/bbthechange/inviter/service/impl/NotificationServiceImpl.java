@@ -15,7 +15,9 @@ import com.bbthechange.inviter.service.FcmNotificationService;
 import com.bbthechange.inviter.service.NotificationService;
 import com.bbthechange.inviter.service.NotificationTextGenerator;
 import com.bbthechange.inviter.service.PushNotificationService;
+import com.bbthechange.inviter.service.ShowFlavorService;
 import com.bbthechange.inviter.service.UserService;
+import com.bbthechange.inviter.util.InviterKeyFactory;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,6 +49,7 @@ public class NotificationServiceImpl implements NotificationService {
     private final FcmNotificationService fcmNotificationService;
     private final UserService userService;
     private final NotificationTextGenerator textGenerator;
+    private final ShowFlavorService showFlavorService;
     private final MeterRegistry meterRegistry;
 
     @Autowired
@@ -58,6 +61,7 @@ public class NotificationServiceImpl implements NotificationService {
                                    FcmNotificationService fcmNotificationService,
                                    UserService userService,
                                    NotificationTextGenerator textGenerator,
+                                   ShowFlavorService showFlavorService,
                                    MeterRegistry meterRegistry) {
         this.groupRepository = groupRepository;
         this.hangoutRepository = hangoutRepository;
@@ -67,6 +71,7 @@ public class NotificationServiceImpl implements NotificationService {
         this.fcmNotificationService = fcmNotificationService;
         this.userService = userService;
         this.textGenerator = textGenerator;
+        this.showFlavorService = showFlavorService;
         this.meterRegistry = meterRegistry;
     }
 
@@ -574,7 +579,8 @@ public class NotificationServiceImpl implements NotificationService {
 
         String claimerName = resolveDisplayName(claimerUserId);
         String day = formatDayOfWeek(hangout.getStartTimestamp(), series.getTimezone());
-        String showName = series.getSeriesTitle() != null ? series.getSeriesTitle() : "Show";
+        Integer showId = InviterKeyFactory.parseShowIdFromSeasonId(series.getSeasonId());
+        String showName = showFlavorService.resolveShortName(showId, series.getSeriesTitle());
         String body = String.format("%s is hosting %s's %s episode.", claimerName, day, showName);
 
         logger.info("Sending host-claim notifications for hangout {} (series {}) to {} users",

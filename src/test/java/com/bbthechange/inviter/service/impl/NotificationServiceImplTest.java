@@ -10,6 +10,7 @@ import com.bbthechange.inviter.service.DeviceService;
 import com.bbthechange.inviter.service.FcmNotificationService;
 import com.bbthechange.inviter.service.NotificationTextGenerator;
 import com.bbthechange.inviter.service.PushNotificationService;
+import com.bbthechange.inviter.service.ShowFlavorService;
 import com.bbthechange.inviter.service.UserService;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -17,12 +18,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.*;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -52,6 +55,9 @@ class NotificationServiceImplTest {
 
     @Mock(lenient = true)
     private NotificationTextGenerator textGenerator;
+
+    @Mock(lenient = true)
+    private ShowFlavorService showFlavorService;
 
     @Mock(lenient = true)
     private MeterRegistry meterRegistry;
@@ -1584,6 +1590,123 @@ class NotificationServiceImplTest {
             // Then
             verify(pushNotificationService).sendCarpoolRiderAddedNotification(
                 eq("ios-token-123"), eq(HANGOUT_ID), isNull(), eq(HANGOUT_TITLE), eq(DRIVER_NAME));
+        }
+    }
+
+    @Nested
+    class NotifyWatchPartyHostClaimed {
+
+        private static final String SERIES_ID = "00000000-0000-0000-0000-000000000401";
+        private static final String GROUP_ID = "00000000-0000-0000-0000-000000000402";
+        private static final String HANGOUT_ID = "00000000-0000-0000-0000-000000000403";
+        private static final String CLAIMER_ID = "00000000-0000-0000-0000-000000000404";
+        private static final String RECIPIENT_ID = "00000000-0000-0000-0000-000000000405";
+
+        private EventSeries series;
+        private Hangout hangout;
+
+        @org.junit.jupiter.api.BeforeEach
+        void setUp() {
+            series = new EventSeries();
+            series.setSeriesId(SERIES_ID);
+            series.setGroupId(GROUP_ID);
+            series.setSeriesTitle("RuPaul's Drag Race: All Stars Season 11");
+            series.setTimezone("America/Los_Angeles");
+
+            hangout = new Hangout();
+            hangout.setHangoutId(HANGOUT_ID);
+            // Pick a fixed timestamp so the day-of-week is deterministic:
+            // 1748620800 = 2025-05-30 09:00 PDT = Friday in America/Los_Angeles.
+            hangout.setStartTimestamp(1748620800L);
+
+            // Claimer display name resolution
+            UserSummaryDTO claimerSummary = new UserSummaryDTO();
+            claimerSummary.setId(UUID.fromString(CLAIMER_ID));
+            claimerSummary.setDisplayName("Brian");
+            when(userService.getUserSummary(UUID.fromString(CLAIMER_ID)))
+                .thenReturn(Optional.of(claimerSummary));
+
+            // One iOS device for the recipient so the push pipeline is exercised.
+            Device iosDevice = new Device();
+            iosDevice.setToken("ios-token-host-claim");
+            iosDevice.setPlatform(Device.Platform.IOS);
+            iosDevice.setUserId(UUID.fromString(RECIPIENT_ID));
+            when(deviceService.getActiveDevicesForUser(UUID.fromString(RECIPIENT_ID)))
+                .thenReturn(List.of(iosDevice));
+
+            // MeterRegistry is a mock — give it a counter stub so the success branch
+            // doesn't NPE on .increment(count).
+            when(meterRegistry.counter(anyString(), any(String[].class))).thenReturn(mockCounter);
+        }
+
+        @Test
+        void flavorPresent_usesCuratedShortNameAndDropsSeriesTitle() {
+            series.setSeasonId("TVMAZE#SHOW#73228|SEASON#11");
+            when(showFlavorService.resolveShortName(eq(73228), anyString())).thenReturn("All Stars");
+
+            notificationService.notifyWatchPartyHostClaimed(
+                series, hangout, CLAIMER_ID, Set.of(RECIPIENT_ID));
+
+            ArgumentCaptor<String> messageCap = ArgumentCaptor.forClass(String.class);
+            verify(pushNotificationService).sendWatchPartyNotification(
+                eq("ios-token-host-claim"), eq(SERIES_ID), eq(GROUP_ID), messageCap.capture());
+            assertThat(messageCap.getValue()).isEqualTo("Brian is hosting Friday's All Stars episode.");
+            assertThat(messageCap.getValue()).doesNotContain("Season 11");
+            assertThat(messageCap.getValue()).doesNotContain("RuPaul");
+        }
+
+        @Test
+        void flavorAbsent_derivesShortNameByStrippingSeasonSuffix() {
+            series.setSeasonId("TVMAZE#SHOW#99999|SEASON#3");
+            when(showFlavorService.resolveShortName(eq(99999), anyString()))
+                .thenAnswer(inv -> ShowFlavorService.deriveShortShowName(inv.getArgument(1)));
+            series.setSeriesTitle("Survivor Season 47");
+
+            notificationService.notifyWatchPartyHostClaimed(
+                series, hangout, CLAIMER_ID, Set.of(RECIPIENT_ID));
+
+            ArgumentCaptor<String> messageCap = ArgumentCaptor.forClass(String.class);
+            verify(pushNotificationService).sendWatchPartyNotification(
+                eq("ios-token-host-claim"), eq(SERIES_ID), eq(GROUP_ID), messageCap.capture());
+            assertThat(messageCap.getValue()).isEqualTo("Brian is hosting Friday's Survivor episode.");
+            assertThat(messageCap.getValue()).doesNotContain("Season 47");
+        }
+
+        @Test
+        void nullSeasonId_stillDerivesFromSeriesTitleViaFlavorService() {
+            series.setSeasonId(null);
+            // parseShowIdFromSeasonId(null) returns null; the service receives null showId
+            // and must derive a short name from the fallback title.
+            when(showFlavorService.resolveShortName(isNull(), anyString()))
+                .thenAnswer(inv -> ShowFlavorService.deriveShortShowName(inv.getArgument(1)));
+            series.setSeriesTitle("Foo Season 2");
+
+            notificationService.notifyWatchPartyHostClaimed(
+                series, hangout, CLAIMER_ID, Set.of(RECIPIENT_ID));
+
+            ArgumentCaptor<String> messageCap = ArgumentCaptor.forClass(String.class);
+            verify(pushNotificationService).sendWatchPartyNotification(
+                eq("ios-token-host-claim"), eq(SERIES_ID), eq(GROUP_ID), messageCap.capture());
+            assertThat(messageCap.getValue()).contains("'s Foo episode.");
+        }
+
+        @Test
+        void emptyRecipients_skipsFlavorLookupAndSend() {
+            notificationService.notifyWatchPartyHostClaimed(
+                series, hangout, CLAIMER_ID, Set.of());
+
+            verify(showFlavorService, never()).resolveShortName(any(), any());
+            verify(pushNotificationService, never()).sendWatchPartyNotification(
+                anyString(), anyString(), anyString(), anyString());
+        }
+
+        @Test
+        void claimerIsOnlyRecipient_skipsSend() {
+            notificationService.notifyWatchPartyHostClaimed(
+                series, hangout, CLAIMER_ID, Set.of(CLAIMER_ID));
+
+            verify(pushNotificationService, never()).sendWatchPartyNotification(
+                anyString(), anyString(), anyString(), anyString());
         }
     }
 }

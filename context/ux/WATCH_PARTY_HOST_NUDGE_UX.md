@@ -56,10 +56,9 @@ No explicit inactive-user filter is needed. A series covers a single season; use
 
 **Notification copy:**
 
-- Format: `"{Show name} — {Episode title} airs Friday and still needs a host!"`
-- Long-name handling falls back to the abbreviation lookup table being built in the parallel naming workstream.
-- TBA titles: `"Friday's {Show name} episode still needs a host!"`
-- Combined episodes (Double/Triple): `"Friday's double {Show name} episode still needs a host!"` — collapses to show name; don't try to list both episode titles in a push.
+- Default: `"{Episode title} airs Friday and still needs a host!"` — `Episode title` is `hangout.getTitle()`, which the title formatter has already prefixed with the show's curated short name (e.g. "All Stars · How To Videos") or its full series title for uncurated shows. Re-prefixing the series title here would render the show name twice or three times in one push.
+- TBA titles: `"Friday's {Short show name} episode still needs a host!"` — `Short show name` is `ShowFlavorService.resolveShortName(...)` (curated `shortName` when present, else series title minus trailing " Season N").
+- Combined episodes (Double/Triple): `"Friday's double {Short show name} episode still needs a host!"` — collapses to short show name; don't try to list both episode titles in a push.
 
 **Tap target:** deep-link directly to the hangout detail with the "I'll host" affordance visible without scrolling.
 
@@ -82,7 +81,7 @@ This is where the **host-claim flow intersects the existing location-change noti
 
 **Required UX behavior:**
 
-- When `hostAtPlaceUserId` transitions from empty to set on a watch-party hangout (regardless of whether `location` is also set), send a notification to the GOING/INTERESTED set on the hangout: *"{Claimer name} is hosting Friday's {show name} episode."*
+- When `hostAtPlaceUserId` transitions from empty to set on a watch-party hangout (regardless of whether `location` is also set), send a notification to the GOING/INTERESTED set on the hangout: *"{Claimer name} is hosting Friday's {Short show name} episode."* — `Short show name` follows the same `ShowFlavorService.resolveShortName(...)` contract as the host-nudge body so the full series title (e.g. "RuPaul's Drag Race: All Stars Season 11") never appears in a push.
 - This is a **separate code path from the generic location-change notification** — that flow keys off `location` mutation, not host mutation. The watch-party host-claim flow needs its own trigger that mirrors the same recipient logic and message shape, but is fired by the host-change path.
 - **Suppress the pending host-needed nudge** for anyone who hasn't received it yet. The hangout's idempotency flag should also be marked sent so the cron doesn't re-fire.
 - **Don't double-notify.** Anyone who already received the "needs a host" push should still get the "hosting" follow-up — they're meaningfully different ("there's a problem" → "the problem is solved"). But a user shouldn't get the host-needed push AND a location-change push if the claimer also fills in an address shortly after. Coalesce: if a location-change notification would fire within a short window after the host-claim notification for the same hangout, skip the second one.

@@ -5,7 +5,9 @@ import com.bbthechange.inviter.model.Hangout;
 import com.bbthechange.inviter.repository.EventSeriesRepository;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.service.NotificationService;
+import com.bbthechange.inviter.service.ShowFlavorService;
 import com.bbthechange.inviter.util.EpisodeTitles;
+import com.bbthechange.inviter.util.InviterKeyFactory;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,6 +49,7 @@ public class WatchPartyHostNudgeService {
     private final EventSeriesRepository eventSeriesRepository;
     private final WatchPartyHostNudgeRecipientResolver recipientResolver;
     private final NotificationService notificationService;
+    private final ShowFlavorService showFlavorService;
     private final MeterRegistry meterRegistry;
 
     @Autowired
@@ -54,11 +57,13 @@ public class WatchPartyHostNudgeService {
                                        EventSeriesRepository eventSeriesRepository,
                                        WatchPartyHostNudgeRecipientResolver recipientResolver,
                                        NotificationService notificationService,
+                                       ShowFlavorService showFlavorService,
                                        MeterRegistry meterRegistry) {
         this.hangoutRepository = hangoutRepository;
         this.eventSeriesRepository = eventSeriesRepository;
         this.recipientResolver = recipientResolver;
         this.notificationService = notificationService;
+        this.showFlavorService = showFlavorService;
         this.meterRegistry = meterRegistry;
     }
 
@@ -175,26 +180,36 @@ public class WatchPartyHostNudgeService {
 
     /**
      * Body format (see UX doc):
-     *   TBA episode:     "{Day}'s {ShowName} episode still needs a host!"
-     *   Combined:        "{Day}'s double/triple {ShowName} episode still needs a host!"
-     *   Default:         "{ShowName} — {EpisodeTitle} airs {Day} and still needs a host!"
+     *   TBA episode:     "{Day}'s {ShortShowName} episode still needs a host!"
+     *   Combined:        "{Day}'s double/triple {ShortShowName} episode still needs a host!"
+     *   Default:         "{EpisodeTitle} airs {Day} and still needs a host!"
+     *
+     * Default uses {@code hangout.getTitle()} directly because the title formatter
+     * already prepends show context (curated short name or full series title). The
+     * TBA / combined branches still need a stand-alone show reference, so they
+     * fall back to the curated {@code shortName} (or a derived form of
+     * {@code series.getSeriesTitle()} stripped of trailing " Season N").
      */
     String buildMessageBody(EventSeries series, Hangout hangout) {
-        String showName = series.getSeriesTitle() != null ? series.getSeriesTitle() : "Show";
         String day = formatDayOfWeek(hangout.getStartTimestamp(), series.getTimezone());
 
         List<String> combined = hangout.getCombinedExternalIds();
         if (combined != null && combined.size() > 1) {
             String word = combined.size() == 2 ? "double" : "triple";
-            return String.format("%s's %s %s episode still needs a host!", day, word, showName);
+            return String.format("%s's %s %s episode still needs a host!", day, word, resolveShortShowName(series));
         }
 
         String episodeTitle = hangout.getTitle();
         if (episodeTitle == null || episodeTitle.isBlank() || EpisodeTitles.isTba(episodeTitle)) {
-            return String.format("%s's %s episode still needs a host!", day, showName);
+            return String.format("%s's %s episode still needs a host!", day, resolveShortShowName(series));
         }
 
-        return String.format("%s — %s airs %s and still needs a host!", showName, episodeTitle, day);
+        return String.format("%s airs %s and still needs a host!", episodeTitle, day);
+    }
+
+    private String resolveShortShowName(EventSeries series) {
+        Integer showId = InviterKeyFactory.parseShowIdFromSeasonId(series.getSeasonId());
+        return showFlavorService.resolveShortName(showId, series.getSeriesTitle());
     }
 
     private String formatDayOfWeek(Long startTimestamp, String timezone) {

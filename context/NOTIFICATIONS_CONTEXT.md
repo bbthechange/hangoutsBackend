@@ -304,8 +304,10 @@ TV watch party feature adds notifications for episode-level events. See `TV_WATC
 | New episode added | GOING/INTERESTED on series | "New episode added: {title}" |
 | Title updated | GOING/INTERESTED on series | "Episode renamed: {newTitle}" |
 | Episode removed | GOING/INTERESTED on series | "{title} has been removed" |
-| Host needed (in-person, ~48h pre-air) | Resolved recipient set (see below) minus muted users | "{Show} — {Episode} airs {Day} and still needs a host!" |
-| Host claimed | GOING/INTERESTED on hangout | "{ClaimerName} is hosting {Day}'s {Show} episode." |
+| Host needed (in-person, ~48h pre-air) | Resolved recipient set (see below) minus muted users | "{Episode} airs {Day} and still needs a host!" (default); "{Day}'s {ShortShow} episode still needs a host!" (TBA / combined) |
+| Host claimed | GOING/INTERESTED on hangout | "{ClaimerName} is hosting {Day}'s {ShortShow} episode." |
+
+**ShortShow source** (TBA / combined / host-claim bodies): `ShowFlavorService.resolveShortName(showId, seriesTitle)` — curated `shortName` when present, otherwise the series title stripped of any trailing " Season N". The default host-needed branch uses `hangout.getTitle()` as-is because the title formatter (see TV watch party context) already prepends show context, so re-adding the series title would render "All Stars · Episode 1 — All Stars · Episode 1 …".
 
 ### Methods
 

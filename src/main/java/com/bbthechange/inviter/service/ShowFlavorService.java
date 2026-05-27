@@ -58,4 +58,25 @@ public class ShowFlavorService {
                 .map(ShowFlavor::getShortName)
                 .filter(s -> s != null && !s.isBlank());
     }
+
+    /**
+     * Returns a compact, user-facing show name. Uses the curated {@code shortName}
+     * when present; otherwise derives a short form from {@code fallbackTitle} by
+     * stripping a trailing " Season N". Returns "Show" if both are unusable.
+     */
+    public String resolveShortName(Integer showId, String fallbackTitle) {
+        return getShortName(showId).orElseGet(() -> deriveShortShowName(fallbackTitle));
+    }
+
+    /**
+     * Strip a trailing " Season N" (case-insensitive) from a series title so it
+     * can stand in as a short show name when the curated flavor is missing.
+     * Falls back to "Show" if the input is null/blank.
+     */
+    public static String deriveShortShowName(String fullTitle) {
+        if (fullTitle == null || fullTitle.isBlank()) {
+            return "Show";
+        }
+        return fullTitle.replaceAll("(?i)\\s+Season\\s+\\d+\\s*$", "").trim();
+    }
 }

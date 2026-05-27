@@ -5,6 +5,7 @@ import com.bbthechange.inviter.model.Hangout;
 import com.bbthechange.inviter.repository.EventSeriesRepository;
 import com.bbthechange.inviter.repository.HangoutRepository;
 import com.bbthechange.inviter.service.NotificationService;
+import com.bbthechange.inviter.service.ShowFlavorService;
 import com.bbthechange.inviter.testutil.WatchPartyTestFixtures;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -44,6 +45,9 @@ class WatchPartyHostNudgeServiceTest {
     @Mock
     private NotificationService notificationService;
 
+    @Mock
+    private ShowFlavorService showFlavorService;
+
     private MeterRegistry meterRegistry;
     private WatchPartyHostNudgeService service;
 
@@ -56,7 +60,12 @@ class WatchPartyHostNudgeServiceTest {
         meterRegistry = new SimpleMeterRegistry();
         service = new WatchPartyHostNudgeService(
             hangoutRepository, eventSeriesRepository,
-            recipientResolver, notificationService, meterRegistry);
+            recipientResolver, notificationService, showFlavorService, meterRegistry);
+        // Default stub: delegate to the real derived-fallback path so this
+        // stays in lockstep with production if the regex/sentinel ever changes.
+        // Tests that exercise the curated-flavor branch override this explicitly.
+        lenient().when(showFlavorService.resolveShortName(any(), any()))
+            .thenAnswer(inv -> ShowFlavorService.deriveShortShowName(inv.getArgument(1)));
     }
 
     private double counter(String status) {
@@ -269,7 +278,9 @@ class WatchPartyHostNudgeServiceTest {
             recipientsCap.capture(), eq(s), eq(h), bodyCap.capture());
 
         assertThat(recipientsCap.getValue()).containsExactlyInAnyOrder("u1", "u2");
-        assertThat(bodyCap.getValue()).contains("My Show").contains("still needs a host");
+        // hangout.getTitle() ("Episode 1" from the fixture) stands alone as the
+        // body subject; the series title is no longer prepended.
+        assertThat(bodyCap.getValue()).contains("Episode 1").contains("still needs a host");
         assertThat(counter("sent")).isEqualTo(1.0);
     }
 
@@ -355,28 +366,60 @@ class WatchPartyHostNudgeServiceTest {
     }
 
     // ===== Body formatting =====
+    //
+    // hangout.getTitle() now carries show context (curated short name or full
+    // series title — see TitleFormatter / hangoutsBackend-3wa), so the default
+    // branch no longer re-prefixes the series title. Curated short names come
+    // from ShowFlavorService and only appear in the TBA / combined branches
+    // where the episode title can't stand alone.
 
     @Test
-    void buildMessageBody_defaultEpisode_includesShowAndTitleAndDay() {
+    void buildMessageBody_defaultEpisode_usesEpisodeTitleAndDayWithoutSeriesPrefix() {
         Hangout h = validHangout();
-        h.setTitle("Pilot");
+        // After title formatting lands, hangout.getTitle() already contains the
+        // show prefix — the nudge body must not re-prepend the series title.
+        h.setTitle("My Show · Pilot");
         EventSeries s = validSeries();
 
         String body = service.buildMessageBody(s, h);
 
-        assertThat(body).contains("My Show").contains("Pilot").contains("airs").contains("needs a host");
+        assertThat(body).isEqualTo(
+            String.format("My Show · Pilot airs %s and still needs a host!",
+                formatDayHelper(h, s)));
+        // Show name appears once, not twice (regression guard for triple-show-name push)
+        assertThat(body.split("My Show", -1).length - 1).isEqualTo(1);
     }
 
     @Test
-    void buildMessageBody_tbaTitle_usesTbaFormat() {
+    void buildMessageBody_tbaTitle_flavorAbsent_derivesShortShowName() {
         Hangout h = validHangout();
         h.setTitle("TBA");
         EventSeries s = validSeries();
+        // No seasonId → flavor service falls back to deriving from the title.
+        s.setSeriesTitle("My Show Season 11");
+        s.setSeasonId(null);
 
         String body = service.buildMessageBody(s, h);
 
         assertThat(body).contains("'s My Show episode still needs a host!");
         assertThat(body).doesNotContain("TBA");
+        assertThat(body).doesNotContain("Season 11");
+    }
+
+    @Test
+    void buildMessageBody_tbaTitle_flavorPresent_usesShortName() {
+        Hangout h = validHangout();
+        h.setTitle("TBA");
+        EventSeries s = validSeries();
+        s.setSeriesTitle("RuPaul's Drag Race: All Stars Season 11");
+        s.setSeasonId("TVMAZE#SHOW#73228|SEASON#11");
+        when(showFlavorService.resolveShortName(eq(73228), anyString())).thenReturn("All Stars");
+
+        String body = service.buildMessageBody(s, h);
+
+        assertThat(body).contains("'s All Stars episode still needs a host!");
+        assertThat(body).doesNotContain("RuPaul");
+        assertThat(body).doesNotContain("Season 11");
     }
 
     @Test
@@ -391,24 +434,37 @@ class WatchPartyHostNudgeServiceTest {
     }
 
     @Test
-    void buildMessageBody_combinedDouble_usesCombinedFormat() {
+    void buildMessageBody_combinedDouble_flavorAbsent_usesDerivedShortName() {
         Hangout h = validHangout();
         h.setCombinedExternalIds(List.of("ep1", "ep2"));
         EventSeries s = validSeries();
+        s.setSeriesTitle("My Show Season 5");
 
         String body = service.buildMessageBody(s, h);
 
         assertThat(body).contains("double My Show episode still needs a host!");
+        assertThat(body).doesNotContain("Season 5");
     }
 
     @Test
-    void buildMessageBody_combinedTriple_usesCombinedFormat() {
+    void buildMessageBody_combinedTriple_flavorPresent_usesShortName() {
         Hangout h = validHangout();
         h.setCombinedExternalIds(List.of("ep1", "ep2", "ep3"));
         EventSeries s = validSeries();
+        s.setSeriesTitle("RuPaul's Drag Race: All Stars Season 11");
+        s.setSeasonId("TVMAZE#SHOW#73228|SEASON#11");
+        when(showFlavorService.resolveShortName(eq(73228), anyString())).thenReturn("All Stars");
 
         String body = service.buildMessageBody(s, h);
 
-        assertThat(body).contains("triple My Show episode still needs a host!");
+        assertThat(body).contains("triple All Stars episode still needs a host!");
+    }
+
+    private String formatDayHelper(Hangout h, EventSeries s) {
+        java.time.ZoneId zone = java.time.ZoneId.of(s.getTimezone());
+        return Instant.ofEpochSecond(h.getStartTimestamp())
+            .atZone(zone)
+            .getDayOfWeek()
+            .getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH);
     }
 }
