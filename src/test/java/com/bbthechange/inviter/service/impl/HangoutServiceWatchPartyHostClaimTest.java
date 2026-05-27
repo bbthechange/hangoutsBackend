@@ -830,6 +830,50 @@ class HangoutServiceWatchPartyHostClaimTest extends HangoutServiceTestBase {
             // Defense in depth: the in-memory hangout's flag is untouched too.
             assertThat(existingHangout.getHostNudgeSentAt()).isEqualTo(alreadySentAt);
         }
+
+        @Test
+        void updateHangout_SameCallTimeChangeAndHostAbdication_SchedulesNudgeOnlyOnce() {
+            // Regression for hangoutsBackend-a51: when a single PUT changes BOTH the
+            // start time AND clears hostAtPlaceUserId, the time-edit reschedule block
+            // and the host-abdication branch in handleWatchPartyHostChange both used to
+            // call scheduleHostNudge — burning one extra DDB read + one extra EventBridge
+            // API call per request (idempotent, but wasteful). The time-edit branch now
+            // marks the reschedule as done so the abdication branch skips its duplicate.
+            String hangoutId = UUID.randomUUID().toString();
+            String seriesId = UUID.randomUUID().toString();
+            String requestingUserId = UUID.randomUUID().toString();
+            String oldHostUserId = UUID.randomUUID().toString();
+
+            Hangout existingHangout = WatchPartyTestFixtures.inPersonHangout(hangoutId, seriesId);
+            existingHangout.setHostAtPlaceUserId(oldHostUserId); // currently hosted
+            existingHangout.setTimeInput(originalTimeInfo());
+            existingHangout.setAssociatedGroups(new ArrayList<>(List.of(GROUP_ID)));
+
+            // Request changes time AND leaves hostAtPlaceUserId null → abdication.
+            UpdateHangoutRequest request = new UpdateHangoutRequest();
+            request.setTimeInfo(shiftedTimeInfo());
+
+            EventSeries series = WatchPartyTestFixtures.inPersonSeries(seriesId, GROUP_ID);
+
+            GroupMembership membership = createTestMembership(GROUP_ID, requestingUserId, "Group");
+            when(groupRepository.findMembership(GROUP_ID, requestingUserId)).thenReturn(Optional.of(membership));
+            when(hangoutRepository.findHangoutById(hangoutId)).thenReturn(Optional.of(existingHangout));
+            when(hangoutRepository.createHangout(any(Hangout.class))).thenReturn(existingHangout);
+            when(eventSeriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+
+            FuzzyTimeService.TimeConversionResult timeResult =
+                    new FuzzyTimeService.TimeConversionResult(1781575200L, 1781582400L);
+            when(fuzzyTimeService.convert(any(com.bbthechange.inviter.dto.TimeInfo.class))).thenReturn(timeResult);
+
+            HangoutDetailData detail = HangoutDetailData.builder().withHangout(existingHangout).build();
+            when(hangoutRepository.getHangoutDetailData(hangoutId)).thenReturn(detail);
+
+            hangoutService.updateHangout(hangoutId, request, requestingUserId);
+
+            // Coalesced: scheduleHostNudge fires exactly once instead of twice.
+            verify(watchPartyHostNudgeScheduler, times(1))
+                    .scheduleHostNudge(any(Hangout.class), eq(series));
+        }
     }
 
     // ============================================================================

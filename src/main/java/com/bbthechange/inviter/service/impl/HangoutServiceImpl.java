@@ -658,6 +658,7 @@ public class HangoutServiceImpl implements HangoutService {
         groupTimestampService.updateGroupTimestamps(hangout.getAssociatedGroups());
 
         // Reschedule reminder if start time changed
+        boolean hostNudgeRescheduledForTimeEdit = false;
         if (timeChanged) {
             // Clear reminderSentAt to allow a new reminder for the updated time
             hangoutRepository.clearReminderSentAt(hangoutId);
@@ -675,6 +676,7 @@ public class HangoutServiceImpl implements HangoutService {
                     EventSeries series = eventSeriesRepository.findById(hangout.getSeriesId()).orElse(null);
                     if (series != null && series.isWatchParty() && !series.isVirtualWatchParty()) {
                         watchPartyHostNudgeScheduler.scheduleHostNudge(hangout, series);
+                        hostNudgeRescheduledForTimeEdit = true;
                     }
                 } catch (Exception e) {
                     logger.warn("Failed to reschedule host nudge after time edit for hangout {}: {}",
@@ -706,7 +708,8 @@ public class HangoutServiceImpl implements HangoutService {
         // Also handles host abdication (re-schedule nudge) and auto-RSVPs self-claimers.
         if (hostAtPlaceChanged && hangout.getSeriesId() != null) {
             try {
-                handleWatchPartyHostChange(hangout, oldHostAtPlaceUserId, requestingUserId);
+                handleWatchPartyHostChange(hangout, oldHostAtPlaceUserId, requestingUserId,
+                        hostNudgeRescheduledForTimeEdit);
             } catch (Exception e) {
                 logger.warn("Failed to handle watch-party host change for hangout {}: {}",
                         hangoutId, e.getMessage());
@@ -786,7 +789,8 @@ public class HangoutServiceImpl implements HangoutService {
      * Non-watch-party series are a silent no-op. Each external call is independently
      * try/caught so one failure doesn't strand the others.
      */
-    private void handleWatchPartyHostChange(Hangout hangout, String oldHostUserId, String requestingUserId) {
+    private void handleWatchPartyHostChange(Hangout hangout, String oldHostUserId, String requestingUserId,
+                                            boolean hostNudgeAlreadyRescheduled) {
         EventSeries series = eventSeriesRepository.findById(hangout.getSeriesId()).orElse(null);
         if (series == null || !series.isWatchParty()) {
             return;
@@ -815,11 +819,15 @@ public class HangoutServiceImpl implements HangoutService {
 
         if (!wasEmpty && nowEmpty) {
             // Host abdication — re-schedule the nudge so the group is reminded next cycle.
-            try {
-                watchPartyHostNudgeScheduler.scheduleHostNudge(hangout, series);
-            } catch (Exception e) {
-                logger.warn("Failed to re-schedule host nudge after abdication for hangout {}: {}",
-                        hangout.getHangoutId(), e.getMessage());
+            // Skip if the same-PUT time-edit branch already rescheduled (the second call is
+            // idempotent via createOrUpdate but burns a DDB read + an EventBridge API call).
+            if (!hostNudgeAlreadyRescheduled) {
+                try {
+                    watchPartyHostNudgeScheduler.scheduleHostNudge(hangout, series);
+                } catch (Exception e) {
+                    logger.warn("Failed to re-schedule host nudge after abdication for hangout {}: {}",
+                            hangout.getHangoutId(), e.getMessage());
+                }
             }
             return;
         }
