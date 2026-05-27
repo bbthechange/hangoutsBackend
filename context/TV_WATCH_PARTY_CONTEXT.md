@@ -231,34 +231,36 @@ Episodes airing <20 hours apart are combined into a single hangout.
 2. Group consecutive episodes with <20 hours between them
 3. Create single hangout per group
 
-**Naming Rules (no curated `ShowFlavor`):**
-| Count | Title Format |
-|-------|--------------|
-| 1 | Episode title |
-| 2 | "Double Episode: {title1}, {title2}" |
-| 3 | "Triple Episode" |
-| 4 | "Quadruple Episode" |
-| 5+ | "Multi-Episode ({count} episodes)" |
+**Display-name precedence:** `ShowFlavor.shortName` when curated, otherwise the
+denormalized `Season.showName` (populated for every Season row). The separator is
+the mid-dot ` · ` (U+00B7) framed by single spaces, chosen to visually disambiguate
+from colons that may appear inside the show name (e.g. "RuPaul's Drag Race: All
+Stars · How To Videos"). Inside a structural marker a regular colon is still used
+because it expresses containment, not metadata ("Double Episode: T1, T2").
 
-**Naming Rules (with curated `ShowFlavor.shortName`):**
-| Count | Title Format |
-|-------|--------------|
-| 1 | "{shortName}: {title}" |
-| 2 | "{shortName} Double: {title1}, {title2}" |
-| 3 | "{shortName} Triple Episode" |
-| 4 | "{shortName} Quadruple Episode" |
-| 5+ | "{shortName} Multi-Episode ({count})" |
+**Naming Rules (every episode gets show context):**
+| Count | Curated (`ShowFlavor.shortName`) | Uncurated (falls back to `Season.showName`) |
+|-------|-----------------------------------|---------------------------------------------|
+| 1 | "{shortName} · {title}" | "{showName} · {title}" |
+| 2 | "{shortName} · Double Episode: {title1}, {title2}" | "{showName} · Double Episode: {title1}, {title2}" |
+| 3 | "{shortName} · Triple Episode" | "{showName} · Triple Episode" |
+| 4 | "{shortName} · Quadruple Episode" | "{showName} · Quadruple Episode" |
+| 5+ | "{shortName} · Multi-Episode ({count})" | "{showName} · Multi-Episode ({count})" |
+
+When neither display source resolves (legacy/test paths), the formatter falls back
+to the bare body — "{title}", "Double Episode: ...", "Triple Episode", etc.
 
 Every watch-party episode-title write must route through `WatchPartyTitleFormatter`
-— there is no second path. The series title (`EventSeries.seriesTitle` / `SeriesPointer.seriesTitle`)
-is intentionally NOT formatted by this helper; it stays as the full
-`"{showName} Season {n}"` string.
+— there is no second path. The series title (`EventSeries.seriesTitle` /
+`SeriesPointer.seriesTitle`) is intentionally NOT formatted by this helper; it
+stays as the full `"{showName} Season {n}"` string.
 
 **Hard contract — null/blank/TBA pass-through:** when `rawTitle == null`,
 `rawTitle.isBlank()`, or `EpisodeTitles.isTba(rawTitle)` returns true, the formatter
-returns `rawTitle` unchanged even when a `shortName` exists. Downstream consumers
-(notably `WatchPartyHostNudgeService`) call `EpisodeTitles.isTba(hangout.getTitle())`
-on the stored title — prefixing TBA would silently break host-nudge.
+returns `rawTitle` unchanged even when a display name is available. Downstream
+consumers (notably `WatchPartyHostNudgeService`) call
+`EpisodeTitles.isTba(hangout.getTitle())` on the stored title — prefixing TBA would
+silently break host-nudge.
 
 **Combined Hangout Data:**
 - `externalId` = First episode's ID
@@ -300,16 +302,18 @@ all collapse to `Optional.empty()` — callers never see a thrown exception.
 
 Admin backfill that re-runs the formatter against every future-dated
 `isGeneratedTitle=true` hangout in a series. Use after a curator writes a new
-`ShowFlavor` record so existing hangouts pick up the curated short name without
-waiting for the next TVMaze title update.
+`ShowFlavor` record (to pick up the curated short name) or after any formatter
+behavior change (to re-prefix existing titles).
 
 - Auth: `X-Api-Key` (internal endpoint, same as the other `/internal/watch-party/*`
   routes).
 - Idempotent: hangouts whose formatted title already matches the stored title are
   left untouched.
 - No notifications fired (background, curator-initiated).
+- Works for both curated and uncurated series — uncurated series get the
+  `Season.showName` fallback prefix.
 - 404 when the series doesn't exist, isn't a watch party, has no parseable
-  `showId`, or has no `ShowFlavor` record for its show.
+  `showId`, or has no Season record (nothing to backfill).
 - Series title and `SeriesPointer.seriesTitle` are **not** touched (per design —
   see contract above).
 

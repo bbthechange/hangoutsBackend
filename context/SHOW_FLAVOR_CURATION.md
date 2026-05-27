@@ -375,7 +375,8 @@ aws dynamodb get-item \
 End-to-end:
 
 1. Create a new watch party for the show. Hangout titles should render with
-   the shortName prefix (e.g., `"All Stars: How To Videos"`).
+   the shortName prefix using the mid-dot separator
+   (e.g., `"All Stars · How To Videos"`).
 2. For pre-existing watch parties, call the reformat endpoint (§7).
 
 ---

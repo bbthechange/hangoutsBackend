@@ -157,8 +157,7 @@ class WatchPartyServiceImplTest {
                 pointerUpdateService,
                 seriesNotificationPreferenceRepository,
                 watchPartyHostNudgeScheduler,
-                titleFormatter,
-                showFlavorService);
+                titleFormatter);
 
         // Create a test series
         testSeries = new EventSeries("Test Show Season 1", null, GROUP_ID);
@@ -2756,14 +2755,24 @@ class WatchPartyServiceImplTest {
         }
 
         @Test
-        void noFlavor_throws404() {
-            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
-            when(showFlavorService.getFlavor(SHOW_ID)).thenReturn(Optional.empty());
+        void noFlavor_stillBackfillsUsingShowNameFallback() {
+            // With the shortName-OR-showName precedence, the reformat endpoint must work
+            // for uncurated series too — Season.showName is the fallback prefix source.
+            when(showFlavorService.getShortName(SHOW_ID)).thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> watchPartyService.reformatWatchPartyTitles(SERIES_ID))
-                    .isInstanceOf(ResourceNotFoundException.class)
-                    .hasMessageContaining("No ShowFlavor");
-            verify(hangoutRepository, never()).save(any(Hangout.class));
+            Hangout generated = futureGeneratedHangout(GENERATED_HANGOUT_ID, "101", "How To Videos");
+            testSeries.setHangoutIds(new ArrayList<>(List.of(GENERATED_HANGOUT_ID)));
+
+            when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
+            when(seasonRepository.findByShowIdAndSeasonNumber(SHOW_ID, SEASON_NUMBER))
+                    .thenReturn(Optional.of(seasonWithEpisodes));
+            when(hangoutRepository.findHangoutById(GENERATED_HANGOUT_ID)).thenReturn(Optional.of(generated));
+
+            ReformatTitlesResult result = watchPartyService.reformatWatchPartyTitles(SERIES_ID);
+
+            assertThat(result.getHangoutsUpdated()).isEqualTo(1);
+            assertThat(generated.getTitle()).isEqualTo(SHOW_NAME + " · How To Videos");
+            verify(hangoutRepository).save(generated);
         }
 
         @Test
@@ -2785,7 +2794,7 @@ class WatchPartyServiceImplTest {
             assertThat(result.getHangoutsScanned()).isEqualTo(2);
             assertThat(result.getHangoutsUpdated()).isEqualTo(1);
             assertThat(result.getHangoutsSkipped()).isEqualTo(1);
-            assertThat(generated.getTitle()).isEqualTo("All Stars: How To Videos");
+            assertThat(generated.getTitle()).isEqualTo("All Stars · How To Videos");
             verify(hangoutRepository).save(generated);
             verify(hangoutRepository, never()).save(custom);
             verify(groupTimestampService).updateGroupTimestamps(List.of(GROUP_ID));
@@ -2793,7 +2802,7 @@ class WatchPartyServiceImplTest {
 
         @Test
         void idempotent_alreadyFormattedTitle_isSkipped() {
-            Hangout already = futureGeneratedHangout(GENERATED_HANGOUT_ID, "101", "All Stars: How To Videos");
+            Hangout already = futureGeneratedHangout(GENERATED_HANGOUT_ID, "101", "All Stars · How To Videos");
             testSeries.setHangoutIds(new ArrayList<>(List.of(GENERATED_HANGOUT_ID)));
 
             when(eventSeriesRepository.findById(SERIES_ID)).thenReturn(Optional.of(testSeries));
@@ -2841,7 +2850,7 @@ class WatchPartyServiceImplTest {
             ReformatTitlesResult result = watchPartyService.reformatWatchPartyTitles(SERIES_ID);
 
             assertThat(result.getHangoutsUpdated()).isEqualTo(1);
-            assertThat(combined.getTitle()).isEqualTo("All Stars Double: How To Videos, Reading Is What");
+            assertThat(combined.getTitle()).isEqualTo("All Stars · Double Episode: How To Videos, Reading Is What");
         }
     }
 }

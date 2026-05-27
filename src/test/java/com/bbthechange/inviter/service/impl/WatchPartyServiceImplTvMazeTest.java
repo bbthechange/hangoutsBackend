@@ -94,8 +94,7 @@ class WatchPartyServiceImplTvMazeTest {
                 null,
                 seriesNotificationPreferenceRepository,
                 watchPartyHostNudgeScheduler,
-                titleFormatter,
-                showFlavorService);
+                titleFormatter);
     }
 
     // Test constants
@@ -228,7 +227,7 @@ class WatchPartyServiceImplTvMazeTest {
         // And hangouts are created using the provided episodes
         assertThat(response).isNotNull();
         assertThat(response.getHangouts()).hasSize(1);
-        assertThat(response.getHangouts().get(0).getTitle()).isEqualTo("Custom Episode");
+        assertThat(response.getHangouts().get(0).getTitle()).isEqualTo(SHOW_NAME + " · Custom Episode");
     }
 
     @Test

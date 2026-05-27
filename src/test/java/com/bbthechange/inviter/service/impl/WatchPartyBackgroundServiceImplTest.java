@@ -233,7 +233,7 @@ class WatchPartyBackgroundServiceImplTest {
         // Then
         ArgumentCaptor<Hangout> hangoutCaptor = ArgumentCaptor.forClass(Hangout.class);
         verify(hangoutRepository).save(hangoutCaptor.capture());
-        assertEquals("All Stars: How To Videos", hangoutCaptor.getValue().getTitle());
+        assertEquals("All Stars · How To Videos", hangoutCaptor.getValue().getTitle());
     }
 
     @Test
@@ -469,7 +469,7 @@ class WatchPartyBackgroundServiceImplTest {
 
         ArgumentCaptor<Hangout> hangoutCaptor = ArgumentCaptor.forClass(Hangout.class);
         verify(hangoutRepository).save(hangoutCaptor.capture());
-        assertEquals("All Stars: How To Videos", hangoutCaptor.getValue().getTitle());
+        assertEquals("All Stars · How To Videos", hangoutCaptor.getValue().getTitle());
     }
 
     @Test

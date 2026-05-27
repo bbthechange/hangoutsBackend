@@ -94,6 +94,11 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
                 return;
             }
 
+            // Resolve denormalized showName once per message (all series share the same season).
+            // Null is safe — formatter then relies on ShowFlavor.shortName alone, or falls
+            // back to the bare body if neither is available.
+            String showName = resolveShowNameFromSeasonKey(showId, message.getSeasonKey());
+
             EpisodeData episode = message.getEpisode();
             int hangoutsCreated = 0;
             Set<String> groupsToUpdate = new HashSet<>();
@@ -108,7 +113,7 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
                 }
 
                 // Create hangout for this series
-                Hangout hangout = createHangoutFromEpisode(series, episode, showId);
+                Hangout hangout = createHangoutFromEpisode(series, episode, showId, showName);
                 HangoutPointer pointer = HangoutPointerFactory.fromHangout(hangout, series.getGroupId());
 
                 // Save records
@@ -180,10 +185,11 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
             long nowTimestamp = Instant.now().getEpochSecond();
             int updated = 0;
             Set<String> groupsToUpdate = new HashSet<>();
-            // Per-invocation cache of seriesId → showId so we resolve each series at most
-            // once. All matched hangouts share the same externalId (TVMaze episode), so in
-            // practice this is a 1–N lookup where N == number of distinct watching groups.
-            Map<String, Integer> showIdBySeriesId = new HashMap<>();
+            // Per-invocation cache of seriesId → (showId, showName) so we resolve each
+            // series at most once. All matched hangouts share the same externalId (TVMaze
+            // episode), so in practice this is a 1–N lookup where N == number of distinct
+            // watching groups.
+            Map<String, ShowContext> contextBySeriesId = new HashMap<>();
 
             for (Hangout hangout : hangouts) {
                 // Skip if not using generated title — the user has customized this title,
@@ -200,8 +206,8 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
 
                 // Apply the central formatter — null/blank/TBA pass through unchanged so the
                 // host-nudge TBA detection downstream still works.
-                Integer showId = resolveShowIdForHangout(hangout, showIdBySeriesId);
-                String formattedTitle = titleFormatter.formatEpisodeTitle(showId, message.getNewTitle());
+                ShowContext ctx = resolveShowContextForHangout(hangout, contextBySeriesId);
+                String formattedTitle = titleFormatter.formatEpisodeTitle(ctx.showId(), ctx.showName(), message.getNewTitle());
 
                 // Skip if title hasn't actually changed
                 if (java.util.Objects.equals(formattedTitle, hangout.getTitle())) {
@@ -334,33 +340,86 @@ public class WatchPartyBackgroundServiceImpl implements WatchPartyBackgroundServ
     // ============================================================================
 
     /**
-     * Resolve the TVMaze show ID for a hangout's series, caching per-message so we read
-     * each EventSeries at most once. Returns null if the series is missing or its
-     * {@code seasonId} can't be parsed — callers fall back to the uncurated formatter
-     * branch (no prefix).
+     * Resolve the (showId, showName) tuple for a hangout's series, caching per-message so
+     * we read each EventSeries and its Season at most once. Returns an empty context
+     * (both null) if the series is missing or its {@code seasonId} can't be parsed —
+     * callers then fall back to the formatter's bare-body branch.
      */
-    private Integer resolveShowIdForHangout(Hangout hangout, Map<String, Integer> cache) {
+    private ShowContext resolveShowContextForHangout(Hangout hangout, Map<String, ShowContext> cache) {
         String seriesId = hangout.getSeriesId();
         if (seriesId == null || seriesId.isEmpty()) {
-            return null;
+            return ShowContext.EMPTY;
         }
-        if (cache.containsKey(seriesId)) {
-            return cache.get(seriesId);
+        ShowContext cached = cache.get(seriesId);
+        if (cached != null) {
+            return cached;
         }
-        Integer showId = eventSeriesRepository.findById(seriesId)
+        ShowContext ctx = eventSeriesRepository.findById(seriesId)
                 .map(EventSeries::getSeasonId)
-                .map(InviterKeyFactory::parseShowIdFromSeasonId)
-                .orElse(null);
-        cache.put(seriesId, showId);
-        return showId;
+                .map(this::contextFromSeasonId)
+                .orElse(ShowContext.EMPTY);
+        cache.put(seriesId, ctx);
+        return ctx;
     }
 
-    private Hangout createHangoutFromEpisode(EventSeries series, EpisodeData episode, Integer showId) {
+    private ShowContext contextFromSeasonId(String seasonId) {
+        Integer showId = InviterKeyFactory.parseShowIdFromSeasonId(seasonId);
+        if (showId == null) {
+            return ShowContext.EMPTY;
+        }
+        String showName = resolveShowNameFromSeasonKey(showId, seasonId);
+        return new ShowContext(showId, showName);
+    }
+
+    /**
+     * Look up {@code Season.showName} for the season identified by {@code seasonKey}.
+     * Returns null when the season key can't be parsed or no Season row exists — the
+     * formatter then falls back to {@code ShowFlavor.shortName} alone, or to the bare
+     * body when both are absent.
+     */
+    private String resolveShowNameFromSeasonKey(Integer showId, String seasonKey) {
+        Integer seasonNumber = parseSeasonNumberFromSeasonKey(seasonKey);
+        if (seasonNumber == null) {
+            return null;
+        }
+        return seasonRepository.findByShowIdAndSeasonNumber(showId, seasonNumber)
+                .map(Season::getShowName)
+                .orElse(null);
+    }
+
+    private Integer parseSeasonNumberFromSeasonKey(String seasonKey) {
+        if (seasonKey == null) {
+            return null;
+        }
+        // Format: "TVMAZE#SHOW#{showId}|SEASON#{seasonNumber}"
+        int pipe = seasonKey.indexOf('|');
+        if (pipe < 0 || pipe == seasonKey.length() - 1) {
+            return null;
+        }
+        String sk = seasonKey.substring(pipe + 1);
+        String[] parts = sk.split("#");
+        if (parts.length < 2) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(parts[1]);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /** Cached per-message context for a series: showId + denormalized showName. */
+    private record ShowContext(Integer showId, String showName) {
+        static final ShowContext EMPTY = new ShowContext(null, null);
+    }
+
+    private Hangout createHangoutFromEpisode(EventSeries series, EpisodeData episode,
+                                             Integer showId, String showName) {
         Hangout hangout = new Hangout();
         hangout.setHangoutId(UUID.randomUUID().toString());
         // Route the title through the central formatter (single sanctioned path for
         // watch-party episode titles). Null/blank/TBA pass through unchanged.
-        hangout.setTitle(titleFormatter.formatEpisodeTitle(showId, episode.getTitle()));
+        hangout.setTitle(titleFormatter.formatEpisodeTitle(showId, showName, episode.getTitle()));
         hangout.setVisibility(EventVisibility.INVITE_ONLY);
         hangout.setSeriesId(series.getSeriesId());
         hangout.setAssociatedGroups(List.of(series.getGroupId()));

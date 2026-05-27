@@ -10,7 +10,6 @@ import com.bbthechange.inviter.exception.ValidationException;
 import com.bbthechange.inviter.model.*;
 import com.bbthechange.inviter.repository.*;
 import com.bbthechange.inviter.service.GroupTimestampService;
-import com.bbthechange.inviter.service.ShowFlavorService;
 import com.bbthechange.inviter.service.WatchPartyHostNudgeScheduler;
 import com.bbthechange.inviter.service.WatchPartyService;
 import com.bbthechange.inviter.util.HangoutPointerFactory;
@@ -52,7 +51,6 @@ public class WatchPartyServiceImpl implements WatchPartyService {
     private final SeriesNotificationPreferenceRepository seriesNotificationPreferenceRepository;
     private final WatchPartyHostNudgeScheduler watchPartyHostNudgeScheduler;
     private final WatchPartyTitleFormatter titleFormatter;
-    private final ShowFlavorService showFlavorService;
 
     @Autowired
     public WatchPartyServiceImpl(
@@ -66,8 +64,7 @@ public class WatchPartyServiceImpl implements WatchPartyService {
             PointerUpdateService pointerUpdateService,
             SeriesNotificationPreferenceRepository seriesNotificationPreferenceRepository,
             WatchPartyHostNudgeScheduler watchPartyHostNudgeScheduler,
-            WatchPartyTitleFormatter titleFormatter,
-            ShowFlavorService showFlavorService) {
+            WatchPartyTitleFormatter titleFormatter) {
         this.groupRepository = groupRepository;
         this.hangoutRepository = hangoutRepository;
         this.eventSeriesRepository = eventSeriesRepository;
@@ -79,7 +76,6 @@ public class WatchPartyServiceImpl implements WatchPartyService {
         this.seriesNotificationPreferenceRepository = seriesNotificationPreferenceRepository;
         this.watchPartyHostNudgeScheduler = watchPartyHostNudgeScheduler;
         this.titleFormatter = titleFormatter;
-        this.showFlavorService = showFlavorService;
     }
 
     @Override
@@ -97,7 +93,7 @@ public class WatchPartyServiceImpl implements WatchPartyService {
         Season season = createOrUpdateSeason(request, episodes);
 
         // 5. Apply episode combination logic
-        List<CombinedEpisode> combinedEpisodes = combineEpisodes(episodes, request.getShowId());
+        List<CombinedEpisode> combinedEpisodes = combineEpisodes(episodes, request.getShowId(), request.getShowName());
         logger.info("Combined {} episodes into {} groups", episodes.size(), combinedEpisodes.size());
 
         // 6. Create EventSeries
@@ -701,17 +697,13 @@ public class WatchPartyServiceImpl implements WatchPartyService {
         if (showId == null) {
             throw new ResourceNotFoundException("Series has no parseable showId: " + seriesId);
         }
-        // 404 when uncurated — curator almost certainly didn't mean to backfill an
-        // uncurated show; surface the no-op explicitly so they can fix the flavor write.
-        if (showFlavorService.getFlavor(showId).isEmpty()) {
-            throw new ResourceNotFoundException("No ShowFlavor record for showId: " + showId);
-        }
 
         Season season = getSeasonFromSeries(series);
         if (season == null) {
             logger.warn("reformatWatchPartyTitles: Season missing for series {} — nothing to backfill", seriesId);
             return new ReformatTitlesResult(seriesId, 0, 0, 0);
         }
+        String showName = season.getShowName();
 
         long nowSeconds = Instant.now().getEpochSecond();
         String groupId = series.getGroupId();
@@ -744,7 +736,7 @@ public class WatchPartyServiceImpl implements WatchPartyService {
                 continue;
             }
 
-            String newTitle = titleFormatter.formatCombinedEpisodeTitle(showId, rawTitles);
+            String newTitle = titleFormatter.formatCombinedEpisodeTitle(showId, showName, rawTitles);
             if (Objects.equals(newTitle, hangout.getTitle())) {
                 // Idempotent — no-op.
                 skipped++;
@@ -882,23 +874,25 @@ public class WatchPartyServiceImpl implements WatchPartyService {
     // ============================================================================
 
     /**
-     * Test/legacy entry: combine episodes without a show ID. The formatter
-     * collapses to its uncurated branch when {@code showId == null}.
+     * Test/legacy entry: combine episodes without any show context. The formatter
+     * collapses to its bare-body branch when both {@code showId} and {@code showName}
+     * are missing.
      */
     List<CombinedEpisode> combineEpisodes(List<CreateWatchPartyEpisodeRequest> episodes) {
-        return combineEpisodes(episodes, null);
+        return combineEpisodes(episodes, null, null);
     }
 
     /**
      * Combine episodes that air within 20 hours of each other.
      * Episodes must be sorted by airTimestamp.
      *
-     * <p>{@code showId} is threaded through to the title formatter so a curated
-     * {@code ShowFlavor.shortName} can be applied to the resulting hangout title.
-     * Pass {@code null} when the show ID is unknown — the formatter falls back to
-     * the legacy unformatted output unchanged.
+     * <p>{@code showId} and {@code showName} are threaded through to the title formatter
+     * so a curated {@code ShowFlavor.shortName} (preferred) or the denormalized
+     * {@code Season.showName} (fallback) can prefix the resulting hangout title.
      */
-    List<CombinedEpisode> combineEpisodes(List<CreateWatchPartyEpisodeRequest> episodes, Integer showId) {
+    List<CombinedEpisode> combineEpisodes(List<CreateWatchPartyEpisodeRequest> episodes,
+                                          Integer showId,
+                                          String showName) {
         if (episodes == null || episodes.isEmpty()) {
             return List.of();
         }
@@ -928,19 +922,21 @@ public class WatchPartyServiceImpl implements WatchPartyService {
                 currentGroup.add(current);
             } else {
                 // Emit current group and start new one
-                result.add(createCombinedEpisode(currentGroup, showId));
+                result.add(createCombinedEpisode(currentGroup, showId, showName));
                 currentGroup = new ArrayList<>();
                 currentGroup.add(current);
             }
         }
 
         // Don't forget the last group
-        result.add(createCombinedEpisode(currentGroup, showId));
+        result.add(createCombinedEpisode(currentGroup, showId, showName));
 
         return result;
     }
 
-    private CombinedEpisode createCombinedEpisode(List<CreateWatchPartyEpisodeRequest> episodes, Integer showId) {
+    private CombinedEpisode createCombinedEpisode(List<CreateWatchPartyEpisodeRequest> episodes,
+                                                  Integer showId,
+                                                  String showName) {
         CombinedEpisode combined = new CombinedEpisode();
 
         // Primary episode is the first one
@@ -965,7 +961,7 @@ public class WatchPartyServiceImpl implements WatchPartyService {
         List<String> rawTitles = episodes.stream()
                 .map(CreateWatchPartyEpisodeRequest::getTitle)
                 .collect(Collectors.toList());
-        combined.setTitle(titleFormatter.formatCombinedEpisodeTitle(showId, rawTitles));
+        combined.setTitle(titleFormatter.formatCombinedEpisodeTitle(showId, showName, rawTitles));
 
         return combined;
     }
